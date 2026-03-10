@@ -1,0 +1,44 @@
+[project]
+name = "vat-backend"
+version = "0.1.0"
+description = "VAT — Vulnerability Assessment Tracker API"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.109.0",
+    "uvicorn[standard]>=0.27.0",
+    "pydantic>=2.5.0",
+    "pydantic-settings>=2.1.0",
+    "sqlalchemy[asyncio]>=2.0.25",
+    "asyncpg>=0.29.0",
+    "psycopg2-binary>=2.9.9",
+    "alembic>=1.13.0",
+    "python-jose[cryptography]>=3.3.0",
+    "httpx>=0.26.0",
+    "python-multipart>=0.0.6",
+    "email-validator>=2.0.0",
+    "bcrypt>=4.0.0",
+    "celery[redis]>=5.3.0",
+    "redis>=5.0.0",
+    "pandas>=2.0.0",
+    "openpyxl>=3.1.0",
+    "rapidfuzz>=3.0.0",
+    "spacy>=3.7.0",
+    "defusedxml>=0.7.0",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "session"
+asyncio_default_test_loop_scope = "session"
+markers = [
+    "e2e_linear: E2E tests against real Linear staging API (requires VAT_LINEAR_E2E_* or VAT_LINEAR_* env)",
+]
+
+[project.optional-dependencies]
+# spaCy model for token-based VAT parsing (optional; parsing falls back to regex/key-value if missing)
+spacy-model = [
+    "en-core-web-sm @ https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl",
+]
+
+[dependency-groups]
+dev = ["pytest>=7.0", "pytest-asyncio>=0.23.0", "httpx>=0.26.0", "respx>=0.21.0"]

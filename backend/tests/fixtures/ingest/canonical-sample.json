@@ -1,0 +1,20 @@
+{
+  "name": "Trivy CI Scan",
+  "source": "trivy",
+  "findings": [
+    {
+      "cve_id": "CVE-2024-1234",
+      "severity": "High",
+      "description": "Remote code execution in library X",
+      "component": "lib-x 1.2.3",
+      "title": "CVE-2024-1234 in lib-x",
+      "cvss": "8.5",
+      "file_path": "package.json"
+    },
+    {
+      "cve_id": "CVE-2024-5678",
+      "severity": "Medium",
+      "description": "Information disclosure in pkg-y"
+    }
+  ]
+}

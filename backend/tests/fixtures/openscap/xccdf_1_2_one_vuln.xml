@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Benchmark xmlns="http://checklists.nist.gov/xccdf/1.2" id="xccdf_test_benchmark" resolved="1">
+  <Rule id="xccdf_test_rule_SV-12345_rule" selected="true" severity="high">
+    <title>Sample STIG rule (XCCDF 1.2)</title>
+    <ident system="http://cve.mitre.org">CVE-2024-9999</ident>
+  </Rule>
+  <TestResult id="xccdf_test_result" start-time="2025-01-01T12:00:00" end-time="2025-01-01T12:00:05">
+    <target>chainguard-container:latest</target>
+    <rule-result idref="xccdf_test_rule_SV-12345_rule" severity="high">
+      <result>fail</result>
+      <ident system="http://cve.mitre.org">CVE-2024-9999</ident>
+    </rule-result>
+  </TestResult>
+</Benchmark>

@@ -1,0 +1,170 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: vat
+      POSTGRES_PASSWORD: vat
+      POSTGRES_DB: vat
+    ports:
+      - "5432:5432"
+    volumes:
+      - vat_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vat -d vat"]
+      interval: 2s
+      timeout: 5s
+      retries: 5
+
+  valkey:
+    image: valkey/valkey:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 2s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+      - backend_venv:/app/.venv  # Isolate container venv from host; prevents root-owned files
+      - ./data:/app/data  # Exports + dev scanner token (data/.vat-scanner-token)
+    command: ["sh", "-c", "uv run alembic upgrade head && uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 30s
+    env_file:
+      - .env
+    environment:
+      VAT_DATABASE_URL: postgresql+asyncpg://vat:vat@postgres:5432/vat
+      VAT_CELERY_BROKER_URL: redis://valkey:6379/0
+      VAT_ENV: development
+      VAT_PUBLIC_URL: http://localhost:8000
+      VAT_FRONTEND_URL: http://localhost:3000
+      VAT_CORS_ORIGINS: http://localhost:3000
+      VAT_ALLOW_DEV_HEADERS: "true"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      valkey:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    env_file:
+      - .env
+    # Bootstrap .next (routes-manifest.json etc.) before dev server; the host mount
+    # overwrites the image, so we must build at runtime when manifests are missing.
+    # Set VAT_FRONTEND_SKIP_BUILD=1 to skip the pre-build for faster dev startup
+    # (Next.js dev server with Turbopack usually works without it).
+    command: ["sh", "-c", "if [ -z \"$VAT_FRONTEND_SKIP_BUILD\" ] && [ ! -f .next/routes-manifest.json ]; then npm run build; fi; npm run dev"]
+    environment:
+      HOSTNAME: "0.0.0.0"
+      # VAT_FRONTEND_SKIP_BUILD: "1"  # Uncomment for faster dev startup (skips pre-build)
+      API_UPSTREAM_URL: http://backend:8000
+      APP_NAME: VAT
+      APP_LOGO: "▣"
+      CLASSIFICATION: UNCLASSIFIED
+      SEARCH_PLACEHOLDER: "Find by CVE, component, team…"
+      SHOW_THEME_TOGGLE: "false"
+      ENV_LABEL: ""
+      FOOTER_CLASSIFICATION: UNCLASSIFIED
+      FOOTER_SUFFIX: " - NO CUI (IL-2)"
+    depends_on:
+      - backend
+
+  celery-worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    command: ["sh", "-c", "uv run celery -A app.celery_app worker -Q vat-sync -l info -c ${VAT_CELERY_WORKER_CONCURRENCY:-4}"]
+    env_file:
+      - .env
+    volumes:
+      - ./backend:/app
+      - backend_venv:/app/.venv  # Isolate container venv from host
+      - ./data:/app/data
+    environment:
+      VAT_DATABASE_URL: postgresql+asyncpg://vat:vat@postgres:5432/vat
+      VAT_CELERY_BROKER_URL: redis://valkey:6379/0
+      VAT_ENV: development
+      VAT_CELERY_WORKER_CONCURRENCY: "4"
+    depends_on:
+      backend:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      valkey:
+        condition: service_healthy
+
+  celery-beat:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    volumes:
+      - ./backend:/app
+      - backend_venv:/app/.venv
+      - ./data:/app/data  # Isolate container venv from host
+    command: ["uv", "run", "celery", "-A", "app.celery_app", "beat", "-l", "info"]
+    environment:
+      VAT_DATABASE_URL: postgresql+asyncpg://vat:vat@postgres:5432/vat
+      VAT_CELERY_BROKER_URL: redis://valkey:6379/0
+      VAT_ENV: development
+    depends_on:
+      postgres:
+        condition: service_healthy
+      valkey:
+        condition: service_healthy
+
+  # VAT Local Scanner — run on demand. Includes Trivy, Grype, Semgrep, Gitleaks, npm, pip-audit, STIG.
+  # Workspace is read-only; temp files go to /tmp (or --temp-dir / VAT_SCANNER_TEMP_DIR).
+  #   docker compose --profile scanner run scanner scan /workspace/repo1 /workspace/repo2
+  #   docker compose --profile scanner run scanner scan /workspace/test/artifacts/2026-03-08_0429 --dry-run
+  #   docker compose --profile scanner run scanner scan-archive /workspace/artifacts/bundle.zip --dry-run
+  # STIG scans require Docker socket (uncomment below): - /var/run/docker.sock:/var/run/docker.sock
+  # Requires VAT_ADMIN_TOKEN (admin API key or JWT from VAT Settings → Access).
+  scanner:
+    profiles:
+      - scanner
+    build:
+      context: ./vat-local-scanner
+      dockerfile: Dockerfile
+    volumes:
+      - .:/workspace:ro
+      - vat_scanner_keys:/root/.config/vat
+      # Required for STIG scans: scanner loads images and runs Chainguard openscap via Docker
+      - /var/run/docker.sock:/var/run/docker.sock
+      # STIG temp dir must be on host so sibling openscap container can mount it
+      - /tmp:/tmp
+    env_file:
+      - .env
+      - data/.vat-scanner-token  # Auto-created by backend in dev when no admin keys exist
+    environment:
+      VAT_URL: http://backend:8000
+      # VAT_ADMIN_TOKEN from env_file (data/.vat-scanner-token or .env); override with -e if needed
+    entrypoint: ["python", "-m", "vat_scanner.cli"]
+    command: ["scan", "/workspace", "--help"]
+    depends_on:
+      backend:
+        condition: service_healthy
+
+volumes:
+  vat_postgres_data:
+  backend_venv:
+  vat_scanner_keys:

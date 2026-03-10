@@ -1,0 +1,54 @@
+# VAT Local Scanner — Azure DevOps Pipeline
+# Add as a pipeline YAML or include in your existing pipeline
+#
+# Variables: VAT_URL, VAT_ADMIN_TOKEN (Pipeline → Variables, secret)
+# Or use Variable Groups
+
+trigger:
+  branches:
+    include: [main, develop]
+
+pr:
+  branches:
+    include: [main, develop]
+
+pool:
+  vmImage: ubuntu-latest
+
+variables:
+  - group: vat-scanner  # Optional: variable group with VAT_URL, VAT_ADMIN_TOKEN
+  - name: VAT_URL
+    value: $(VAT_URL)
+  - name: VAT_ADMIN_TOKEN
+    value: $(VAT_ADMIN_TOKEN)
+
+steps:
+  - task: UsePythonVersion@0
+    inputs:
+      versionSpec: '3.11'
+
+  - script: |
+      pip install vat-scanner
+      curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin
+      curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sh -s -- -b /usr/local/bin
+    displayName: 'Install VAT Scanner and tools'
+
+  - script: |
+      vat-scan scan . \
+        --asset "$(Build.Repository.Name)" \
+        --gating-mode pr \
+        --fail-on high \
+        --base-commit-id $(Build.SourceVersion) \
+        --head-commit-id $(Build.SourceVersion) \
+        --gating-result-output gating-result.json
+    displayName: 'Run VAT Scan'
+    env:
+      VAT_URL: $(VAT_URL)
+      VAT_ADMIN_TOKEN: $(VAT_ADMIN_TOKEN)
+
+  - task: PublishPipelineArtifact@1
+    inputs:
+      targetPath: gating-result.json
+      artifactName: vat-gating
+      publishLocation: pipeline
+    condition: always()

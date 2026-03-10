@@ -1,0 +1,113 @@
+{
+  "_description": "Canonical fixture for group key parity. Backend and frontend must produce identical keys. Grouping is scoped within asset (image|branch|tag). Fixtures use empty asset (||) unless image/branch/tag specified.",
+  "_asset_suffix": "#{image}|{branch}|{tag} — empty = #||",
+  "fixtures": [
+    {
+      "id": "f-1",
+      "findingType": "SCA",
+      "cveId": "CVE-2024-8385",
+      "component": "firefox-esr 115.0",
+      "componentBase": "firefox-esr",
+      "ecosystem": "debian",
+      "expectedKey": "sca:debian|firefox-esr#||"
+    },
+    {
+      "id": "f-2",
+      "findingType": "SCA",
+      "cveId": "CVE-2024-1234",
+      "component": null,
+      "componentBase": null,
+      "ecosystem": null,
+      "expectedKey": "cve:cve-2024-1234#||"
+    },
+    {
+      "id": "f-3",
+      "findingType": "SCA",
+      "cveId": "CVE-2024-5678",
+      "component": "Lodash 4.17.21",
+      "componentBase": "Lodash",
+      "ecosystem": "npm",
+      "expectedKey": "sca:npm|lodash#||"
+    },
+    {
+      "id": "f-3b",
+      "findingType": "SCA",
+      "cveId": "CVE-2024-5679",
+      "component": "Lodash 4.17.22",
+      "componentBase": "Lodash",
+      "ecosystem": "yarn",
+      "expectedKey": "sca:npm|lodash#||"
+    },
+    {
+      "id": "f-3c",
+      "findingType": "SCA",
+      "cveId": "CVE-2024-5680",
+      "component": "lodash 4.17.21",
+      "componentBase": null,
+      "ecosystem": "npm",
+      "expectedKey": "sca:npm|lodash#||"
+    },
+    {
+      "id": "f-4",
+      "findingType": "SCA",
+      "cveId": "CVE-2024-9999",
+      "component": "my_package 1.0",
+      "componentBase": "my_package",
+      "ecosystem": "pypi",
+      "expectedKey": "sca:pypi|my-package#||"
+    },
+    {
+      "id": "f-5",
+      "findingType": "SAST",
+      "cveId": "python.dangerous-assert",
+      "title": "Dangerous assert",
+      "ruleId": "python.dangerous-assert",
+      "cweId": "CWE-617",
+      "expectedKey": "sast:python.dangerous-assert#||"
+    },
+    {
+      "id": "f-6",
+      "findingType": "IaC",
+      "cveId": "AVD-123",
+      "title": "S3 bucket public",
+      "ruleId": "AVD-123",
+      "expectedKey": "iac:avd-123#||"
+    },
+    {
+      "id": "f-7",
+      "findingType": "Secret",
+      "cveId": "gitleaks-aws",
+      "title": "AWS Key",
+      "ruleId": "gitleaks-aws",
+      "secretType": "AWS Key",
+      "expectedKey": "secret:aws-key#||"
+    },
+    {
+      "id": "f-7a",
+      "findingType": "Secret",
+      "cveId": "aikido-leaked-secret",
+      "title": "Leaked secret in install.sh",
+      "ruleId": null,
+      "secretType": null,
+      "expectedKey": "secret:leaked secret in install.sh#||"
+    },
+    {
+      "id": "f-7b",
+      "findingType": "Secret",
+      "cveId": "aikido-leaked-secret",
+      "title": "Leaked secret in postlaunch.sh",
+      "ruleId": null,
+      "secretType": null,
+      "expectedKey": "secret:leaked secret in postlaunch.sh#||"
+    },
+    {
+      "id": "f-8",
+      "findingType": "License",
+      "cveId": "license:MIT",
+      "component": "pkg 1.0",
+      "componentBase": "pkg",
+      "ecosystem": "npm",
+      "expectedKey": "license:npm|pkg#||"
+    }
+  ]
+}

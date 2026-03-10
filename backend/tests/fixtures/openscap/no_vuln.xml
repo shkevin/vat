@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Benchmark xmlns="http://checklists.nist.gov/xccdf/1.1" id="vat-test-benchmark" resolved="1">
+  <status>draft</status>
+  <title>VAT OpenSCAP test benchmark — no vulnerabilities</title>
+  <description>Sample XCCDF 1.1 for parser tests. All rules pass.</description>
+  <version time="2025-01-01T00:00:00">1.0</version>
+  <model system="urn:xccdf:scoring:default"/>
+  <Rule id="rule-001" selected="true" severity="medium">
+    <title>Sample rule: package update check</title>
+    <ident system="http://cve.mitre.org">CVE-2024-0001</ident>
+    <check system="http://oval.mitre.org/XMLSchema/oval-definitions-5">
+      <check-content-ref name="oval:test:def:001" href="test-oval.xml"/>
+    </check>
+  </Rule>
+  <Rule id="rule-002" selected="true" severity="low">
+    <title>Sample rule: config hardening</title>
+    <ident system="http://cve.mitre.org">CVE-2024-0002</ident>
+    <check system="http://oval.mitre.org/XMLSchema/oval-definitions-5">
+      <check-content-ref name="oval:test:def:002" href="test-oval.xml"/>
+    </check>
+  </Rule>
+  <TestResult id="vat-test-result" start-time="2025-01-01T12:00:00" end-time="2025-01-01T12:00:05" test-system="cpe:/a:openscap:openscap:1.3">
+    <title>VAT test scan result</title>
+    <target>test-host.example.com</target>
+    <target-address>10.0.0.1</target-address>
+    <rule-result idref="rule-001" time="2025-01-01T12:00:01" severity="medium">
+      <result>pass</result>
+      <ident system="http://cve.mitre.org">CVE-2024-0001</ident>
+      <check system="http://oval.mitre.org/XMLSchema/oval-definitions-5">
+        <check-content-ref name="oval:test:def:001" href="test-oval.xml"/>
+      </check>
+    </rule-result>
+    <rule-result idref="rule-002" time="2025-01-01T12:00:02" severity="low">
+      <result>pass</result>
+      <ident system="http://cve.mitre.org">CVE-2024-0002</ident>
+      <check system="http://oval.mitre.org/XMLSchema/oval-definitions-5">
+        <check-content-ref name="oval:test:def:002" href="test-oval.xml"/>
+      </check>
+    </rule-result>
+    <score system="urn:xccdf:scoring:default" maximum="100.000000">100.000000</score>
+  </TestResult>
+</Benchmark>

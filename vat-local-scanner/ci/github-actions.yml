@@ -1,0 +1,50 @@
+# VAT Local Scanner — GitHub Actions
+# Copy to .github/workflows/vat-scan.yml in your repo
+#
+# Secrets (Settings → Secrets): VAT_URL, VAT_ADMIN_TOKEN
+# Optional: --fail-on high for gating
+
+name: VAT Scan
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  vat-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # For PR diff-aware gating
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install VAT Scanner
+        run: pip install vat-scanner
+        # Or from repo: pip install -e ./vat-local-scanner
+
+      - name: Install scanners (Trivy, Grype)
+        run: |
+          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin
+          curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sh -s -- -b /usr/local/bin
+
+      - name: Run VAT Scan
+        env:
+          VAT_URL: ${{ secrets.VAT_URL }}
+          VAT_ADMIN_TOKEN: ${{ secrets.VAT_ADMIN_TOKEN }}
+        run: |
+          BASE="${{ github.event.pull_request.base.sha || github.sha }}"
+          HEAD="${{ github.event.pull_request.head.sha || github.sha }}"
+          vat-scan scan . \
+            --asset "${{ github.repository }}" \
+            --gating-mode pr \
+            --fail-on high \
+            --base-commit-id "$BASE" \
+            --head-commit-id "$HEAD" \
+            --gating-result-output gating-result.json

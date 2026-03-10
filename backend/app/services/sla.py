@@ -1,0 +1,30 @@
+"""SLA service — compute due dates and breach status per PRD §5.2."""
+
+# SLA_DAYS by (finding_type, severity)
+SLA_DAYS = {
+    ("Secret", "Critical"): 1,
+    ("Secret", "High"): 1,
+    ("Secret", "Medium"): 1,
+    ("Secret", "Low"): 3,
+    ("Secret", "Informational"): 7,
+    ("SCA", "Critical"): 3,
+    ("SCA", "High"): 14,
+    ("SCA", "Medium"): 30,
+    ("SCA", "Low"): 90,
+    ("SCA", "Informational"): 180,
+    ("IaC", "Critical"): 1,
+    ("IaC", "High"): 7,
+    ("IaC", "Medium"): 14,
+    ("IaC", "Low"): 30,
+    ("IaC", "Informational"): 90,
+    ("SAST", "Critical"): 7,
+    ("SAST", "High"): 21,
+    ("SAST", "Medium"): 60,
+    ("SAST", "Low"): 90,
+    ("SAST", "Informational"): 180,
+    ("License", "Critical"): 14,
+    ("License", "High"): 30,
+    ("License", "Medium"): 30,
+    ("License", "Low"): 90,
+    ("License", "Informational"): 180,
+}

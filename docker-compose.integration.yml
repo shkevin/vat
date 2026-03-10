@@ -1,0 +1,38 @@
+# Override for integration testing with WireMock (Linear + Aikido mocks).
+# Usage: docker compose -f docker-compose.yml -f docker-compose.integration.yml up
+#
+# Backend and celery-worker will use WireMock instead of real Linear/Aikido APIs.
+# Use test credentials below; WireMock accepts any value for auth headers.
+
+services:
+  wiremock:
+    image: wiremock/wiremock:3.3.1
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./tests/wiremock/mappings:/home/wiremock/mappings:ro
+    command: ["--global-response-templating", "--verbose"]
+
+  backend:
+    environment:
+      VAT_LINEAR_API_URL: http://wiremock:8080/linear/graphql
+      VAT_AIKIDO_BASE_URL: http://wiremock:8080/aikido
+      VAT_LINEAR_API_KEY: ${VAT_LINEAR_API_KEY:-test-linear-key}
+      VAT_LINEAR_TEAM_ID: ${VAT_LINEAR_TEAM_ID:-test-team-id}
+      VAT_AIKIDO_CLIENT_ID: ${VAT_AIKIDO_CLIENT_ID:-test-client-id}
+      VAT_AIKIDO_CLIENT_SECRET: ${VAT_AIKIDO_CLIENT_SECRET:-test-client-secret}
+    depends_on:
+      wiremock:
+        condition: service_started
+
+  celery-worker:
+    environment:
+      VAT_LINEAR_API_URL: http://wiremock:8080/linear/graphql
+      VAT_AIKIDO_BASE_URL: http://wiremock:8080/aikido
+      VAT_LINEAR_API_KEY: ${VAT_LINEAR_API_KEY:-test-linear-key}
+      VAT_LINEAR_TEAM_ID: ${VAT_LINEAR_TEAM_ID:-test-team-id}
+      VAT_AIKIDO_CLIENT_ID: ${VAT_AIKIDO_CLIENT_ID:-test-client-id}
+      VAT_AIKIDO_CLIENT_SECRET: ${VAT_AIKIDO_CLIENT_SECRET:-test-client-secret}
+    depends_on:
+      wiremock:
+        condition: service_started

@@ -1,0 +1,62 @@
+/**
+ * Report engine integration test — verify Open count in context respects countMode.
+ * When 3 findings exist with 2 in one group and 1 in another:
+ * - countMode "groups" → context.openIssues = 2
+ * - countMode "instances" → context.openIssues = 3
+ */
+
+import { describe, it, expect } from "vitest";
+import { computeReportContext } from "./report-engine";
+import { toVATDashboardData } from "./vatReportAdapter";
+import type { Finding, Asset } from "@/types";
+
+function mkFinding(
+  id: string,
+  cveId: string,
+  component: string,
+  componentBase: string
+): Finding {
+  return {
+    id,
+    findingType: "SCA",
+    fingerprintId: `fp-${id}`,
+    cveId,
+    severity: "High",
+    status: "Open",
+    sources: [],
+    audit: [],
+    component,
+    componentBase,
+    title: `${cveId} in ${component}`,
+  };
+}
+
+describe("computeReportContext countMode", () => {
+  const findings: Finding[] = [
+    mkFinding("f1", "CVE-2024-8385", "firefox-esr 115.0", "firefox-esr"),
+    mkFinding("f2", "CVE-2024-8381", "firefox-esr 115.0", "firefox-esr"),
+    mkFinding("f3", "CVE-2024-5432", "openssl 3.0.0", "openssl"),
+  ];
+  const assets: Asset[] = [];
+
+  const baseFilters = {
+    repoFilter: [],
+    branchFilter: null,
+    severityFilter: [],
+    dateFrom: null,
+    dateTo: null,
+    notes: "",
+  };
+
+  it("returns openIssues=2 when countMode is groups (2 groups)", () => {
+    const data = toVATDashboardData(findings, assets, "VAT", { groupFindings: true });
+    const ctx = computeReportContext(data, { ...baseFilters, countMode: "groups" });
+    expect(ctx.openIssues).toBe(2);
+  });
+
+  it("returns openIssues=3 when countMode is instances (3 instances)", () => {
+    const data = toVATDashboardData(findings, assets, "VAT", { groupFindings: true });
+    const ctx = computeReportContext(data, { ...baseFilters, countMode: "instances" });
+    expect(ctx.openIssues).toBe(3);
+  });
+});

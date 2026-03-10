@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Benchmark xmlns="http://checklists.nist.gov/xccdf/1.2" id="xccdf_fix_test" resolved="1">
+  <Rule id="rule_sshd" selected="true" severity="medium">
+    <title>SSH must use approved ciphers</title>
+    <description>The following line in /etc/ssh/sshd_config demonstrates use of FIPS-approved ciphers.</description>
+    <fix system="urn:xccdf:fix:script:sh"># Configure /etc/ssh/sshd_config
+sed -i 's/^Ciphers.*/Ciphers aes128-ctr,aes256-ctr/' /etc/ssh/sshd_config</fix>
+  </Rule>
+  <TestResult id="xccdf_test_result" start-time="2025-01-01T12:00:00" end-time="2025-01-01T12:00:05">
+    <target>my-container:latest</target>
+    <rule-result idref="rule_sshd" severity="medium">
+      <result>fail</result>
+      <message>Found: Ciphers 3des-cbc,aes128-cbc (non-compliant)</message>
+    </rule-result>
+  </TestResult>
+</Benchmark>

@@ -1,0 +1,11 @@
+*.egg-info/
+.eggs/
+dist/
+build/
+__pycache__/
+*.pyc
+.pytest_cache/
+.coverage
+htmlcov/
+.trivy-fs-scan.json
+vat-scanner.yaml

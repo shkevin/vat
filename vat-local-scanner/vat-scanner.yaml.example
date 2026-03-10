@@ -1,0 +1,28 @@
+# VAT Local Scanner config — copy to vat-scanner.yaml or .vat-scanner.yaml
+# CLI flags override these values.
+
+vat_url: https://vat.example.com
+asset: my-repo-name
+
+scan_types:
+  - code
+  - dependencies
+  - secrets
+  - iac
+  - license
+  - container
+
+exclude:
+  - "**/node_modules/**"
+  - "**/dist/**"
+  - "**/*.min.js"
+
+gating:
+  mode: pr  # or release
+  fail_on: high
+  base_commit_id: ${GITHUB_BASE_SHA}
+  head_commit_id: ${GITHUB_SHA}
+
+scan_timeout_ms: 600000
+disable_artifact_scanning: false
+# temp_dir: /tmp  # Where scanner writes temp files (default: /tmp or VAT_SCANNER_TEMP_DIR)

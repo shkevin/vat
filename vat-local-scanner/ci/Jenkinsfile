@@ -1,0 +1,43 @@
+// VAT Local Scanner — Jenkins Pipeline
+// Use with Jenkins Pipeline job or Multibranch Pipeline
+//
+// Credentials: VAT_URL and VAT_ADMIN_TOKEN as Jenkins credentials (Secret text)
+// Or env vars in the environment block
+
+pipeline {
+    agent any
+
+    environment {
+        VAT_URL = credentials('vat-url')
+        VAT_ADMIN_TOKEN = credentials('vat-admin-token')
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                checkout scm
+            }
+        }
+
+        stage('VAT Scan') {
+            steps {
+                sh '''
+                    pip install vat-scanner
+                    vat-scan scan . \
+                        --asset "${JOB_NAME}" \
+                        --gating-mode pr \
+                        --fail-on high \
+                        --base-commit-id ${GIT_PREVIOUS_COMMIT:-${GIT_COMMIT}} \
+                        --head-commit-id ${GIT_COMMIT} \
+                        --gating-result-output gating-result.json
+                '''
+            }
+        }
+    }
+
+    post {
+        always {
+            archiveArtifacts artifacts: 'gating-result.json', allowEmptyArchive: true
+        }
+    }
+}

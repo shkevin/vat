@@ -1,0 +1,84 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="115 0 785 500" width="900" height="500">
+  <defs>
+    <!-- Deep slate primary -->
+    <linearGradient id="pri" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0C1222"/>
+      <stop offset="100%" stop-color="#1A2744"/>
+    </linearGradient>
+    
+    <!-- Teal-to-cyan accent -->
+    <linearGradient id="acc" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#06D6A0"/>
+      <stop offset="80%" stop-color="#22D3EE"/>
+    </linearGradient>
+    
+    <!-- Soft glow -->
+    <filter id="glo">
+      <feGaussianBlur stdDeviation="4" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+
+    <!-- Shield clip -->
+    <clipPath id="sc">
+      <path d="M60,120 L60,65 Q60,60 65,58 L115,38 Q120,36 125,38 L175,58 Q180,60 180,65 L180,120 Q180,155 120,178 Q60,155 60,120 Z"/>
+    </clipPath>
+  </defs>
+  
+  <!-- Transparent background -->
+  
+  <!-- ══════════ SHIELD ICON ══════════ -->
+  <g transform="translate(70, 128)">
+    <!-- Shield body -->
+    <path d="M60,120 L60,65 Q60,60 65,58 L115,38 Q120,36 125,38 L175,58 Q180,60 180,65 L180,120 Q180,158 120,180 Q60,158 60,120 Z" 
+          fill="url(#pri)"/>
+    
+    <!-- Inner shield outline -->
+    <path d="M72,116 L72,72 Q72,68 76,66 L116,50 Q120,48 124,50 L164,66 Q168,68 168,72 L168,116 Q168,146 120,165 Q72,146 72,116 Z" 
+          fill="none" stroke="url(#acc)" stroke-width="1.2" opacity="0.4"/>
+    
+    <!-- Assessment scan lines -->
+    <g clip-path="url(#sc)" filter="url(#glo)">
+      <line x1="90" y1="78" x2="130" y2="78"  stroke="url(#acc)" stroke-width="3" stroke-linecap="round" opacity="0.7"/>
+      <line x1="90" y1="94" x2="145" y2="94"  stroke="url(#acc)" stroke-width="3" stroke-linecap="round" opacity="0.85"/>
+      <line x1="90" y1="110" x2="138" y2="110" stroke="url(#acc)" stroke-width="3" stroke-linecap="round" opacity="1"/>
+      <line x1="90" y1="126" x2="120" y2="126" stroke="url(#acc)" stroke-width="3" stroke-linecap="round" opacity="0.6"/>
+    </g>
+    
+    <!-- Checkmark — the "assessment complete" signal -->
+    <polyline points="140,108 146,116 158,98" 
+              fill="none" stroke="#06D6A0" stroke-width="3" 
+              stroke-linecap="round" stroke-linejoin="round"
+              filter="url(#glo)"/>
+  </g>
+  
+  <!-- ══════════ WORDMARK: V A T ══════════ -->
+  <g transform="translate(310, 165)">
+    <!-- V — custom geometric, slightly condensed -->
+    <path d="
+      M0,0 L18,0 L52,110 L86,0 L104,0 L60,130 L44,130 Z
+    " fill="url(#pri)"/>
+    
+    <!-- A -->
+    <path d="
+      M130,130 L174,0 L192,0 L236,130 L218,130 L208,100 L158,100 L148,130 Z
+      M163,84 L203,84 L183,26 Z
+    " fill="url(#pri)"/>
+    
+    <!-- T -->
+    <path d="
+      M256,0 L360,0 L360,18 L317,18 L317,130 L299,130 L299,18 L256,18 Z
+    " fill="url(#pri)"/>
+  </g>
+  
+  <!-- Accent tracking bar -->
+  <rect x="310" y="308" width="140" height="4" rx="2" fill="url(#acc)" filter="url(#glo)"/>
+  
+  <!-- Descriptor -->
+  <text x="310" y="340" 
+        font-family="'SF Pro Text', 'Helvetica Neue', 'Segoe UI', system-ui, sans-serif" 
+        font-size="14" font-weight="600" letter-spacing="5" 
+        fill="#94A3B8">
+    VULNERABILITY ASSESSMENT TRACKER
+  </text>
+  
+</svg>

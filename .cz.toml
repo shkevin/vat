@@ -1,0 +1,23 @@
+[tool.commitizen]
+name = "cz_conventional_commits"
+version = "0.1.0"
+tag_format = "v$version"
+version_provider = "commitizen"
+version_files = [
+    "backend/pyproject.toml:version",
+    "frontend/package.json:version",
+]
+version_scheme = "pep440"
+
+[tool.commitizen.customize]
+message_template = "{{change_type}}{% if scope %}({{scope}}){% endif %}: {{subject}}"
+example = "feat(backend): add user authentication endpoint"
+schema = "<type>(<scope>): <subject>"
+schema_pattern = "(build|ci|docs|feat|fix|perf|refactor|style|test|chore|revert)(\\(.+\\))?: .+"
+bump_message = "chore(release): bump version to $current_version → $new_version"
+changelog_file = "CHANGELOG.md"
+changelog_incremental = true
+update_changelog_on_bump = true
+annotated_tag = false
+prerelease = false
+major_version_zero = true

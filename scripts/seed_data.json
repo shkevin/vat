@@ -1,0 +1,2096 @@
+{
+  "findings": [
+    {
+      "id": "f-001",
+      "findingType": "CVE",
+      "fingerprintId": "9a888045",
+      "cveId": "CVE-2024-21626",
+      "title": "runc container escape (Leaky Vessels)",
+      "severity": "Critical",
+      "status": "In Review",
+      "sources": [
+        {
+          "name": "Aikido",
+          "importedAt": "2024-11-01T09:00:00Z"
+        }
+      ],
+      "source": "Aikido",
+      "component": "runc 1.1.11",
+      "image": "api-server:latest",
+      "cvss": "8.6",
+      "epss": "0.42",
+      "team": "Platform",
+      "owner": "alice@co.com",
+      "trackerId": "PLT-1041",
+      "controlRef": "CC6.6",
+      "suppressionScope": null,
+      "attestation": null,
+      "regressionOf": [],
+      "regressionCount": 0,
+      "description": "File descriptor leak in runc allows container escape to host OS.",
+      "justification": "Our Kubernetes node pool uses gVisor (runsc) as the container runtime, not runc directly.",
+      "compensatingControls": "gVisor sandbox on all prod nodes.",
+      "reviewerNote": "",
+      "trackerComment": true,
+      "archived": false,
+      "archivedReason": null,
+      "audit": [
+        {
+          "ts": "2024-11-01T09:00:00Z",
+          "user": "system",
+          "action": "Imported from Aikido scan",
+          "note": null
+        },
+        {
+          "ts": "2024-11-02T14:23:00Z",
+          "user": "system",
+          "action": "Status \u2192 In Review",
+          "note": null
+        }
+      ],
+      "created": "2024-11-01",
+      "slaDue": "2024-11-04"
+    },
+    {
+      "id": "f-002",
+      "findingType": "CVE",
+      "fingerprintId": "b2c3d4e5",
+      "cveId": "CVE-2023-44487",
+      "title": "HTTP/2 Rapid Reset DoS",
+      "severity": "High",
+      "status": "Risk Accepted",
+      "sources": [
+        {
+          "name": "Aikido",
+          "importedAt": "2024-10-15T10:00:00Z"
+        }
+      ],
+      "source": "Aikido",
+      "component": "nginx 1.25.1",
+      "image": "ingress:v1.9",
+      "cvss": "7.5",
+      "epss": "0.71",
+      "team": "Infrastructure",
+      "owner": "bob@co.com",
+      "trackerId": "INF-882",
+      "controlRef": "CC7.1",
+      "suppressionScope": null,
+      "attestation": {
+        "approver": "Sarah Chen",
+        "approverTitle": "CISO",
+        "approvedAt": "2024-10-17T09:05:00Z",
+        "waiverRef": "WAV-2024-012",
+        "expiresAt": "2025-06-01"
+      },
+      "regressionOf": [],
+      "regressionCount": 0,
+      "description": "HTTP/2 rapid reset via stream cancellation causes unauthenticated remote DoS.",
+      "justification": "Cloudflare WAF absorbs reset floods before reaching origin.",
+      "compensatingControls": "Cloudflare WAF rule CF-DDOS-8800.",
+      "reviewerNote": "Accepted \u2014 WAF evidence reviewed.",
+      "trackerComment": true,
+      "archived": false,
+      "archivedReason": null,
+      "audit": [
+        {
+          "ts": "2024-10-15T10:00:00Z",
+          "user": "system",
+          "action": "Imported from Aikido scan",
+          "note": null
+        },
+        {
+          "ts": "2024-10-17T09:05:00Z",
+          "user": "Sarah Chen",
+          "action": "Risk Accepted \u2014 signed off by CISO",
+          "note": "WAV-2024-012"
+        }
+      ],
+      "created": "2024-10-15",
+      "slaDue": "2024-10-29"
+    },
+    {
+      "id": "f-002b",
+      "findingType": "CVE",
+      "fingerprintId": "b2c3d4e6",
+      "cveId": "CVE-2024-21984",
+      "title": "OpenSSL AES-NI buffer overflow",
+      "severity": "High",
+      "status": "Risk Accepted",
+      "sources": [
+        {
+          "name": "Aikido",
+          "importedAt": "2024-09-01T10:00:00Z"
+        }
+      ],
+      "source": "Aikido",
+      "component": "openssl 3.0.11",
+      "image": "api-server:latest",
+      "cvss": "7.4",
+      "epss": "0.05",
+      "team": "Platform",
+      "owner": "alice@co.com",
+      "trackerId": "PLT-801",
+      "controlRef": "CC6.6",
+      "suppressionScope": null,
+      "attestation": {
+        "approver": "Sarah Chen",
+        "approverTitle": "CISO",
+        "approvedAt": "2024-09-05T09:00:00Z",
+        "waiverRef": "WAV-2024-008",
+        "expiresAt": "2025-03-15"
+      },
+      "regressionOf": [],
+      "regressionCount": 0,
+      "description": "Buffer overflow in AES-NI implementation. Requires local access.",
+      "justification": "API containers run as non-root; no local user access.",
+      "compensatingControls": "Network policies restrict pod-to-pod; no shell access.",
+      "reviewerNote": "Waiver expiring soon \u2014 re-review scheduled.",
+      "trackerComment": true,
+      "archived": false,
+      "archivedReason": null,
+      "audit": [
+        {
+          "ts": "2024-09-01T10:00:00Z",
+          "user": "system",
+          "action": "Imported from Aikido scan",
+          "note": null
+        },
+        {
+          "ts": "2024-09-05T09:00:00Z",
+          "user": "Sarah Chen",
+          "action": "Risk Accepted",
+          "note": "WAV-2024-008"
+        }
+      ],
+      "created": "2024-09-01",
+      "slaDue": "2024-09-15"
+    },
+    {
+      "id": "f-002c",
+      "findingType": "CVE",
+      "fingerprintId": "b2c3d4e7",
+      "cveId": "CVE-2023-5678",
+      "title": "Spring Framework path traversal",
+      "severity": "Medium",
+      "status": "Risk Accepted",
+      "sources": [
+        {
+          "name": "Aikido",
+          "importedAt": "2024-06-01T10:00:00Z"
+        }
+      ],
+      "source": "Aikido",
+      "component": "spring-boot 3.2.1",
+      "image": "api-server:latest",
+      "cvss": "5.9",
+      "epss": "0.02",
+      "team": "Backend",
+      "owner": "carol@co.com",
+      "trackerId": "BE-1800",
+      "controlRef": "",
+      "suppressionScope": null,
+      "attestation": {
+        "approver": "Sarah Chen",
+        "approverTitle": "CISO",
+        "approvedAt": "2024-06-10T09:00:00Z",
+        "waiverRef": "WAV-2024-003",
+        "expiresAt": "2024-12-01"
+      },
+      "regressionOf": [],
+      "regressionCount": 0,
+      "description": "Path traversal in Spring ResourceHandler. Requires authenticated request.",
+      "justification": "Static assets served from CDN; handler not exposed.",
+      "compensatingControls": "",
+      "reviewerNote": "Waiver expired \u2014 needs re-review.",
+      "trackerComment": true,
+      "archived": false,
+      "archivedReason": null,
+      "audit": [
+        {
+          "ts": "2024-06-01T10:00:00Z",
+          "user": "system",
+          "action": "Imported from Aikido scan",
+          "note": null
+        },
+        {
+          "ts": "2024-06-10T09:00:00Z",
+          "user": "Sarah Chen",
+          "action": "Risk Accepted",
+          "note": "WAV-2024-003"
+        }
+      ],
+      "created": "2024-06-01",
+      "slaDue": "2024-06-30"
+    },
+    {
+      "id": "f-003",
+      "findingType": "CVE",
+      "fingerprintId": "c3d4e5f6",
+      "cveId": "CVE-2024-3094",
+      "title": "XZ Utils backdoor",
+      "severity": "Critical",
+      "status": "False Positive",
+      "sources": [
+        {
+          "name": "Aikido",
+          "importedAt": "2024-04-02T11:00:00Z"
+        }
+      ],
+      "source": "Aikido",
+      "component": "xz-utils 5.6.0",
+      "image": "base-alpine:3.19",
+      "cvss": "10.0",
+      "epss": "0.12",
+      "team": "Platform",
+      "owner": "dave@co.com",
+      "trackerId": "PLT-998",
+      "controlRef": "",
+      "suppressionScope": "global",
+      "attestation": null,
+      "regressionOf": [],
+      "regressionCount": 0,
+      "description": "Malicious backdoor in XZ Utils 5.6.0\u20135.6.1 targeting sshd on systemd-enabled Linux.",
+      "justification": "Alpine/musl \u2014 no systemd, no sshd. The liblzma code path is not reachable.",
+      "compensatingControls": "",
+      "reviewerNote": "Confirmed FP \u2014 Alpine/musl stack.",
+      "trackerComment": true,
+      "archived": false,
+      "archivedReason": null,
+      "audit": [
+        {
+          "ts": "2024-04-02T11:00:00Z",
+          "user": "system",
+          "action": "Imported from Aikido scan",
+          "note": null
+        },
+        {
+          "ts": "2024-04-03T15:45:00Z",
+          "user": "security@co.com",
+          "action": "False Positive confirmed",
+          "note": null
+        }
+      ],
+      "created": "2024-04-02",
+      "slaDue": "2024-04-05"
+    },
+    {
+      "id": "f-004",
+      "findingType": "CVE",
+      "fingerprintId": "d4e5f6a7",
+      "cveId": "CVE-2024-27316",
+      "title": "Apache httpd HTTP/2 CONTINUATION flood",
+      "severity": "High",
+      "status": "Synced to Tracker",
+      "sources": [
+        {
+          "name": "Aikido",
+          "importedAt": "2024-11-10T07:30:00Z"
+        }
+      ],
+      "source": "Aikido",
+      "component": "httpd 2.4.58",
+      "image": "web-frontend:v1.2",
+      "cvss": "7.5",
+      "epss": "0.09",
+      "team": "Frontend",
+      "owner": "eve@co.com",
+      "trackerId": "FE-441",
+      "controlRef": "",
+      "suppressionScope": null,
+      "attestation": null,
+      "regressionOf": [],
+      "regressionCount": 0,
+      "description": "HTTP/2 CONTINUATION frame flooding exhausts server memory/CPU.",
+      "justification": "",
+      "compensatingControls": "",
+      "reviewerNote": "",
+      "trackerComment": false,
+      "archived": false,
+      "archivedReason": null,
+      "audit": [
+        {
+          "ts": "2024-11-10T07:30:00Z",
+          "user": "system",
+          "action": "Imported from Aikido scan",
+          "note": null
+        },
+        {
+          "ts": "2024-11-10T07:31:00Z",
+          "user": "system",
+          "action": "Tracker issue FE-441 created",
+          "note": null
+        }
+      ],
+      "created": "2024-11-10",
+      "slaDue": "2024-11-24"
+    },
+    {
+      "id": "f-005",
+      "findingType": "CVE",
+      "fingerprintId": "e5f6a7b8",
+      "cveId": "CVE-2021-44228",
+      "title": "Log4Shell RCE \u2014 REGRESSION",
+      "severity": "Critical",
+      "status": "Reopened",
+      "sources": [
+        {
+          "name": "Drata",
+          "importedAt": "2024-02-14T08:00:00Z"
+        },
+        {
+          "name": "Aikido",
+          "importedAt": "2024-11-20T06:00:00Z"
+        }
+      ],
+      "source": "Drata",
+      "component": "log4j-core 2.14.0",
+      "image": "worker:v2.3",
+      "cvss": "10.0",
+      "epss": "0.97",
+      "team": "Backend",
+      "owner": "carol@co.com",
+      "trackerId": "BE-2201-R2",
+      "controlRef": "CC6.8",
+      "suppressionScope": null,
+      "attestation": null,
+      "regressionOf": [
+        "f-005-orig"
+      ],
+      "regressionCount": 1,
+      "description": "JNDI injection in Apache Log4j2 allows unauthenticated RCE. Regression detected.",
+      "justification": "",
+      "compensatingControls": "",
+      "reviewerNote": "",
+      "trackerComment": false,
+      "archived": false,
+      "archivedReason": null,
+      "audit": [
+        {
+          "ts": "2024-02-14T08:00:00Z",
+          "user": "system",
+          "action": "First seen \u2014 imported from Drata",
+          "note": null
+        },
+        {
+          "ts": "2024-11-20T06:00:00Z",
+          "user": "system",
+          "action": "REGRESSION DETECTED",
+          "note": "Transitive dep re-introduced"
+        }
+      ],
+      "created": "2024-11-20",
+      "slaDue": "2024-11-23"
+    },
+    {
+      "id": "f-006",
+      "findingType": "CVE",
+      "fingerprintId": "f6a7b8c0",
+      "cveId": "CVE-2024-12345",
+      "title": "Tomcat session fixation",
+      "severity": "Medium",
+      "status": "Rejected",
+      "sources": [
+        {
+          "name": "Aikido",
+          "importedAt": "2024-10-20T10:00:00Z"
+        }
+      ],
+      "source": "Aikido",
+      "component": "tomcat-embed 10.1.31",
+      "image": "api-server:latest",
+      "cvss": "5.4",
+      "epss": "0.03",
+      "team": "Backend",
+      "owner": "carol@co.com",
+      "trackerId": "BE-2100",
+      "controlRef": "",
+      "suppressionScope": null,
+      "attestation": null,
+      "regressionOf": [],
+      "regressionCount": 0,
+      "description": "Session fixation possible when using default session config.",
+      "justification": "We use Spring Security with custom session management.",
+      "compensatingControls": "",
+      "reviewerNote": "Rejected \u2014 justification insufficient. Please provide config evidence.",
+      "trackerComment": true,
+      "archived": false,
+      "archivedReason": null,
+      "audit": [
+        {
+          "ts": "2024-10-20T10:00:00Z",
+          "user": "system",
+          "action": "Imported from Aikido scan",
+          "note": null
+        },
+        {
+          "ts": "2024-10-22T14:00:00Z",
+          "user": "security@co.com",
+          "action": "Status \u2192 Rejected",
+          "note": "Needs rework"
+        }
+      ],
+      "created": "2024-10-20",
+      "slaDue": "2024-11-19"
+    },
+    {
+      "id": "f-trivy-1",
+      "findingType": "CVE",
+      "fingerprintId": "trivy001a1b2c3",
+      "cveId": "CVE-2024-3400",
+      "title": "Palo Alto PAN-OS command injection",
+      "severity": "Critical",
+      "status": "Open",
+      "sources": [
+        {
+          "name": "trivy-ci",
+          "importedAt": "2024-11-22T08:15:00Z"
+        }
+      ],
+      "source": "trivy-ci",
+      "component": "pan-os 11.0.2",
+      "image": "firewall-base:11.0",
+      "cvss": "9.8",
+      "epss": "0.89",
+      "team": "Infrastructure",
+      "owner": "bob@co.com",
+      "trackerId": null,
+      "controlRef": "",
+      "suppressionScope": null,
+      "attestation": null,
+      "regressionOf": [],
+      "regressionCount": 0,
+      "description": "Command injection in GlobalProtect gateway. Pushed from Trivy CI scan.",
+      "justification": "",
+      "compensatingControls": "",
+      "reviewerNote": "",
+      "trackerComment": false,
+      "archived": false,
+      "archivedReason": null,
+      "audit": [
+        {
+          "ts": "2024-11-22T08:15:00Z",
+          "user": "system",
+          "action": "Imported from trivy-ci scan",
+          "note": null
+        }
+      ],
+      "created": "2024-11-22",
+      "slaDue": "2024-11-25"
+    },
+    {
+      "id": "f-trivy-2",
+      "findingType": "CVE",
+      "fingerprintId": "trivy002d4e5f6",
+      "cveId": "CVE-2024-21626",
+      "title": "runc container escape (from Trivy image scan)",
+      "severity": "High",
+      "status": "Open",
+      "sources": [
+        {
+          "name": "trivy-ci",
+          "importedAt": "2024-11-21T14:30:00Z"
+        }
+      ],
+      "source": "trivy-ci",
+      "component": "runc 1.1.10",
+      "image": "builder:latest",
+      "cvss": "8.6",
+      "epss": "0.42",
+      "team": "Platform",
+      "owner": "alice@co.com",
+      "trackerId": null,
+      "controlRef": "",
+      "suppressionScope": null,
+      "attestation": null,
+      "regressionOf": [],
+      "regressionCount": 0,
+      "description": "File descriptor leak in runc. Detected by Trivy in CI pipeline.",
+      "justification": "",
+      "compensatingControls": "",
+      "reviewerNote": "",
+      "trackerComment": false,
+      "archived": false,
+      "archivedReason": null,
+      "audit": [
+        {
+          "ts": "2024-11-21T14:30:00Z",
+          "user": "system",
+          "action": "Imported from trivy-ci scan",
+          "note": null
+        }
+      ],
+      "created": "2024-11-21",
+      "slaDue": "2024-11-24"
+    },
+    {
+      "id": "f-007",
+      "findingType": "CVE",
+      "fingerprintId": "a7b8c9d1",
+      "cveId": "CVE-2024-23456",
+      "title": "Jackson polymorphic deserialization",
+      "severity": "High",
+      "status": "Suppressed",
+      "sources": [
+        {
+          "name": "Aikido",
+          "importedAt": "2024-09-15T10:00:00Z"
+        }
+      ],
+      "source": "Aikido",
+      "component": "jackson-databind 2.15.2",
+      "image": "api-server:latest",
+      "cvss": "7.5",
+      "epss": "0.08",
+      "team": "Backend",
+      "owner": "carol@co.com",
+      "trackerId": "BE-1900",
+      "controlRef": "",
+      "suppressionScope": "api-server:latest",
+      "attestation": {
+        "approver": "Sarah Chen",
+        "approverTitle": "CISO",
+        "approvedAt": "2024-09-20T09:00:00Z",
+        "waiverRef": "WAV-2024-010",
+        "expiresAt": "2025-09-20"
+      },
+      "regressionOf": [],
+      "regressionCount": 0,
+      "description": "Polymorphic deserialization can lead to RCE via crafted JSON.",
+      "justification": "API only accepts whitelisted DTOs; ObjectMapper defaultTyping disabled.",
+      "compensatingControls": "Input validation; no @JsonTypeInfo on API models.",
+      "reviewerNote": "Suppressed \u2014 contextual. Same CVE on other services still requires triage.",
+      "trackerComment": true,
+      "archived": false,
+      "archivedReason": null,
+      "audit": [
+        {
+          "ts": "2024-09-15T10:00:00Z",
+          "user": "system",
+          "action": "Imported from Aikido scan",
+          "note": null
+        },
+        {
+          "ts": "2024-09-20T09:00:00Z",
+          "user": "Sarah Chen",
+          "action": "Suppressed \u2014 contextual",
+          "note": "WAV-2024-010"
+        }
+      ],
+      "created": "2024-09-15",
+      "slaDue": "2024-09-29"
+    },
+    {
+      "id": "f-008",
+      "findingType": "CVE",
+      "fingerprintId": "b8c9d0e2",
+      "cveId": "CVE-2023-34567",
+      "title": "Netty HTTP request smuggling",
+      "severity": "High",
+      "status": "Not Applicable",
+      "sources": [
+        {
+          "name": "Aikido",
+          "importedAt": "2024-08-01T10:00:00Z"
+        }
+      ],
+      "source": "Aikido",
+      "component": "netty 4.1.100",
+      "image": "api-server:latest",
+      "cvss": "7.2",
+      "epss": "0.04",
+      "team": "Backend",
+      "owner": "carol@co.com",
+      "trackerId": "BE-1700",
+      "controlRef": "",
+      "suppressionScope": null,
+      "attestation": null,
+      "regressionOf": [],
+      "regressionCount": 0,
+      "description": "HTTP request smuggling via chunked encoding.",
+      "justification": "We run behind AWS ALB which normalizes requests. Netty never sees raw HTTP.",
+      "compensatingControls": "ALB terminates HTTP; backend receives normalized requests.",
+      "reviewerNote": "N/A confirmed \u2014 architecture prevents exploitation.",
+      "trackerComment": true,
+      "archived": false,
+      "archivedReason": null,
+      "audit": [
+        {
+          "ts": "2024-08-01T10:00:00Z",
+          "user": "system",
+          "action": "Imported from Aikido scan",
+          "note": null
+        },
+        {
+          "ts": "2024-08-05T10:00:00Z",
+          "user": "security@co.com",
+          "action": "Not Applicable \u2014 ALB architecture",
+          "note": null
+        }
+      ],
+      "created": "2024-08-01",
+      "slaDue": "2024-08-15"
+    },
+    {
+      "id": "f-009",
+      "findingType": "CVE",
+      "fingerprintId": "c9d0e1f3",
+      "cveId": "CVE-2024-34567",
+      "title": "Bouncy Castle timing attack",
+      "severity": "Low",
+      "status": "Mitigated",
+      "sources": [
+        {
+          "name": "Aikido",
+          "importedAt": "2024-07-10T10:00:00Z"
+        }
+      ],
+      "source": "Aikido",
+      "component": "bouncy-castle 1.70",
+      "image": "api-server:latest",
+      "cvss": "4.3",
+      "epss": "0.01",
+      "team": "Backend",
+      "owner": "carol@co.com",
+      "trackerId": "BE-1600",
+      "controlRef": "",
+      "suppressionScope": null,
+      "attestation": null,
+      "regressionOf": [],
+      "regressionCount": 0,
+      "description": "Timing side-channel in RSA implementation.",
+      "justification": "Upgrade blocked by compatibility. Compensating controls in place.",
+      "compensatingControls": "Rate limiting; HSM for key operations; monitoring.",
+      "reviewerNote": "Mitigated \u2014 controls documented.",
+      "trackerComment": true,
+      "archived": false,
+      "archivedReason": null,
+      "audit": [
+        {
+          "ts": "2024-07-10T10:00:00Z",
+          "user": "system",
+          "action": "Imported from Aikido scan",
+          "note": null
+        },
+        {
+          "ts": "2024-07-20T10:00:00Z",
+          "user": "security@co.com",
+          "action": "Mitigated \u2014 compensating controls",
+          "note": null
+        }
+      ],
+      "created": "2024-07-10",
+      "slaDue": "2024-10-09"
+    },
+    {
+      "id": "f-010",
+      "findingType": "Secret",
+      "fingerprintId": "f6a7b8c9",
+      "cveId": "SECRET-2024-001",
+      "title": "AWS Access Key exposed in .env file",
+      "severity": "Critical",
+      "status": "Open",
+      "sources": [
+        {
+          "name": "Aikido",
+          "importedAt": "2024-11-18T11:00:00Z"
+        }
+      ],
+      "source": "Aikido",
+      "component": "ci-runner:ubuntu22",
+      "image": "ci-runner:ubuntu22",
+      "cvss": "9.8",
+      "epss": "\u2014",
+      "team": "DevOps",
+      "owner": "frank@co.com",
+      "trackerId": "",
+      "controlRef": "CC6.3",
+      "suppressionScope": null,
+      "attestation": null,
+      "regressionOf": [],
+      "regressionCount": 0,
+      "description": "Hardcoded AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY in .env. SLA 24h.",
+      "justification": "",
+      "compensatingControls": "",
+      "reviewerNote": "",
+      "trackerComment": false,
+      "archived": false,
+      "archivedReason": null,
+      "audit": [
+        {
+          "ts": "2024-11-18T11:00:00Z",
+          "user": "system",
+          "action": "Detected by Aikido secrets scanner",
+          "note": null
+        },
+        {
+          "ts": "2024-11-18T11:00:30Z",
+          "user": "system",
+          "action": "URGENT: SLA = 24 hours",
+          "note": null
+        }
+      ],
+      "created": "2024-11-18",
+      "slaDue": "2024-11-19"
+    },
+    {
+      "id": "f-011",
+      "findingType": "IaC",
+      "fingerprintId": "a7b8c9d0",
+      "cveId": "IAC-2024-008",
+      "title": "S3 bucket ACL set to public-read",
+      "severity": "High",
+      "status": "In Review",
+      "sources": [
+        {
+          "name": "Aikido",
+          "importedAt": "2024-11-15T09:00:00Z"
+        }
+      ],
+      "source": "Aikido",
+      "component": "infra/s3.tf",
+      "image": "terraform:prod",
+      "cvss": "7.2",
+      "epss": "\u2014",
+      "team": "DevOps",
+      "owner": "grace@co.com",
+      "trackerId": "DEV-901",
+      "controlRef": "CC6.1",
+      "suppressionScope": null,
+      "attestation": null,
+      "regressionOf": [],
+      "regressionCount": 0,
+      "description": "S3 bucket 'app-assets-prod' configured with ACL: public-read in Terraform.",
+      "justification": "Bucket hosts public static assets. Policy limits read to /public/* prefix.",
+      "compensatingControls": "Bucket policy limiting public access to /public/* prefix.",
+      "reviewerNote": "",
+      "trackerComment": true,
+      "archived": false,
+      "archivedReason": null,
+      "audit": [
+        {
+          "ts": "2024-11-15T09:00:00Z",
+          "user": "system",
+          "action": "Detected by Aikido IaC scan",
+          "note": null
+        },
+        {
+          "ts": "2024-11-16T10:21:00Z",
+          "user": "system",
+          "action": "Status \u2192 In Review",
+          "note": null
+        }
+      ],
+      "created": "2024-11-15",
+      "slaDue": "2024-11-22"
+    },
+    {
+      "id": "f-012",
+      "findingType": "CVE",
+      "fingerprintId": "a7b8c9d2",
+      "cveId": "CVE-2024-45678",
+      "title": "Linux kernel privilege escalation",
+      "severity": "High",
+      "status": "Open",
+      "sources": [
+        {
+          "name": "Aikido",
+          "importedAt": "2024-11-12T10:00:00Z"
+        }
+      ],
+      "source": "Aikido",
+      "component": "prod-web-01",
+      "image": null,
+      "cvss": "7.8",
+      "epss": "0.15",
+      "team": "Infrastructure",
+      "owner": "bob@co.com",
+      "trackerId": "INF-950",
+      "controlRef": "CC6.6",
+      "suppressionScope": null,
+      "attestation": null,
+      "regressionOf": [],
+      "regressionCount": 0,
+      "description": "VM host (prod-web-01) kernel vulnerability. Requires local access to exploit.",
+      "justification": "",
+      "compensatingControls": "",
+      "reviewerNote": "",
+      "trackerComment": false,
+      "archived": false,
+      "archivedReason": null,
+      "audit": [
+        {
+          "ts": "2024-11-12T10:00:00Z",
+          "user": "system",
+          "action": "Imported from Aikido VM scan",
+          "note": null
+        }
+      ],
+      "created": "2024-11-12",
+      "slaDue": "2024-11-26"
+    },
+    {
+      "id": "f-013",
+      "findingType": "License",
+      "fingerprintId": "b8c9d0e1",
+      "cveId": "LIC-2024-005",
+      "title": "AGPL-3.0 dependency in commercial product",
+      "severity": "Critical",
+      "status": "Open",
+      "sources": [
+        {
+          "name": "Aikido",
+          "importedAt": "2024-11-17T08:00:00Z"
+        }
+      ],
+      "source": "Aikido",
+      "component": "agpl-client 2.3.1",
+      "image": "api-server:latest",
+      "cvss": "\u2014",
+      "epss": "\u2014",
+      "team": "Backend",
+      "owner": "",
+      "trackerId": "",
+      "controlRef": "",
+      "suppressionScope": null,
+      "attestation": null,
+      "regressionOf": [],
+      "regressionCount": 0,
+      "description": "Package 'agpl-client@2.3.1' is AGPL-3.0. Commercial use requires source disclosure.",
+      "justification": "",
+      "compensatingControls": "",
+      "reviewerNote": "",
+      "trackerComment": false,
+      "archived": false,
+      "archivedReason": null,
+      "audit": [
+        {
+          "ts": "2024-11-17T08:00:00Z",
+          "user": "system",
+          "action": "Detected via SBOM license scan",
+          "note": null
+        }
+      ],
+      "created": "2024-11-17",
+      "slaDue": "2024-12-01"
+    },
+    {
+      "id": "f-012b",
+      "findingType": "CVE",
+      "fingerprintId": "a7b8c9d3",
+      "cveId": "CVE-2024-45679",
+      "title": "OpenSSH auth bypass on VM",
+      "severity": "High",
+      "status": "In Review",
+      "sources": [
+        {
+          "name": "Aikido",
+          "importedAt": "2024-11-14T10:00:00Z"
+        }
+      ],
+      "source": "Aikido",
+      "component": "db-server-02",
+      "image": null,
+      "cvss": "7.2",
+      "epss": "0.08",
+      "team": "Infrastructure",
+      "owner": "bob@co.com",
+      "trackerId": "INF-960",
+      "controlRef": "CC6.6",
+      "suppressionScope": null,
+      "attestation": null,
+      "regressionOf": [],
+      "regressionCount": 0,
+      "description": "VM host (db-server-02) \u2014 OpenSSH auth bypass. Database server VM.",
+      "justification": "Restricting to VPN-only access.",
+      "compensatingControls": "",
+      "reviewerNote": "",
+      "trackerComment": true,
+      "archived": false,
+      "archivedReason": null,
+      "audit": [
+        {
+          "ts": "2024-11-14T10:00:00Z",
+          "user": "system",
+          "action": "Imported from Aikido VM scan",
+          "note": null
+        },
+        {
+          "ts": "2024-11-15T10:00:00Z",
+          "user": "system",
+          "action": "Status \u2192 In Review",
+          "note": null
+        }
+      ],
+      "created": "2024-11-14",
+      "slaDue": "2024-11-28"
+    },
+    {
+      "id": "f-012c",
+      "findingType": "CVE",
+      "fingerprintId": "a7b8c9d4",
+      "cveId": "CVE-2024-45680",
+      "title": "Sudo privilege escalation on VM",
+      "severity": "Medium",
+      "status": "Open",
+      "sources": [
+        {
+          "name": "Aikido",
+          "importedAt": "2024-11-16T10:00:00Z"
+        }
+      ],
+      "source": "Aikido",
+      "component": "batch-worker-01",
+      "image": null,
+      "cvss": "5.5",
+      "epss": "0.03",
+      "team": "Data",
+      "owner": "dave@co.com",
+      "trackerId": "DATA-110",
+      "controlRef": "",
+      "suppressionScope": null,
+      "attestation": null,
+      "regressionOf": [],
+      "regressionCount": 0,
+      "description": "VM host (batch-worker-01) \u2014 sudo CVE allows local privilege escalation.",
+      "justification": "",
+      "compensatingControls": "",
+      "reviewerNote": "",
+      "trackerComment": false,
+      "archived": false,
+      "archivedReason": null,
+      "audit": [
+        {
+          "ts": "2024-11-16T10:00:00Z",
+          "user": "system",
+          "action": "Imported from Aikido VM scan",
+          "note": null
+        }
+      ],
+      "created": "2024-11-16",
+      "slaDue": "2024-12-16"
+    },
+    {
+      "id": "f-014b",
+      "findingType": "SAST",
+      "fingerprintId": "c9d0e1f3a",
+      "cveId": "SAST-2024-015",
+      "title": "XSS in user profile render",
+      "severity": "Medium",
+      "status": "Open",
+      "sources": [
+        {
+          "name": "Aikido",
+          "importedAt": "2024-11-17T09:00:00Z"
+        }
+      ],
+      "source": "Aikido",
+      "component": "org/frontend-app",
+      "image": null,
+      "cvss": "6.1",
+      "epss": "\u2014",
+      "team": "Frontend",
+      "owner": "eve@co.com",
+      "trackerId": "FE-500",
+      "controlRef": "CC6.8",
+      "suppressionScope": null,
+      "attestation": null,
+      "regressionOf": [],
+      "regressionCount": 0,
+      "description": "Reflected XSS in profile page \u2014 user input not escaped in React.",
+      "justification": "",
+      "compensatingControls": "",
+      "reviewerNote": "",
+      "trackerComment": false,
+      "archived": false,
+      "archivedReason": null,
+      "audit": [
+        {
+          "ts": "2024-11-17T09:00:00Z",
+          "user": "system",
+          "action": "Detected by Aikido SAST",
+          "note": null
+        }
+      ],
+      "created": "2024-11-17",
+      "slaDue": "2024-12-17"
+    },
+    {
+      "id": "f-014c",
+      "findingType": "CVE",
+      "fingerprintId": "c9d0e1f4",
+      "cveId": "CVE-2024-56789",
+      "title": "Lodash prototype pollution in frontend",
+      "severity": "Medium",
+      "status": "Resolved",
+      "sources": [
+        {
+          "name": "Aikido",
+          "importedAt": "2024-10-10T10:00:00Z"
+        }
+      ],
+      "source": "Aikido",
+      "component": "org/frontend-app",
+      "image": null,
+      "cvss": "5.3",
+      "epss": "0.02",
+      "team": "Frontend",
+      "owner": "eve@co.com",
+      "trackerId": "FE-420",
+      "controlRef": "",
+      "suppressionScope": null,
+      "attestation": null,
+      "regressionOf": [],
+      "regressionCount": 0,
+      "description": "Lodash prototype pollution in org/frontend-app dependencies.",
+      "justification": "Upgraded lodash to 4.17.21.",
+      "compensatingControls": "",
+      "reviewerNote": "Resolved",
+      "trackerComment": true,
+      "archived": false,
+      "archivedReason": null,
+      "audit": [
+        {
+          "ts": "2024-10-10T10:00:00Z",
+          "user": "system",
+          "action": "Imported from Aikido scan",
+          "note": null
+        },
+        {
+          "ts": "2024-10-15T10:00:00Z",
+          "user": "eve@co.com",
+          "action": "Resolved \u2014 upgraded lodash",
+          "note": null
+        }
+      ],
+      "created": "2024-10-10",
+      "slaDue": "2024-11-09"
+    },
+    {
+      "id": "f-011b",
+      "findingType": "IaC",
+      "fingerprintId": "a7b8c9d5",
+      "cveId": "IAC-2024-012",
+      "title": "EC2 instance exposed to 0.0.0.0/0",
+      "severity": "High",
+      "status": "Open",
+      "sources": [
+        {
+          "name": "Aikido",
+          "importedAt": "2024-11-18T09:00:00Z"
+        }
+      ],
+      "source": "Aikido",
+      "component": "infra/terraform-modules",
+      "image": null,
+      "cvss": "7.8",
+      "epss": "\u2014",
+      "team": "DevOps",
+      "owner": "grace@co.com",
+      "trackerId": "DEV-910",
+      "controlRef": "CC6.1",
+      "suppressionScope": null,
+      "attestation": null,
+      "regressionOf": [],
+      "regressionCount": 0,
+      "description": "Terraform module in infra/terraform-modules \u2014 EC2 security group allows 0.0.0.0/0 on port 22.",
+      "justification": "",
+      "compensatingControls": "",
+      "reviewerNote": "",
+      "trackerComment": false,
+      "archived": false,
+      "archivedReason": null,
+      "audit": [
+        {
+          "ts": "2024-11-18T09:00:00Z",
+          "user": "system",
+          "action": "Detected by Aikido IaC scan",
+          "note": null
+        }
+      ],
+      "created": "2024-11-18",
+      "slaDue": "2024-11-25"
+    },
+    {
+      "id": "f-014",
+      "findingType": "SAST",
+      "fingerprintId": "c9d0e1f2",
+      "cveId": "SAST-2024-012",
+      "title": "SQL injection in user lookup",
+      "severity": "High",
+      "status": "Open",
+      "sources": [
+        {
+          "name": "Aikido",
+          "importedAt": "2024-11-19T09:00:00Z"
+        }
+      ],
+      "source": "Aikido",
+      "component": "acme/backend-api",
+      "image": null,
+      "cvss": "8.1",
+      "epss": "\u2014",
+      "team": "Backend",
+      "owner": "carol@co.com",
+      "trackerId": "BE-2250",
+      "controlRef": "CC6.8",
+      "suppressionScope": null,
+      "attestation": null,
+      "regressionOf": [],
+      "regressionCount": 0,
+      "description": "User input concatenated into SQL query in src/db/users.py.",
+      "justification": "",
+      "compensatingControls": "",
+      "reviewerNote": "",
+      "trackerComment": false,
+      "archived": false,
+      "archivedReason": null,
+      "audit": [
+        {
+          "ts": "2024-11-19T09:00:00Z",
+          "user": "system",
+          "action": "Detected by Aikido SAST",
+          "note": null
+        }
+      ],
+      "created": "2024-11-19",
+      "slaDue": "2024-12-03"
+    },
+    {
+      "id": "f-015",
+      "findingType": "CVE",
+      "fingerprintId": "d0e1f2a3",
+      "cveId": "CVE-2022-24999",
+      "title": "Express qs prototype pollution",
+      "severity": "Medium",
+      "status": "Resolved",
+      "sources": [
+        {
+          "name": "Aikido",
+          "importedAt": "2024-10-01T10:00:00Z"
+        }
+      ],
+      "source": "Aikido",
+      "component": "express 4.18.2",
+      "image": null,
+      "cvss": "5.3",
+      "epss": "0.02",
+      "team": "Frontend",
+      "owner": "eve@co.com",
+      "trackerId": "FE-380",
+      "controlRef": "",
+      "suppressionScope": null,
+      "attestation": null,
+      "regressionOf": [],
+      "regressionCount": 0,
+      "description": "Prototype pollution in express qs parser.",
+      "justification": "Upgraded to express 4.19.x",
+      "compensatingControls": "",
+      "reviewerNote": "Resolved in v1.2.1",
+      "trackerComment": true,
+      "archived": false,
+      "archivedReason": null,
+      "audit": [
+        {
+          "ts": "2024-10-01T10:00:00Z",
+          "user": "system",
+          "action": "Imported from Aikido scan",
+          "note": null
+        },
+        {
+          "ts": "2024-10-05T14:00:00Z",
+          "user": "eve@co.com",
+          "action": "Resolved \u2014 upgraded express",
+          "note": null
+        }
+      ],
+      "created": "2024-10-01",
+      "slaDue": "2024-10-31"
+    },
+    {
+      "id": "f-016",
+      "findingType": "CVE",
+      "fingerprintId": "e1f2a3b4",
+      "cveId": "CVE-2024-34351",
+      "title": "OpenSSH double-free in sshd",
+      "severity": "High",
+      "status": "In Review",
+      "sources": [
+        {
+          "name": "Aikido",
+          "importedAt": "2024-11-21T08:00:00Z"
+        }
+      ],
+      "source": "Aikido",
+      "component": "openssh 9.5p1",
+      "image": "auth-service:v3.1",
+      "cvss": "7.5",
+      "epss": "0.15",
+      "team": "Platform",
+      "owner": "alice@co.com",
+      "trackerId": "PLT-1099",
+      "controlRef": "CC6.6",
+      "suppressionScope": null,
+      "attestation": null,
+      "regressionOf": [],
+      "regressionCount": 0,
+      "description": "Double-free in sshd when processing certain auth requests.",
+      "justification": "",
+      "compensatingControls": "",
+      "reviewerNote": "",
+      "trackerComment": true,
+      "archived": false,
+      "archivedReason": null,
+      "audit": [
+        {
+          "ts": "2024-11-21T08:00:00Z",
+          "user": "system",
+          "action": "Imported from Aikido scan",
+          "note": null
+        }
+      ],
+      "created": "2024-11-21",
+      "slaDue": "2024-12-05"
+    },
+    {
+      "id": "f-017",
+      "findingType": "CVE",
+      "fingerprintId": "e1f2a3b5",
+      "cveId": "CVE-2024-56789",
+      "title": "Duplicate of CVE-2024-21626",
+      "severity": "Critical",
+      "status": "Duplicate",
+      "sources": [
+        {
+          "name": "Aikido",
+          "importedAt": "2024-11-01T10:00:00Z"
+        }
+      ],
+      "source": "Aikido",
+      "component": "runc 1.1.11",
+      "image": "api-server:latest",
+      "cvss": "8.6",
+      "epss": "0.42",
+      "team": "Platform",
+      "owner": "alice@co.com",
+      "trackerId": "",
+      "controlRef": "",
+      "suppressionScope": null,
+      "attestation": null,
+      "regressionOf": [],
+      "regressionCount": 0,
+      "description": "Duplicate finding from second scan.",
+      "justification": "",
+      "compensatingControls": "",
+      "reviewerNote": "Merged with f-001",
+      "trackerComment": false,
+      "archived": false,
+      "archivedReason": null,
+      "audit": [
+        {
+          "ts": "2024-11-01T10:00:00Z",
+          "user": "system",
+          "action": "Marked Duplicate of f-001",
+          "note": null
+        }
+      ],
+      "created": "2024-11-01",
+      "slaDue": "2024-11-04"
+    },
+    {
+      "id": "f-018",
+      "findingType": "CVE",
+      "fingerprintId": "e1f2a3b6",
+      "cveId": "CVE-2023-12345",
+      "title": "Old OpenSSL vulnerability",
+      "severity": "Low",
+      "status": "Resolved",
+      "sources": [
+        {
+          "name": "Aikido",
+          "importedAt": "2024-05-01T10:00:00Z"
+        }
+      ],
+      "source": "Aikido",
+      "component": "openssl 3.0.11",
+      "image": "api-server:latest",
+      "cvss": "4.3",
+      "epss": "0.01",
+      "team": "Platform",
+      "owner": "alice@co.com",
+      "trackerId": "PLT-700",
+      "controlRef": "",
+      "suppressionScope": null,
+      "attestation": null,
+      "regressionOf": [],
+      "regressionCount": 0,
+      "description": "Low-severity OpenSSL issue. Fixed in base image update.",
+      "justification": "Upgraded base image to alpine 3.19.",
+      "compensatingControls": "",
+      "reviewerNote": "Resolved",
+      "trackerComment": true,
+      "archived": true,
+      "archivedReason": "Stale \u2014 superseded by newer scans",
+      "archivedAt": "2024-11-01T00:00:00Z",
+      "archivedBy": "security@co.com",
+      "audit": [
+        {
+          "ts": "2024-05-01T10:00:00Z",
+          "user": "system",
+          "action": "Imported from Aikido scan",
+          "note": null
+        },
+        {
+          "ts": "2024-05-15T10:00:00Z",
+          "user": "alice@co.com",
+          "action": "Resolved",
+          "note": null
+        },
+        {
+          "ts": "2024-11-01T00:00:00Z",
+          "user": "security@co.com",
+          "action": "Archived",
+          "note": "Stale"
+        }
+      ],
+      "created": "2024-05-01",
+      "slaDue": "2024-06-30"
+    },
+    {
+      "id": "f-019",
+      "findingType": "CVE",
+      "fingerprintId": "x1",
+      "cveId": "CVE-2024-11111",
+      "title": "Guava cache DoS",
+      "severity": "Medium",
+      "status": "Open",
+      "sources": [
+        {
+          "name": "Aikido",
+          "importedAt": "2024-11-01T10:00:00Z"
+        }
+      ],
+      "source": "Aikido",
+      "component": "guava 32.1.0",
+      "image": "api-server:latest",
+      "cvss": "5.3",
+      "epss": "0.02",
+      "team": "Backend",
+      "owner": "carol@co.com",
+      "trackerId": "BE-2300",
+      "controlRef": "",
+      "suppressionScope": null,
+      "attestation": null,
+      "regressionOf": [],
+      "regressionCount": 0,
+      "description": "Cache DoS via crafted keys.",
+      "justification": "",
+      "compensatingControls": "",
+      "reviewerNote": "",
+      "trackerComment": false,
+      "archived": false,
+      "archivedReason": null,
+      "audit": [
+        {
+          "ts": "2024-11-01T10:00:00Z",
+          "user": "system",
+          "action": "Imported from Aikido scan",
+          "note": null
+        }
+      ],
+      "created": "2024-11-01",
+      "slaDue": "2024-12-01"
+    },
+    {
+      "id": "f-020",
+      "findingType": "CVE",
+      "fingerprintId": "x2",
+      "cveId": "CVE-2024-22222",
+      "title": "SnakeYAML deserialization",
+      "severity": "High",
+      "status": "In Review",
+      "sources": [
+        {
+          "name": "Aikido",
+          "importedAt": "2024-11-02T10:00:00Z"
+        }
+      ],
+      "source": "Aikido",
+      "component": "snakeyaml 2.0",
+      "image": "api-server:latest",
+      "cvss": "7.5",
+      "epss": "0.06",
+      "team": "Backend",
+      "owner": "carol@co.com",
+      "trackerId": "BE-2310",
+      "controlRef": "",
+      "suppressionScope": null,
+      "attestation": null,
+      "regressionOf": [],
+      "regressionCount": 0,
+      "description": "Unsafe deserialization in SnakeYAML.",
+      "justification": "We only parse trusted config files.",
+      "compensatingControls": "",
+      "reviewerNote": "",
+      "trackerComment": true,
+      "archived": false,
+      "archivedReason": null,
+      "audit": [
+        {
+          "ts": "2024-11-02T10:00:00Z",
+          "user": "system",
+          "action": "Imported from Aikido scan",
+          "note": null
+        },
+        {
+          "ts": "2024-11-03T10:00:00Z",
+          "user": "system",
+          "action": "Status \u2192 In Review",
+          "note": null
+        }
+      ],
+      "created": "2024-11-02",
+      "slaDue": "2024-11-16"
+    },
+    {
+      "id": "f-021",
+      "findingType": "CVE",
+      "fingerprintId": "x3",
+      "cveId": "CVE-2024-33333",
+      "title": "HikariCP connection leak",
+      "severity": "Low",
+      "status": "Resolved",
+      "sources": [
+        {
+          "name": "Aikido",
+          "importedAt": "2024-10-01T10:00:00Z"
+        }
+      ],
+      "source": "Aikido",
+      "component": "hikaricp 5.0.1",
+      "image": "api-server:latest",
+      "cvss": "4.2",
+      "epss": "0.01",
+      "team": "Backend",
+      "owner": "carol@co.com",
+      "trackerId": "BE-2200",
+      "controlRef": "",
+      "suppressionScope": null,
+      "attestation": null,
+      "regressionOf": [],
+      "regressionCount": 0,
+      "description": "Connection leak under load.",
+      "justification": "Fixed in 5.0.2.",
+      "compensatingControls": "",
+      "reviewerNote": "Resolved",
+      "trackerComment": true,
+      "archived": false,
+      "archivedReason": null,
+      "audit": [
+        {
+          "ts": "2024-10-01T10:00:00Z",
+          "user": "system",
+          "action": "Imported from Aikido scan",
+          "note": null
+        },
+        {
+          "ts": "2024-10-10T10:00:00Z",
+          "user": "carol@co.com",
+          "action": "Resolved",
+          "note": null
+        }
+      ],
+      "created": "2024-10-01",
+      "slaDue": "2024-10-31"
+    },
+    {
+      "id": "f-022",
+      "findingType": "CVE",
+      "fingerprintId": "x4",
+      "cveId": "CVE-2024-44444",
+      "title": "SLF4J log injection",
+      "severity": "Low",
+      "status": "Approved",
+      "sources": [
+        {
+          "name": "Aikido",
+          "importedAt": "2024-09-15T10:00:00Z"
+        }
+      ],
+      "source": "Aikido",
+      "component": "slf4j 2.0.9",
+      "image": "api-server:latest",
+      "cvss": "3.7",
+      "epss": "0.01",
+      "team": "Backend",
+      "owner": "carol@co.com",
+      "trackerId": "BE-2000",
+      "controlRef": "",
+      "suppressionScope": null,
+      "attestation": null,
+      "regressionOf": [],
+      "regressionCount": 0,
+      "description": "Log injection via crafted input.",
+      "justification": "Logs are internal only; no user-facing impact.",
+      "compensatingControls": "",
+      "reviewerNote": "Approved",
+      "trackerComment": true,
+      "archived": false,
+      "archivedReason": null,
+      "audit": [
+        {
+          "ts": "2024-09-15T10:00:00Z",
+          "user": "system",
+          "action": "Imported from Aikido scan",
+          "note": null
+        },
+        {
+          "ts": "2024-09-20T10:00:00Z",
+          "user": "security@co.com",
+          "action": "Approved",
+          "note": null
+        }
+      ],
+      "created": "2024-09-15",
+      "slaDue": "2024-10-15"
+    },
+    {
+      "id": "f-023",
+      "findingType": "CVE",
+      "fingerprintId": "x5",
+      "cveId": "CVE-2024-55555",
+      "title": "JUnit platform reflection",
+      "severity": "Informational",
+      "status": "Not Applicable",
+      "sources": [
+        {
+          "name": "Aikido",
+          "importedAt": "2024-08-01T10:00:00Z"
+        }
+      ],
+      "source": "Aikido",
+      "component": "junit-platform 1.10.0",
+      "image": "api-server:latest",
+      "cvss": "0",
+      "epss": "0",
+      "team": "Backend",
+      "owner": "carol@co.com",
+      "trackerId": "BE-1850",
+      "controlRef": "",
+      "suppressionScope": null,
+      "attestation": null,
+      "regressionOf": [],
+      "regressionCount": 0,
+      "description": "Reflection in test framework.",
+      "justification": "Test-only dependency; not in prod runtime.",
+      "compensatingControls": "",
+      "reviewerNote": "N/A",
+      "trackerComment": true,
+      "archived": false,
+      "archivedReason": null,
+      "audit": [
+        {
+          "ts": "2024-08-01T10:00:00Z",
+          "user": "system",
+          "action": "Imported from Aikido scan",
+          "note": null
+        },
+        {
+          "ts": "2024-08-05T10:00:00Z",
+          "user": "security@co.com",
+          "action": "Not Applicable",
+          "note": null
+        }
+      ],
+      "created": "2024-08-01",
+      "slaDue": "2025-01-31"
+    },
+    {
+      "id": "f-024",
+      "findingType": "CVE",
+      "fingerprintId": "x6",
+      "cveId": "CVE-2024-66666",
+      "title": "Commons Text RCE",
+      "severity": "High",
+      "status": "Open",
+      "sources": [
+        {
+          "name": "Aikido",
+          "importedAt": "2024-11-05T10:00:00Z"
+        }
+      ],
+      "source": "Aikido",
+      "component": "commons-text 1.10.0",
+      "image": "api-server:latest",
+      "cvss": "8.1",
+      "epss": "0.12",
+      "team": "Backend",
+      "owner": "carol@co.com",
+      "trackerId": "BE-2320",
+      "controlRef": "",
+      "suppressionScope": null,
+      "attestation": null,
+      "regressionOf": [],
+      "regressionCount": 0,
+      "description": "Script interpolation in Commons Text.",
+      "justification": "",
+      "compensatingControls": "",
+      "reviewerNote": "",
+      "trackerComment": false,
+      "archived": false,
+      "archivedReason": null,
+      "audit": [
+        {
+          "ts": "2024-11-05T10:00:00Z",
+          "user": "system",
+          "action": "Imported from Aikido scan",
+          "note": null
+        }
+      ],
+      "created": "2024-11-05",
+      "slaDue": "2024-11-19"
+    },
+    {
+      "id": "f-025",
+      "findingType": "CVE",
+      "fingerprintId": "x7",
+      "cveId": "CVE-2024-77777",
+      "title": "Logback JNDI",
+      "severity": "Medium",
+      "status": "In Review",
+      "sources": [
+        {
+          "name": "Aikido",
+          "importedAt": "2024-11-08T10:00:00Z"
+        }
+      ],
+      "source": "Aikido",
+      "component": "logback 1.4.11",
+      "image": "api-server:latest",
+      "cvss": "6.5",
+      "epss": "0.04",
+      "team": "Backend",
+      "owner": "carol@co.com",
+      "trackerId": "BE-2330",
+      "controlRef": "",
+      "suppressionScope": null,
+      "attestation": null,
+      "regressionOf": [],
+      "regressionCount": 0,
+      "description": "JNDI lookup in log config.",
+      "justification": "We use static config; no remote JNDI.",
+      "compensatingControls": "",
+      "reviewerNote": "",
+      "trackerComment": true,
+      "archived": false,
+      "archivedReason": null,
+      "audit": [
+        {
+          "ts": "2024-11-08T10:00:00Z",
+          "user": "system",
+          "action": "Imported from Aikido scan",
+          "note": null
+        },
+        {
+          "ts": "2024-11-09T10:00:00Z",
+          "user": "system",
+          "action": "Status \u2192 In Review",
+          "note": null
+        }
+      ],
+      "created": "2024-11-08",
+      "slaDue": "2024-11-29"
+    },
+    {
+      "id": "f-026",
+      "findingType": "CVE",
+      "fingerprintId": "x8",
+      "cveId": "CVE-2024-88888",
+      "title": "Micrometer metrics injection",
+      "severity": "Low",
+      "status": "Resolved",
+      "sources": [
+        {
+          "name": "Aikido",
+          "importedAt": "2024-07-01T10:00:00Z"
+        }
+      ],
+      "source": "Aikido",
+      "component": "micrometer 1.11.0",
+      "image": "api-server:latest",
+      "cvss": "4.2",
+      "epss": "0.01",
+      "team": "Backend",
+      "owner": "carol@co.com",
+      "trackerId": "BE-1650",
+      "controlRef": "",
+      "suppressionScope": null,
+      "attestation": null,
+      "regressionOf": [],
+      "regressionCount": 0,
+      "description": "Metrics tag injection.",
+      "justification": "Upgraded to 1.12.",
+      "compensatingControls": "",
+      "reviewerNote": "Resolved",
+      "trackerComment": true,
+      "archived": false,
+      "archivedReason": null,
+      "audit": [
+        {
+          "ts": "2024-07-01T10:00:00Z",
+          "user": "system",
+          "action": "Imported from Aikido scan",
+          "note": null
+        },
+        {
+          "ts": "2024-07-15T10:00:00Z",
+          "user": "carol@co.com",
+          "action": "Resolved",
+          "note": null
+        }
+      ],
+      "created": "2024-07-01",
+      "slaDue": "2024-07-31"
+    },
+    {
+      "id": "f-027",
+      "findingType": "CVE",
+      "fingerprintId": "x9",
+      "cveId": "CVE-2024-99999",
+      "title": "Lettuce Redis command injection",
+      "severity": "Medium",
+      "status": "Open",
+      "sources": [
+        {
+          "name": "Aikido",
+          "importedAt": "2024-11-10T10:00:00Z"
+        }
+      ],
+      "source": "Aikido",
+      "component": "lettuce 6.2.0",
+      "image": "api-server:latest",
+      "cvss": "5.3",
+      "epss": "0.02",
+      "team": "Backend",
+      "owner": "carol@co.com",
+      "trackerId": "BE-2340",
+      "controlRef": "",
+      "suppressionScope": null,
+      "attestation": null,
+      "regressionOf": [],
+      "regressionCount": 0,
+      "description": "Command injection via Redis protocol.",
+      "justification": "",
+      "compensatingControls": "",
+      "reviewerNote": "",
+      "trackerComment": false,
+      "archived": false,
+      "archivedReason": null,
+      "audit": [
+        {
+          "ts": "2024-11-10T10:00:00Z",
+          "user": "system",
+          "action": "Imported from Aikido scan",
+          "note": null
+        }
+      ],
+      "created": "2024-11-10",
+      "slaDue": "2024-12-10"
+    },
+    {
+      "id": "f-028",
+      "findingType": "CVE",
+      "fingerprintId": "x10",
+      "cveId": "CVE-2023-99999",
+      "title": "Kafka client auth bypass",
+      "severity": "High",
+      "status": "Risk Accepted",
+      "sources": [
+        {
+          "name": "Aikido",
+          "importedAt": "2024-06-15T10:00:00Z"
+        }
+      ],
+      "source": "Aikido",
+      "component": "kafka-clients 3.5.0",
+      "image": "api-server:latest",
+      "cvss": "7.2",
+      "epss": "0.05",
+      "team": "Backend",
+      "owner": "carol@co.com",
+      "trackerId": "BE-1820",
+      "controlRef": "",
+      "suppressionScope": null,
+      "attestation": {
+        "approver": "Sarah Chen",
+        "approverTitle": "CISO",
+        "approvedAt": "2024-06-20T09:00:00Z",
+        "waiverRef": "WAV-2024-005",
+        "expiresAt": "2025-06-20"
+      },
+      "regressionOf": [],
+      "regressionCount": 0,
+      "description": "Auth bypass in SASL config.",
+      "justification": "We use mTLS; Kafka not exposed.",
+      "compensatingControls": "Network isolation; mTLS.",
+      "reviewerNote": "Accepted",
+      "trackerComment": true,
+      "archived": false,
+      "archivedReason": null,
+      "audit": [
+        {
+          "ts": "2024-06-15T10:00:00Z",
+          "user": "system",
+          "action": "Imported from Aikido scan",
+          "note": null
+        },
+        {
+          "ts": "2024-06-20T09:00:00Z",
+          "user": "Sarah Chen",
+          "action": "Risk Accepted",
+          "note": "WAV-2024-005"
+        }
+      ],
+      "created": "2024-06-15",
+      "slaDue": "2024-06-29"
+    }
+  ],
+  "sbom": [
+    {
+      "component": "api-server:latest",
+      "source": "aikido",
+      "bom": {
+        "bomFormat": "CycloneDX",
+        "specVersion": "1.4",
+        "version": 1,
+        "metadata": {
+          "component": {
+            "name": "api-server",
+            "version": "latest"
+          }
+        },
+        "components": [
+          {
+            "name": "runc",
+            "version": "1.1.11",
+            "licenses": [
+              {
+                "license": {
+                  "id": "Apache-2.0"
+                }
+              }
+            ],
+            "language": "go"
+          },
+          {
+            "name": "nginx",
+            "version": "1.25.1",
+            "licenses": [
+              {
+                "license": {
+                  "id": "BSD-2-Clause"
+                }
+              }
+            ],
+            "language": "c"
+          },
+          {
+            "name": "openssl",
+            "version": "3.0.11",
+            "licenses": [
+              {
+                "license": {
+                  "id": "Apache-2.0"
+                }
+              }
+            ],
+            "language": "c"
+          },
+          {
+            "name": "spring-boot",
+            "version": "3.2.1",
+            "licenses": [
+              {
+                "license": {
+                  "id": "Apache-2.0"
+                }
+              }
+            ],
+            "language": "java"
+          },
+          {
+            "name": "guava",
+            "version": "32.1.0",
+            "licenses": [
+              {
+                "license": {
+                  "id": "Apache-2.0"
+                }
+              }
+            ],
+            "language": "java"
+          },
+          {
+            "name": "snakeyaml",
+            "version": "2.0",
+            "licenses": [
+              {
+                "license": {
+                  "id": "Apache-2.0"
+                }
+              }
+            ],
+            "language": "java"
+          },
+          {
+            "name": "log4j-core",
+            "version": "2.20.0",
+            "licenses": [
+              {
+                "license": {
+                  "id": "Apache-2.0"
+                }
+              }
+            ],
+            "language": "java"
+          },
+          {
+            "name": "redis-client",
+            "version": "6.2.0",
+            "licenses": [
+              {
+                "license": {
+                  "id": "Apache-2.0"
+                }
+              }
+            ],
+            "language": "java"
+          },
+          {
+            "name": "lib-with-agpl",
+            "version": "1.0.0",
+            "licenses": [
+              {
+                "license": {
+                  "id": "AGPL-3.0"
+                }
+              }
+            ],
+            "language": "python"
+          }
+        ]
+      }
+    },
+    {
+      "component": "ingress:v1.9",
+      "source": "ci",
+      "bom": {
+        "bomFormat": "CycloneDX",
+        "specVersion": "1.4",
+        "version": 1,
+        "metadata": {
+          "component": {
+            "name": "ingress",
+            "version": "v1.9"
+          }
+        },
+        "components": [
+          {
+            "name": "nginx",
+            "version": "1.25.1",
+            "licenses": [
+              {
+                "license": {
+                  "id": "BSD-2-Clause"
+                }
+              }
+            ],
+            "language": "c"
+          },
+          {
+            "name": "openssl",
+            "version": "3.0.11",
+            "licenses": [
+              {
+                "license": {
+                  "id": "Apache-2.0"
+                }
+              }
+            ],
+            "language": "c"
+          }
+        ]
+      }
+    },
+    {
+      "component": "builder:latest",
+      "source": "trivy-ci",
+      "bom": {
+        "bomFormat": "CycloneDX",
+        "specVersion": "1.4",
+        "version": 1,
+        "metadata": {
+          "component": {
+            "name": "builder",
+            "version": "latest"
+          }
+        },
+        "components": [
+          {
+            "name": "runc",
+            "version": "1.1.10",
+            "licenses": [
+              {
+                "license": {
+                  "id": "Apache-2.0"
+                }
+              }
+            ],
+            "language": "go"
+          }
+        ]
+      }
+    }
+  ],
+  "tenants": [
+    {
+      "id": "t-default",
+      "name": "Default Org"
+    }
+  ],
+  "users": [],
+  "settings": {
+    "sources": [
+      {
+        "id": "s-1",
+        "name": "Aikido",
+        "color": "#06b6d4",
+        "type": "scanner",
+        "adapter": "aikido",
+        "description": "Container, SCA, SAST, IaC, secrets scanner. Webhooks + REST."
+      },
+      {
+        "id": "s-2",
+        "name": "CI-Trivy",
+        "color": "#94a3b8",
+        "type": "manual",
+        "adapter": "manual",
+        "description": "Manually entered findings and push sources (Trivy, Semgrep, etc.)."
+      }
+    ],
+    "tracker": {
+      "name": "Linear",
+      "type": "linear",
+      "baseUrl": "https://linear.app/yourteam/issue/",
+      "icon": "◈",
+      "description": "Engineers receive issues with auto-injected [VAT] template.",
+      "commentPrefix": "[VAT]",
+      "issueTemplate": "[VAT] {finding_id}\n\n---\n### Vulnerability Assessment Response\nPost the block below as a **comment** to update this finding in VAT.\n\n| Field | Value |\n|-------|-------|\n| status | `false-positive` \\| `not-applicable` \\| `risk-accepted` \\| `mitigated` \\| `duplicate` |\n| justification | _(required — explain why; cite evidence for false-positive)_ |\n| compensating-controls | _(optional — e.g. WAF, network segmentation, monitoring)_ |\n\n**Copy-paste and fill in:**\n```\n[VAT] {finding_id}\nstatus: \njustification: \ncompensating-controls: \n```"
+    },
+    "aikido_credentials": {
+      "clientId": "AIK_CLIENT_demo-placeholder",
+      "clientSecret": "AIK_SECRET_demo-placeholder",
+      "region": "eu",
+      "webhookSecret": "demo-webhook-secret-placeholder"
+    }
+  }
+}

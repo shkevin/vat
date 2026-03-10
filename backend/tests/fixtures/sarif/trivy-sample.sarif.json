@@ -1,0 +1,54 @@
+{
+  "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "Trivy",
+          "version": "0.45.0"
+        }
+      },
+      "results": [
+        {
+          "ruleId": "CVE-2024-1234",
+          "message": {
+            "text": "Remote code execution in library X"
+          },
+          "level": "error",
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {"uri": "package.json"},
+                "region": {"startLine": 10}
+              }
+            }
+          ],
+          "properties": {
+            "packageName": "lib-x",
+            "installedVersion": "1.2.3",
+            "security-severity": "8.5"
+          }
+        },
+        {
+          "ruleId": "CVE-2024-5678",
+          "message": {
+            "text": "Information disclosure"
+          },
+          "level": "warning",
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {"uri": "src/main.go"}
+              }
+            }
+          ],
+          "properties": {
+            "packageName": "pkg-y",
+            "installedVersion": "2.0.0"
+          }
+        }
+      ]
+    }
+  ]
+}

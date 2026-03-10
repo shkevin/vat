@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<oval_results xmlns="http://oval.mitre.org/XMLSchema/oval-results-5"
+              xmlns:oval-def="http://oval.mitre.org/XMLSchema/oval-definitions-5">
+  <generator>
+    <product_name>OpenSCAP</product_name>
+    <product_version>1.3.0</product_version>
+  </generator>
+  <directives>
+    <definition_true reported="true" content="full"/>
+    <definition_false reported="true" content="full"/>
+  </directives>
+  <oval_definitions xmlns="http://oval.mitre.org/XMLSchema/oval-definitions-5">
+    <definitions>
+      <definition id="oval:com.redhat.rhsa:def:20240001" version="1" class="vulnerability">
+        <metadata>
+          <title>RHSA-2024:0001: curl security update (Important)</title>
+          <reference source="CVE" ref_id="CVE-2024-1234"/>
+          <reference source="CVE" ref_id="CVE-2024-1235"/>
+        </metadata>
+      </definition>
+      <definition id="oval:com.redhat.rhsa:def:20240002" version="1" class="vulnerability">
+        <metadata>
+          <title>RHSA-2024:0002: openssl security update (Critical)</title>
+          <reference source="CVE" ref_id="CVE-2024-5678"/>
+        </metadata>
+      </definition>
+    </definitions>
+  </oval_definitions>
+  <results>
+    <system>
+      <oval_system_characteristics>
+        <system_info>
+          <hostname>scanned-container.example.com</hostname>
+        </system_info>
+      </oval_system_characteristics>
+      <definitions>
+        <definition definition_id="oval:com.redhat.rhsa:def:20240001" result="true" version="1"/>
+        <definition definition_id="oval:com.redhat.rhsa:def:20240002" result="false" version="1"/>
+      </definitions>
+    </system>
+  </results>
+</oval_results>
