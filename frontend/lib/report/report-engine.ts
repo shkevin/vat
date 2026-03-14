@@ -2,8 +2,8 @@
 
 import type { VATDashboardData, VATReportIssue } from "./vatReportAdapter"
 import {
-  computeRiskScore,
-  getRiskLevel,
+  computeReportRiskScore,
+  getReportRiskLevel,
   computeMTTR,
   computeABCComplianceForIssues,
   computeAgingBuckets,
@@ -442,7 +442,7 @@ export function computeReportContext(
     issueGroups: data.issueGroups,
     hasFilters,
   })
-  const riskScore = computeRiskScore(counts)
+  const riskScore = computeReportRiskScore(counts)
   const mttr = computeMTTR(issues, countMode)
   const assetFilter = new Set(filters.repoFilter)
   const reposForRisk =
@@ -506,7 +506,7 @@ export function computeReportContext(
     openIssues: totalOpen,
     counts,
     riskScore,
-    riskLevel: getRiskLevel(riskScore),
+    riskLevel: getReportRiskLevel(riskScore),
     avgMttr: computeAvgMttr(mttr),
     mttr,
     aging: computeAgingBuckets(issues, countMode),
@@ -1135,11 +1135,9 @@ function buildReportFilterBar(
     var useServerCounts = reportData.serverCounts != null && reportData.totalOpen != null && noFilters;
     var counts = useServerCounts ? reportData.serverCounts : countBySeverity(openIssues);
     function oraPenalty(c) { var p = (c.critical||0)*10 + (c.high||0)*4; p += Math.min((c.medium||0)*0.5, 30); p += Math.min((c.low||0)*0.25, 10); return p; }
-    function toDisplayORA(v) { return Math.round(0.9 * Math.max(0, Math.min(100, v)) + 10); }
-    var vulnScore = Math.max(0, Math.min(100, Math.round(100 - oraPenalty(counts))));
-    var riskScore = toDisplayORA(vulnScore);
-    var rawORA = (riskScore - 10) / 0.9;
-    var riskLevel = rawORA < 25 ? "Critical" : rawORA < 50 ? "High" : rawORA < 75 ? "Medium" : "Low";
+    function toReportRisk(c) { return Math.max(0, Math.min(100, Math.round(oraPenalty(c)))); }
+    var riskScore = toReportRisk(counts);
+    var riskLevel = riskScore >= 75 ? "Critical" : riskScore >= 50 ? "High" : riskScore >= 25 ? "Medium" : "Low";
     var criticalHigh = counts.critical + counts.high;
     var pc = null;
     if (reportData.dateFrom && reportData.dateTo) {
@@ -1152,10 +1150,8 @@ function buildReportFilterBar(
         function dir(a,b) { return a > b ? "up" : a < b ? "down" : "flat"; }
         var currCnt = countBySeverity(currOpen);
         var prevCnt = countBySeverity(prevOpen);
-        var currVuln = Math.max(0, Math.min(100, Math.round(100 - oraPenalty(currCnt))));
-        var prevVuln = Math.max(0, Math.min(100, Math.round(100 - oraPenalty(prevCnt))));
-        var currRisk = toDisplayORA(currVuln);
-        var prevRisk = toDisplayORA(prevVuln);
+        var currRisk = toReportRisk(currCnt);
+        var prevRisk = toReportRisk(prevCnt);
         function avgMttrInRange(issues, start, end) {
           var days = []; var startTs = start.getTime(); var endTs = end.getTime();
           issues.forEach(function(i) {
@@ -1207,7 +1203,7 @@ function buildReportFilterBar(
       if (boardHero) {
         var scoreEl = section.querySelector(".board-risk-score"); var levelEl = section.querySelector(".board-risk-level");
         var gaugeWrap = section.querySelector(".board-hero-viz");
-        if (scoreEl) scoreEl.innerHTML = '<span style="color:' + riskColor + '">' + riskScore + '</span><span class="board-risk-max">/100</span>' + (pc && pc.riskScore ? trendBadge(pc.riskScore, true, true) : '');
+        if (scoreEl) scoreEl.innerHTML = '<span style="color:' + riskColor + '">' + riskScore + '</span><span class="board-risk-max">/100</span>' + (pc && pc.riskScore ? trendBadge(pc.riskScore, true) : '');
         if (levelEl) levelEl.textContent = riskLevel + " risk";
         if (gaugeWrap) {
           var fillColor = riskLevel === "Critical" ? "#ef4444" : riskLevel === "High" ? "#f97316" : riskLevel === "Medium" ? "#eab308" : "#22c55e";
@@ -1226,7 +1222,7 @@ function buildReportFilterBar(
           trendEl.style.display = trendHtml ? "" : "none";
         }
       }
-      setKpiValue(grid.querySelector(".kpi-card:nth-child(1) .kpi-value"), '<span style="color:' + riskColor + '">' + riskScore + '</span><span class="kpi-suffix">/100</span>', pc && pc.riskScore ? trendBadge(pc.riskScore, true, true) : "");
+      setKpiValue(grid.querySelector(".kpi-card:nth-child(1) .kpi-value"), '<span style="color:' + riskColor + '">' + riskScore + '</span><span class="kpi-suffix">/100</span>', pc && pc.riskScore ? trendBadge(pc.riskScore, true) : "");
       var totalOpenVal = useServerCounts ? reportData.totalOpen : countTotal(openIssues);
       setKpiValue(grid.querySelector(".kpi-card:nth-child(2) .kpi-value"), String(totalOpenVal), pc && pc.openIssues ? trendBadge(pc.openIssues) : "");
       setKpiValue(grid.querySelector(".kpi-card:nth-child(3) .kpi-value"), '<span style="color:#f97316">' + criticalHigh + '</span>', pc && pc.criticalHigh ? trendBadge(pc.criticalHigh) : "");

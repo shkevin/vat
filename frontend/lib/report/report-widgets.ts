@@ -424,7 +424,7 @@ function svgTrendStacked(trends: TrendDataPoint[], w = 560, h = 160): string {
 // ---------------------------------------------------------------------------
 
 /** Trend badge: up/down arrow + percentage. Block (below value) or inline.
- * improvementIsUp: when true (e.g. ORA risk score), up = good = green; else down = good = green. */
+ * improvementIsUp: when true, up = good = green; else down = good = green. */
 function trendBadgeHtml(
   change: { pctChange: number; direction: "up" | "down" | "flat" } | undefined,
   inline = false,
@@ -477,7 +477,7 @@ function renderSummary(ctx: ReportContext, config: Record<string, unknown>): str
       ctx,
       "Risk Score",
       `<span style="color:${riskColor}">${ctx.riskScore}</span><span class="kpi-suffix">/100</span>`,
-      trendBadgeHtml(pc?.riskScore ?? undefined, false, true),
+      trendBadgeHtml(pc?.riskScore ?? undefined),
       ctx.riskLevel
     ),
     kpiCard(
@@ -515,7 +515,7 @@ function renderSummary(ctx: ReportContext, config: Record<string, unknown>): str
           ? `There are ${ctx.openIssues} open findings; ${criticalHigh} are critical or high and require prioritization.`
           : `${ctx.openIssues} open findings, predominantly medium and low severity.`
     const tooltipAttr = ` data-tooltip="${ORA_INFO_TITLE.replace(/"/g, "&quot;")}"`
-    return `<div class="section section-board-summary" data-report-aggregate="summary"><div${summaryFilter}><h2${tooltipAttr}>Risk at a glance (ORA)</h2>${filterNote}<div class="board-hero"><div class="board-hero-viz">${svgRiskGauge(ctx.riskScore)}</div><div class="board-hero-text"><div class="board-risk-score" style="color:${riskColor}">${ctx.riskScore}<span class="board-risk-max">/100</span>${trendBadgeHtml(pc?.riskScore ?? undefined, true, true)}</div><div class="board-risk-level">${ctx.riskLevel} risk</div><p class="board-narrative">${narrative}</p></div></div>${notes}</div></div>`
+    return `<div class="section section-board-summary" data-report-aggregate="summary"><div${summaryFilter}><h2${tooltipAttr}>Risk at a glance</h2>${filterNote}<div class="board-hero"><div class="board-hero-viz">${svgRiskGauge(ctx.riskScore)}</div><div class="board-hero-text"><div class="board-risk-score" style="color:${riskColor}">${ctx.riskScore}<span class="board-risk-max">/100</span>${trendBadgeHtml(pc?.riskScore ?? undefined, true)}</div><div class="board-risk-level">${ctx.riskLevel} risk</div><p class="board-narrative">${narrative}</p></div></div>${notes}</div></div>`
   }
 
   if (variant === "weekly") {
@@ -593,7 +593,7 @@ function renderRiskGauge(ctx: ReportContext, config: Record<string, unknown>): s
   const size = Number(config.size) || 120
   const attrs = sectionFilterAttrs(ctx)
   const tooltipAttr = ` data-tooltip="${ORA_INFO_TITLE.replace(/"/g, "&quot;")}"`
-  return `<div class="section" data-report-aggregate="risk-gauge" data-gauge-size="${size}"><div${attrs}><h2${tooltipAttr}>Risk score (ORA)</h2><div class="board-hero-viz">${svgRiskGauge(ctx.riskScore, size)}</div></div></div>`
+  return `<div class="section" data-report-aggregate="risk-gauge" data-gauge-size="${size}"><div${attrs}><h2${tooltipAttr}>Risk score</h2><div class="board-hero-viz">${svgRiskGauge(ctx.riskScore, size)}</div></div></div>`
 }
 
 function renderTrendSparkline(ctx: ReportContext, config: Record<string, unknown>): string {
@@ -1220,7 +1220,7 @@ const ABC_INFO_TITLE =
   "Acceptance Baseline Criteria (ABC): Compliance standards for container hardening and vulnerability management. Includes SLA timelines for justification and remediation, max open findings per severity, and CVE age tolerance.";
 
 const ORA_INFO_TITLE =
-  "Overall Risk Assessment (ORA): Score 0–100 (higher = safer). 90% from open findings (weighted penalties; mitigated count half), 10% from Maintained/Dependency Update (assumed best when unknown).";
+  "Overall Risk Assessment (ORA): Score 0–100 (higher = riskier). Based on weighted open findings (critical and high contribute most; mitigated findings count half).";
 
 function renderABCCompliance(ctx: ReportContext, _config: Record<string, unknown>): string {
   const abc = ctx.abcCompliance
