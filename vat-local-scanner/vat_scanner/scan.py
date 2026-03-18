@@ -29,8 +29,11 @@ from vat_scanner.scanners import (
     run_semgrep,
     run_stig_image,
     run_stig_oci_layout,
+    run_trivy_fs_cyclonedx,
     run_trivy_fs,
+    run_trivy_image_cyclonedx,
     run_trivy_image,
+    run_trivy_oci_layout_cyclonedx,
     run_trivy_oci_layout,
 )
 from vat_scanner.snippet_enrichment import enrich_reports
@@ -55,6 +58,39 @@ def _fmt_elapsed(seconds: float) -> str:
     m = int(seconds // 60)
     s = seconds - m * 60
     return f"{m}m {s:.1f}s" if s >= 0.1 else f"{m}m"
+
+
+def _apply_cyclonedx_container_ref(doc: dict | None, container_ref: str | None) -> dict | None:
+    """Stamp VAT container reference into CycloneDX component properties."""
+    if not isinstance(doc, dict):
+        return None
+    ref = (container_ref or "").strip()
+    if not ref:
+        return doc
+    components = doc.get("components") or []
+    if not isinstance(components, list):
+        return doc
+    out = dict(doc)
+    patched_components: list[dict] = []
+    for c in components:
+        if not isinstance(c, dict):
+            continue
+        props = c.get("properties") or []
+        if not isinstance(props, list):
+            props = []
+        has_ref = False
+        for p in props:
+            if not isinstance(p, dict):
+                continue
+            name = str(p.get("name") or "").strip().lower()
+            if name in {"vat:container_ref", "vat.container_ref"}:
+                has_ref = True
+                break
+        if not has_ref:
+            props = [*props, {"name": "vat:container_ref", "value": ref}]
+        patched_components.append({**c, "properties": props})
+    out["components"] = patched_components
+    return out
 
 
 def run_scan(path: Path, config: ScannerConfig) -> dict[str, dict | list]:
@@ -108,7 +144,12 @@ def run_scan(path: Path, config: ScannerConfig) -> dict[str, dict | list]:
     # Container images: docker-save tars + OCI layouts from .wrap bundles
     container_sources: list = []
     extract_dirs: list = []
-    if "container" in scan_types or "stig" in scan_types or "oval_cve" in scan_types:
+    if (
+        "container" in scan_types
+        or "stig" in scan_types
+        or "oval_cve" in scan_types
+        or "dependencies" in scan_types
+    ):
         _verbose(config, "Collecting container sources (docker-save, OCI layouts)")
         container_sources, extract_dirs = collect_container_sources(
             path, temp_dir=temp_dir
@@ -263,12 +304,54 @@ def run_scan(path: Path, config: ScannerConfig) -> dict[str, dict | list]:
                 flush=True,
             )
 
-    # Clean up extracted wrap bundles
-    for d in extract_dirs:
-        shutil.rmtree(d, ignore_errors=True)
-
     # Dependencies: Grype, npm audit, pip-audit
     if "dependencies" in scan_types:
+        # Always generate CycloneDX from Trivy so SBOM export includes packages
+        # even when there are no vulnerability findings.
+        cyclonedx_docs: list[tuple[dict, str | None]] = []
+        t0 = time.perf_counter()
+        fs_cdx = run_trivy_fs_cyclonedx(
+            path,
+            timeout=min(180, timeout_sec),
+            exclude=config.exclude,
+            temp_dir=temp_dir,
+        )
+        if fs_cdx:
+            doc = _apply_cyclonedx_container_ref(fs_cdx, asset_name)
+            if doc:
+                cyclonedx_docs.append((doc, asset_name))
+        if container_sources:
+            trivy_cdx_timeout = min(180, timeout_sec)
+            for src in container_sources:
+                if src.format == "docker-save":
+                    img_cdx = run_trivy_image_cyclonedx(src.path, timeout=trivy_cdx_timeout)
+                else:
+                    img_cdx = run_trivy_oci_layout_cyclonedx(src.path, timeout=trivy_cdx_timeout)
+                if img_cdx:
+                    container_ref = src.image_ref or src.label
+                    doc = _apply_cyclonedx_container_ref(img_cdx, container_ref)
+                    if doc:
+                        cyclonedx_docs.append((doc, container_ref))
+        total_cyclonedx_components = sum(
+            len((d.get("components") or []))
+            for d, _ in cyclonedx_docs
+            if isinstance(d, dict)
+        )
+        if cyclonedx_docs:
+            reports["cyclonedx"] = cyclonedx_docs
+        if config.verbose:
+            doc_count = len(cyclonedx_docs)
+            print(
+                f"  → CycloneDX docs: {doc_count}, components: {total_cyclonedx_components}",
+                flush=True,
+            )
+        scan_totals["trivy_cyclonedx"] = time.perf_counter() - t0
+        if total_cyclonedx_components == 0:
+            raise RuntimeError(
+                "Dependencies scan requested but CycloneDX SBOM has zero components. "
+                "Failing scan to avoid stale SBOM exports."
+            )
+
         if has_grype_content(path):
             _verbose(config, "Grype (dependencies)")
             t0 = time.perf_counter()
@@ -335,6 +418,10 @@ def run_scan(path: Path, config: ScannerConfig) -> dict[str, dict | list]:
                 reports["gitleaks"] = normalize_gitleaks(gitleaks_report, asset_name, scan_tag)
         scan_totals["gitleaks"] = time.perf_counter() - t0
         _verbose(config, f"Gitleaks completed in {_fmt_elapsed(scan_totals['gitleaks'])}")
+
+    # Clean up extracted wrap bundles after all scans that may read OCI layouts.
+    for d in extract_dirs:
+        shutil.rmtree(d, ignore_errors=True)
 
     # Overall total (verbose only)
     overall_elapsed = time.perf_counter() - overall_start

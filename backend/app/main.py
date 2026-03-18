@@ -20,7 +20,23 @@ from app.core.pii_filter import PIIFilter
 logging.getLogger("app").addFilter(PIIFilter())
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import aikido, auth, export, findings, health, ingest, oauth, sbom, seed, settings, sync_worker, tenants, users, vat_data
+from app.api import (
+    aikido,
+    assets,
+    auth,
+    export,
+    findings,
+    health,
+    ingest,
+    oauth,
+    sbom,
+    seed,
+    settings,
+    sync_worker,
+    tenants,
+    users,
+    vat_data,
+)
 from app.api.webhooks import router as webhooks_router
 
 
@@ -111,6 +127,7 @@ app.add_middleware(
 app.include_router(health.router, prefix="/health", tags=["health"])
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
 app.include_router(findings.router, prefix="/api/findings", tags=["findings"])
+app.include_router(assets.router, prefix="/api/assets", tags=["assets"])
 app.include_router(vat_data.router, prefix="/api/vat-data", tags=["vat-data"])
 app.include_router(export.router, prefix="/api/export", tags=["export"])
 app.include_router(sbom.router, prefix="/api/sbom", tags=["sbom"])

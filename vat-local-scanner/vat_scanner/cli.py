@@ -68,6 +68,17 @@ def _push_report(
                     base_url, api_key, xml_content, asset=asset, tag=tag, source_image=source_image
                 )
                 responses.append(resp)
+    elif parser == "cyclonedx" and isinstance(report, list):
+        for item in report:
+            if isinstance(item, tuple) and len(item) >= 2:
+                doc, source_image = item[0], item[1]
+            else:
+                doc, source_image = item, None
+            if isinstance(doc, dict):
+                resp = ingest_report(
+                    base_url, api_key, doc, asset=asset, tag=tag, source_image=source_image
+                )
+                responses.append(resp)
     elif parser == "openscap_oval" and isinstance(report, list):
         for item in report:
             if isinstance(item, tuple) and len(item) >= 2:
@@ -228,6 +239,18 @@ def _scan_one_path(
                 print(f"  {p}: {report_count} report(s), {finding_count} finding(s)")
             else:
                 print(f"  {p}: 0 result(s)")
+        elif p == "cyclonedx":
+            if isinstance(r, list):
+                docs = len(r)
+                count = 0
+                for item in r:
+                    doc = item[0] if isinstance(item, tuple) and item else item
+                    if isinstance(doc, dict):
+                        count += len(doc.get("components") or [])
+                print(f"  {p}: {docs} document(s), {count} component(s)")
+            else:
+                count = len(r.get("components") or []) if isinstance(r, dict) else 0
+                print(f"  {p}: {count} component(s)")
         else:
             count = 0
             print(f"  {p}: {count} result(s)")
@@ -330,9 +353,14 @@ def cmd_scan(args: argparse.Namespace) -> int:
                             tag=path_cfg.tag or None,
                         )
                         if responses:
-                            total_created = sum(r.get("created", 0) for r in responses)
-                            total_merged = sum(r.get("merged", 0) for r in responses)
-                            print(f"  {p}: pushed ({total_created} created, {total_merged} merged)")
+                            if p == "cyclonedx":
+                                sbom_created = sum(r.get("sbomCreated", 0) for r in responses)
+                                sbom_updated = sum(r.get("sbomUpdated", 0) for r in responses)
+                                print(f"  {p}: pushed ({sbom_created} SBOM created, {sbom_updated} SBOM updated)")
+                            else:
+                                total_created = sum(r.get("created", 0) for r in responses)
+                                total_merged = sum(r.get("merged", 0) for r in responses)
+                                print(f"  {p}: pushed ({total_created} created, {total_merged} merged)")
                 print(f"  Pushed {asset_name}")
             except VATClientError as e:
                 print(f"ERROR: {e}", file=sys.stderr)
@@ -397,9 +425,14 @@ def cmd_scan(args: argparse.Namespace) -> int:
                         tag=cfg.tag or None,
                     )
                     if responses:
-                        total_created = sum(r.get("created", 0) for r in responses)
-                        total_merged = sum(r.get("merged", 0) for r in responses)
-                        print(f"  {p}: pushed ({total_created} created, {total_merged} merged)")
+                        if p == "cyclonedx":
+                            sbom_created = sum(r.get("sbomCreated", 0) for r in responses)
+                            sbom_updated = sum(r.get("sbomUpdated", 0) for r in responses)
+                            print(f"  {p}: pushed ({sbom_created} SBOM created, {sbom_updated} SBOM updated)")
+                        else:
+                            total_created = sum(r.get("created", 0) for r in responses)
+                            total_merged = sum(r.get("merged", 0) for r in responses)
+                            print(f"  {p}: pushed ({total_created} created, {total_merged} merged)")
                     else:
                         print(f"  {p}: pushed")
         except VATClientError as e:
@@ -496,9 +529,14 @@ def cmd_scan_archive(args: argparse.Namespace) -> int:
                         tag=path_cfg.tag or None,
                     )
                     if responses:
-                        total_created = sum(r.get("created", 0) for r in responses)
-                        total_merged = sum(r.get("merged", 0) for r in responses)
-                        print(f"  {p}: pushed ({total_created} created, {total_merged} merged)")
+                        if p == "cyclonedx":
+                            sbom_created = sum(r.get("sbomCreated", 0) for r in responses)
+                            sbom_updated = sum(r.get("sbomUpdated", 0) for r in responses)
+                            print(f"  {p}: pushed ({sbom_created} SBOM created, {sbom_updated} SBOM updated)")
+                        else:
+                            total_created = sum(r.get("created", 0) for r in responses)
+                            total_merged = sum(r.get("merged", 0) for r in responses)
+                            print(f"  {p}: pushed ({total_created} created, {total_merged} merged)")
             print(f"  Pushed {asset_name}")
         except (ValueError, RuntimeError) as e:
             print(f"ERROR: {e}", file=sys.stderr)

@@ -11,6 +11,16 @@ from app.models.finding import Finding, FindingType, Severity, Status
 from app.models.sbom import SbomPackage, license_risk_tier
 
 
+def _clip(value: str | None, max_len: int) -> str | None:
+    """Bound persisted string fields to DB column sizes."""
+    if value is None:
+        return None
+    v = str(value).strip()
+    if not v:
+        return None
+    return v[:max_len]
+
+
 def _now() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
@@ -19,6 +29,40 @@ def _package_id(name: str, version: str, component: str) -> str:
     """Deterministic ID for dedup."""
     key = f"{name}|{version}|{component or ''}"
     return hashlib.sha256(key.encode()).hexdigest()[:16]
+
+
+def _extract_container_ref(component: dict, doc: dict) -> str:
+    """Resolve stable container reference from CycloneDX properties/metadata."""
+    props = component.get("properties") or []
+    if isinstance(props, list):
+        for p in props:
+            if not isinstance(p, dict):
+                continue
+            name = str(p.get("name") or "").strip().lower()
+            val = str(p.get("value") or "").strip()
+            if name in {"vat:container_ref", "vat.container_ref", "container_ref", "container.image.ref"} and val:
+                return val
+    # Backward compatibility: old scanner versions stamped container refs in group.
+    group = str(component.get("group") or "").strip()
+    if group:
+        return group
+    # Optional metadata-level fallback.
+    md = doc.get("metadata") or {}
+    md_props = md.get("properties") or []
+    if isinstance(md_props, list):
+        for p in md_props:
+            if not isinstance(p, dict):
+                continue
+            name = str(p.get("name") or "").strip().lower()
+            val = str(p.get("value") or "").strip()
+            if name in {"vat:container_ref", "vat.container_ref", "container_ref", "container.image.ref"} and val:
+                return val
+    md_component = md.get("component") or {}
+    if isinstance(md_component, dict):
+        name = str(md_component.get("name") or "").strip()
+        if name:
+            return name
+    return ""
 
 
 def _parse_cyclonedx(doc: dict) -> list[dict]:
@@ -45,10 +89,7 @@ def _parse_cyclonedx(doc: dict) -> list[dict]:
                     license_id = str(lic_obj) if lic_obj else None
             else:
                 license_id = str(lic)
-        # Try to get component from metadata or parent
-        component = c.get("group") or doc.get("metadata", {}).get("component", {}).get("name") or ""
-        if isinstance(component, dict):
-            component = component.get("name", "")
+        component = _extract_container_ref(c, doc)
         language = c.get("language") or ""
 
         out.append({
@@ -82,8 +123,9 @@ async def import_sbom(
 
     for pkg in packages:
         comp = pkg.get("component") or component
+        comp = _clip(comp, 256)
         pkg_id = _package_id(pkg["name"], pkg["version"], comp)
-        license_id = pkg.get("license_id")
+        license_id = _clip(pkg.get("license_id"), 64)
         risk = license_risk_tier(license_id) if license_id else None
 
         result = await db.execute(

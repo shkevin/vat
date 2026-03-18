@@ -92,6 +92,7 @@ class ContainerSource:
     path: Path
     format: str  # "docker-save" | "oci-layout"
     label: str  # For asset naming, e.g. "kamiwaza-abc123"
+    image_ref: str | None = None  # Best-effort repo/name:tag from source metadata
 
 
 def _tar_has_wrap_files(archive: Path) -> bool:
@@ -128,6 +129,33 @@ def _tar_is_docker_save(archive: Path) -> bool:
         return False
     except (FileNotFoundError, subprocess.TimeoutExpired):
         return False
+
+
+def _docker_save_image_ref(archive: Path) -> str | None:
+    """Extract first RepoTag from docker-save tar manifest.json."""
+    try:
+        result = subprocess.run(
+            ["tar", "-xOf", str(archive), "manifest.json"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if result.returncode != 0 or not result.stdout.strip():
+            return None
+        data = json.loads(result.stdout)
+        if not isinstance(data, list) or not data:
+            return None
+        first = data[0]
+        if not isinstance(first, dict):
+            return None
+        repo_tags = first.get("RepoTags") or []
+        if isinstance(repo_tags, list) and repo_tags:
+            tag = repo_tags[0]
+            if isinstance(tag, str) and tag.strip():
+                return tag.strip()
+        return None
+    except (FileNotFoundError, subprocess.TimeoutExpired, json.JSONDecodeError):
+        return None
 
 
 def _find_oci_layouts(root: Path) -> list[Path]:
@@ -289,6 +317,7 @@ def _process_wrap_sources(
                 path=layout_dir,
                 format="oci-layout",
                 label=label,
+                image_ref=image_ref,
             )
         )
     return sources
@@ -319,6 +348,7 @@ def collect_container_sources(
                     path=tar_path,
                     format="docker-save",
                     label=tar_path.stem,
+                    image_ref=_docker_save_image_ref(tar_path),
                 )
             )
             continue

@@ -110,6 +110,7 @@ def ingest_report(
     *,
     asset: str | None = None,
     tag: str | None = None,
+    source_image: str | None = None,
 ) -> dict:
     """
     POST report to VAT ingest.
@@ -122,7 +123,7 @@ def ingest_report(
         url,
         data=json.dumps(report).encode(),
         method="POST",
-        headers=_ingest_headers(api_key, asset, tag),
+        headers=_ingest_headers(api_key, asset, tag, source_image),
     )
     try:
         with urllib.request.urlopen(req, timeout=60) as resp:

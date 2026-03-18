@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { useVATData } from "@/contexts/VATDataContext";
 import { getAssetById, computeMetricsFromFindings, getFindingTag, getAssetTypeFromAsset } from "@/lib/assetUtils";
 import { getGroupedFindings } from "@/lib/findingGroupUtils";
@@ -24,6 +24,7 @@ import { MultiSelectFilter } from "@/components/ui/MultiSelectFilter";
 import { ABC_TOOLTIP, ORA_TOOLTIP } from "@/lib/constants";
 import { ThemedTooltip } from "@/components/ui/ThemedTooltip";
 import { useAssetFilters } from "@/hooks/useAssetFilters";
+import { deleteAsset } from "@/lib/api";
 
 const HEADER_PADDING = {
   compact: "4px 14px",
@@ -89,14 +90,17 @@ interface AssetPageProps {
 
 export function AssetPage({ config }: AssetPageProps) {
   const params = useParams();
+  const router = useRouter();
   const assetId = typeof params.id === "string" ? decodeURIComponent(params.id) : null;
   const data = useVATData();
   const { preferences, setPreferences } = useUserPreferences();
-  const { user } = useAuth();
+  const { user, token } = useAuth();
   const readOnly = user?.role === "read_only";
   const isAdmin = user?.role === "admin";
   const density = preferences.tableDensity ?? "default";
   const [assetTab, setAssetTab] = useState<AssetTabId>("findings");
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [deletingAsset, setDeletingAsset] = useState(false);
   const [selectedSourceIndex, setSelectedSourceIndex] = useState<number | undefined>();
 
   const {
@@ -449,6 +453,26 @@ export function AssetPage({ config }: AssetPageProps) {
     }));
   }, [displayRows]);
 
+  const handleDeleteAsset = useCallback(async () => {
+    if (!asset || deletingAsset) return;
+    const confirmed = window.confirm(
+      `Delete asset "${asset.name}" and all its findings? This cannot be undone.`
+    );
+    if (!confirmed) return;
+    setDeleteError(null);
+    setDeletingAsset(true);
+    try {
+      await deleteAsset(asset.id, { token: token ?? undefined, userEmail: user?.email });
+      setSelected(null);
+      await refetch({ silent: true });
+      router.push("/");
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : "Failed to delete asset");
+    } finally {
+      setDeletingAsset(false);
+    }
+  }, [asset, deletingAsset, refetch, router, setSelected, token, user?.email]);
+
   const mainContent = (() => {
     if (loading && !error) {
       return (
@@ -663,6 +687,27 @@ export function AssetPage({ config }: AssetPageProps) {
                 >
                   {favoriteAssetIds.has(asset.id) ? "♥" : "♡"}
                 </button>
+                {isAdmin && (
+                  <button
+                    type="button"
+                    onClick={handleDeleteAsset}
+                    disabled={deletingAsset}
+                    aria-label={`Delete asset ${asset.name}`}
+                    style={{
+                      ...mono,
+                      fontSize: 11,
+                      borderRadius: 6,
+                      border: "1px solid var(--app-danger)",
+                      background: "transparent",
+                      color: "var(--app-danger)",
+                      padding: "4px 10px",
+                      cursor: deletingAsset ? "not-allowed" : "pointer",
+                      opacity: deletingAsset ? 0.7 : 1,
+                    }}
+                  >
+                    {deletingAsset ? "Deleting…" : "Delete asset"}
+                  </button>
+                )}
               </div>
               <div style={{ ...mono, fontSize: 11, color: "var(--app-muted)" }}>
                 {asset.tag && `Tag: ${asset.tag} · `}
@@ -792,6 +837,22 @@ export function AssetPage({ config }: AssetPageProps) {
               </div>
           </div>
         </div>
+        {deleteError && (
+          <div
+            style={{
+              marginTop: 12,
+              border: "1px solid color-mix(in srgb, var(--app-danger) 60%, transparent)",
+              background: "color-mix(in srgb, var(--app-danger) 10%, transparent)",
+              color: "var(--app-danger)",
+              borderRadius: 8,
+              padding: "8px 12px",
+              ...sans,
+              fontSize: 12,
+            }}
+          >
+            {deleteError}
+          </div>
+        )}
 
         {/* Sort, multi-filter by column, search */}
         <div

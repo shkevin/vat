@@ -284,7 +284,7 @@ def run_stig_oci_layout(
 
     try:
         if not _skopeo_copy_oci_to_docker(
-            oci_layout_dir, image_ref, timeout=min(120, timeout), verbose=verbose
+            oci_layout_dir, image_ref, timeout=min(300, timeout), verbose=verbose
         ):
             if verbose:
                 import sys
@@ -453,7 +453,7 @@ def run_oval_cve_oci_layout(
 
     try:
         if not _skopeo_copy_oci_to_docker(
-            oci_layout_dir, image_ref, timeout=min(120, timeout), verbose=verbose
+            oci_layout_dir, image_ref, timeout=min(300, timeout), verbose=verbose
         ):
             if verbose:
                 import sys
@@ -527,6 +527,141 @@ def run_trivy_oci_layout(oci_layout_dir: Path, timeout: int = 120) -> dict | Non
     if result.returncode != 0 or not result.stdout.strip():
         return None
     return json.loads(result.stdout)
+
+
+def run_trivy_fs_cyclonedx(
+    folder: Path,
+    *,
+    timeout: int = 300,
+    exclude: list[str] | None = None,
+    temp_dir: Path | None = None,
+) -> dict | None:
+    """Run trivy fs --format cyclonedx and return JSON SBOM."""
+    temp_dir = Path(temp_dir) if temp_dir else Path("/tmp")
+    temp_dir.mkdir(parents=True, exist_ok=True)
+    out_file = temp_dir / f"trivy-fs-sbom-{uuid.uuid4().hex[:12]}.json"
+    cmd = [
+        "trivy",
+        "fs",
+        str(folder),
+        "--format",
+        "cyclonedx",
+        "--list-all-pkgs",
+        "-o",
+        str(out_file),
+        "--quiet",
+    ]
+    cmd[2:2] = _trivy_skip_args(exclude)
+    try:
+        subprocess.run(
+            cmd,
+            capture_output=True,
+            check=False,
+            timeout=timeout,
+        )
+    except FileNotFoundError:
+        return None
+    except subprocess.TimeoutExpired:
+        return None
+    try:
+        if not out_file.exists():
+            return None
+        with open(out_file) as f:
+            return json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return None
+    finally:
+        out_file.unlink(missing_ok=True)
+
+
+def run_trivy_image_cyclonedx(tar_path: Path, timeout: int = 180) -> dict | None:
+    """Run trivy image --input --format cyclonedx and return JSON SBOM."""
+    def _scan_ref(image_ref: str) -> dict | None:
+        try:
+            result = subprocess.run(
+                ["trivy", "image", image_ref, "--format", "cyclonedx", "--list-all-pkgs", "--quiet"],
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+            )
+        except FileNotFoundError:
+            return None
+        if result.returncode != 0 or not result.stdout.strip():
+            return None
+        try:
+            return json.loads(result.stdout)
+        except json.JSONDecodeError:
+            return None
+
+    # Fast path for direct tar input.
+    try:
+        result = subprocess.run(
+            ["trivy", "image", "--input", str(tar_path), "--format", "cyclonedx", "--list-all-pkgs", "--quiet"],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+    except FileNotFoundError:
+        result = None
+    if result and result.returncode == 0 and result.stdout.strip():
+        try:
+            return json.loads(result.stdout)
+        except json.JSONDecodeError:
+            pass
+
+    # Fallback path: load tar into Docker and scan by image ref.
+    image_ref = _docker_load_and_get_image_ref(tar_path, timeout=min(60, timeout))
+    if not image_ref:
+        return None
+    try:
+        return _scan_ref(image_ref)
+    finally:
+        subprocess.run(["docker", "rmi", image_ref], capture_output=True, timeout=10)
+
+
+def run_trivy_oci_layout_cyclonedx(oci_layout_dir: Path, timeout: int = 180) -> dict | None:
+    """Run trivy image --input on OCI layout in CycloneDX format."""
+    def _scan_ref(image_ref: str) -> dict | None:
+        try:
+            result = subprocess.run(
+                ["trivy", "image", image_ref, "--format", "cyclonedx", "--list-all-pkgs", "--quiet"],
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+            )
+        except FileNotFoundError:
+            return None
+        if result.returncode != 0 or not result.stdout.strip():
+            return None
+        try:
+            return json.loads(result.stdout)
+        except json.JSONDecodeError:
+            return None
+
+    # Fast path for direct OCI layout input.
+    try:
+        result = subprocess.run(
+            ["trivy", "image", "--input", str(oci_layout_dir), "--format", "cyclonedx", "--list-all-pkgs", "--quiet"],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+    except FileNotFoundError:
+        result = None
+    if result and result.returncode == 0 and result.stdout.strip():
+        try:
+            return json.loads(result.stdout)
+        except json.JSONDecodeError:
+            pass
+
+    # Fallback path: copy OCI layout to Docker daemon and scan by image ref.
+    image_ref = f"vat-sbom-{uuid.uuid4().hex[:12]}:latest"
+    if not _skopeo_copy_oci_to_docker(oci_layout_dir, image_ref, timeout=min(300, timeout)):
+        return None
+    try:
+        return _scan_ref(image_ref)
+    finally:
+        subprocess.run(["docker", "rmi", image_ref], capture_output=True, timeout=10)
 
 
 def run_gitleaks(

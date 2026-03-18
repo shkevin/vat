@@ -968,6 +968,25 @@ export async function deleteTenant(tenantId: string, auth?: Auth): Promise<void>
   }
 }
 
+export async function deleteAsset(assetId: string, auth?: Auth): Promise<void> {
+  const res = await vatFetch(
+    `${API_BASE}/assets/${encodeURIComponent(assetId)}`,
+    { method: "DELETE", headers: apiHeaders(auth?.token, auth?.userEmail) },
+    auth
+  );
+  if (!res.ok) {
+    const text = await res.text();
+    let msg = `API error: ${res.status} ${res.statusText}`;
+    try {
+      const j = JSON.parse(text);
+      if (j.detail) msg = typeof j.detail === "string" ? j.detail : String(j.detail);
+    } catch {
+      if (text) msg = text;
+    }
+    throw new Error(msg);
+  }
+}
+
 export async function fetchTrivyStatus(auth?: Auth): Promise<{
   ingestUrl: string;
   ingestUrlJson: string;

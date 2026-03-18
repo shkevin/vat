@@ -141,6 +141,10 @@ async def _ingest_from_parser(
     except ValueError as e:
         raise HTTPException(status_code=422, detail=f"Parse error: {e}") from e
 
+    sbom_created = 0
+    sbom_updated = 0
+    sbom_component = source_image_override or asset_override
+
     if not payloads:
         # Ensure Asset record so zero-finding scans appear in frontend
         base_asset = asset_override or source_image_override or _extract_asset_from_report(raw, parser_id)
@@ -161,7 +165,9 @@ async def _ingest_from_parser(
         sbom_doc = extract_sbom_from_report(parser_id, raw, source)
         if sbom_doc:
             try:
-                sbom_created, sbom_updated = await import_sbom(db, sbom_doc, source=source)
+                sbom_created, sbom_updated = await import_sbom(
+                    db, sbom_doc, source=source, component=sbom_component
+                )
                 if sbom_created or sbom_updated:
                     logger.info("SBOM import: %d created, %d updated from %s", sbom_created, sbom_updated, source)
             except Exception as e:
@@ -169,6 +175,8 @@ async def _ingest_from_parser(
         return {
             "created": 0,
             "merged": 0,
+            "sbomCreated": sbom_created,
+            "sbomUpdated": sbom_updated,
             "source": source,
             "message": f"No findings in {parser_id} payload",
         }
@@ -202,7 +210,9 @@ async def _ingest_from_parser(
     sbom_doc = extract_sbom_from_report(parser_id, raw, source)
     if sbom_doc:
         try:
-            sbom_created, sbom_updated = await import_sbom(db, sbom_doc, source=source)
+            sbom_created, sbom_updated = await import_sbom(
+                db, sbom_doc, source=source, component=sbom_component
+            )
             if sbom_created or sbom_updated:
                 logger.info("SBOM import: %d created, %d updated from %s", sbom_created, sbom_updated, source)
         except Exception as e:
@@ -231,6 +241,8 @@ async def _ingest_from_parser(
     result = {
         "created": created,
         "merged": merged,
+        "sbomCreated": sbom_created,
+        "sbomUpdated": sbom_updated,
         "source": source,
         "message": f"Ingested {created} new, {merged} merged findings",
     }
