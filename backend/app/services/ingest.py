@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.finding import Finding, FindingType, Severity, Status
 from app.schemas.vat import VatFindingSchema, VatFindingType, VatSeverity
+from app.services.correlation import correlation_key_for_payload
 from app.services.findings_service import _status_to_enum
 from app.services.dedup import component_base, make_fingerprint, make_fingerprint_for_source_issue
 from app.services.sla import SLA_DAYS
@@ -88,6 +89,17 @@ async def ingest_finding(
     image = payload.image or ""
     branch = getattr(payload, "branch", None) or ""
     tag = getattr(payload, "tag", None) or ""
+    corr_key, corr_conf = correlation_key_for_payload(
+        finding_type=str(payload.finding_type.value),
+        image=image,
+        branch=branch,
+        tag=tag,
+        cve_id=cve_id,
+        component=component,
+        ecosystem=getattr(payload, "ecosystem", None),
+        rule_id=getattr(payload, "rule_id", None),
+        file_path=getattr(payload, "file_path", None),
+    )
     # When source provides source_issue_id, use 1:1 fingerprint so VAT count matches source (e.g. Aikido).
     # Otherwise use CVE+component+image+branch+tag for cross-source dedup.
     sid = getattr(payload, "source_issue_id", None)
@@ -164,6 +176,9 @@ async def ingest_finding(
             existing.line = payload.line
         if getattr(payload, "snippet_masked", None) and not existing.snippet_masked:
             existing.snippet_masked = payload.snippet_masked
+        if corr_key and not existing.correlation_key:
+            existing.correlation_key = corr_key
+            existing.correlation_confidence = corr_conf
         # Backfill grouping fields when existing has none
         for attr in ("rule_id", "cwe_id", "ecosystem", "secret_type", "resource"):
             pv = getattr(payload, attr, None)
@@ -280,6 +295,9 @@ async def ingest_finding(
         external_links=external_links,
         source_issue_group_id=source_issue_group_id,
         aikido_source_id=aikido_source_id if source_name == "Aikido" else None,
+        correlation_key=corr_key,
+        correlation_confidence=corr_conf,
+        correlated_to=None,
     )
     db.add(finding)
     await db.commit()

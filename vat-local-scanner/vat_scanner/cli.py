@@ -113,6 +113,7 @@ def _merge_scan_cli(cfg: ScannerConfig, args: argparse.Namespace) -> ScannerConf
         api_key=args.api_key or None,
         admin_token=args.admin_token or None,
         asset=args.asset or None,
+        asset_mode=getattr(args, "asset_mode", None),
         tag=getattr(args, "tag", None),
         scan_types=scan_types if scan_types else None,
         exclude=args.exclude if args.exclude else None,
@@ -349,7 +350,7 @@ def cmd_scan(args: argparse.Namespace) -> int:
                     if key and p in reports:
                         responses = _push_report(
                             cfg.vat_url, key, p, reports[p],
-                            asset=path_cfg.asset or path.name,
+                            asset=(path_cfg.asset or path.name) if path_cfg.asset_mode != "multi" else None,
                             tag=path_cfg.tag or None,
                         )
                         if responses:
@@ -421,7 +422,7 @@ def cmd_scan(args: argparse.Namespace) -> int:
                 if key and p in all_reports:
                     responses = _push_report(
                         cfg.vat_url, key, p, all_reports[p],
-                        asset=cfg.asset or paths[0].name,
+                        asset=(cfg.asset or paths[0].name) if cfg.asset_mode != "multi" else None,
                         tag=cfg.tag or None,
                     )
                     if responses:
@@ -525,7 +526,7 @@ def cmd_scan_archive(args: argparse.Namespace) -> int:
                 if key and p in reports:
                     responses = _push_report(
                         cfg.vat_url, key, p, reports[p],
-                        asset=asset_name,
+                        asset=asset_name if path_cfg.asset_mode != "multi" else None,
                         tag=path_cfg.tag or None,
                     )
                     if responses:
@@ -724,6 +725,11 @@ def main() -> int:
     )
     sp_scan.add_argument("--asset", help="Asset name (default: path basename)")
     sp_scan.add_argument(
+        "--asset-mode",
+        choices=["single", "multi"],
+        help="Asset targeting mode: single (default) forces one asset; multi preserves per-target assets",
+    )
+    sp_scan.add_argument(
         "--tag",
         help="Scan tag for package delineation (default: YYYY-MM-DD_HHMMSS for multiple scans per day)",
     )
@@ -773,6 +779,11 @@ def main() -> int:
         help="Archive(s) to scan: .zip, .tar, .tar.gz, .tgz, .tar.bz2, .tar.xz",
     )
     sp_arch.add_argument("--asset", help="Asset name (default: archive stem)")
+    sp_arch.add_argument(
+        "--asset-mode",
+        choices=["single", "multi"],
+        help="Asset targeting mode: single (default) forces one asset; multi preserves per-target assets",
+    )
     sp_arch.add_argument(
         "--tag",
         help="Scan tag for package delineation (default: YYYY-MM-DD_HHMMSS for multiple scans per day)",

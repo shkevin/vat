@@ -2,6 +2,7 @@
 
 import json
 import logging
+import uuid
 from typing import Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
@@ -11,9 +12,12 @@ from app.api.settings import get_source_config
 from app.core.database import get_db
 from app.core.ingest_auth import get_ingest_source
 from app.models.asset import Asset
-from app.parsers import get_parser
+from app.parsers import PARSER_IDENTITY_POLICY, get_parser
 from app.schemas.vat import VatFindingSchema
+from app.services.asset_resolver import resolve_asset_for_payload
+from app.services.audit_events import emit_audit_event
 from app.services.ingest import ingest_finding
+from app.services.observability import IngestLatencyTimer
 from app.services.openscap_storage import store_openscap_scan_result
 from app.services.sbom import import_sbom
 from app.services.sbom_extract import extract_sbom_from_report
@@ -130,15 +134,47 @@ async def _ingest_from_parser(
     asset_override: Optional[str] = None,
     tag_override: Optional[str] = None,
     source_image_override: Optional[str] = None,
+    trace_id: Optional[str] = None,
+    actor_id: Optional[str] = None,
+    strict_asset_mapping: bool = False,
 ) -> dict:
     """
     Parse payload with configured parser and ingest findings.
     Returns {created, merged, source, message}.
     """
     parser = get_parser(parser_id)
+    trace_id = trace_id or uuid.uuid4().hex
+    await emit_audit_event(
+        db,
+        trace_id=trace_id,
+        event_type="ingest.parser.selected",
+        actor_type="api_client",
+        actor_id=actor_id,
+        source_id=source,
+        parser_id=parser_id,
+        decision_name="parser_selection",
+        decision_reason_code="configured_parser",
+        decision_confidence="explicit",
+        decision_result="selected",
+        data={"parser_id": parser_id},
+    )
     try:
         payloads = parser.parse(raw)
     except ValueError as e:
+        await emit_audit_event(
+            db,
+            trace_id=trace_id,
+            event_type="ingest.parser.failed",
+            actor_type="api_client",
+            actor_id=actor_id,
+            source_id=source,
+            parser_id=parser_id,
+            decision_name="parser_parse",
+            decision_reason_code="parse_error",
+            decision_confidence="high",
+            decision_result="failed",
+            data={"error": str(e)},
+        )
         raise HTTPException(status_code=422, detail=f"Parse error: {e}") from e
 
     sbom_created = 0
@@ -178,6 +214,7 @@ async def _ingest_from_parser(
             "sbomCreated": sbom_created,
             "sbomUpdated": sbom_updated,
             "source": source,
+            "traceId": trace_id,
             "message": f"No findings in {parser_id} payload",
         }
 
@@ -186,6 +223,31 @@ async def _ingest_from_parser(
     merged = 0
     for p in payloads:
         try:
+            policy = PARSER_IDENTITY_POLICY.get(parser_id, {})
+            requires_explicit_asset = bool(policy.get("requires_explicit_asset", False))
+            p, resolution = resolve_asset_for_payload(
+                p,
+                parser_id=parser_id,
+                source_id=source,
+                asset_override=asset_override,
+                strict_mode=strict_asset_mapping,
+                requires_explicit_asset=requires_explicit_asset,
+            )
+            await emit_audit_event(
+                db,
+                trace_id=trace_id,
+                event_type="asset.mapping.resolved",
+                actor_type="api_client",
+                actor_id=actor_id,
+                source_id=source,
+                parser_id=parser_id,
+                asset_id=resolution.asset_id,
+                decision_name="asset_mapping",
+                decision_reason_code=resolution.reason,
+                decision_confidence=resolution.confidence,
+                decision_result=resolution.asset_kind,
+                data=resolution.to_api_dict(),
+            )
             if asset_override:
                 p = p.model_copy(update={"image": asset_override})
             if tag_override:
@@ -198,13 +260,43 @@ async def _ingest_from_parser(
                 else:
                     p = p.model_copy(update={"component": source_image_override})
             p = _apply_asset_type_transform(p, asset_type)
-            _, is_new = await ingest_finding(db, p, source_name=source)
+            finding, is_new = await ingest_finding(db, p, source_name=source)
+            await emit_audit_event(
+                db,
+                trace_id=trace_id,
+                event_type="dedup.replay.new" if is_new else "dedup.replay.merged",
+                actor_type="api_client",
+                actor_id=actor_id,
+                source_id=source,
+                parser_id=parser_id,
+                asset_id=(p.image or p.component),
+                finding_id=getattr(finding, "id", None),
+                decision_name="replay_dedup",
+                decision_reason_code="fingerprint_lookup",
+                decision_confidence="high",
+                decision_result="created" if is_new else "merged",
+                data={"finding_id": getattr(finding, "id", None)},
+            )
             if is_new:
                 created += 1
             else:
                 merged += 1
         except Exception as e:
             logger.warning("Ingest failed for %s: %s", getattr(p, "cve_id", "?"), e)
+            await emit_audit_event(
+                db,
+                trace_id=trace_id,
+                event_type="ingest.finding.failed",
+                actor_type="api_client",
+                actor_id=actor_id,
+                source_id=source,
+                parser_id=parser_id,
+                decision_name="finding_ingest",
+                decision_reason_code="exception",
+                decision_confidence="high",
+                decision_result="failed",
+                data={"cve_id": getattr(p, "cve_id", "?"), "error": str(e)},
+            )
 
     # Extract and import SBOM from Trivy/Grype/CycloneDX reports
     sbom_doc = extract_sbom_from_report(parser_id, raw, source)
@@ -244,6 +336,7 @@ async def _ingest_from_parser(
         "sbomCreated": sbom_created,
         "sbomUpdated": sbom_updated,
         "source": source,
+        "traceId": trace_id,
         "message": f"Ingested {created} new, {merged} merged findings",
     }
     if parser_id in ("openscap", "openscap_oval"):
@@ -283,67 +376,103 @@ async def post_ingest(
     Optional headers: X-VAT-Asset, X-VAT-Tag, X-VAT-Source-Image — override asset context for bundle scans.
     X-VAT-Source-Image: container label within bundle (e.g. redis, metrics-server) so component identifies which image failed.
     """
-    auth_source, _ = ingest_auth
-    asset_override = (request.headers.get("X-VAT-Asset") or "").strip() or None
-    tag_override = (request.headers.get("X-VAT-Tag") or "").strip() or None
-    source_image_override = (request.headers.get("X-VAT-Source-Image") or "").strip() or None
-    if auth_source is None:
-        raise HTTPException(
-            status_code=401,
-            detail="Ingest requires API key. Use Authorization: Bearer <key> or X-VAT-API-Key.",
+    with IngestLatencyTimer():
+        auth_source, _ = ingest_auth
+        asset_override = (request.headers.get("X-VAT-Asset") or "").strip() or None
+        tag_override = (request.headers.get("X-VAT-Tag") or "").strip() or None
+        source_image_override = (request.headers.get("X-VAT-Source-Image") or "").strip() or None
+        trace_id = (getattr(request.state, "trace_id", "") or request.headers.get("X-Trace-Id") or "").strip() or uuid.uuid4().hex
+        strict_asset_mapping = (request.headers.get("X-VAT-Strict-Asset-Mapping") or "").strip().lower() in (
+            "1",
+            "true",
+            "yes",
+            "on",
         )
-
-    source_id = auth_source
-    source_config = await get_source_config(db, source_id)
-    parser_id = _resolve_parser(source_config, source_id)
-
-    # Parse request body — JSON, XML (OpenSCAP), or multipart file
-    content_type = request.headers.get("content-type", "")
-    if "multipart/form-data" in content_type:
-        form = await request.form()
-        f = form.get("file")
-        if not f or not hasattr(f, "read"):
-            raise HTTPException(
-                status_code=400,
-                detail="File upload requires 'file' field in multipart/form-data",
+        if auth_source is None:
+            await emit_audit_event(
+                db,
+                trace_id=trace_id,
+                event_type="ingest.auth.rejected",
+                actor_type="api_client",
+                actor_id="unknown",
+                decision_name="ingest_auth",
+                decision_reason_code="missing_api_key",
+                decision_confidence="high",
+                decision_result="rejected",
+                data={},
             )
-        content = await f.read()
-        if parser_id in ("openscap", "openscap_oval") and _is_xml_content(content):
-            raw = content
-        else:
+            raise HTTPException(
+                status_code=401,
+                detail="Ingest requires API key. Use Authorization: Bearer <key> or X-VAT-API-Key.",
+            )
+
+        source_id = auth_source
+        await emit_audit_event(
+            db,
+            trace_id=trace_id,
+            event_type="ingest.auth.validated",
+            actor_type="api_client",
+            actor_id=source_id,
+            source_id=source_id,
+            decision_name="ingest_auth",
+            decision_reason_code="api_key_valid",
+            decision_confidence="high",
+            decision_result="validated",
+            data={"source_id": source_id},
+        )
+        source_config = await get_source_config(db, source_id)
+        parser_id = _resolve_parser(source_config, source_id)
+
+        # Parse request body — JSON, XML (OpenSCAP), or multipart file
+        content_type = request.headers.get("content-type", "")
+        if "multipart/form-data" in content_type:
+            form = await request.form()
+            f = form.get("file")
+            if not f or not hasattr(f, "read"):
+                raise HTTPException(
+                    status_code=400,
+                    detail="File upload requires 'file' field in multipart/form-data",
+                )
+            content = await f.read()
+            if parser_id in ("openscap", "openscap_oval") and _is_xml_content(content):
+                raw = content
+            else:
+                try:
+                    raw = json.loads(content)
+                except json.JSONDecodeError as e:
+                    raise HTTPException(status_code=400, detail=f"Invalid JSON in file: {e}") from e
+        elif "application/json" in content_type:
             try:
-                raw = json.loads(content)
+                raw = await request.json()
             except json.JSONDecodeError as e:
-                raise HTTPException(status_code=400, detail=f"Invalid JSON in file: {e}") from e
-    elif "application/json" in content_type:
-        try:
-            raw = await request.json()
-        except json.JSONDecodeError as e:
-            raise HTTPException(status_code=400, detail=f"Invalid JSON: {e}") from e
-    elif parser_id in ("openscap", "openscap_oval") and (
-        "application/xml" in content_type or "text/xml" in content_type
-    ):
-        raw = await request.body()
-        if not _is_xml_content(raw):
+                raise HTTPException(status_code=400, detail=f"Invalid JSON: {e}") from e
+        elif parser_id in ("openscap", "openscap_oval") and (
+            "application/xml" in content_type or "text/xml" in content_type
+        ):
+            raw = await request.body()
+            if not _is_xml_content(raw):
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Invalid XML body for {parser_id} parser",
+                )
+        else:
             raise HTTPException(
                 status_code=400,
-                detail=f"Invalid XML body for {parser_id} parser",
+                detail="Send JSON body (Content-Type: application/json), XML (application/xml for OpenSCAP/OVAL), or file upload (multipart/form-data with 'file' field)",
             )
-    else:
-        raise HTTPException(
-            status_code=400,
-            detail="Send JSON body (Content-Type: application/json), XML (application/xml for OpenSCAP/OVAL), or file upload (multipart/form-data with 'file' field)",
+
+        if raw is None:
+            raise HTTPException(status_code=400, detail="Empty payload")
+
+        return await _ingest_from_parser(
+            db, raw, parser_id, source_id, source_config,
+            asset_override=asset_override,
+            tag_override=tag_override,
+            source_image_override=source_image_override,
+            trace_id=trace_id,
+            actor_id=source_id,
+            strict_asset_mapping=strict_asset_mapping,
         )
-
-    if raw is None:
-        raise HTTPException(status_code=400, detail="Empty payload")
-
-    return await _ingest_from_parser(
-        db, raw, parser_id, source_id, source_config,
-        asset_override=asset_override,
-        tag_override=tag_override,
-        source_image_override=source_image_override,
-    )
 
 
 @router.post("/sarif")

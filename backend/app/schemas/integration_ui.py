@@ -6,7 +6,13 @@ Adapters declare their settings fields and appearance; the frontend renders cons
 import re
 from typing import Literal, Optional
 
-from pydantic import BaseModel, Field, field_validator
+try:
+    from pydantic import BaseModel, Field, field_validator
+except ImportError:  # pragma: no cover - compatibility for pydantic v1 test environments
+    from pydantic import BaseModel, Field, validator
+
+    def field_validator(*fields, mode="after", **kwargs):
+        return validator(*fields, pre=(mode == "before"), allow_reuse=True, **kwargs)
 
 
 class IntegrationFieldSchema(BaseModel):

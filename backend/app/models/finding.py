@@ -108,6 +108,10 @@ class Finding(Base):
 
     # External links: [{adapter_key, kind, issue_id, url, created_at, ...}]. Unified for sources and trackers.
     external_links: Mapped[list] = mapped_column(JSONB, default=list, nullable=False)
+    # Cross-source correlation metadata (distinct from replay dedup fingerprint).
+    correlation_key: Mapped[Optional[str]] = mapped_column(String(256), nullable=True, index=True)
+    correlation_confidence: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    correlated_to: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
 
     @property
     def tracker_id(self) -> Optional[str]:

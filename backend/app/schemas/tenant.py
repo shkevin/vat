@@ -2,7 +2,14 @@
 
 from typing import Any, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+try:
+    from pydantic import BaseModel, ConfigDict, Field
+
+    _PYDANTIC_V2 = True
+except ImportError:  # pragma: no cover - compatibility for pydantic v1 test environments
+    from pydantic import BaseModel, Field
+
+    _PYDANTIC_V2 = False
 
 
 class TenantCreate(BaseModel):
@@ -12,7 +19,11 @@ class TenantCreate(BaseModel):
 
 
 class TenantRead(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
+    if _PYDANTIC_V2:
+        model_config = ConfigDict(from_attributes=True)
+    else:
+        class Config:
+            orm_mode = True
 
     id: str
     name: str

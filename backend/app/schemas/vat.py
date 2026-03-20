@@ -7,7 +7,17 @@ Security: field length limits, validation, no credential storage.
 from enum import Enum
 from typing import Literal, Optional
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+try:
+    from pydantic import BaseModel, Field, field_validator, model_validator
+
+    _PYDANTIC_V2 = True
+except ImportError:  # pragma: no cover - compatibility for pydantic v1 test environments
+    from pydantic import BaseModel, Field, root_validator, validator
+
+    _PYDANTIC_V2 = False
+
+    def field_validator(*fields, mode="after", **kwargs):
+        return validator(*fields, pre=(mode == "before"), allow_reuse=True, **kwargs)
 
 
 # --- Enums (VAT canonical) ---
@@ -96,17 +106,29 @@ class VatFindingSchema(BaseModel):
         }
         return mapping.get(s, VatSeverity.MEDIUM)
 
-    @model_validator(mode="after")
-    def require_asset_context(self) -> "VatFindingSchema":
-        """Every finding must have asset context for grouping: at least one of image, branch, tag."""
-        has_image = bool(self.image and str(self.image).strip())
-        has_branch = bool(getattr(self, "branch", None) and str(self.branch).strip())
-        has_tag = bool(getattr(self, "tag", None) and str(self.tag).strip())
-        if not (has_image or has_branch or has_tag):
-            raise ValueError(
-                "Finding must have at least one of: image, branch, tag (required for asset-scoped grouping)"
-            )
-        return self
+    if _PYDANTIC_V2:
+        @model_validator(mode="after")
+        def require_asset_context(self) -> "VatFindingSchema":
+            """Every finding must have asset context for grouping: at least one of image, branch, tag."""
+            has_image = bool(self.image and str(self.image).strip())
+            has_branch = bool(getattr(self, "branch", None) and str(self.branch).strip())
+            has_tag = bool(getattr(self, "tag", None) and str(self.tag).strip())
+            if not (has_image or has_branch or has_tag):
+                raise ValueError(
+                    "Finding must have at least one of: image, branch, tag (required for asset-scoped grouping)"
+                )
+            return self
+    else:
+        @root_validator
+        def require_asset_context(cls, values):
+            has_image = bool(values.get("image") and str(values.get("image")).strip())
+            has_branch = bool(values.get("branch") and str(values.get("branch")).strip())
+            has_tag = bool(values.get("tag") and str(values.get("tag")).strip())
+            if not (has_image or has_branch or has_tag):
+                raise ValueError(
+                    "Finding must have at least one of: image, branch, tag (required for asset-scoped grouping)"
+                )
+            return values
 
 
 class VatTrackerCommentUpdate(BaseModel):

@@ -12,7 +12,10 @@ _NPM7 = Path(__file__).resolve().parent.parent.parent / "django-DefectDojo" / "u
 
 
 def _load(name: str) -> dict:
-    with (_SAMPLES / name).open(encoding="utf-8") as f:
+    sample = _SAMPLES / name
+    if not sample.exists():
+        pytest.skip(f"Missing external parser fixture: {sample}")
+    with sample.open(encoding="utf-8") as f:
         return json.load(f)
 
 
@@ -38,7 +41,10 @@ def test_npm_audit_v6_many():
 def test_npm_audit_v7_one():
     import json
     parser = NpmAuditParser()
-    with (_NPM7 / "one_vuln.json").open(encoding="utf-8") as f:
+    sample = _NPM7 / "one_vuln.json"
+    if not sample.exists():
+        pytest.skip(f"Missing external parser fixture: {sample}")
+    with sample.open(encoding="utf-8") as f:
         data = json.load(f)
     payloads = parser.parse(data)
     assert len(payloads) >= 1

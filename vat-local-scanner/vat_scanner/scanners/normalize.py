@@ -36,9 +36,11 @@ def normalize_trivy(
     scan_tag: str = "",
     *,
     source_image: str | None = None,
+    rewrite_target: bool = True,
 ) -> dict:
     """
     Set Target in Trivy Results to asset_name so findings group under the bundle asset.
+    When rewrite_target=False, preserve original Target and only inject metadata.
     When scanning with --asset (e.g. kamiwaza-bundle), all package findings appear as
     sub-assets within that parent asset instead of as top-level package assets.
     When source_image is provided (e.g. container label), store it so the parser can
@@ -50,8 +52,9 @@ def normalize_trivy(
             continue
         original_target = r.get("Target") or r.get("target") or ""
         original_target = str(original_target).strip() if original_target else ""
-        r["Target"] = asset_name
-        r["target"] = asset_name
+        if rewrite_target:
+            r["Target"] = asset_name
+            r["target"] = asset_name
         if source_image and str(source_image).strip():
             r[VAT_SOURCE_IMAGE_KEY] = str(source_image).strip()
         elif original_target:

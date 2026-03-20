@@ -2,7 +2,14 @@
 
 from typing import Optional
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+try:
+    from pydantic import BaseModel, ConfigDict, EmailStr, Field
+
+    _PYDANTIC_V2 = True
+except ImportError:  # pragma: no cover - compatibility for pydantic v1 test environments
+    from pydantic import BaseModel, EmailStr, Field
+
+    _PYDANTIC_V2 = False
 
 
 class UserCreate(BaseModel):
@@ -18,7 +25,11 @@ class UserUpdate(BaseModel):
 
 
 class UserRead(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
+    if _PYDANTIC_V2:
+        model_config = ConfigDict(from_attributes=True)
+    else:
+        class Config:
+            orm_mode = True
 
     id: str
     tenant_id: Optional[str]

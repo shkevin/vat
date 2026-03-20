@@ -133,6 +133,7 @@ class ScannerConfig:
         api_key: str = "",
         admin_token: str = "",
         asset: str = "",
+        asset_mode: str = "single",
         scan_types: list[str] | None = None,
         exclude: list[str] | None = None,
         dry_run: bool = False,
@@ -157,6 +158,9 @@ class ScannerConfig:
         self.api_key = api_key or os.environ.get("VAT_API_KEY", "").strip()
         self.admin_token = admin_token or os.environ.get("VAT_ADMIN_TOKEN", "").strip()
         self.asset = asset
+        self.asset_mode = (asset_mode or "single").strip().lower()
+        if self.asset_mode not in ("single", "multi"):
+            self.asset_mode = "single"
         self.scan_types = scan_types or list(DEFAULT_SCAN_TYPES)
         self.exclude = exclude or list(DEFAULT_EXCLUDES)
         self.dry_run = dry_run
@@ -201,6 +205,7 @@ class ScannerConfig:
         return cls(
             vat_url=str(raw.get("vat_url", "")),
             asset=str(raw.get("asset", scan_path.name if scan_path else "")),
+            asset_mode=str(raw.get("asset_mode", "single")),
             tag=str(raw.get("tag", "")),
             dev_limit=int(raw.get("dev_limit", 0)),
             scan_types=raw.get("scan_types") or list(DEFAULT_SCAN_TYPES),
@@ -221,6 +226,7 @@ class ScannerConfig:
         api_key: str | None = None,
         admin_token: str | None = None,
         asset: str | None = None,
+        asset_mode: str | None = None,
         scan_types: list[str] | None = None,
         exclude: list[str] | None = None,
         dry_run: bool | None = None,
@@ -247,6 +253,7 @@ class ScannerConfig:
             api_key=api_key if api_key is not None else self.api_key,
             admin_token=admin_token if admin_token is not None else self.admin_token,
             asset=asset if asset is not None else self.asset,
+            asset_mode=asset_mode if asset_mode is not None else self.asset_mode,
             scan_types=scan_types if scan_types is not None else self.scan_types,
             exclude=exclude if exclude is not None else self.exclude,
             dry_run=dry_run if dry_run is not None else self.dry_run,

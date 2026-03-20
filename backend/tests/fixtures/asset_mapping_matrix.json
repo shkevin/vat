@@ -1,0 +1,14 @@
+{
+  "trivy": {"mappingMode": "single|multi", "identityStrength": "strong"},
+  "grype": {"mappingMode": "single|multi", "identityStrength": "strong"},
+  "semgrep": {"mappingMode": "derived-path|explicit", "identityStrength": "medium"},
+  "gitleaks": {"mappingMode": "derived-path|explicit", "identityStrength": "medium"},
+  "npm_audit": {"mappingMode": "derived-package|explicit", "identityStrength": "medium"},
+  "pip_audit": {"mappingMode": "derived-package|explicit", "identityStrength": "medium"},
+  "snyk": {"mappingMode": "derived-project|explicit", "identityStrength": "strong"},
+  "sarif": {"mappingMode": "derived-path|explicit", "identityStrength": "medium"},
+  "openscap": {"mappingMode": "derived-host|explicit", "identityStrength": "strong"},
+  "openscap_oval": {"mappingMode": "derived-host|explicit", "identityStrength": "strong"},
+  "cyclonedx": {"mappingMode": "derived-component|explicit", "identityStrength": "strong"},
+  "canonical": {"mappingMode": "derived-asset|explicit", "identityStrength": "medium"}
+}

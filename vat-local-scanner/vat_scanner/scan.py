@@ -104,6 +104,8 @@ def run_scan(path: Path, config: ScannerConfig) -> dict[str, dict | list]:
 
     asset_name = config.asset or path.name
     asset_name = _sanitize_asset_name(asset_name)
+    asset_mode = (getattr(config, "asset_mode", "single") or "single").strip().lower()
+    rewrite_target = asset_mode != "multi"
     scan_tag = config.tag or ""
 
     scan_types = set(config.scan_types)
@@ -134,7 +136,7 @@ def run_scan(path: Path, config: ScannerConfig) -> dict[str, dict | list]:
                 temp_dir=temp_dir,
             )
             enrich_reports({"trivy": trivy_fs}, path)
-            trivy_fs = normalize_trivy(trivy_fs, asset_name, scan_tag)
+            trivy_fs = normalize_trivy(trivy_fs, asset_name, scan_tag, rewrite_target=rewrite_target)
             reports["trivy"] = trivy_fs
             scan_totals["trivy_fs"] = time.perf_counter() - t0
             _verbose(config, f"Trivy fs completed in {_fmt_elapsed(scan_totals['trivy_fs'])}")
@@ -181,7 +183,11 @@ def run_scan(path: Path, config: ScannerConfig) -> dict[str, dict | list]:
                 # Use bundle asset so findings appear as sub-assets under kamiwaza-bundle
                 # Pass source_image so parser can set file_path for provenance (which container had the vuln)
                 img_report = normalize_trivy(
-                    img_report, asset_name, scan_tag, source_image=src.label
+                    img_report,
+                    asset_name,
+                    scan_tag,
+                    source_image=src.label,
+                    rewrite_target=rewrite_target,
                 )
                 trivy_results.extend(img_report.get("Results") or [])
         scan_totals["trivy_container"] = time.perf_counter() - trivy_container_start

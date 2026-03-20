@@ -30,6 +30,72 @@ PARSER_REGISTRY: dict[str, type[IngestParser]] = {
     "openscap_oval": OpenSCAPOvalParser,
 }
 
+# Parser identity/mapping contract for deterministic asset resolution.
+# - requires_explicit_asset: parser payloads are too weak/noisy for safe derived mapping by default.
+# - supports_deterministic_derived_asset: parser has stable target fields for derived mapping.
+PARSER_IDENTITY_POLICY: dict[str, dict[str, object]] = {
+    "trivy": {
+        "requires_explicit_asset": False,
+        "supports_deterministic_derived_asset": True,
+        "strong_fields": ["Results[].Target", "_vat_source_image"],
+    },
+    "grype": {
+        "requires_explicit_asset": False,
+        "supports_deterministic_derived_asset": True,
+        "strong_fields": ["source.target.userInput", "source.target"],
+    },
+    "semgrep": {
+        "requires_explicit_asset": False,
+        "supports_deterministic_derived_asset": True,
+        "strong_fields": ["result.path"],
+    },
+    "sarif": {
+        "requires_explicit_asset": False,
+        "supports_deterministic_derived_asset": True,
+        "strong_fields": ["locations[].physicalLocation.artifactLocation.uri"],
+    },
+    "gitleaks": {
+        "requires_explicit_asset": False,
+        "supports_deterministic_derived_asset": True,
+        "strong_fields": ["target", "findings[].File"],
+    },
+    "npm_audit": {
+        "requires_explicit_asset": False,
+        "supports_deterministic_derived_asset": True,
+        "strong_fields": ["vulnerabilities[].nodes", "advisories[].findings.paths"],
+    },
+    "pip_audit": {
+        "requires_explicit_asset": False,
+        "supports_deterministic_derived_asset": True,
+        "strong_fields": ["dependencies[].name"],
+    },
+    "snyk": {
+        "requires_explicit_asset": False,
+        "supports_deterministic_derived_asset": True,
+        "strong_fields": ["targetFile", "projectName"],
+    },
+    "cyclonedx": {
+        "requires_explicit_asset": False,
+        "supports_deterministic_derived_asset": True,
+        "strong_fields": ["metadata.component", "components[].properties"],
+    },
+    "canonical": {
+        "requires_explicit_asset": False,
+        "supports_deterministic_derived_asset": True,
+        "strong_fields": ["image|branch|tag"],
+    },
+    "openscap": {
+        "requires_explicit_asset": False,
+        "supports_deterministic_derived_asset": True,
+        "strong_fields": ["TestResult.target", "TestResult.target-address"],
+    },
+    "openscap_oval": {
+        "requires_explicit_asset": False,
+        "supports_deterministic_derived_asset": True,
+        "strong_fields": ["oval_results.results.system.hostname"],
+    },
+}
+
 
 def get_parser(parser_id: str) -> IngestParser:
     """Return parser instance by id. Raises ValueError if unknown."""
@@ -88,4 +154,5 @@ __all__ = [
     "get_parser",
     "list_parsers",
     "PARSER_REGISTRY",
+    "PARSER_IDENTITY_POLICY",
 ]

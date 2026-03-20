@@ -1,6 +1,7 @@
 """VAT FastAPI application entry point."""
 
 import logging
+import uuid
 from contextlib import asynccontextmanager
 
 from app.core.config import get_settings
@@ -13,6 +14,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 
 from fastapi import FastAPI
+from fastapi.responses import PlainTextResponse
 
 from app.core.pii_filter import PIIFilter
 
@@ -21,6 +23,7 @@ logging.getLogger("app").addFilter(PIIFilter())
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api import (
+    audit,
     aikido,
     assets,
     auth,
@@ -38,6 +41,8 @@ from app.api import (
     vat_data,
 )
 from app.api.webhooks import router as webhooks_router
+from app.services.otel import init_otel
+from app.services.observability import METRICS
 
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
@@ -48,7 +53,19 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        trace_id = getattr(request.state, "trace_id", None)
+        if trace_id:
+            response.headers["X-Trace-Id"] = trace_id
         return response
+
+
+class TraceIdMiddleware(BaseHTTPMiddleware):
+    """Attach request trace id for observability/audit correlation."""
+
+    async def dispatch(self, request: Request, call_next):
+        trace_id = request.headers.get("X-Trace-Id") or uuid.uuid4().hex
+        request.state.trace_id = trace_id
+        return await call_next(request)
 from app.services.waiver_expiry import enforce_waiver_expiry
 
 logger = logging.getLogger(__name__)
@@ -57,6 +74,7 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Run waiver expiry enforcement on startup (PRD §5.5.2)."""
+    init_otel()
     try:
         count = await enforce_waiver_expiry()
         if count > 0:
@@ -114,6 +132,7 @@ app = FastAPI(
     version="0.1.0",
 )
 
+app.add_middleware(TraceIdMiddleware)
 app.add_middleware(SecurityHeadersMiddleware)
 _cors_origins = [o.strip() for o in get_settings().cors_origins.split(",") if o.strip()]
 app.add_middleware(
@@ -126,6 +145,7 @@ app.add_middleware(
 
 app.include_router(health.router, prefix="/health", tags=["health"])
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
+app.include_router(audit.router, prefix="/api/audit", tags=["audit"])
 app.include_router(findings.router, prefix="/api/findings", tags=["findings"])
 app.include_router(assets.router, prefix="/api/assets", tags=["assets"])
 app.include_router(vat_data.router, prefix="/api/vat-data", tags=["vat-data"])
@@ -140,3 +160,12 @@ app.include_router(oauth.router, prefix="/api/oauth", tags=["oauth"])
 app.include_router(webhooks_router, prefix="/webhook", tags=["webhooks"])
 app.include_router(aikido.router, prefix="/api/aikido", tags=["aikido"])
 app.include_router(sync_worker.router, prefix="/api/sync", tags=["sync"])
+
+
+@app.get("/metrics", tags=["observability"])
+async def metrics():
+    """Prometheus scrape endpoint."""
+    return PlainTextResponse(
+        content=METRICS.render_prometheus(),
+        media_type="text/plain; version=0.0.4; charset=utf-8",
+    )

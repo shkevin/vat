@@ -3,7 +3,14 @@
 from enum import Enum
 from typing import Optional
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+try:
+    from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+    _PYDANTIC_V2 = True
+except ImportError:  # pragma: no cover - compatibility for pydantic v1 test environments
+    from pydantic import BaseModel, Field, root_validator
+
+    _PYDANTIC_V2 = False
 
 
 class SourceAuthType(str, Enum):
@@ -21,17 +28,32 @@ class SourceConfig(BaseModel):
     auth_type: SourceAuthType = Field(default=SourceAuthType.WEBHOOK, alias="authType")
     supports_outbound_sync: bool = Field(default=True, alias="supportsOutboundSync")
 
-    model_config = ConfigDict(
-        populate_by_name=True,
-        extra="ignore",  # Ignore unknown keys from legacy config
-    )
+    if _PYDANTIC_V2:
+        model_config = ConfigDict(
+            populate_by_name=True,
+            extra="ignore",  # Ignore unknown keys from legacy config
+        )
+    else:
+        class Config:
+            allow_population_by_field_name = True
+            extra = "ignore"
 
-    @model_validator(mode="after")
-    def push_implies_no_outbound(self):
-        """auth_type=PUSH must have supports_outbound_sync=False."""
-        if self.auth_type == SourceAuthType.PUSH and self.supports_outbound_sync:
-            raise ValueError("auth_type=push requires supports_outbound_sync=False")
-        return self
+    if _PYDANTIC_V2:
+        @model_validator(mode="after")
+        def push_implies_no_outbound(self):
+            """auth_type=PUSH must have supports_outbound_sync=False."""
+            if self.auth_type == SourceAuthType.PUSH and self.supports_outbound_sync:
+                raise ValueError("auth_type=push requires supports_outbound_sync=False")
+            return self
+    else:
+        @root_validator
+        def push_implies_no_outbound(cls, values):
+            if (
+                values.get("auth_type") == SourceAuthType.PUSH
+                and values.get("supports_outbound_sync")
+            ):
+                raise ValueError("auth_type=push requires supports_outbound_sync=False")
+            return values
 
 
 class TrackerConfig(BaseModel):

@@ -3,13 +3,18 @@
 import json
 from pathlib import Path
 
+import pytest
+
 from app.parsers.cyclonedx import CyclonedxParser
 
 _SAMPLES = Path(__file__).resolve().parent.parent.parent / "django-DefectDojo" / "unittests" / "scans" / "cyclonedx"
 
 
 def _load_json(name: str) -> dict:
-    with (_SAMPLES / name).open(encoding="utf-8") as f:
+    sample = _SAMPLES / name
+    if not sample.exists():
+        pytest.skip(f"Missing external parser fixture: {sample}")
+    with sample.open(encoding="utf-8") as f:
         return json.load(f)
 
 

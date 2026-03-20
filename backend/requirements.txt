@@ -24,3 +24,8 @@ pandas>=2.0.0
 
 # XML parsing (OpenSCAP XCCDF) — defusedxml for security
 defusedxml>=0.7.0
+
+# OpenTelemetry (operational mirror for audit events)
+opentelemetry-api>=1.28.0
+opentelemetry-sdk>=1.28.0
+opentelemetry-exporter-otlp>=1.28.0

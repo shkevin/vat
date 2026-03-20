@@ -1,5 +1,6 @@
 """Full Aikido sync: pull (bootstrap) + dashboard + backfill. Runs in background to avoid HTTP timeout."""
 
+import hashlib
 import logging
 from typing import Any, Callable, Optional
 
@@ -18,6 +19,7 @@ from app.adapters.aikido import (
 from app.core.database import async_session
 from app.models.asset import Asset
 from app.models.finding import Finding
+from app.services.audit_events import emit_audit_event
 from app.services.dedup import make_fingerprint
 from app.services.ingest import _parse_iso_datetime, ingest_finding
 from app.services.aikido_dashboard_sync import sync_aikido_dashboard
@@ -33,6 +35,19 @@ def _progress(on_progress: Optional[Callable[[int, int, str], None]], step: int,
 def _asset_key(name: str) -> str:
     """Build asset_key — name only. Branches are shown in asset page dropdown."""
     return (name or "").strip()
+
+
+def _aikido_trace_id(source_id: str | None, issue: dict[str, Any]) -> str:
+    """Create deterministic trace IDs for background Aikido sync audit events."""
+    issue_id = str(issue.get("id") or issue.get("issue_id") or "unknown")
+    seed = f"aikido-sync:{source_id or 'default'}:{issue_id}"
+    return hashlib.sha256(seed.encode("utf-8")).hexdigest()[:32]
+
+
+def _asset_trace_id(source_id: str | None, asset_type: str, asset_id: str) -> str:
+    """Create deterministic trace IDs for Aikido asset lifecycle events."""
+    seed = f"aikido-asset:{source_id or 'default'}:{asset_type}:{asset_id}"
+    return hashlib.sha256(seed.encode("utf-8")).hexdigest()[:32]
 
 
 async def run_full_sync(
@@ -83,6 +98,20 @@ async def run_full_sync(
                 if not existing:
                     session.add(Asset(id=key, name=name, type="repo", source="Aikido", branch=branch_val, tag=None))
                     assets_created += 1
+                    await emit_audit_event(
+                        session,
+                        trace_id=_asset_trace_id(source_id, "repo", key),
+                        event_type="asset.lifecycle.created",
+                        actor_type="system",
+                        source_id=source_id or "aikido",
+                        parser_id="aikido",
+                        asset_id=key,
+                        decision_name="asset_lifecycle",
+                        decision_reason_code="aikido_repository_discovered",
+                        decision_confidence="high",
+                        decision_result="created",
+                        data={"asset_type": "repo", "branch": branch_val},
+                    )
                 elif branch_val and existing.branch != branch_val:
                     branches = {b.strip() for b in (existing.branch or "").split(",") if b.strip()}
                     branches.add(branch_val)
@@ -117,6 +146,20 @@ async def run_full_sync(
                         Asset(id=asset_key, name=name_no_tag, type="container", source="Aikido", branch=None, tag=tag)
                     )
                     assets_created += 1
+                    await emit_audit_event(
+                        session,
+                        trace_id=_asset_trace_id(source_id, "container", asset_key),
+                        event_type="asset.lifecycle.created",
+                        actor_type="system",
+                        source_id=source_id or "aikido",
+                        parser_id="aikido",
+                        asset_id=asset_key,
+                        decision_name="asset_lifecycle",
+                        decision_reason_code="aikido_container_discovered",
+                        decision_confidence="high",
+                        decision_result="created",
+                        data={"asset_type": "container", "tag": tag},
+                    )
             await session.commit()
     except Exception as e:
         logger.warning("Full sync: could not fetch/create container assets: %s", e)
@@ -152,8 +195,39 @@ async def run_full_sync(
                 transformed = await adapter.to_vat_finding(
                     raw, repo_map=repo_map, repo_id_to_name=repo_id_to_name, container_name_to_id=container_name_to_id
                 )
+                trace_id = _aikido_trace_id(source_id, raw)
+                resolved_asset = (transformed.image or transformed.component or "").strip() or None
+                await emit_audit_event(
+                    session,
+                    trace_id=trace_id,
+                    event_type="asset.mapping.resolved",
+                    actor_type="system",
+                    source_id=source_id or "aikido",
+                    parser_id="aikido",
+                    asset_id=resolved_asset,
+                    decision_name="asset_mapping",
+                    decision_reason_code="aikido_payload_identity",
+                    decision_confidence="high" if resolved_asset else "low",
+                    decision_result="resolved" if resolved_asset else "unresolved",
+                    data={"source_issue_id": str(raw.get("id") or "")},
+                )
                 finding, is_new = await ingest_finding(
                     session, transformed, source_name="Aikido", tenant_id=None, aikido_source_id=source_id
+                )
+                await emit_audit_event(
+                    session,
+                    trace_id=trace_id,
+                    event_type="dedup.replay.new" if is_new else "dedup.replay.merged",
+                    actor_type="system",
+                    source_id=source_id or "aikido",
+                    parser_id="aikido",
+                    asset_id=resolved_asset,
+                    finding_id=getattr(finding, "id", None),
+                    decision_name="replay_dedup",
+                    decision_reason_code="fingerprint_lookup",
+                    decision_confidence="high",
+                    decision_result="created" if is_new else "merged",
+                    data={"source_issue_id": str(raw.get("id") or "")},
                 )
                 if is_new:
                     created += 1

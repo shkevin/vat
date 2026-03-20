@@ -1,0 +1,137 @@
+{
+  "id": null,
+  "uid": "vat-observability-pipeline",
+  "title": "VAT Observability Pipeline",
+  "tags": ["vat", "observability", "otel", "loki", "tempo"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "10s",
+  "time": { "from": "now-2h", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "trace_id",
+        "type": "textbox",
+        "label": "Trace ID",
+        "query": "",
+        "current": { "selected": false, "text": "", "value": "" }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "OTEL Mirror Success Rate (5m)",
+      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "100 * increase(vat_audit_otel_mirror_total[5m]) / clamp_min((increase(vat_audit_otel_mirror_total[5m]) + increase(vat_audit_otel_mirror_failures_total[5m])), 1)",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 95 },
+              { "color": "green", "value": 99 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "OTEL Mirror Failures (5m)",
+      "gridPos": { "h": 6, "w": 8, "x": 8, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "expr": "increase(vat_audit_otel_mirror_failures_total[5m])", "refId": "A" }]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Ledger vs Mirror Delta (5m)",
+      "gridPos": { "h": 6, "w": 8, "x": 16, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "expr": "increase(vat_audit_events_total[5m]) - increase(vat_audit_otel_mirror_total[5m])", "refId": "A" }],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 1 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Tempo Spans and Traces / sec",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "expr": "sum(rate(tempo_distributor_spans_received_total[5m]))", "legendFormat": "spans/sec", "refId": "A" },
+        { "expr": "sum(rate(tempo_ingester_traces_created_total[5m]))", "legendFormat": "traces/sec", "refId": "B" }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Loki/Promtail Throughput / sec",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "expr": "sum(rate(promtail_sent_entries_total[5m]))", "legendFormat": "promtail sent", "refId": "A" },
+        { "expr": "sum(rate(loki_distributor_lines_received_total[5m]))", "legendFormat": "loki received", "refId": "B" }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Audit Event Types / sec",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 14 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "expr": "sum by (event_type) (rate(vat_audit_events_by_type_total[5m]))", "legendFormat": "{{event_type}}", "refId": "A" }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "logs",
+      "title": "Trace-Correlated Audit Logs",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 14 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        {
+          "expr": "{container=~\".*backend.*\"} |= \"audit_event_emitted\" |= \"$trace_id\"",
+          "queryType": "range",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "logs",
+      "title": "Telemetry Export Errors",
+      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 22 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        {
+          "expr": "{container=~\".*backend.*|.*otel-collector.*\"} |= \"Failed to export\" or {container=~\".*backend.*|.*otel-collector.*\"} |= \"Transient error\" or {container=~\".*backend.*|.*otel-collector.*\"} |= \"rpc error\"",
+          "queryType": "range",
+          "refId": "A"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,143 @@
+{
+  "id": null,
+  "uid": "vat-operational-overview",
+  "title": "VAT Operational Overview",
+  "tags": ["vat", "operations", "overview"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "10s",
+  "time": { "from": "now-6h", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "trace_id",
+        "type": "textbox",
+        "label": "Trace ID Filter",
+        "query": "",
+        "current": { "selected": false, "text": "", "value": "" }
+      },
+      {
+        "name": "asset_filter",
+        "type": "textbox",
+        "label": "Asset Contains",
+        "query": "",
+        "current": { "selected": false, "text": "", "value": "" }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Audit Events (1h)",
+      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "expr": "increase(vat_audit_events_total[1h])", "refId": "A" }]
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Ingest Requests (1h)",
+      "gridPos": { "h": 6, "w": 6, "x": 6, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "expr": "increase(vat_ingest_requests_total[1h])", "refId": "A" }]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Asset Mapping Decisions (1h)",
+      "gridPos": { "h": 6, "w": 6, "x": 12, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "expr": "increase(vat_audit_events_by_type_total{event_type=\"asset.mapping.resolved\"}[1h])", "refId": "A" }]
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Assets Created (1h)",
+      "gridPos": { "h": 6, "w": 6, "x": 18, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "expr": "increase(vat_audit_events_by_type_total{event_type=\"asset.lifecycle.created\"}[1h])", "refId": "A" }]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Decision Event Rates / sec",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "expr": "sum(rate(vat_audit_events_by_type_total{event_type=\"asset.mapping.resolved\"}[5m]))", "legendFormat": "asset.mapping.resolved", "refId": "A" },
+        { "expr": "sum(rate(vat_audit_events_by_type_total{event_type=\"dedup.replay.new\"}[5m]))", "legendFormat": "dedup.replay.new", "refId": "B" },
+        { "expr": "sum(rate(vat_audit_events_by_type_total{event_type=\"dedup.replay.merged\"}[5m]))", "legendFormat": "dedup.replay.merged", "refId": "C" },
+        { "expr": "sum(rate(vat_audit_events_by_type_total{event_type=\"asset.lifecycle.created\"}[5m]))", "legendFormat": "asset.lifecycle.created", "refId": "D" }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Audit Events by Type / sec",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "expr": "sum by (event_type) (rate(vat_audit_events_by_type_total[5m]))", "legendFormat": "{{event_type}}", "refId": "A" }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Top Sources by Audit Rate / sec",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 14 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        {
+          "expr": "topk(10, sum by (source_id) (rate(({container=~\".*backend.*\"} |= \"audit_event_emitted\" | logfmt)[5m])))",
+          "queryType": "range",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Top Assets by Mapping Count / 1h",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 14 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        {
+          "expr": "topk(10, sum by (asset_id) (count_over_time({container=~\".*backend.*\"} |= \"audit_event_emitted\" |= \"event_type=asset.mapping.resolved\" | logfmt [1h])))",
+          "queryType": "range",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "type": "logs",
+      "title": "Asset Lifecycle + Mapping Evidence",
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 22 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        {
+          "expr": "{container=~\".*backend.*\"} |= \"audit_event_emitted\" |~ \"event_type=(asset.mapping.resolved|asset.lifecycle.created|dedup.replay.new|dedup.replay.merged)\" |= \"$trace_id\" |= \"$asset_filter\" | logfmt | line_format \"trace={{.trace_id}} source={{.source_id}} parser={{.parser_id}} event={{.event_type}} asset={{.asset_id}} reason={{.reason}} decision={{.decision}} result={{.result}} finding={{.finding_id}}\"",
+          "queryType": "range",
+          "refId": "A"
+        }
+      ],
+      "options": { "showLabels": true, "showCommonLabels": false }
+    },
+    {
+      "id": 10,
+      "type": "logs",
+      "title": "Backend Errors and Exceptions",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 32 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        {
+          "expr": "{container=~\".*backend.*\"} |= \"ERROR\" or {container=~\".*backend.*\"} |= \"Traceback\"",
+          "queryType": "range",
+          "refId": "A"
+        }
+      ]
+    }
+  ]
+}

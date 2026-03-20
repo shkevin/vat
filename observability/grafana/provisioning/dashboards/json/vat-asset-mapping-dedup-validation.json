@@ -1,0 +1,240 @@
+{
+  "id": null,
+  "uid": "vat-asset-mapping-dedup-validation",
+  "title": "VAT Audit and Asset Forensics",
+  "tags": ["vat", "audit", "asset-mapping", "dedup", "forensics"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 4,
+  "refresh": "10s",
+  "time": { "from": "now-2h", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "trace_id",
+        "type": "textbox",
+        "label": "Trace ID Filter",
+        "query": "",
+        "current": { "selected": false, "text": "", "value": "" }
+      },
+      {
+        "name": "asset_filter",
+        "type": "textbox",
+        "label": "Asset ID/Name Contains",
+        "query": "",
+        "current": { "selected": false, "text": "", "value": "" }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Asset Mapping Resolved / sec",
+      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum(rate(vat_audit_events_by_type_total{event_type=\"asset.mapping.resolved\"}[5m]))",
+          "legendFormat": "resolved/sec",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Replay Dedup Decisions / sec",
+      "gridPos": { "h": 7, "w": 8, "x": 8, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum(rate(vat_audit_events_by_type_total{event_type=\"dedup.replay.new\"}[5m]))",
+          "legendFormat": "replay.new/sec",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(rate(vat_audit_events_by_type_total{event_type=\"dedup.replay.merged\"}[5m]))",
+          "legendFormat": "replay.merged/sec",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Policy Rejections / sec",
+      "gridPos": { "h": 7, "w": 8, "x": 16, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum(rate(vat_audit_events_by_type_total{event_type=\"policy.strict_mode.reject\"}[5m]))",
+          "legendFormat": "strict rejects/sec",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Mapping Events (5m)",
+      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 7 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "increase(vat_audit_events_by_type_total{event_type=\"asset.mapping.resolved\"}[5m])",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "Replay New (5m)",
+      "gridPos": { "h": 6, "w": 6, "x": 6, "y": 7 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "increase(vat_audit_events_by_type_total{event_type=\"dedup.replay.new\"}[5m])",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "stat",
+      "title": "Replay Merged (5m)",
+      "gridPos": { "h": 6, "w": 6, "x": 12, "y": 7 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "increase(vat_audit_events_by_type_total{event_type=\"dedup.replay.merged\"}[5m])",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "stat",
+      "title": "Strict Rejects (5m)",
+      "gridPos": { "h": 6, "w": 6, "x": 18, "y": 7 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "increase(vat_audit_events_by_type_total{event_type=\"policy.strict_mode.reject\"}[5m])",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 1 }, { "color": "red", "value": 5 }]
+          }
+        }
+      }
+    },
+    {
+      "id": 8,
+      "type": "logs",
+      "title": "Asset Mapping Decisions (parsed)",
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 13 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        {
+          "expr": "{container=~\".*backend.*\"} |= \"audit_event_emitted\" |= \"event_type=asset.mapping.resolved\" |= \"$trace_id\" |= \"$asset_filter\" | logfmt | line_format \"trace={{.trace_id}} source={{.source_id}} parser={{.parser_id}} asset={{.asset_id}} reason={{.reason}} decision={{.decision}} result={{.result}} finding={{.finding_id}}\"",
+          "queryType": "range",
+          "refId": "A"
+        }
+      ],
+      "options": { "showLabels": true, "showCommonLabels": false }
+    },
+    {
+      "id": 9,
+      "type": "logs",
+      "title": "Dedup Decision Logs",
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 23 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        {
+          "expr": "{container=~\".*backend.*\"} |= \"audit_event_emitted\" |~ \"event_type=dedup\\\\.replay\\\\.(new|merged)\" |= \"$trace_id\" |= \"$asset_filter\"",
+          "queryType": "range",
+          "refId": "A"
+        }
+      ],
+      "options": { "showLabels": true, "showCommonLabels": false }
+    },
+    {
+      "id": 10,
+      "type": "logs",
+      "title": "Correlation Dedup Logs (if enabled)",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 33 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        {
+          "expr": "{container=~\".*backend.*\"} |= \"audit_event_emitted\" |= \"event_type=dedup.correlation\" |= \"$trace_id\" |= \"$asset_filter\"",
+          "queryType": "range",
+          "refId": "A"
+        }
+      ],
+      "options": { "showLabels": true, "showCommonLabels": false }
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "Mapping Decisions by Reason / sec",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 41 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        {
+          "expr": "sum by (reason) (rate(({container=~\".*backend.*\"} |= \"audit_event_emitted\" |= \"event_type=asset.mapping.resolved\" |= \"$trace_id\" |= \"$asset_filter\" | logfmt)[5m]))",
+          "queryType": "range",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "type": "timeseries",
+      "title": "Top 10 Mapped Assets / 1h",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 41 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        {
+          "expr": "topk(10, sum by (asset_id) (count_over_time({container=~\".*backend.*\"} |= \"audit_event_emitted\" |= \"event_type=asset.mapping.resolved\" |= \"$trace_id\" |= \"$asset_filter\" | logfmt [1h])))",
+          "queryType": "range",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 13,
+      "type": "timeseries",
+      "title": "Assets Created by Type / 1h",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 49 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        {
+          "expr": "sum by (reason) (count_over_time({container=~\".*backend.*\"} |= \"audit_event_emitted\" |= \"event_type=asset.lifecycle.created\" | logfmt [1h]))",
+          "queryType": "range",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 14,
+      "type": "logs",
+      "title": "Asset Lifecycle Logs (created/updated/deleted)",
+      "gridPos": { "h": 10, "w": 12, "x": 12, "y": 49 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        {
+          "expr": "{container=~\".*backend.*\"} |= \"audit_event_emitted\" |~ \"event_type=asset\\\\.lifecycle\\\\.(created|updated|deleted)\" |= \"$trace_id\" |= \"$asset_filter\" | logfmt | line_format \"trace={{.trace_id}} source={{.source_id}} asset={{.asset_id}} reason={{.reason}} result={{.result}}\"",
+          "queryType": "range",
+          "refId": "A"
+        }
+      ]
+    }
+  ]
+}
+

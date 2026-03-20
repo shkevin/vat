@@ -4,8 +4,15 @@ import os
 from functools import lru_cache
 from typing import Optional
 
-from pydantic import model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+try:
+    from pydantic import model_validator
+    from pydantic_settings import BaseSettings, SettingsConfigDict
+
+    _PYDANTIC_V2 = True
+except Exception:  # pragma: no cover - compatibility for pydantic v1 test environments
+    from pydantic import BaseSettings, root_validator
+
+    _PYDANTIC_V2 = False
 
 DEFAULT_SECRET = "change-me-in-production"
 
@@ -13,7 +20,12 @@ DEFAULT_SECRET = "change-me-in-production"
 class Settings(BaseSettings):
     """VAT application settings."""
 
-    model_config = SettingsConfigDict(env_file=".env", env_prefix="VAT_")
+    if _PYDANTIC_V2:
+        model_config = SettingsConfigDict(env_file=".env", env_prefix="VAT_")
+    else:
+        class Config:
+            env_file = ".env"
+            env_prefix = "VAT_"
 
     # Database
     database_url: str = "postgresql+asyncpg://vat:vat@localhost:5432/vat"
@@ -63,15 +75,26 @@ class Settings(BaseSettings):
     # Defaults to True when no webhook configured; False when webhook is configured (webhooks preferred)
     linear_poll_enabled: bool = True
 
-    @model_validator(mode="after")
-    def default_poll_when_no_webhook(self) -> "Settings":
-        # When webhook not configured: poll is the only way to get [VAT] updates — default True
-        if not self.linear_webhook_secret and "VAT_LINEAR_POLL_ENABLED" not in os.environ:
-            self.linear_poll_enabled = True
-        # When webhook configured: webhooks are preferred; default False unless explicitly set
-        elif self.linear_webhook_secret and "VAT_LINEAR_POLL_ENABLED" not in os.environ:
-            self.linear_poll_enabled = False
-        return self
+    if _PYDANTIC_V2:
+        @model_validator(mode="after")
+        def default_poll_when_no_webhook(self) -> "Settings":
+            # When webhook not configured: poll is the only way to get [VAT] updates — default True
+            if not self.linear_webhook_secret and "VAT_LINEAR_POLL_ENABLED" not in os.environ:
+                self.linear_poll_enabled = True
+            # When webhook configured: webhooks are preferred; default False unless explicitly set
+            elif self.linear_webhook_secret and "VAT_LINEAR_POLL_ENABLED" not in os.environ:
+                self.linear_poll_enabled = False
+            return self
+    else:
+        @root_validator
+        def default_poll_when_no_webhook(cls, values):
+            # When webhook not configured: poll is the only way to get [VAT] updates — default True
+            if not values.get("linear_webhook_secret") and "VAT_LINEAR_POLL_ENABLED" not in os.environ:
+                values["linear_poll_enabled"] = True
+            # When webhook configured: webhooks are preferred; default False unless explicitly set
+            elif values.get("linear_webhook_secret") and "VAT_LINEAR_POLL_ENABLED" not in os.environ:
+                values["linear_poll_enabled"] = False
+            return values
     linear_poll_interval_min: int = 5
     linear_poll_max_issues: int = 100
     # Reconciliation: fetch [VAT] updates via API to catch missed webhooks. Runs regardless of webhook config.
@@ -105,6 +128,11 @@ class Settings(BaseSettings):
 
     # Logging: show httpx HTTP request logs (Linear, Aikido, etc.). Default False to avoid log flood.
     log_http_requests: bool = False  # VAT_LOG_HTTP_REQUESTS=true for debug
+
+    # OpenTelemetry (operational mirror; audit ledger remains source of truth)
+    otel_enabled: bool = False
+    otel_service_name: str = "vat-backend"
+    otel_exporter_otlp_endpoint: str = "http://otel-collector:4318/v1/traces"
 
     # CORS: comma-separated origins (e.g. https://vat.example.com,https://app.vat.example.com)
     cors_origins: str = "http://localhost:3000"

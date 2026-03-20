@@ -3,7 +3,14 @@
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel, ConfigDict
+try:
+    from pydantic import BaseModel, ConfigDict
+
+    _PYDANTIC_V2 = True
+except ImportError:  # pragma: no cover - compatibility for pydantic v1 test environments
+    from pydantic import BaseModel
+
+    _PYDANTIC_V2 = False
 
 from app.models.finding import FindingType, Severity, Status, SuppressionScope
 
@@ -69,7 +76,11 @@ class FindingCreate(FindingBase):
 
 
 class FindingRead(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
+    if _PYDANTIC_V2:
+        model_config = ConfigDict(from_attributes=True)
+    else:
+        class Config:
+            orm_mode = True
 
     id: str
     finding_type: FindingType
@@ -118,6 +129,9 @@ class FindingRead(BaseModel):
     ecosystem: Optional[str] = None
     secret_type: Optional[str] = None
     resource: Optional[str] = None
+    correlation_key: Optional[str] = None
+    correlation_confidence: Optional[str] = None
+    correlated_to: Optional[str] = None
     created_at: datetime
     updated_at: datetime
     first_detected_at: Optional[datetime] = None
@@ -173,6 +187,9 @@ class FindingRead(BaseModel):
             "ecosystem": self.ecosystem,
             "secretType": self.secret_type,
             "resource": self.resource,
+            "correlationKey": self.correlation_key,
+            "correlationConfidence": self.correlation_confidence,
+            "correlatedTo": self.correlated_to,
             "created": self.created_at.isoformat() if self.created_at else None,
             "firstDetectedAt": self.first_detected_at.isoformat() if self.first_detected_at else None,
             "closedAt": self.closed_at.isoformat() if self.closed_at else None,
