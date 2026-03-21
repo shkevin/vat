@@ -3,8 +3,17 @@
 import logging
 import re
 
-from app.schemas.ingest import CanonicalFindingPayload, CanonicalFindingType, CanonicalSeverity
-from app.parsers.utils import extract_scan_tag, normalize_snippet, VAT_SOURCE_IMAGE_KEY, VAT_SOURCE_PATH_KEY
+from app.schemas.ingest import (
+    CanonicalFindingPayload,
+    CanonicalFindingType,
+    CanonicalSeverity,
+)
+from app.parsers.utils import (
+    extract_scan_tag,
+    normalize_snippet,
+    VAT_SOURCE_IMAGE_KEY,
+    VAT_SOURCE_PATH_KEY,
+)
 
 MASK = "***REDACTED***"
 
@@ -20,6 +29,8 @@ def _mask_secret_in_line(line: str, secret: str) -> str | None:
         escaped = re.escape(secret.strip())
         line = re.sub(escaped, MASK, line, flags=re.IGNORECASE)
     return normalize_snippet(line)
+
+
 from app.parsers.base import IngestParser
 
 logger = logging.getLogger(__name__)
@@ -47,17 +58,32 @@ def _trivy_type_to_ecosystem(t: str) -> str | None:
         return None
     t = str(t).lower()
     mapping = {
-        "debian": "debian", "ubuntu": "debian",
-        "npm": "npm", "yarn": "npm", "pnpm": "npm",
-        "pip": "pypi", "pipenv": "pypi", "poetry": "pypi",
-        "go": "go", "gomod": "go",
-        "cargo": "cargo", "rust": "cargo",
-        "maven": "maven", "gradle": "maven",
-        "composer": "composer", "php": "composer",
-        "rubygems": "rubygems", "gem": "rubygems",
-        "nuget": "nuget", "dotnet": "nuget",
-        "alpine": "alpine", "apk": "alpine",
-        "redhat": "rpm", "rpm": "rpm", "centos": "rpm", "fedora": "rpm",
+        "debian": "debian",
+        "ubuntu": "debian",
+        "npm": "npm",
+        "yarn": "npm",
+        "pnpm": "npm",
+        "pip": "pypi",
+        "pipenv": "pypi",
+        "poetry": "pypi",
+        "go": "go",
+        "gomod": "go",
+        "cargo": "cargo",
+        "rust": "cargo",
+        "maven": "maven",
+        "gradle": "maven",
+        "composer": "composer",
+        "php": "composer",
+        "rubygems": "rubygems",
+        "gem": "rubygems",
+        "nuget": "nuget",
+        "dotnet": "nuget",
+        "alpine": "alpine",
+        "apk": "alpine",
+        "redhat": "rpm",
+        "rpm": "rpm",
+        "centos": "rpm",
+        "fedora": "rpm",
     }
     return mapping.get(t) or (t if t in ("os", "library", "container") else None)
 
@@ -94,13 +120,21 @@ class TrivyParser(IngestParser):
             source_path = res.get(VAT_SOURCE_PATH_KEY) or ""
             source_path = str(source_path).strip() if source_path else None
 
-            for p in self._parse_vulnerabilities(res, target_str, ecosystem, scan_tag, source_image, source_path):
+            for p in self._parse_vulnerabilities(
+                res, target_str, ecosystem, scan_tag, source_image, source_path
+            ):
                 payloads.append(p)
-            for p in self._parse_misconfigurations(res, target_str, scan_tag, source_image, source_path):
+            for p in self._parse_misconfigurations(
+                res, target_str, scan_tag, source_image, source_path
+            ):
                 payloads.append(p)
-            for p in self._parse_secrets(res, target_str, scan_tag, source_image, source_path):
+            for p in self._parse_secrets(
+                res, target_str, scan_tag, source_image, source_path
+            ):
                 payloads.append(p)
-            for p in self._parse_licenses(res, target_str, ecosystem, scan_tag, source_image, source_path):
+            for p in self._parse_licenses(
+                res, target_str, ecosystem, scan_tag, source_image, source_path
+            ):
                 payloads.append(p)
 
         return payloads
@@ -122,11 +156,18 @@ class TrivyParser(IngestParser):
             if not isinstance(v, dict):
                 continue
             try:
-                cve_id = v.get("VulnerabilityID") or v.get("vulnerabilityID") or v.get("ID") or "unknown"
+                cve_id = (
+                    v.get("VulnerabilityID")
+                    or v.get("vulnerabilityID")
+                    or v.get("ID")
+                    or "unknown"
+                )
                 pkg = v.get("PkgName") or v.get("pkgName") or ""
                 ver = v.get("InstalledVersion") or v.get("installedVersion") or ""
                 component = f"{pkg} {ver}".strip() if pkg or ver else (target or None)
-                file_path = (source_image or source_path or target or "").strip() or None
+                file_path = (
+                    source_image or source_path or target or ""
+                ).strip() or None
                 if not component and not file_path:
                     continue
                 title = v.get("Title") or v.get("title") or cve_id
@@ -135,7 +176,11 @@ class TrivyParser(IngestParser):
                 cvss_val = v.get("CVSS") or v.get("cvss")
                 cvss_str = None
                 if isinstance(cvss_val, dict):
-                    cvss_str = str(cvss_val.get("nvd", {}).get("V3Score") or cvss_val.get("V3Score") or "")
+                    cvss_str = str(
+                        cvss_val.get("nvd", {}).get("V3Score")
+                        or cvss_val.get("V3Score")
+                        or ""
+                    )
                 elif cvss_val is not None:
                     cvss_str = str(cvss_val)
                 fields = {
@@ -182,8 +227,13 @@ class TrivyParser(IngestParser):
                 sev = _map_severity(m.get("Severity") or m.get("severity"))
                 # Per-item path when available (Trivy may include CauseMetadata, etc.)
                 item_path = (
-                    m.get("Path") or m.get("path") or m.get("FilePath") or m.get("filePath")
-                    or m.get("Target") or m.get("File") or m.get("file")
+                    m.get("Path")
+                    or m.get("path")
+                    or m.get("FilePath")
+                    or m.get("filePath")
+                    or m.get("Target")
+                    or m.get("File")
+                    or m.get("file")
                 )
                 item_path = str(item_path).strip() if item_path else ""
                 if source_image and item_path:
@@ -230,8 +280,12 @@ class TrivyParser(IngestParser):
             # Trivy fanal: Secret has FilePath + Findings[]. Support both nested and flat structures.
             findings = s.get("Findings") or s.get("findings") or []
             secret_file_path = (
-                s.get("FilePath") or s.get("filePath") or s.get("Target") or s.get("target")
-                or s.get("File") or s.get("file")
+                s.get("FilePath")
+                or s.get("filePath")
+                or s.get("Target")
+                or s.get("target")
+                or s.get("File")
+                or s.get("file")
             )
             secret_file_path = str(secret_file_path).strip() if secret_file_path else ""
             if findings:
@@ -240,7 +294,12 @@ class TrivyParser(IngestParser):
                         continue
                     try:
                         payload = self._secret_to_payload(
-                            f, target_str, scan_tag, source_image, source_path, secret_file_path
+                            f,
+                            target_str,
+                            scan_tag,
+                            source_image,
+                            source_path,
+                            secret_file_path,
                         )
                         if payload:
                             out.append(payload)
@@ -250,7 +309,12 @@ class TrivyParser(IngestParser):
                 # Flat: treat s as single finding
                 try:
                     payload = self._secret_to_payload(
-                        s, target_str, scan_tag, source_image, source_path, secret_file_path
+                        s,
+                        target_str,
+                        scan_tag,
+                        source_image,
+                        source_path,
+                        secret_file_path,
                     )
                     if payload:
                         out.append(payload)
@@ -273,13 +337,21 @@ class TrivyParser(IngestParser):
         match = s.get("Match") or s.get("match") or ""
         desc = f"{cat or rule_id} (secret redacted)" if match else (cat or rule_id)
         sev = _map_severity(s.get("Severity") or s.get("severity"))
-        raw_code = s.get("Code") or s.get("code") or s.get("Content") or s.get("content")
+        raw_code = (
+            s.get("Code") or s.get("code") or s.get("Content") or s.get("content")
+        )
         if isinstance(raw_code, dict):
             lines = raw_code.get("Lines") or raw_code.get("lines") or []
-            line_content = lines[0].get("Content", lines[0].get("content", "")) if lines and isinstance(lines[0], dict) else ""
+            line_content = (
+                lines[0].get("Content", lines[0].get("content", ""))
+                if lines and isinstance(lines[0], dict)
+                else ""
+            )
         else:
             line_content = str(raw_code) if raw_code else ""
-        snippet_masked = _mask_secret_in_line(line_content, match) if line_content else None
+        snippet_masked = (
+            _mask_secret_in_line(line_content, match) if line_content else None
+        )
         line = s.get("StartLine") or s.get("startLine")
         if line is not None:
             try:
@@ -288,7 +360,9 @@ class TrivyParser(IngestParser):
                 line = None
 
         # Location: source_image (container) + path within image, or source_path (fs), or per-secret path
-        path_part = secret_file_path or (s.get("Target") or s.get("File") or s.get("file") or s.get("FilePath") or "")
+        path_part = secret_file_path or (
+            s.get("Target") or s.get("File") or s.get("file") or s.get("FilePath") or ""
+        )
         path_part = str(path_part).strip() if path_part else ""
         if source_image and path_part:
             file_path = f"{source_image}:{path_part}"
@@ -341,10 +415,16 @@ class TrivyParser(IngestParser):
                 rule_id = f"license:{name}" if name else "license:unknown"
                 desc = f"{name} ({cat})" if cat else str(name)
                 sev = _map_severity(lic.get("Severity") or lic.get("severity"))
-                component = f"{pkg} {lic.get('Version', '')}".strip() if pkg else (target or None)
+                component = (
+                    f"{pkg} {lic.get('Version', '')}".strip()
+                    if pkg
+                    else (target or None)
+                )
                 lic_path = lic.get("FilePath") or lic.get("filePath") or ""
                 lic_path = str(lic_path).strip() if lic_path else ""
-                file_path = (source_image or source_path or lic_path or target or "").strip() or None
+                file_path = (
+                    source_image or source_path or lic_path or target or ""
+                ).strip() or None
                 if not component and not file_path:
                     continue
                 fields = {

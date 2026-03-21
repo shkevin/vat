@@ -17,7 +17,9 @@ export function ShellProvider({
   children: React.ReactNode;
 }) {
   return (
-    <ShellContext.Provider value={{ embedded }}>{children}</ShellContext.Provider>
+    <ShellContext.Provider value={{ embedded }}>
+      {children}
+    </ShellContext.Provider>
   );
 }
 

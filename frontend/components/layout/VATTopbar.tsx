@@ -70,7 +70,9 @@ export function VATTopbar({
               ...mono,
               background: "none",
               border: "none",
-              borderBottom: active ? "2px solid #3b82f6" : "2px solid transparent",
+              borderBottom: active
+                ? "2px solid #3b82f6"
+                : "2px solid transparent",
               color: active ? "#e2e8f0" : "#475569",
               padding: "0 14px",
               height: 48,

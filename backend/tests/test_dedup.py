@@ -1,7 +1,5 @@
 """Tests for deduplication fingerprint."""
 
-import pytest
-
 from app.services.dedup import make_fingerprint
 
 

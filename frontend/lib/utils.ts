@@ -1,15 +1,20 @@
 /** Classification banner colors for security labels. */
 export function getClassificationColor(classification: string): string {
   const u = (classification || "").toUpperCase();
-  if (u.includes("SECRET") && u.includes("TOP")) return "var(--app-classification-topsecret)";
+  if (u.includes("SECRET") && u.includes("TOP"))
+    return "var(--app-classification-topsecret)";
   if (u.includes("SECRET")) return "var(--app-classification-secret)";
-  if (u.includes("CONFIDENTIAL")) return "var(--app-classification-confidential)";
-  if (u.includes("CUI") || u.includes("CONTROLLED")) return "var(--app-classification-cui)";
+  if (u.includes("CONFIDENTIAL"))
+    return "var(--app-classification-confidential)";
+  if (u.includes("CUI") || u.includes("CONTROLLED"))
+    return "var(--app-classification-cui)";
   return "var(--app-classification-unclassified)";
 }
 
 export function makeFingerprint(cveId: string, component: string): string {
-  const s = `${(cveId || "").toLowerCase()}|${(component || "").toLowerCase().replace(/:\S+/, "")}`;
+  const s = `${(cveId || "").toLowerCase()}|${(component || "")
+    .toLowerCase()
+    .replace(/:\S+/, "")}`;
   let h = 0;
   for (const c of s) {
     h = (h << 5) - h + c.charCodeAt(0);
@@ -29,7 +34,11 @@ export function displaySourceName(name: string | null | undefined): string {
 export function fmtDt(s: string | null | undefined): string {
   if (!s) return "—";
   try {
-    return new Date(s).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+    return new Date(s).toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    });
   } catch {
     return s;
   }
@@ -38,7 +47,10 @@ export function fmtDt(s: string | null | undefined): string {
 export function fmtDtSm(s: string | null | undefined): string {
   if (!s) return "—";
   try {
-    return new Date(s).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+    return new Date(s).toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+    });
   } catch {
     return s;
   }
@@ -49,23 +61,35 @@ export function daysLeft(d: string | null | undefined): number | null {
   return Math.ceil((new Date(d).getTime() - Date.now()) / 86400000);
 }
 
-export function slaDot(
-  due: string | null | undefined,
-  status: string
-): string {
+export function slaDot(due: string | null | undefined, status: string): string {
   if (
-    ["Resolved", "False Positive", "Duplicate", "Not Applicable", "Approved", "Suppressed"].includes(status)
+    [
+      "Resolved",
+      "False Positive",
+      "Duplicate",
+      "Not Applicable",
+      "Approved",
+      "Suppressed",
+    ].includes(status)
   )
     return "#334155";
   const d = daysLeft(due);
   if (d === null) return "#334155";
-  return d < 0 ? "#f87060" : d < 2 ? "#f87060" : d < 7 ? "#f5a623" : d < 14 ? "#f5d020" : "#334155";
+  return d < 0
+    ? "#f87060"
+    : d < 2
+      ? "#f87060"
+      : d < 7
+        ? "#f5a623"
+        : d < 14
+          ? "#f5d020"
+          : "#334155";
 }
 
 export function getSlaDays(
   type: string,
   severity: string,
-  slaDays: Record<string, Record<string, number>>
+  slaDays: Record<string, Record<string, number>>,
 ): number {
   return (slaDays[type] || slaDays.SCA)?.[severity] ?? 30;
 }
@@ -101,7 +125,11 @@ export function computeAlerts(
   findings: Array<{
     archived?: boolean;
     status?: string;
-    attestation?: { expiresAt?: string; waiverRef?: string; approver?: string } | null;
+    attestation?: {
+      expiresAt?: string;
+      waiverRef?: string;
+      approver?: string;
+    } | null;
     slaDue?: string;
     trackerComment?: boolean;
     cveId?: string;
@@ -110,7 +138,7 @@ export function computeAlerts(
     regressionCount?: number;
     id?: string;
   }>,
-  daysLeftFn: (d: string | null | undefined) => number | null
+  daysLeftFn: (d: string | null | undefined) => number | null,
 ): Alert[] {
   const alerts: Alert[] = [];
   const active = findings.filter((f) => !f.archived);
@@ -132,7 +160,9 @@ export function computeAlerts(
           type: "expired-waiver",
           severity: "High",
           fId: f.id,
-          msg: `Waiver expired: ${f.cveId} — risk acceptance by ${f.attestation?.approver || "reviewer"} expired ${Math.abs(daysLeftFn(exp)!)}d ago`,
+          msg: `Waiver expired: ${f.cveId} — risk acceptance by ${
+            f.attestation?.approver || "reviewer"
+          } expired ${Math.abs(daysLeftFn(exp)!)}d ago`,
           waiverRef: f.attestation?.waiverRef,
         });
     });
@@ -148,13 +178,17 @@ export function computeAlerts(
           type: "waiver-expiring",
           severity: d <= 7 ? "High" : "Medium",
           fId: f.id,
-          msg: `Waiver expiring in ${d}d: ${f.cveId} (${f.attestation?.waiverRef || "no ref"})`,
+          msg: `Waiver expiring in ${d}d: ${f.cveId} (${
+            f.attestation?.waiverRef || "no ref"
+          })`,
           d,
         });
     });
 
   active
-    .filter((f) => !closed.includes(f.status || "") && f.slaDue && !f.trackerComment)
+    .filter(
+      (f) => !closed.includes(f.status || "") && f.slaDue && !f.trackerComment,
+    )
     .forEach((f) => {
       const d = daysLeftFn(f.slaDue);
       if (d !== null && d >= 0 && d <= 2)
@@ -162,7 +196,9 @@ export function computeAlerts(
           type: "sla-48h",
           severity: "High",
           fId: f.id,
-          msg: `SLA breach in ${d}d — no engineer comment: ${f.cveId} (${(f as { trackerId?: string }).trackerId || "no ticket"})`,
+          msg: `SLA breach in ${d}d — no engineer comment: ${f.cveId} (${
+            (f as { trackerId?: string }).trackerId || "no ticket"
+          })`,
         });
     });
 
@@ -175,7 +211,10 @@ export function computeAlerts(
           type: "overdue",
           severity: "Critical",
           fId: f.id,
-          msg: `${Math.abs(d)}d overdue: ${f.cveId} — ${(f.title || "").slice(0, 50)}`,
+          msg: `${Math.abs(d)}d overdue: ${f.cveId} — ${(f.title || "").slice(
+            0,
+            50,
+          )}`,
         });
     });
 
@@ -186,7 +225,9 @@ export function computeAlerts(
         type: "regression",
         severity: "High",
         fId: f.id,
-        msg: `Regression detected: ${f.cveId} was previously resolved (count: ${f.regressionCount || 0})`,
+        msg: `Regression detected: ${f.cveId} was previously resolved (count: ${
+          f.regressionCount || 0
+        })`,
       });
     });
 
@@ -197,10 +238,18 @@ export function computeAlerts(
         type: "secret-open",
         severity: "Critical",
         fId: f.id,
-        msg: `URGENT — Open secret: ${(f.title || "").slice(0, 60)} — rotate immediately`,
+        msg: `URGENT — Open secret: ${(f.title || "").slice(
+          0,
+          60,
+        )} — rotate immediately`,
       });
     });
 
-  const so: Record<string, number> = { Critical: 0, High: 1, Medium: 2, Low: 3 };
+  const so: Record<string, number> = {
+    Critical: 0,
+    High: 1,
+    Medium: 2,
+    Low: 3,
+  };
   return alerts.sort((a, b) => (so[a.severity] ?? 4) - (so[b.severity] ?? 4));
 }

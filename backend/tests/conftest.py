@@ -47,6 +47,7 @@ async def db() -> AsyncSession:
 @pytest.fixture
 async def client(db: AsyncSession):
     """Async HTTP client for API tests. Overrides get_db to use test session (avoids connection sharing)."""
+
     async def override_get_db():
         yield db
 
@@ -130,13 +131,7 @@ def _linear_graphql_response(request):
         if "team(id" in query:
             return respx.MockResponse(
                 200,
-                json={
-                    "data": {
-                        "team": {
-                            "organization": {"urlKey": "automatedhass"}
-                        }
-                    }
-                },
+                json={"data": {"team": {"organization": {"urlKey": "automatedhass"}}}},
             )
         if "teams" in query and "filter" in query:
             return respx.MockResponse(
@@ -173,7 +168,7 @@ def _linear_graphql_response(request):
                                 {"id": "state-unstarted", "type": "unstarted"},
                                 {"id": "state-done", "type": "done"},
                             ]
-                        }
+                        },
                     }
                 }
             },
@@ -195,21 +190,14 @@ def _linear_graphql_response(request):
     if "workflowState(id" in query or "workflowState(" in query:
         return respx.MockResponse(
             200,
-            json={
-                "data": {
-                    "workflowState": {"id": "mock-state-done", "type": "done"}
-                }
-            },
+            json={"data": {"workflowState": {"id": "mock-state-done", "type": "done"}}},
         )
     if "issue(id" in query and "team" in query:
         return respx.MockResponse(
             200,
             json={
                 "data": {
-                    "issue": {
-                        "id": "mock-issue-uuid",
-                        "team": {"id": "mock-team-uuid"}
-                    }
+                    "issue": {"id": "mock-issue-uuid", "team": {"id": "mock-team-uuid"}}
                 }
             },
         )
@@ -221,27 +209,35 @@ def _linear_graphql_response(request):
                 "data": {
                     "issues": {
                         "pageInfo": {"hasNextPage": False, "endCursor": None},
-                        "nodes": [{
-                            "id": "mock-issue-uuid",
-                            "identifier": "AUT-51",
-                            "title": "Kafka client auth bypass CVE-2024-1234",
-                            "description": "",
-                        }],
+                        "nodes": [
+                            {
+                                "id": "mock-issue-uuid",
+                                "identifier": "AUT-51",
+                                "title": "Kafka client auth bypass CVE-2024-1234",
+                                "description": "",
+                            }
+                        ],
                     }
                 }
             },
         )
     # Other issues queries (e.g. get_issue_by_identifier for reopen)
-    if "issues(filter" in query or "issues (" in query or ("issues" in query and "filter" in query):
+    if (
+        "issues(filter" in query
+        or "issues (" in query
+        or ("issues" in query and "filter" in query)
+    ):
         return respx.MockResponse(
             200,
             json={
                 "data": {
                     "issues": {
-                        "nodes": [{
-                            "id": "mock-issue-uuid-from-identifier",
-                            "team": {"id": "mock-team-uuid"}
-                        }]
+                        "nodes": [
+                            {
+                                "id": "mock-issue-uuid-from-identifier",
+                                "team": {"id": "mock-team-uuid"},
+                            }
+                        ]
                     }
                 }
             },
@@ -294,21 +290,24 @@ def aikido_respx():
         router.get("https://app.aikido.dev/api/public/v1/repositories/code").mock(
             return_value=Response(
                 200,
-                json={"repositories": [{"id": 1, "name": "test-repo", "branch": "main"}]},
+                json={
+                    "repositories": [{"id": 1, "name": "test-repo", "branch": "main"}]
+                },
             )
         )
-        router.put(url__regex=r"https://app\.aikido\.dev/api/public/v1/issues/[^/]+/ignore").mock(
-            return_value=Response(200, json={})
-        )
-        router.put(url__regex=r"https://app\.aikido\.dev/api/public/v1/issues/[^/]+/unignore").mock(
-            return_value=Response(200, json={})
-        )
+        router.put(
+            url__regex=r"https://app\.aikido\.dev/api/public/v1/issues/[^/]+/ignore"
+        ).mock(return_value=Response(200, json={}))
+        router.put(
+            url__regex=r"https://app\.aikido\.dev/api/public/v1/issues/[^/]+/unignore"
+        ).mock(return_value=Response(200, json={}))
         yield router
 
 
 # ---------------------------------------------------------------------------
 # Google OAuth fixtures (respx)
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture
 def google_respx():

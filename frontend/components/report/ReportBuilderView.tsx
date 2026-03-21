@@ -1,6 +1,12 @@
 "use client";
 
-import React, { useState, useMemo, useCallback, useEffect, useRef } from "react";
+import React, {
+  useState,
+  useMemo,
+  useCallback,
+  useEffect,
+  useRef,
+} from "react";
 import type { ReportContext } from "@/lib/report/report-types";
 import { useTheme } from "@/contexts/ThemeContext";
 import { sans } from "@/lib/styles";
@@ -16,7 +22,10 @@ import {
   buildReportHtmlFromDefinition,
 } from "@/lib/report/report-engine";
 import { validateReportDefinition } from "@/lib/report/report-types";
-import { getReportPersistence, type SavedReportMeta } from "@/lib/report/report-persistence";
+import {
+  getReportPersistence,
+  type SavedReportMeta,
+} from "@/lib/report/report-persistence";
 import type {
   ReportDefinition,
   ReportFilters,
@@ -64,7 +73,11 @@ import {
   LayoutPanelTop,
   Move,
 } from "lucide-react";
-import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/ResizablePanels";
+import {
+  ResizablePanelGroup,
+  ResizablePanel,
+  ResizableHandle,
+} from "@/components/ui/ResizablePanels";
 import type { ImperativePanelHandle } from "react-resizable-panels";
 
 const SEVERITY_OPTIONS = ["critical", "high", "medium", "low", "info"] as const;
@@ -104,7 +117,9 @@ function AssetTypeDropdown({
   const selectedCount = assets.filter((a) => selected.has(a.name)).length;
   const summary =
     selectedCount === 0
-      ? (open ? "Select assets…" : "All")
+      ? open
+        ? "Select assets…"
+        : "All"
       : selectedCount === assets.length
         ? "All"
         : `${selectedCount} selected`;
@@ -123,9 +138,20 @@ function AssetTypeDropdown({
           textAlign: "left",
         }}
       >
-        <span style={{ ...sans, fontSize: 12, color: "var(--app-fg-secondary)" }}>{label}</span>
-        <span style={{ ...sans, fontSize: 11, color: "var(--app-fg-secondary)" }}>{summary}</span>
-        <ChevronDown size={12} style={{ color: "var(--app-fg-secondary)", flexShrink: 0 }} />
+        <span
+          style={{ ...sans, fontSize: 12, color: "var(--app-fg-secondary)" }}
+        >
+          {label}
+        </span>
+        <span
+          style={{ ...sans, fontSize: 11, color: "var(--app-fg-secondary)" }}
+        >
+          {summary}
+        </span>
+        <ChevronDown
+          size={12}
+          style={{ color: "var(--app-fg-secondary)", flexShrink: 0 }}
+        />
       </button>
       {open && (
         <>
@@ -147,7 +173,16 @@ function AssetTypeDropdown({
               zIndex: 50,
             }}
           >
-            <div style={{ ...sans, fontSize: 11, color: "var(--app-fg-secondary)", marginBottom: 8, paddingBottom: 4, borderBottom: "1px solid var(--app-border)" }}>
+            <div
+              style={{
+                ...sans,
+                fontSize: 11,
+                color: "var(--app-fg-secondary)",
+                marginBottom: 8,
+                paddingBottom: 4,
+                borderBottom: "1px solid var(--app-border)",
+              }}
+            >
               Select {label.toLowerCase()}
             </div>
             {assets.map((a) => (
@@ -170,7 +205,11 @@ function AssetTypeDropdown({
                   onChange={() => onToggle(a.name)}
                 />
                 <span style={{ color: "var(--app-fg)" }}>{a.name}</span>
-                <span style={{ color: "var(--app-fg-secondary)", fontSize: 11 }}>({a.findings.length})</span>
+                <span
+                  style={{ color: "var(--app-fg-secondary)", fontSize: 11 }}
+                >
+                  ({a.findings.length})
+                </span>
               </label>
             ))}
           </div>
@@ -239,7 +278,7 @@ function getSavedPresets(): SavedPreset[] {
         typeof (p as SavedPreset).id === "string" &&
         typeof (p as SavedPreset).name === "string" &&
         typeof (p as SavedPreset).savedAt === "string" &&
-        typeof (p as SavedPreset).definition === "object"
+        typeof (p as SavedPreset).definition === "object",
     );
   } catch {
     return [];
@@ -262,7 +301,7 @@ function genId(prefix: string): string {
 function effectiveColsForRow(
   targetRow: number,
   widgets: WidgetDefinition[],
-  excludeId: string | null
+  excludeId: string | null,
 ): 1 | 2 | 3 {
   const count = widgets.filter((w) => {
     if (w.id === excludeId) return false;
@@ -271,7 +310,9 @@ function effectiveColsForRow(
     const h = l.height ?? 1;
     return targetRow >= r && targetRow < r + h;
   }).length;
-  return (Math.min(CANVAS_MAX_COLUMNS, Math.max(1, count + 1)) as 1 | 2 | 3) || 1;
+  return (
+    (Math.min(CANVAS_MAX_COLUMNS, Math.max(1, count + 1)) as 1 | 2 | 3) || 1
+  );
 }
 
 function CanvasGrid({
@@ -289,7 +330,9 @@ function CanvasGrid({
   onReorderWidget: (id: string, direction: "up" | "down") => void;
   onRemoveWidget: (id: string) => void;
   onLayoutChange: (widgetId: string, patch: Partial<WidgetLayout>) => void;
-  onBatchLayoutChange?: (patches: Array<{ widgetId: string; patch: Partial<WidgetLayout> }>) => void;
+  onBatchLayoutChange?: (
+    patches: Array<{ widgetId: string; patch: Partial<WidgetLayout> }>,
+  ) => void;
 }) {
   const gridRef = useRef<HTMLDivElement>(null);
   const [draggingId, setDraggingId] = useState<string | null>(null);
@@ -311,8 +354,12 @@ function CanvasGrid({
 
   const findDropSlotOrSplit = useCallback(
     (
-      targetRow: number
-    ): { col: number; width: number; resizeOthers?: Array<{ widgetId: string; patch: Partial<WidgetLayout> }> } | null => {
+      targetRow: number,
+    ): {
+      col: number;
+      width: number;
+      resizeOthers?: Array<{ widgetId: string; patch: Partial<WidgetLayout> }>;
+    } | null => {
       const othersInRow = widgets.filter((w) => {
         if (w.id === draggingId) return false;
         const l = w.layout ?? widgetLayoutFullWidth(0);
@@ -321,25 +368,41 @@ function CanvasGrid({
         return targetRow >= r && targetRow < r + h;
       });
       if (othersInRow.length === 0) return { col: 0, width: CANVAS_GRID_COLS };
-      const cols = Math.min(CANVAS_MAX_COLUMNS, othersInRow.length + 1) as 1 | 2 | 3;
+      const cols = Math.min(CANVAS_MAX_COLUMNS, othersInRow.length + 1) as
+        | 1
+        | 2
+        | 3;
       const upc = gridUnitsPerColumn(cols);
-      const occupied: Array<{ id: string; start: number; end: number }> = othersInRow.map((w) => {
-        const l = w.layout ?? widgetLayoutFullWidth(0);
-        return { id: w.id, start: l.col ?? 0, end: (l.col ?? 0) + (l.width ?? 12) };
-      });
+      const occupied: Array<{ id: string; start: number; end: number }> =
+        othersInRow.map((w) => {
+          const l = w.layout ?? widgetLayoutFullWidth(0);
+          return {
+            id: w.id,
+            start: l.col ?? 0,
+            end: (l.col ?? 0) + (l.width ?? 12),
+          };
+        });
       for (let c = 0; c <= CANVAS_GRID_COLS - upc; c += upc) {
         const end = c + upc;
         const overlapping = occupied.filter((o) => o.start < end && o.end > c);
         if (overlapping.length === 0) return { col: c, width: upc };
-        if (overlapping.length === 1 && overlapping[0]!.end - overlapping[0]!.start === CANVAS_GRID_COLS) {
+        if (
+          overlapping.length === 1 &&
+          overlapping[0]!.end - overlapping[0]!.start === CANVAS_GRID_COLS
+        ) {
           const fullWidth = overlapping[0]!;
-          const resizeOthers = [{ widgetId: fullWidth.id, patch: { col: 0, width: upc } as Partial<WidgetLayout> }];
+          const resizeOthers = [
+            {
+              widgetId: fullWidth.id,
+              patch: { col: 0, width: upc } as Partial<WidgetLayout>,
+            },
+          ];
           return { col: upc, width: upc, resizeOthers };
         }
       }
       return null;
     },
-    [widgets, draggingId]
+    [widgets, draggingId],
   );
 
   const findNextRowSingleCol = useCallback(
@@ -357,16 +420,19 @@ function CanvasGrid({
       }
       return targetRow + 1;
     },
-    [widgets, draggingId]
+    [widgets, draggingId],
   );
 
-  const handleDragStart = useCallback((e: React.DragEvent, widgetId: string) => {
-    setDraggingId(widgetId);
-    setDropTarget(null);
-    e.dataTransfer.setData("text/plain", widgetId);
-    e.dataTransfer.effectAllowed = "move";
-    e.dataTransfer.setData("application/x-widget-id", widgetId);
-  }, []);
+  const handleDragStart = useCallback(
+    (e: React.DragEvent, widgetId: string) => {
+      setDraggingId(widgetId);
+      setDropTarget(null);
+      e.dataTransfer.setData("text/plain", widgetId);
+      e.dataTransfer.effectAllowed = "move";
+      e.dataTransfer.setData("application/x-widget-id", widgetId);
+    },
+    [],
+  );
 
   const handleDragEnd = useCallback(() => {
     setDraggingId(null);
@@ -382,13 +448,16 @@ function CanvasGrid({
       const relX = e.clientX - rect.left;
       const relY = e.clientY - rect.top;
       const colWidth = rect.width / CANVAS_GRID_COLS;
-      const rawCol = Math.min(CANVAS_GRID_COLS - 1, Math.max(0, Math.floor(relX / colWidth)));
+      const rawCol = Math.min(
+        CANVAS_GRID_COLS - 1,
+        Math.max(0, Math.floor(relX / colWidth)),
+      );
       const rawRow = Math.max(0, Math.floor(relY / CANVAS_GRID_ROW_STEP));
       const rowHasOthers = widgets.some(
         (w) =>
           w.id !== draggingId &&
           (w.layout?.row ?? 0) <= rawRow &&
-          rawRow < (w.layout?.row ?? 0) + (w.layout?.height ?? 1)
+          rawRow < (w.layout?.row ?? 0) + (w.layout?.height ?? 1),
       );
       const effectiveCols = effectiveColsForRow(rawRow, widgets, draggingId);
       const col = snapColToLayout(rawCol, effectiveCols);
@@ -397,7 +466,9 @@ function CanvasGrid({
       let snapCol: number;
       let snapRow: number;
       let snapWidth: number;
-      let resizeOthers: Array<{ widgetId: string; patch: Partial<WidgetLayout> }> | undefined;
+      let resizeOthers:
+        | Array<{ widgetId: string; patch: Partial<WidgetLayout> }>
+        | undefined;
       if (rowHasOthers) {
         const result = findDropSlotOrSplit(rawRow);
         if (result) {
@@ -415,15 +486,22 @@ function CanvasGrid({
         snapRow = rawRow;
         snapWidth = snapWidthToLayout(draggedWidth, effectiveCols);
       }
-      setDropTarget({ col: snapCol, row: snapRow, width: snapWidth, resizeOthers });
+      setDropTarget({
+        col: snapCol,
+        row: snapRow,
+        width: snapWidth,
+        resizeOthers,
+      });
     },
-    [draggingId, widgets, findDropSlotOrSplit, findNextRowSingleCol]
+    [draggingId, widgets, findDropSlotOrSplit, findNextRowSingleCol],
   );
 
   const handleDrop = useCallback(
     (e: React.DragEvent) => {
       e.preventDefault();
-      const widgetId = e.dataTransfer.getData("application/x-widget-id") || e.dataTransfer.getData("text/plain");
+      const widgetId =
+        e.dataTransfer.getData("application/x-widget-id") ||
+        e.dataTransfer.getData("text/plain");
       if (!widgetId || !gridRef.current) {
         setDraggingId(null);
         setDropTarget(null);
@@ -433,17 +511,31 @@ function CanvasGrid({
         if (dropTarget.resizeOthers && onBatchLayoutChange) {
           onBatchLayoutChange([
             ...dropTarget.resizeOthers,
-            { widgetId, patch: { col: dropTarget.col, row: dropTarget.row, width: dropTarget.width } },
+            {
+              widgetId,
+              patch: {
+                col: dropTarget.col,
+                row: dropTarget.row,
+                width: dropTarget.width,
+              },
+            },
           ]);
         } else {
-          onLayoutChange(widgetId, { col: dropTarget.col, row: dropTarget.row, width: dropTarget.width });
+          onLayoutChange(widgetId, {
+            col: dropTarget.col,
+            row: dropTarget.row,
+            width: dropTarget.width,
+          });
         }
       } else {
         const rect = gridRef.current.getBoundingClientRect();
         const colWidth = rect.width / CANVAS_GRID_COLS;
         const relX = e.clientX - rect.left;
         const relY = e.clientY - rect.top;
-        const rawCol = Math.min(CANVAS_GRID_COLS - 1, Math.max(0, Math.floor(relX / colWidth)));
+        const rawCol = Math.min(
+          CANVAS_GRID_COLS - 1,
+          Math.max(0, Math.floor(relX / colWidth)),
+        );
         const row = Math.max(0, Math.floor(relY / CANVAS_GRID_ROW_STEP));
         const effectiveCols = effectiveColsForRow(row, widgets, widgetId);
         const col = snapColToLayout(rawCol, effectiveCols);
@@ -452,7 +544,7 @@ function CanvasGrid({
           (x) =>
             x.id !== widgetId &&
             (x.layout?.row ?? 0) <= row &&
-            row < (x.layout?.row ?? 0) + (x.layout?.height ?? 1)
+            row < (x.layout?.row ?? 0) + (x.layout?.height ?? 1),
         );
         let finalCol: number;
         let finalRow: number;
@@ -480,14 +572,24 @@ function CanvasGrid({
         } else {
           finalCol = col;
           finalRow = row;
-          width = snapWidthToLayout(w?.layout?.width ?? gridUnitsPerColumn(effectiveCols), effectiveCols);
+          width = snapWidthToLayout(
+            w?.layout?.width ?? gridUnitsPerColumn(effectiveCols),
+            effectiveCols,
+          );
           onLayoutChange(widgetId, { col: finalCol, row: finalRow, width });
         }
       }
       setDraggingId(null);
       setDropTarget(null);
     },
-    [onLayoutChange, onBatchLayoutChange, dropTarget, widgets, findDropSlotOrSplit, findNextRowSingleCol]
+    [
+      onLayoutChange,
+      onBatchLayoutChange,
+      dropTarget,
+      widgets,
+      findDropSlotOrSplit,
+      findNextRowSingleCol,
+    ],
   );
 
   return (
@@ -521,7 +623,10 @@ function CanvasGrid({
         const layout = widget.layout ?? widgetLayoutFullWidth(0);
         const col = layout.col ?? 0;
         const row = layout.row ?? 0;
-        const w = Math.min(CANVAS_GRID_COLS - col, Math.max(1, layout.width ?? 1));
+        const w = Math.min(
+          CANVAS_GRID_COLS - col,
+          Math.max(1, layout.width ?? 1),
+        );
         const h = Math.max(1, layout.height ?? 1);
         const isDragging = draggingId === widget.id;
         return (
@@ -530,7 +635,9 @@ function CanvasGrid({
             draggable
             onDragStart={(e) => handleDragStart(e, widget.id)}
             onDragEnd={handleDragEnd}
-            className={`report-builder-canvas-widget ${selectedWidgetId === widget.id ? "selected" : ""} ${isDragging ? "dragging" : ""}`}
+            className={`report-builder-canvas-widget ${
+              selectedWidgetId === widget.id ? "selected" : ""
+            } ${isDragging ? "dragging" : ""}`}
             style={{
               gridColumn: `${col + 1} / span ${w}`,
               gridRow: `${row + 1} / span ${h}`,
@@ -538,8 +645,20 @@ function CanvasGrid({
             }}
             onClick={() => onSelectWidget(widget.id)}
           >
-            <GripVertical size={14} style={{ color: "var(--app-fg-secondary)", flexShrink: 0 }} />
-            <span style={{ ...sans, fontSize: 13, color: "var(--app-fg)", flex: 1, overflow: "hidden", textOverflow: "ellipsis" }}>
+            <GripVertical
+              size={14}
+              style={{ color: "var(--app-fg-secondary)", flexShrink: 0 }}
+            />
+            <span
+              style={{
+                ...sans,
+                fontSize: 13,
+                color: "var(--app-fg)",
+                flex: 1,
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+              }}
+            >
               {WIDGET_TYPE_LABELS[widget.type]}
             </span>
             <div style={{ display: "flex", gap: 2, flexShrink: 0 }}>
@@ -573,7 +692,11 @@ function CanvasGrid({
                   e.stopPropagation();
                   onRemoveWidget(widget.id);
                 }}
-                style={{ ...VAT_BUTTON, padding: "4px 6px", color: "var(--app-danger)" }}
+                style={{
+                  ...VAT_BUTTON,
+                  padding: "4px 6px",
+                  color: "var(--app-danger)",
+                }}
                 aria-label="Remove"
               >
                 <Trash2 size={14} />
@@ -599,7 +722,11 @@ function WidgetConfigForm({
   if (type === "summary") {
     return (
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        <label style={{ ...sans, fontSize: 12, color: "var(--app-fg-secondary)" }}>Variant</label>
+        <label
+          style={{ ...sans, fontSize: 12, color: "var(--app-fg-secondary)" }}
+        >
+          Variant
+        </label>
         <select
           value={String(c.variant ?? "default")}
           onChange={(e) => onUpdate({ variant: e.target.value })}
@@ -614,35 +741,57 @@ function WidgetConfigForm({
     );
   }
 
-  const limitTypes: WidgetType[] = ["repoTable", "topVulnsTable", "topVulnsList", "topVulnsAdvisory", "issueList"];
+  const limitTypes: WidgetType[] = [
+    "repoTable",
+    "topVulnsTable",
+    "topVulnsList",
+    "topVulnsAdvisory",
+    "issueList",
+  ];
   if (limitTypes.includes(type)) {
     const limit = Number(c.limit) || 25;
     return (
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        <label style={{ ...sans, fontSize: 12, color: "var(--app-fg-secondary)" }}>Limit</label>
+        <label
+          style={{ ...sans, fontSize: 12, color: "var(--app-fg-secondary)" }}
+        >
+          Limit
+        </label>
         <input
           type="number"
           min={1}
           max={type === "issueList" ? 1000 : 100}
           value={limit}
-          onChange={(e) => onUpdate({ limit: Math.max(1, parseInt(e.target.value, 10) || 1) })}
+          onChange={(e) =>
+            onUpdate({ limit: Math.max(1, parseInt(e.target.value, 10) || 1) })
+          }
           style={{ ...VAT_INPUT, width: "100%" }}
         />
       </div>
     );
   }
 
-  if (type === "severityDonut" || type === "riskGauge" || type === "scannerDonut") {
+  if (
+    type === "severityDonut" ||
+    type === "riskGauge" ||
+    type === "scannerDonut"
+  ) {
     const size = Number(c.size) || (type === "riskGauge" ? 120 : 100);
     return (
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        <label style={{ ...sans, fontSize: 12, color: "var(--app-fg-secondary)" }}>Size (px)</label>
+        <label
+          style={{ ...sans, fontSize: 12, color: "var(--app-fg-secondary)" }}
+        >
+          Size (px)
+        </label>
         <input
           type="number"
           min={40}
           max={200}
           value={size}
-          onChange={(e) => onUpdate({ size: Math.max(40, parseInt(e.target.value, 10) || 40) })}
+          onChange={(e) =>
+            onUpdate({ size: Math.max(40, parseInt(e.target.value, 10) || 40) })
+          }
           style={{ ...VAT_INPUT, width: "100%" }}
         />
       </div>
@@ -653,14 +802,27 @@ function WidgetConfigForm({
     const maxRepos = Number(c.maxRepos ?? c.maxContainers) || 8;
     return (
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        <label style={{ ...sans, fontSize: 12, color: "var(--app-fg-secondary)" }}>Max items</label>
+        <label
+          style={{ ...sans, fontSize: 12, color: "var(--app-fg-secondary)" }}
+        >
+          Max items
+        </label>
         <input
           type="number"
           min={1}
           max={30}
           value={maxRepos}
           onChange={(e) =>
-            onUpdate(type === "containerBars" ? { maxContainers: Math.max(1, parseInt(e.target.value, 10) || 1) } : { maxRepos: Math.max(1, parseInt(e.target.value, 10) || 1) })
+            onUpdate(
+              type === "containerBars"
+                ? {
+                    maxContainers: Math.max(
+                      1,
+                      parseInt(e.target.value, 10) || 1,
+                    ),
+                  }
+                : { maxRepos: Math.max(1, parseInt(e.target.value, 10) || 1) },
+            )
           }
           style={{ ...VAT_INPUT, width: "100%" }}
         />
@@ -674,32 +836,54 @@ function WidgetConfigForm({
     const height = Number(c.height) || 160;
     return (
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        <label style={{ ...sans, fontSize: 12, color: "var(--app-fg-secondary)" }}>Period</label>
+        <label
+          style={{ ...sans, fontSize: 12, color: "var(--app-fg-secondary)" }}
+        >
+          Period
+        </label>
         <select
           value={String(periodDays)}
-          onChange={(e) => onUpdate({ periodDays: parseInt(e.target.value, 10) })}
+          onChange={(e) =>
+            onUpdate({ periodDays: parseInt(e.target.value, 10) })
+          }
           style={{ ...VAT_INPUT, width: "100%" }}
         >
           <option value="30">Last 30 days</option>
           <option value="90">Last 90 days</option>
           <option value="365">Last 12 months</option>
         </select>
-        <label style={{ ...sans, fontSize: 12, color: "var(--app-fg-secondary)" }}>Width (px)</label>
+        <label
+          style={{ ...sans, fontSize: 12, color: "var(--app-fg-secondary)" }}
+        >
+          Width (px)
+        </label>
         <input
           type="number"
           min={120}
           max={800}
           value={width}
-          onChange={(e) => onUpdate({ width: Math.max(120, parseInt(e.target.value, 10) || 120) })}
+          onChange={(e) =>
+            onUpdate({
+              width: Math.max(120, parseInt(e.target.value, 10) || 120),
+            })
+          }
           style={{ ...VAT_INPUT, width: "100%" }}
         />
-        <label style={{ ...sans, fontSize: 12, color: "var(--app-fg-secondary)" }}>Height (px)</label>
+        <label
+          style={{ ...sans, fontSize: 12, color: "var(--app-fg-secondary)" }}
+        >
+          Height (px)
+        </label>
         <input
           type="number"
           min={32}
           max={200}
           value={height}
-          onChange={(e) => onUpdate({ height: Math.max(32, parseInt(e.target.value, 10) || 32) })}
+          onChange={(e) =>
+            onUpdate({
+              height: Math.max(32, parseInt(e.target.value, 10) || 32),
+            })
+          }
           style={{ ...VAT_INPUT, width: "100%" }}
         />
       </div>
@@ -709,7 +893,11 @@ function WidgetConfigForm({
   if (type === "complianceScoreCard") {
     return (
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        <label style={{ ...sans, fontSize: 12, color: "var(--app-fg-secondary)" }}>Framework</label>
+        <label
+          style={{ ...sans, fontSize: 12, color: "var(--app-fg-secondary)" }}
+        >
+          Framework
+        </label>
         <select
           value={String(c.framework ?? "soc2")}
           onChange={(e) => onUpdate({ framework: e.target.value })}
@@ -730,40 +918,72 @@ function WidgetConfigForm({
     const lowDays = Number(c.lowDays) || 180;
     return (
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        <label style={{ ...sans, fontSize: 12, color: "var(--app-fg-secondary)" }}>Critical SLA (days)</label>
+        <label
+          style={{ ...sans, fontSize: 12, color: "var(--app-fg-secondary)" }}
+        >
+          Critical SLA (days)
+        </label>
         <input
           type="number"
           min={1}
           max={90}
           value={criticalDays}
-          onChange={(e) => onUpdate({ criticalDays: Math.max(1, parseInt(e.target.value, 10) || 7) })}
+          onChange={(e) =>
+            onUpdate({
+              criticalDays: Math.max(1, parseInt(e.target.value, 10) || 7),
+            })
+          }
           style={{ ...VAT_INPUT, width: "100%" }}
         />
-        <label style={{ ...sans, fontSize: 12, color: "var(--app-fg-secondary)" }}>High SLA (days)</label>
+        <label
+          style={{ ...sans, fontSize: 12, color: "var(--app-fg-secondary)" }}
+        >
+          High SLA (days)
+        </label>
         <input
           type="number"
           min={1}
           max={180}
           value={highDays}
-          onChange={(e) => onUpdate({ highDays: Math.max(1, parseInt(e.target.value, 10) || 30) })}
+          onChange={(e) =>
+            onUpdate({
+              highDays: Math.max(1, parseInt(e.target.value, 10) || 30),
+            })
+          }
           style={{ ...VAT_INPUT, width: "100%" }}
         />
-        <label style={{ ...sans, fontSize: 12, color: "var(--app-fg-secondary)" }}>Medium SLA (days)</label>
+        <label
+          style={{ ...sans, fontSize: 12, color: "var(--app-fg-secondary)" }}
+        >
+          Medium SLA (days)
+        </label>
         <input
           type="number"
           min={1}
           max={365}
           value={mediumDays}
-          onChange={(e) => onUpdate({ mediumDays: Math.max(1, parseInt(e.target.value, 10) || 90) })}
+          onChange={(e) =>
+            onUpdate({
+              mediumDays: Math.max(1, parseInt(e.target.value, 10) || 90),
+            })
+          }
           style={{ ...VAT_INPUT, width: "100%" }}
         />
-        <label style={{ ...sans, fontSize: 12, color: "var(--app-fg-secondary)" }}>Low SLA (days)</label>
+        <label
+          style={{ ...sans, fontSize: 12, color: "var(--app-fg-secondary)" }}
+        >
+          Low SLA (days)
+        </label>
         <input
           type="number"
           min={1}
           max={365}
           value={lowDays}
-          onChange={(e) => onUpdate({ lowDays: Math.max(1, parseInt(e.target.value, 10) || 180) })}
+          onChange={(e) =>
+            onUpdate({
+              lowDays: Math.max(1, parseInt(e.target.value, 10) || 180),
+            })
+          }
           style={{ ...VAT_INPUT, width: "100%" }}
         />
       </div>
@@ -773,7 +993,11 @@ function WidgetConfigForm({
   if (type === "text") {
     return (
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        <label style={{ ...sans, fontSize: 12, color: "var(--app-fg-secondary)" }}>Content (Markdown)</label>
+        <label
+          style={{ ...sans, fontSize: 12, color: "var(--app-fg-secondary)" }}
+        >
+          Content (Markdown)
+        </label>
         <textarea
           value={String(c.content ?? "")}
           onChange={(e) => onUpdate({ content: e.target.value })}
@@ -785,7 +1009,9 @@ function WidgetConfigForm({
   }
 
   return (
-    <p style={{ ...sans, fontSize: 12, color: "var(--app-fg-secondary)" }}>No options for this widget type.</p>
+    <p style={{ ...sans, fontSize: 12, color: "var(--app-fg-secondary)" }}>
+      No options for this widget type.
+    </p>
   );
 }
 
@@ -805,7 +1031,10 @@ function Modal({
   if (!open) return null;
   return (
     <div className="report-builder-modal-overlay" onClick={onClose}>
-      <div className="report-builder-modal" onClick={(e) => e.stopPropagation()}>
+      <div
+        className="report-builder-modal"
+        onClick={(e) => e.stopPropagation()}
+      >
         <h2 className="report-builder-modal-title">{title}</h2>
         {desc && <p className="report-builder-modal-desc">{desc}</p>}
         <div className="report-builder-modal-body">{children}</div>
@@ -835,10 +1064,15 @@ export function ReportBuilderView({
 }: ReportBuilderViewProps) {
   const { themeId: userThemeId } = useTheme();
   const [definition, setDefinition] = useState<ReportDefinition>(() =>
-    createDefaultReportDefinition(data.workspace.name, undefined, userThemeId, defaultCountMode)
+    createDefaultReportDefinition(
+      data.workspace.name,
+      undefined,
+      userThemeId,
+      defaultCountMode,
+    ),
   );
   const [selectedCanvasId, setSelectedCanvasId] = useState<string | null>(
-    () => definition.canvases[0]?.id ?? null
+    () => definition.canvases[0]?.id ?? null,
   );
   const [selectedWidgetId, setSelectedWidgetId] = useState<string | null>(null);
   const [savedPresets, setSavedPresets] = useState<SavedPreset[]>([]);
@@ -852,13 +1086,20 @@ export function ReportBuilderView({
   const [emailSending, setEmailSending] = useState(false);
   const [previewZoom, setPreviewZoom] = useState<"fit" | number>("fit");
   const [previewMode, setPreviewMode] = useState<"dock" | "float">("dock");
-  const [measuredReportHeight, setMeasuredReportHeight] = useState<number | null>(null);
-  const [measuredReportWidth, setMeasuredReportWidth] = useState<number | null>(null);
-  const [assetTypeFilter, setAssetTypeFilter] = useState<ReportAssetType[]>(() =>
-    ["image", "component", "unknown"] as ReportAssetType[]
+  const [measuredReportHeight, setMeasuredReportHeight] = useState<
+    number | null
+  >(null);
+  const [measuredReportWidth, setMeasuredReportWidth] = useState<number | null>(
+    null,
+  );
+  const [assetTypeFilter, setAssetTypeFilter] = useState<ReportAssetType[]>(
+    () => ["image", "component", "unknown"] as ReportAssetType[],
   );
   const previewContainerRef = useRef<HTMLDivElement>(null);
-  const [previewSize, setPreviewSize] = useState({ width: PREVIEW_PAGE_WIDTH, height: 400 });
+  const [previewSize, setPreviewSize] = useState({
+    width: PREVIEW_PAGE_WIDTH,
+    height: 400,
+  });
   const floatWindowRef = useRef<Window | null>(null);
   const previewPanelRef = useRef<ImperativePanelHandle>(null);
 
@@ -876,11 +1117,15 @@ export function ReportBuilderView({
   // Always use sidebar preference for count mode — report must match Findings tab.
   const effectiveFilters = useMemo(
     () => ({ ...definition.filters, countMode: defaultCountMode ?? "groups" }),
-    [definition.filters, defaultCountMode]
+    [definition.filters, defaultCountMode],
   );
   const countMode = effectiveFilters.countMode ?? "groups";
   const assetsByType = useMemo(() => {
-    const byType: Record<ReportAssetType, Asset[]> = { image: [], component: [], unknown: [] };
+    const byType: Record<ReportAssetType, Asset[]> = {
+      image: [],
+      component: [],
+      unknown: [],
+    };
     for (const a of allAssets) {
       const t = getAssetTypeForReport(a);
       byType[t].push(a);
@@ -889,22 +1134,31 @@ export function ReportBuilderView({
   }, [allAssets]);
   const toggleAssetType = useCallback((t: ReportAssetType) => {
     setAssetTypeFilter((prev) =>
-      prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t]
+      prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t],
     );
   }, []);
   const repos = useMemo(
-    () => computeRepoRiskScores(data.issues, data.repos, data.issueGroups, countMode),
-    [data, countMode]
+    () =>
+      computeRepoRiskScores(
+        data.issues,
+        data.repos,
+        data.issueGroups,
+        countMode,
+      ),
+    [data, countMode],
   );
   const currentCanvas = useMemo(
     () => definition.canvases.find((c) => c.id === selectedCanvasId) ?? null,
-    [definition.canvases, selectedCanvasId]
+    [definition.canvases, selectedCanvasId],
   );
   const selectedWidget = useMemo(() => {
     if (!currentCanvas || !selectedWidgetId) return null;
     return currentCanvas.widgets.find((w) => w.id === selectedWidgetId) ?? null;
   }, [currentCanvas, selectedWidgetId]);
-  const validation = useMemo(() => validateReportDefinition(definition), [definition]);
+  const validation = useMemo(
+    () => validateReportDefinition(definition),
+    [definition],
+  );
 
   // Defer heavy report computation to avoid freezing the browser with large datasets
   const [reportState, setReportState] = useState<{
@@ -925,7 +1179,11 @@ export function ReportBuilderView({
         });
         if (cancelled) return;
         const defWithFilters = { ...definition, filters: effectiveFilters };
-        const previewHtml = buildReportHtmlFromDefinition(reportContext, defWithFilters, { preview: true });
+        const previewHtml = buildReportHtmlFromDefinition(
+          reportContext,
+          defWithFilters,
+          { preview: true },
+        );
         if (cancelled) return;
         setReportState({ reportContext, previewHtml });
       } catch {
@@ -956,9 +1214,14 @@ export function ReportBuilderView({
     if (previewMode !== "dock") return;
     const handler = (e: MessageEvent) => {
       const d = e.data;
-      if (d?.type === "vat-report-size" && typeof d.height === "number" && d.height > 0) {
+      if (
+        d?.type === "vat-report-size" &&
+        typeof d.height === "number" &&
+        d.height > 0
+      ) {
         setMeasuredReportHeight(d.height);
-        if (typeof d.width === "number" && d.width > 0) setMeasuredReportWidth(d.width);
+        if (typeof d.width === "number" && d.width > 0)
+          setMeasuredReportWidth(d.width);
       }
     };
     window.addEventListener("message", handler);
@@ -972,7 +1235,12 @@ export function ReportBuilderView({
     const ro = new ResizeObserver(() => {
       const w = el.clientWidth;
       const h = el.clientHeight;
-      if (w > 0 && h > 0) setPreviewSize((prev) => (prev.width === w && prev.height === h ? prev : { width: w, height: h }));
+      if (w > 0 && h > 0)
+        setPreviewSize((prev) =>
+          prev.width === w && prev.height === h
+            ? prev
+            : { width: w, height: h },
+        );
     });
     ro.observe(el);
     const w = el.clientWidth;
@@ -984,7 +1252,10 @@ export function ReportBuilderView({
   const previewPageCount = Math.max(1, definition.canvases.length);
   const previewContentHeight = previewPageCount * PREVIEW_PAGE_HEIGHT;
   const iframeHeight = measuredReportHeight ?? previewContentHeight;
-  const iframeWidth = Math.max(PREVIEW_PAGE_WIDTH, measuredReportWidth ?? PREVIEW_PAGE_WIDTH);
+  const iframeWidth = Math.max(
+    PREVIEW_PAGE_WIDTH,
+    measuredReportWidth ?? PREVIEW_PAGE_WIDTH,
+  );
   const containerW = Math.max(previewSize.width, 1);
   const containerH = Math.max(previewSize.height, 1);
   const fitScale = containerW / Math.max(iframeWidth, 1);
@@ -995,7 +1266,8 @@ export function ReportBuilderView({
   const openFloatPreviewWindow = useCallback(() => {
     if (!previewHtml) return;
     const name = "report-preview-window";
-    const features = "width=900,height=800,scrollbars=yes,resizable=yes,menubar=no,toolbar=no,location=no";
+    const features =
+      "width=900,height=800,scrollbars=yes,resizable=yes,menubar=no,toolbar=no,location=no";
     let w = floatWindowRef.current;
     if (!w || w.closed) {
       w = window.open("about:blank", name, features);
@@ -1046,31 +1318,31 @@ export function ReportBuilderView({
     }
   }, [definition.canvases, selectedCanvasId]);
 
-  const updateDefinition = useCallback((updater: (d: ReportDefinition) => ReportDefinition) => {
-    setDefinition((prev) => updater(prev));
-  }, []);
+  const updateDefinition = useCallback(
+    (updater: (d: ReportDefinition) => ReportDefinition) => {
+      setDefinition((prev) => updater(prev));
+    },
+    [],
+  );
 
   const updateFilters = useCallback(
     (patch: Partial<ReportFilters>) => {
       updateDefinition((d) => ({ ...d, filters: { ...d.filters, ...patch } }));
     },
-    [updateDefinition]
+    [updateDefinition],
   );
 
-  const toggleSeverity = useCallback(
-    (sev: string) => {
-      setDefinition((d) => ({
-        ...d,
-        filters: {
-          ...d.filters,
-          severityFilter: d.filters.severityFilter.includes(sev)
-            ? d.filters.severityFilter.filter((s) => s !== sev)
-            : [...d.filters.severityFilter, sev],
-        },
-      }));
-    },
-    []
-  );
+  const toggleSeverity = useCallback((sev: string) => {
+    setDefinition((d) => ({
+      ...d,
+      filters: {
+        ...d.filters,
+        severityFilter: d.filters.severityFilter.includes(sev)
+          ? d.filters.severityFilter.filter((s) => s !== sev)
+          : [...d.filters.severityFilter, sev],
+      },
+    }));
+  }, []);
 
   const addCanvas = useCallback(() => {
     const id = genId("c");
@@ -1092,12 +1364,13 @@ export function ReportBuilderView({
         canvases: d.canvases.filter((c) => c.id !== canvasId),
       }));
       if (selectedCanvasId === canvasId) {
-        const next = definition.canvases[idx + 1] ?? definition.canvases[idx - 1];
+        const next =
+          definition.canvases[idx + 1] ?? definition.canvases[idx - 1];
         setSelectedCanvasId(next?.id ?? null);
         setSelectedWidgetId(null);
       }
     },
-    [definition.canvases, selectedCanvasId, updateDefinition]
+    [definition.canvases, selectedCanvasId, updateDefinition],
   );
 
   const reorderCanvas = useCallback(
@@ -1110,17 +1383,19 @@ export function ReportBuilderView({
       [copy[idx], copy[nextIdx]] = [copy[nextIdx]!, copy[idx]!];
       updateDefinition((d) => ({ ...d, canvases: copy }));
     },
-    [definition.canvases, updateDefinition]
+    [definition.canvases, updateDefinition],
   );
 
   const updateCanvasName = useCallback(
     (canvasId: string, name: string) => {
       updateDefinition((d) => ({
         ...d,
-        canvases: d.canvases.map((c) => (c.id === canvasId ? { ...c, name } : c)),
+        canvases: d.canvases.map((c) =>
+          c.id === canvasId ? { ...c, name } : c,
+        ),
       }));
     },
-    [updateDefinition]
+    [updateDefinition],
   );
 
   const addWidget = useCallback(
@@ -1133,12 +1408,14 @@ export function ReportBuilderView({
       updateDefinition((d) => ({
         ...d,
         canvases: d.canvases.map((c) =>
-          c.id === currentCanvas.id ? { ...c, widgets: [...c.widgets, { id, type, config, layout }] } : c
+          c.id === currentCanvas.id
+            ? { ...c, widgets: [...c.widgets, { id, type, config, layout }] }
+            : c,
         ),
       }));
       setSelectedWidgetId(id);
     },
-    [currentCanvas, updateDefinition]
+    [currentCanvas, updateDefinition],
   );
 
   const removeWidget = useCallback(
@@ -1152,13 +1429,13 @@ export function ReportBuilderView({
         return {
           ...d,
           canvases: d.canvases.map((c) =>
-            c.id === currentCanvas.id ? { ...c, widgets: normalized } : c
+            c.id === currentCanvas.id ? { ...c, widgets: normalized } : c,
           ),
         };
       });
       if (selectedWidgetId === widgetId) setSelectedWidgetId(null);
     },
-    [currentCanvas, selectedWidgetId, updateDefinition]
+    [currentCanvas, selectedWidgetId, updateDefinition],
   );
 
   const reorderWidget = useCallback(
@@ -1173,11 +1450,11 @@ export function ReportBuilderView({
       updateDefinition((d) => ({
         ...d,
         canvases: d.canvases.map((c) =>
-          c.id === currentCanvas.id ? { ...c, widgets: copy } : c
+          c.id === currentCanvas.id ? { ...c, widgets: copy } : c,
         ),
       }));
     },
-    [currentCanvas, updateDefinition]
+    [currentCanvas, updateDefinition],
   );
 
   const updateWidgetLayout = useCallback(
@@ -1203,12 +1480,12 @@ export function ReportBuilderView({
         return {
           ...d,
           canvases: d.canvases.map((x) =>
-            x.id === currentCanvas.id ? { ...x, widgets: normalized } : x
+            x.id === currentCanvas.id ? { ...x, widgets: normalized } : x,
           ),
         };
       });
     },
-    [currentCanvas, updateDefinition]
+    [currentCanvas, updateDefinition],
   );
 
   const updateWidgetLayoutBatch = useCallback(
@@ -1236,12 +1513,12 @@ export function ReportBuilderView({
         return {
           ...d,
           canvases: d.canvases.map((x) =>
-            x.id === currentCanvas.id ? { ...x, widgets: normalized } : x
+            x.id === currentCanvas.id ? { ...x, widgets: normalized } : x,
           ),
         };
       });
     },
-    [currentCanvas, updateDefinition]
+    [currentCanvas, updateDefinition],
   );
 
   const updateWidgetConfig = useCallback(
@@ -1252,20 +1529,27 @@ export function ReportBuilderView({
         canvases: d.canvases.map((c) =>
           c.id === currentCanvas.id
             ? {
-              ...c,
-              widgets: c.widgets.map((w) =>
-                w.id === widgetId ? { ...w, config: { ...w.config, ...patch } } : w
-              ),
-            }
-            : c
+                ...c,
+                widgets: c.widgets.map((w) =>
+                  w.id === widgetId
+                    ? { ...w, config: { ...w.config, ...patch } }
+                    : w,
+                ),
+              }
+            : c,
         ),
       }));
     },
-    [currentCanvas, updateDefinition]
+    [currentCanvas, updateDefinition],
   );
 
   const startFresh = useCallback(() => {
-    const next = createDefaultReportDefinition(data.workspace.name, undefined, userThemeId, defaultCountMode);
+    const next = createDefaultReportDefinition(
+      data.workspace.name,
+      undefined,
+      userThemeId,
+      defaultCountMode,
+    );
     setDefinition(next);
     const first = next.canvases[0];
     setSelectedCanvasId(first?.id ?? null);
@@ -1277,7 +1561,10 @@ export function ReportBuilderView({
       const builtIn = REPORT_PRESETS.find((p) => p.id === presetId);
       if (builtIn) {
         const def = clonePresetDefinition(builtIn);
-        setDefinition({ ...def, filters: { ...def.filters, countMode: defaultCountMode ?? "groups" } });
+        setDefinition({
+          ...def,
+          filters: { ...def.filters, countMode: defaultCountMode ?? "groups" },
+        });
         const first = builtIn.definition.canvases[0];
         setSelectedCanvasId(first?.id ?? null);
         setSelectedWidgetId(null);
@@ -1285,14 +1572,19 @@ export function ReportBuilderView({
       }
       const saved = savedPresets.find((p) => p.id === presetId);
       if (saved) {
-        const def = normalizeReportDefinitionLayout(JSON.parse(JSON.stringify(saved.definition)));
-        setDefinition({ ...def, filters: { ...def.filters, countMode: defaultCountMode ?? "groups" } });
+        const def = normalizeReportDefinitionLayout(
+          JSON.parse(JSON.stringify(saved.definition)),
+        );
+        setDefinition({
+          ...def,
+          filters: { ...def.filters, countMode: defaultCountMode ?? "groups" },
+        });
         const first = def.canvases[0];
         setSelectedCanvasId(first?.id ?? null);
         setSelectedWidgetId(null);
       }
     },
-    [savedPresets, defaultCountMode]
+    [savedPresets, defaultCountMode],
   );
 
   const saveCurrentAsPreset = useCallback(() => {
@@ -1322,13 +1614,16 @@ export function ReportBuilderView({
     async (id: string) => {
       const def = await getReportPersistence().load(id);
       if (def) {
-        setDefinition({ ...def, filters: { ...def.filters, countMode: defaultCountMode ?? "groups" } });
+        setDefinition({
+          ...def,
+          filters: { ...def.filters, countMode: defaultCountMode ?? "groups" },
+        });
         const first = def.canvases[0];
         setSelectedCanvasId(first?.id ?? null);
         setSelectedWidgetId(null);
       }
     },
-    [defaultCountMode]
+    [defaultCountMode],
   );
 
   const saveCurrentReport = useCallback(async () => {
@@ -1344,7 +1639,7 @@ export function ReportBuilderView({
       await getReportPersistence().delete(id);
       refreshSavedReports();
     },
-    [refreshSavedReports]
+    [refreshSavedReports],
   );
 
   const handleExportPdf = useCallback(() => {
@@ -1352,7 +1647,10 @@ export function ReportBuilderView({
   }, [data, definition, effectiveFilters]);
 
   const handleExportHtml = useCallback(() => {
-    exportHtmlFromDefinition(data, { ...definition, filters: effectiveFilters });
+    exportHtmlFromDefinition(data, {
+      ...definition,
+      filters: effectiveFilters,
+    });
   }, [data, definition, effectiveFilters]);
 
   const handleExportCsv = useCallback(() => {
@@ -1396,7 +1694,10 @@ export function ReportBuilderView({
     <div className="report-builder">
       <header className="report-builder-header">
         <h1>Report Builder</h1>
-        <p>Build compliance evidence reports with multiple pages and widgets. Configure filters, add content, and export to PDF, HTML, or CSV.</p>
+        <p>
+          Build compliance evidence reports with multiple pages and widgets.
+          Configure filters, add content, and export to PDF, HTML, or CSV.
+        </p>
       </header>
 
       <div className="report-builder-toolbar">
@@ -1425,10 +1726,20 @@ export function ReportBuilderView({
         </div>
         <div className="toolbar-divider" />
         <div className="toolbar-group">
-          <button onClick={() => setEmailDialogOpen(true)} disabled={!validation.valid} className="btn">
+          <button
+            onClick={() => setEmailDialogOpen(true)}
+            disabled={!validation.valid}
+            className="btn"
+          >
             <Mail size={16} /> Email
           </button>
-          <button onClick={() => { setSaveReportName(definition.title); setSaveReportOpen(true); }} className="btn">
+          <button
+            onClick={() => {
+              setSaveReportName(definition.title);
+              setSaveReportOpen(true);
+            }}
+            className="btn"
+          >
             <Save size={16} /> Save Report
           </button>
           <button onClick={() => setSavePresetOpen(true)} className="btn">
@@ -1444,512 +1755,928 @@ export function ReportBuilderView({
       </div>
 
       <div className="report-builder-body">
-      <ResizablePanelGroup direction="horizontal" style={{ flex: 1, minHeight: 400 }}>
-        <ResizablePanel defaultSize={60} minSize={40} style={{ display: "flex", flexDirection: "column", minWidth: 0, minHeight: 0, overflow: "hidden" }}>
-          <div className="report-builder-sidebar">
-            <div className="report-builder-sidebar-scroll">
-            {/* Settings & Filters */}
-            <div className="report-builder-section">
-              <div className="report-builder-section-header">
-                <Settings2 size={14} />
-                Report settings & filters
-              </div>
-              <div className="report-builder-section-body">
-              <div className="form-row">
-                <label className="form-label">Report title</label>
-                <input
-                  type="text"
-                  value={definition.title}
-                  onChange={(e) => setDefinition((d) => ({ ...d, title: e.target.value }))}
-                  placeholder={`Vulnerability Report - ${data.workspace.name}`}
-                  className="form-input"
-                  style={{ maxWidth: 400 }}
-                />
-              </div>
-              <div className="form-row">
-                <label className="form-label">Theme</label>
-                <select
-                  value={definition.themeId ?? "default"}
-                  onChange={(e) => setDefinition((d) => ({ ...d, themeId: e.target.value }))}
-                  className="form-input"
-                  style={{ minWidth: 140 }}
-                >
-                  {REPORT_THEMES.map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              {favoriteCount > 0 && onUseFavoritesOnlyToggle && (
-                <label
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 8,
-                    cursor: "pointer",
-                    ...sans,
-                    fontSize: 12,
-                    color: "var(--app-fg)",
-                  }}
-                >
-                  <input
-                    type="checkbox"
-                    checked={useFavoritesOnly}
-                    onChange={onUseFavoritesOnlyToggle}
-                  />
-                  <Bookmark size={14} style={{ color: "var(--app-fg-secondary)", flexShrink: 0 }} />
-                  <span>Use current favorites ({favoriteCount})</span>
-                </label>
-              )}
-              <div className="form-row" style={{ display: "flex", gap: 20, flexWrap: "wrap" }}>
-                <div style={{ flex: 1, minWidth: 120 }}>
-                  <label className="form-label">Date range</label>
-                  <select
-                    value={
-                      [7, 30, 90, 120, 365].includes(Number(definition.filters.dateRangePreset))
-                        ? String(definition.filters.dateRangePreset)
-                        : definition.filters.dateFrom ?? definition.filters.dateTo
-                          ? "custom"
-                          : "all"
-                    }
-                    onChange={(e) => {
-                      const v = e.target.value;
-                      const preset: DateRangePreset =
-                        v === "all" || v === "custom" ? null : (Number(v) as 7 | 30 | 90 | 120 | 365);
-                      if (v === "custom") {
-                        const to = new Date();
-                        const from = new Date(to);
-                        from.setDate(from.getDate() - 30);
-                        updateFilters({
-                          dateRangePreset: null,
-                          dateFrom: from.toISOString().slice(0, 10),
-                          dateTo: to.toISOString().slice(0, 10),
-                        });
-                      } else {
-                        updateFilters({ dateRangePreset: preset, dateFrom: null, dateTo: null });
-                      }
-                    }}
-                    className="form-input"
-                    style={{ minWidth: 120 }}
-                  >
-                    <option value="all">All</option>
-                    <option value="7">Last 7 days</option>
-                    <option value="30">Last 30 days</option>
-                    <option value="90">Last 90 days</option>
-                    <option value="120">Last 120 days</option>
-                    <option value="365">Last 365 days</option>
-                    <option value="custom">Custom range</option>
-                  </select>
-                </div>
-              </div>
-              {definition.filters.dateRangePreset == null &&
-                (definition.filters.dateFrom != null || definition.filters.dateTo != null) && (
-                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <input
-                      type="date"
-                      value={definition.filters.dateFrom ?? ""}
-                      onChange={(e) => updateFilters({ dateFrom: e.target.value || null })}
-                      className="form-input"
-                    />
-                    <span style={{ ...sans, fontSize: 13, color: "var(--app-fg-secondary)" }}>to</span>
-                    <input
-                      type="date"
-                      value={definition.filters.dateTo ?? ""}
-                      onChange={(e) => updateFilters({ dateTo: e.target.value || null })}
-                      className="form-input"
-                    />
+        <ResizablePanelGroup
+          direction="horizontal"
+          style={{ flex: 1, minHeight: 400 }}
+        >
+          <ResizablePanel
+            defaultSize={60}
+            minSize={40}
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              minWidth: 0,
+              minHeight: 0,
+              overflow: "hidden",
+            }}
+          >
+            <div className="report-builder-sidebar">
+              <div className="report-builder-sidebar-scroll">
+                {/* Settings & Filters */}
+                <div className="report-builder-section">
+                  <div className="report-builder-section-header">
+                    <Settings2 size={14} />
+                    Report settings & filters
                   </div>
-                )}
-              <div className="form-row">
-                <label className="form-label">Asset type</label>
-                <p style={{ ...sans, fontSize: 12, color: "var(--app-fg-secondary)", marginBottom: 10, marginTop: 0 }}>Select types to filter by, then pick assets per type</p>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
-                  {(["image", "component", "unknown"] as ReportAssetType[]).map((t) => (
+                  <div className="report-builder-section-body">
+                    <div className="form-row">
+                      <label className="form-label">Report title</label>
+                      <input
+                        type="text"
+                        value={definition.title}
+                        onChange={(e) =>
+                          setDefinition((d) => ({
+                            ...d,
+                            title: e.target.value,
+                          }))
+                        }
+                        placeholder={`Vulnerability Report - ${data.workspace.name}`}
+                        className="form-input"
+                        style={{ maxWidth: 400 }}
+                      />
+                    </div>
+                    <div className="form-row">
+                      <label className="form-label">Theme</label>
+                      <select
+                        value={definition.themeId ?? "default"}
+                        onChange={(e) =>
+                          setDefinition((d) => ({
+                            ...d,
+                            themeId: e.target.value,
+                          }))
+                        }
+                        className="form-input"
+                        style={{ minWidth: 140 }}
+                      >
+                        {REPORT_THEMES.map((t) => (
+                          <option key={t.id} value={t.id}>
+                            {t.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    {favoriteCount > 0 && onUseFavoritesOnlyToggle && (
+                      <label
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 8,
+                          cursor: "pointer",
+                          ...sans,
+                          fontSize: 12,
+                          color: "var(--app-fg)",
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={useFavoritesOnly}
+                          onChange={onUseFavoritesOnlyToggle}
+                        />
+                        <Bookmark
+                          size={14}
+                          style={{
+                            color: "var(--app-fg-secondary)",
+                            flexShrink: 0,
+                          }}
+                        />
+                        <span>Use current favorites ({favoriteCount})</span>
+                      </label>
+                    )}
+                    <div
+                      className="form-row"
+                      style={{ display: "flex", gap: 20, flexWrap: "wrap" }}
+                    >
+                      <div style={{ flex: 1, minWidth: 120 }}>
+                        <label className="form-label">Date range</label>
+                        <select
+                          value={
+                            [7, 30, 90, 120, 365].includes(
+                              Number(definition.filters.dateRangePreset),
+                            )
+                              ? String(definition.filters.dateRangePreset)
+                              : definition.filters.dateFrom ??
+                                  definition.filters.dateTo
+                                ? "custom"
+                                : "all"
+                          }
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            const preset: DateRangePreset =
+                              v === "all" || v === "custom"
+                                ? null
+                                : (Number(v) as 7 | 30 | 90 | 120 | 365);
+                            if (v === "custom") {
+                              const to = new Date();
+                              const from = new Date(to);
+                              from.setDate(from.getDate() - 30);
+                              updateFilters({
+                                dateRangePreset: null,
+                                dateFrom: from.toISOString().slice(0, 10),
+                                dateTo: to.toISOString().slice(0, 10),
+                              });
+                            } else {
+                              updateFilters({
+                                dateRangePreset: preset,
+                                dateFrom: null,
+                                dateTo: null,
+                              });
+                            }
+                          }}
+                          className="form-input"
+                          style={{ minWidth: 120 }}
+                        >
+                          <option value="all">All</option>
+                          <option value="7">Last 7 days</option>
+                          <option value="30">Last 30 days</option>
+                          <option value="90">Last 90 days</option>
+                          <option value="120">Last 120 days</option>
+                          <option value="365">Last 365 days</option>
+                          <option value="custom">Custom range</option>
+                        </select>
+                      </div>
+                    </div>
+                    {definition.filters.dateRangePreset == null &&
+                      (definition.filters.dateFrom != null ||
+                        definition.filters.dateTo != null) && (
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 8,
+                          }}
+                        >
+                          <input
+                            type="date"
+                            value={definition.filters.dateFrom ?? ""}
+                            onChange={(e) =>
+                              updateFilters({
+                                dateFrom: e.target.value || null,
+                              })
+                            }
+                            className="form-input"
+                          />
+                          <span
+                            style={{
+                              ...sans,
+                              fontSize: 13,
+                              color: "var(--app-fg-secondary)",
+                            }}
+                          >
+                            to
+                          </span>
+                          <input
+                            type="date"
+                            value={definition.filters.dateTo ?? ""}
+                            onChange={(e) =>
+                              updateFilters({ dateTo: e.target.value || null })
+                            }
+                            className="form-input"
+                          />
+                        </div>
+                      )}
+                    <div className="form-row">
+                      <label className="form-label">Asset type</label>
+                      <p
+                        style={{
+                          ...sans,
+                          fontSize: 12,
+                          color: "var(--app-fg-secondary)",
+                          marginBottom: 10,
+                          marginTop: 0,
+                        }}
+                      >
+                        Select types to filter by, then pick assets per type
+                      </p>
+                      <div
+                        style={{
+                          display: "flex",
+                          flexWrap: "wrap",
+                          gap: 8,
+                          marginBottom: 12,
+                        }}
+                      >
+                        {(
+                          ["image", "component", "unknown"] as ReportAssetType[]
+                        ).map((t) => (
+                          <label
+                            key={t}
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 6,
+                              cursor: "pointer",
+                              ...sans,
+                              fontSize: 12,
+                            }}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={assetTypeFilter.includes(t)}
+                              onChange={() => toggleAssetType(t)}
+                            />
+                            <span style={{ color: "var(--app-fg-secondary)" }}>
+                              {ASSET_TYPE_LABELS[t]}
+                            </span>
+                            <span
+                              style={{
+                                color: "var(--app-fg-secondary)",
+                                fontSize: 11,
+                              }}
+                            >
+                              ({assetsByType[t].length})
+                            </span>
+                          </label>
+                        ))}
+                      </div>
+                      {assetTypeFilter.length > 0 && (
+                        <div
+                          style={{
+                            display: "flex",
+                            flexDirection: "column",
+                            gap: 8,
+                          }}
+                        >
+                          {assetTypeFilter.map((t) => {
+                            const assets = assetsByType[t];
+                            if (assets.length === 0) return null;
+                            const selectedSet = new Set(
+                              definition.filters.repoFilter,
+                            );
+                            return (
+                              <AssetTypeDropdown
+                                key={t}
+                                type={t}
+                                label={ASSET_TYPE_LABELS[t]}
+                                assets={assets}
+                                selected={selectedSet}
+                                onToggle={(name) => {
+                                  const current = definition.filters.repoFilter;
+                                  const next = current.includes(name)
+                                    ? current.filter((x) => x !== name)
+                                    : [...current, name];
+                                  updateFilters({ repoFilter: next });
+                                }}
+                                style={VAT_BUTTON}
+                              />
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                    <div className="form-row">
+                      <label className="form-label">
+                        Severity filter (empty = all)
+                      </label>
+                      <div
+                        style={{ display: "flex", flexWrap: "wrap", gap: 12 }}
+                      >
+                        {SEVERITY_OPTIONS.map((sev) => (
+                          <label
+                            key={sev}
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 6,
+                              cursor: "pointer",
+                              ...sans,
+                              fontSize: 12,
+                            }}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={definition.filters.severityFilter.includes(
+                                sev,
+                              )}
+                              onChange={() => toggleSeverity(sev)}
+                            />
+                            <span
+                              style={{
+                                color: "var(--app-fg-secondary)",
+                                textTransform: "capitalize",
+                              }}
+                            >
+                              {sev}
+                            </span>
+                            <span
+                              style={{
+                                color: "var(--app-fg-secondary)",
+                                fontSize: 11,
+                              }}
+                            >
+                              (
+                              {reportContext
+                                ? reportContext.counts[
+                                    sev as keyof typeof reportContext.counts
+                                  ] ?? 0
+                                : "—"}
+                              )
+                            </span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="form-row">
+                      <label className="form-label">Notes (optional)</label>
+                      <textarea
+                        value={definition.filters.notes}
+                        onChange={(e) =>
+                          updateFilters({ notes: e.target.value })
+                        }
+                        placeholder="Add context or commentary..."
+                        rows={2}
+                        className="form-input"
+                        style={{ resize: "vertical" }}
+                      />
+                    </div>
                     <label
-                      key={t}
                       style={{
                         display: "flex",
                         alignItems: "center",
-                        gap: 6,
+                        gap: 8,
                         cursor: "pointer",
-                        ...sans,
-                        fontSize: 12,
+                        marginTop: 12,
                       }}
                     >
                       <input
                         type="checkbox"
-                        checked={assetTypeFilter.includes(t)}
-                        onChange={() => toggleAssetType(t)}
+                        checked={definition.filters.external ?? false}
+                        onChange={(e) =>
+                          updateFilters({ external: e.target.checked })
+                        }
                       />
-                      <span style={{ color: "var(--app-fg-secondary)" }}>{ASSET_TYPE_LABELS[t]}</span>
-                      <span style={{ color: "var(--app-fg-secondary)", fontSize: 11 }}>({assetsByType[t].length})</span>
-                    </label>
-                  ))}
-                </div>
-                {assetTypeFilter.length > 0 && (
-                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                    {assetTypeFilter.map((t) => {
-                      const assets = assetsByType[t];
-                      if (assets.length === 0) return null;
-                      const selectedSet = new Set(definition.filters.repoFilter);
-                      return (
-                        <AssetTypeDropdown
-                          key={t}
-                          type={t}
-                          label={ASSET_TYPE_LABELS[t]}
-                          assets={assets}
-                          selected={selectedSet}
-                          onToggle={(name) => {
-                            const current = definition.filters.repoFilter;
-                            const next = current.includes(name)
-                              ? current.filter((x) => x !== name)
-                              : [...current, name];
-                            updateFilters({ repoFilter: next });
-                          }}
-                          style={VAT_BUTTON}
-                        />
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-              <div className="form-row">
-                <label className="form-label">Severity filter (empty = all)</label>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
-                  {SEVERITY_OPTIONS.map((sev) => (
-                    <label
-                      key={sev}
-                      style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", ...sans, fontSize: 12 }}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={definition.filters.severityFilter.includes(sev)}
-                        onChange={() => toggleSeverity(sev)}
-                      />
-                      <span style={{ color: "var(--app-fg-secondary)", textTransform: "capitalize" }}>{sev}</span>
-                      <span style={{ color: "var(--app-fg-secondary)", fontSize: 11 }}>
-                        ({reportContext ? (reportContext.counts[sev as keyof typeof reportContext.counts] ?? 0) : "—"})
+                      <span
+                        style={{
+                          ...sans,
+                          fontSize: 13,
+                          color: "var(--app-fg-secondary)",
+                        }}
+                      >
+                        External report (omit internal links)
                       </span>
                     </label>
-                  ))}
-                </div>
-              </div>
-              <div className="form-row">
-                <label className="form-label">Notes (optional)</label>
-                <textarea
-                  value={definition.filters.notes}
-                  onChange={(e) => updateFilters({ notes: e.target.value })}
-                  placeholder="Add context or commentary..."
-                  rows={2}
-                  className="form-input"
-                  style={{ resize: "vertical" }}
-                />
-              </div>
-              <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", marginTop: 12 }}>
-                <input
-                  type="checkbox"
-                  checked={definition.filters.external ?? false}
-                  onChange={(e) => updateFilters({ external: e.target.checked })}
-                />
-                <span style={{ ...sans, fontSize: 13, color: "var(--app-fg-secondary)" }}>External report (omit internal links)</span>
-              </label>
-              <div className="form-row" style={{ borderTop: "1px solid var(--app-border)", paddingTop: 16, marginTop: 16 }}>
-                <label className="form-label">Load preset</label>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                  {REPORT_PRESETS.map((p) => (
-                    <button key={p.id} type="button" onClick={() => loadPreset(p.id)} className="btn" style={{ padding: "6px 12px", fontSize: 12 }}>
-                      {p.name}
-                    </button>
-                  ))}
-                </div>
-                {savedPresets.length > 0 && (
-                  <div style={{ marginTop: 12 }}>
-                    <label className="form-label">Saved presets</label>
-                    <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                      {savedPresets.map((p) => (
-                        <span key={p.id} className="report-builder-canvas-card" style={{ padding: "6px 10px" }}>
-                          <button type="button" onClick={() => loadPreset(p.id)} style={{ ...sans, fontSize: 13, color: "var(--app-accent)", background: "none", border: "none", cursor: "pointer" }}>
+                    <div
+                      className="form-row"
+                      style={{
+                        borderTop: "1px solid var(--app-border)",
+                        paddingTop: 16,
+                        marginTop: 16,
+                      }}
+                    >
+                      <label className="form-label">Load preset</label>
+                      <div
+                        style={{ display: "flex", flexWrap: "wrap", gap: 8 }}
+                      >
+                        {REPORT_PRESETS.map((p) => (
+                          <button
+                            key={p.id}
+                            type="button"
+                            onClick={() => loadPreset(p.id)}
+                            className="btn"
+                            style={{ padding: "6px 12px", fontSize: 12 }}
+                          >
                             {p.name}
                           </button>
-                          <button type="button" onClick={() => deleteSavedPreset(p.id)} className="btn" style={{ padding: "2px 6px" }} aria-label={`Delete ${p.name}`}>
-                            <Trash2 size={12} />
-                          </button>
-                        </span>
-                      ))}
+                        ))}
+                      </div>
+                      {savedPresets.length > 0 && (
+                        <div style={{ marginTop: 12 }}>
+                          <label className="form-label">Saved presets</label>
+                          <div
+                            style={{
+                              display: "flex",
+                              flexWrap: "wrap",
+                              gap: 8,
+                            }}
+                          >
+                            {savedPresets.map((p) => (
+                              <span
+                                key={p.id}
+                                className="report-builder-canvas-card"
+                                style={{ padding: "6px 10px" }}
+                              >
+                                <button
+                                  type="button"
+                                  onClick={() => loadPreset(p.id)}
+                                  style={{
+                                    ...sans,
+                                    fontSize: 13,
+                                    color: "var(--app-accent)",
+                                    background: "none",
+                                    border: "none",
+                                    cursor: "pointer",
+                                  }}
+                                >
+                                  {p.name}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => deleteSavedPreset(p.id)}
+                                  className="btn"
+                                  style={{ padding: "2px 6px" }}
+                                  aria-label={`Delete ${p.name}`}
+                                >
+                                  <Trash2 size={12} />
+                                </button>
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      {savedReports.length > 0 && (
+                        <div style={{ marginTop: 12 }}>
+                          <label className="form-label">Saved reports</label>
+                          <div
+                            style={{
+                              display: "flex",
+                              flexWrap: "wrap",
+                              gap: 8,
+                            }}
+                          >
+                            {savedReports.map((r) => (
+                              <span
+                                key={r.id}
+                                className="report-builder-canvas-card"
+                                style={{ padding: "6px 10px" }}
+                              >
+                                <button
+                                  type="button"
+                                  onClick={() => loadSavedReport(r.id)}
+                                  style={{
+                                    ...sans,
+                                    fontSize: 13,
+                                    color: "var(--app-accent)",
+                                    background: "none",
+                                    border: "none",
+                                    cursor: "pointer",
+                                  }}
+                                >
+                                  {r.name}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => deleteSavedReport(r.id)}
+                                  className="btn"
+                                  style={{ padding: "2px 6px" }}
+                                  aria-label={`Delete ${r.name}`}
+                                >
+                                  <Trash2 size={12} />
+                                </button>
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
-                )}
-                {savedReports.length > 0 && (
-                  <div style={{ marginTop: 12 }}>
-                    <label className="form-label">Saved reports</label>
-                    <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                      {savedReports.map((r) => (
-                        <span key={r.id} className="report-builder-canvas-card" style={{ padding: "6px 10px" }}>
-                          <button type="button" onClick={() => loadSavedReport(r.id)} style={{ ...sans, fontSize: 13, color: "var(--app-accent)", background: "none", border: "none", cursor: "pointer" }}>
-                            {r.name}
-                          </button>
-                          <button type="button" onClick={() => deleteSavedReport(r.id)} className="btn" style={{ padding: "2px 6px" }} aria-label={`Delete ${r.name}`}>
-                            <Trash2 size={12} />
-                          </button>
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-              </div>
-            </div>
-
-            {/* Pages + Widgets + Canvas */}
-            <div className="report-builder-three-columns" style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 20, minWidth: 400 }}>
-              <div className="report-builder-section report-builder-section-grid">
-                <div className="report-builder-section-header">
-                  <Layers size={14} />
-                  Pages
                 </div>
-                <div className="report-builder-section-body">
-                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                  {definition.canvases.map((canvas, idx) => (
-                    <div
-                      key={canvas.id}
-                      className={`report-builder-canvas-card ${selectedCanvasId === canvas.id ? "selected" : ""}`}
-                    >
-                      <input
-                        value={canvas.name}
-                        onChange={(e) => updateCanvasName(canvas.id, e.target.value)}
-                        onFocus={() => setSelectedCanvasId(canvas.id)}
-                        onClick={() => setSelectedCanvasId(canvas.id)}
-                        className="form-input"
-                        style={{ flex: 1, border: "none", background: "transparent" }}
-                        placeholder="Page name"
-                      />
-                      <div style={{ display: "flex", gap: 2 }}>
+
+                {/* Pages + Widgets + Canvas */}
+                <div
+                  className="report-builder-three-columns"
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "1fr 1fr 1fr",
+                    gap: 20,
+                    minWidth: 400,
+                  }}
+                >
+                  <div className="report-builder-section report-builder-section-grid">
+                    <div className="report-builder-section-header">
+                      <Layers size={14} />
+                      Pages
+                    </div>
+                    <div className="report-builder-section-body">
+                      <div
+                        style={{
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: 6,
+                        }}
+                      >
+                        {definition.canvases.map((canvas, idx) => (
+                          <div
+                            key={canvas.id}
+                            className={`report-builder-canvas-card ${
+                              selectedCanvasId === canvas.id ? "selected" : ""
+                            }`}
+                          >
+                            <input
+                              value={canvas.name}
+                              onChange={(e) =>
+                                updateCanvasName(canvas.id, e.target.value)
+                              }
+                              onFocus={() => setSelectedCanvasId(canvas.id)}
+                              onClick={() => setSelectedCanvasId(canvas.id)}
+                              className="form-input"
+                              style={{
+                                flex: 1,
+                                border: "none",
+                                background: "transparent",
+                              }}
+                              placeholder="Page name"
+                            />
+                            <div style={{ display: "flex", gap: 2 }}>
+                              <button
+                                type="button"
+                                onClick={() => reorderCanvas(canvas.id, "up")}
+                                disabled={idx === 0}
+                                style={{ ...VAT_BUTTON, padding: "4px 6px" }}
+                              >
+                                <ChevronUp size={12} />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => reorderCanvas(canvas.id, "down")}
+                                disabled={
+                                  idx === definition.canvases.length - 1
+                                }
+                                style={{ ...VAT_BUTTON, padding: "4px 6px" }}
+                              >
+                                <ChevronDown size={12} />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => removeCanvas(canvas.id)}
+                                disabled={definition.canvases.length <= 1}
+                                style={{
+                                  ...VAT_BUTTON,
+                                  padding: "4px 6px",
+                                  color: "var(--app-danger)",
+                                }}
+                              >
+                                <Trash2 size={12} />
+                              </button>
+                            </div>
+                          </div>
+                        ))}
                         <button
-                          type="button"
-                          onClick={() => reorderCanvas(canvas.id, "up")}
-                          disabled={idx === 0}
-                          style={{ ...VAT_BUTTON, padding: "4px 6px" }}
+                          onClick={addCanvas}
+                          className="btn"
+                          style={{ width: "100%", justifyContent: "center" }}
                         >
-                          <ChevronUp size={12} />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => reorderCanvas(canvas.id, "down")}
-                          disabled={idx === definition.canvases.length - 1}
-                          style={{ ...VAT_BUTTON, padding: "4px 6px" }}
-                        >
-                          <ChevronDown size={12} />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => removeCanvas(canvas.id)}
-                          disabled={definition.canvases.length <= 1}
-                          style={{ ...VAT_BUTTON, padding: "4px 6px", color: "var(--app-danger)" }}
-                        >
-                          <Trash2 size={12} />
+                          <Plus size={14} /> Add page
                         </button>
                       </div>
                     </div>
-                  ))}
-                  <button onClick={addCanvas} className="btn" style={{ width: "100%", justifyContent: "center" }}>
-                    <Plus size={14} /> Add page
-                  </button>
-                </div>
-                </div>
-              </div>
+                  </div>
 
-              <div className="report-builder-section report-builder-section-grid">
-                <div className="report-builder-section-header">
-                  <LayoutTemplate size={14} />
-                  Widgets
-                </div>
-                <div className="report-builder-section-body">
-                <p style={{ ...sans, fontSize: 12, color: "var(--app-fg-secondary)", marginBottom: 12, marginTop: 0 }}>Click to add to current page</p>
-                <div className="report-builder-widgets-list" style={{ display: "flex", flexDirection: "column", gap: 6, minHeight: 320, maxHeight: 320, overflowY: "auto" }}>
-                  {WIDGET_TYPES.map((type) => (
-                    <button
-                      key={type}
-                      type="button"
-                      onClick={() => addWidget(type)}
-                      disabled={!currentCanvas}
-                      className="report-builder-widget-card"
-                      style={{ width: "100%", textAlign: "left" }}
-                    >
-                      <LayoutTemplate size={14} style={{ color: "var(--app-fg-secondary)", flexShrink: 0 }} />
-                      <span style={{ flex: 1 }}>{WIDGET_TYPE_LABELS[type]}</span>
-                    </button>
-                  ))}
-                </div>
-                </div>
-              </div>
+                  <div className="report-builder-section report-builder-section-grid">
+                    <div className="report-builder-section-header">
+                      <LayoutTemplate size={14} />
+                      Widgets
+                    </div>
+                    <div className="report-builder-section-body">
+                      <p
+                        style={{
+                          ...sans,
+                          fontSize: 12,
+                          color: "var(--app-fg-secondary)",
+                          marginBottom: 12,
+                          marginTop: 0,
+                        }}
+                      >
+                        Click to add to current page
+                      </p>
+                      <div
+                        className="report-builder-widgets-list"
+                        style={{
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: 6,
+                          minHeight: 320,
+                          maxHeight: 320,
+                          overflowY: "auto",
+                        }}
+                      >
+                        {WIDGET_TYPES.map((type) => (
+                          <button
+                            key={type}
+                            type="button"
+                            onClick={() => addWidget(type)}
+                            disabled={!currentCanvas}
+                            className="report-builder-widget-card"
+                            style={{ width: "100%", textAlign: "left" }}
+                          >
+                            <LayoutTemplate
+                              size={14}
+                              style={{
+                                color: "var(--app-fg-secondary)",
+                                flexShrink: 0,
+                              }}
+                            />
+                            <span style={{ flex: 1 }}>
+                              {WIDGET_TYPE_LABELS[type]}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
 
-              <div className="report-builder-section report-builder-section-grid report-builder-section-widget-settings">
-                <div className="report-builder-section-header">Widget settings</div>
-                <div className="report-builder-section-body">
-                {!selectedWidget ? (
-                  <p style={{ ...sans, fontSize: 13, color: "var(--app-fg-secondary)" }}>Select a widget on the canvas below to edit options.</p>
-                ) : (
-                  <WidgetConfigForm
-                    widget={selectedWidget}
-                    onUpdate={(patch) => updateWidgetConfig(selectedWidget.id, patch)}
-                  />
-                )}
+                  <div className="report-builder-section report-builder-section-grid report-builder-section-widget-settings">
+                    <div className="report-builder-section-header">
+                      Widget settings
+                    </div>
+                    <div className="report-builder-section-body">
+                      {!selectedWidget ? (
+                        <p
+                          style={{
+                            ...sans,
+                            fontSize: 13,
+                            color: "var(--app-fg-secondary)",
+                          }}
+                        >
+                          Select a widget on the canvas below to edit options.
+                        </p>
+                      ) : (
+                        <WidgetConfigForm
+                          widget={selectedWidget}
+                          onUpdate={(patch) =>
+                            updateWidgetConfig(selectedWidget.id, patch)
+                          }
+                        />
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Canvas grid */}
+                <div className="report-builder-section">
+                  <div className="report-builder-section-header">
+                    {currentCanvas ? currentCanvas.name : "Select a page"}
+                  </div>
+                  <div className="report-builder-section-body">
+                    {currentCanvas && (
+                      <p
+                        style={{
+                          ...sans,
+                          fontSize: 12,
+                          color: "var(--app-fg-secondary)",
+                          marginBottom: 14,
+                          marginTop: -4,
+                        }}
+                      >
+                        {currentCanvas.widgets.length} widget
+                        {currentCanvas.widgets.length !== 1 ? "s" : ""} — drag
+                        to reposition
+                      </p>
+                    )}
+                    {!currentCanvas ? (
+                      <p
+                        style={{
+                          ...sans,
+                          fontSize: 13,
+                          color: "var(--app-fg-secondary)",
+                        }}
+                      >
+                        Select or add a page.
+                      </p>
+                    ) : currentCanvas.widgets.length === 0 ? (
+                      <p
+                        style={{
+                          ...sans,
+                          fontSize: 13,
+                          color: "var(--app-fg-secondary)",
+                        }}
+                      >
+                        Click a widget type to add it.
+                      </p>
+                    ) : (
+                      <CanvasGrid
+                        widgets={currentCanvas.widgets}
+                        selectedWidgetId={selectedWidgetId}
+                        onSelectWidget={setSelectedWidgetId}
+                        onReorderWidget={reorderWidget}
+                        onRemoveWidget={removeWidget}
+                        onLayoutChange={updateWidgetLayout}
+                        onBatchLayoutChange={updateWidgetLayoutBatch}
+                      />
+                    )}
+                    {!validation.valid && (
+                      <div
+                        style={{
+                          marginTop: 16,
+                          padding: 14,
+                          borderRadius: 8,
+                          border: "1px solid var(--app-danger)",
+                          background:
+                            "color-mix(in srgb, var(--app-danger) 12%, transparent)",
+                        }}
+                      >
+                        <p
+                          style={{
+                            ...sans,
+                            fontSize: 13,
+                            fontWeight: 600,
+                            color: "var(--app-danger)",
+                            marginBottom: 6,
+                          }}
+                        >
+                          Fix before exporting
+                        </p>
+                        <ul
+                          style={{
+                            ...sans,
+                            fontSize: 13,
+                            color: "var(--app-danger)",
+                            margin: 0,
+                            paddingLeft: 20,
+                          }}
+                        >
+                          {validation.errors.map((e, i) => (
+                            <li key={i}>{e}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
+          </ResizablePanel>
 
-            {/* Canvas grid */}
-            <div className="report-builder-section">
-              <div className="report-builder-section-header">
-                {currentCanvas ? currentCanvas.name : "Select a page"}
-              </div>
-              <div className="report-builder-section-body">
-              {currentCanvas && (
-                <p style={{ ...sans, fontSize: 12, color: "var(--app-fg-secondary)", marginBottom: 14, marginTop: -4 }}>
-                  {currentCanvas.widgets.length} widget{currentCanvas.widgets.length !== 1 ? "s" : ""} — drag to reposition
+          <ResizableHandle withHandle />
+
+          <ResizablePanel
+            ref={previewPanelRef}
+            defaultSize={45}
+            minSize={28}
+            collapsible
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              minWidth: 0,
+              overflow: "hidden",
+            }}
+          >
+            {previewMode === "float" ? (
+              <div
+                className="report-builder-preview-panel"
+                style={{
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 16,
+                }}
+              >
+                <p
+                  style={{
+                    ...sans,
+                    fontSize: 14,
+                    color: "var(--app-fg-secondary)",
+                    textAlign: "center",
+                    margin: 0,
+                  }}
+                >
+                  Preview opens in a separate window. Drag it to another
+                  monitor.
                 </p>
-              )}
-              {!currentCanvas ? (
-                <p style={{ ...sans, fontSize: 13, color: "var(--app-fg-secondary)" }}>Select or add a page.</p>
-              ) : currentCanvas.widgets.length === 0 ? (
-                <p style={{ ...sans, fontSize: 13, color: "var(--app-fg-secondary)" }}>Click a widget type to add it.</p>
-              ) : (
-                <CanvasGrid
-                  widgets={currentCanvas.widgets}
-                  selectedWidgetId={selectedWidgetId}
-                  onSelectWidget={setSelectedWidgetId}
-                  onReorderWidget={reorderWidget}
-                  onRemoveWidget={removeWidget}
-                  onLayoutChange={updateWidgetLayout}
-                  onBatchLayoutChange={updateWidgetLayoutBatch}
-                />
-              )}
-              {!validation.valid && (
-                <div style={{ marginTop: 16, padding: 14, borderRadius: 8, border: "1px solid var(--app-danger)", background: "color-mix(in srgb, var(--app-danger) 12%, transparent)" }}>
-                  <p style={{ ...sans, fontSize: 13, fontWeight: 600, color: "var(--app-danger)", marginBottom: 6 }}>Fix before exporting</p>
-                  <ul style={{ ...sans, fontSize: 13, color: "var(--app-danger)", margin: 0, paddingLeft: 20 }}>
-                    {validation.errors.map((e, i) => (
-                      <li key={i}>{e}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-              </div>
-            </div>
-            </div>
-          </div>
-        </ResizablePanel>
-
-        <ResizableHandle withHandle />
-
-        <ResizablePanel
-          ref={previewPanelRef}
-          defaultSize={45}
-          minSize={28}
-          collapsible
-          style={{ display: "flex", flexDirection: "column", minWidth: 0, overflow: "hidden" }}
-        >
-          {previewMode === "float" ? (
-            <div className="report-builder-preview-panel" style={{ alignItems: "center", justifyContent: "center", gap: 16 }}>
-              <p style={{ ...sans, fontSize: 14, color: "var(--app-fg-secondary)", textAlign: "center", margin: 0 }}>
-                Preview opens in a separate window. Drag it to another monitor.
-              </p>
-              <div style={{ display: "flex", gap: 10 }}>
-                <button onClick={openFloatPreviewWindow} disabled={!previewHtml} className="btn">
-                  <Move size={16} /> Reopen window
-                </button>
-                <button onClick={() => setPreviewMode("dock")} className="btn">
-                  <LayoutPanelTop size={16} /> Dock
-                </button>
-              </div>
-            </div>
-          ) : (
-            <div className="report-builder-preview-panel">
-              <div className="report-builder-preview-header">
-                <div className="report-builder-preview-title">
-                  Live preview <span>Updates as you edit</span>
-                </div>
-                <div className="report-builder-preview-actions">
-                  <button onClick={() => setPreviewMode("dock")} className="btn-sm">
-                    <LayoutPanelTop size={14} /> Dock
+                <div style={{ display: "flex", gap: 10 }}>
+                  <button
+                    onClick={openFloatPreviewWindow}
+                    disabled={!previewHtml}
+                    className="btn"
+                  >
+                    <Move size={16} /> Reopen window
                   </button>
-                  <button onClick={() => { openFloatPreviewWindow(); setPreviewMode("float"); }} disabled={!previewHtml} className="btn-sm">
-                    <Move size={14} /> Float
+                  <button
+                    onClick={() => setPreviewMode("dock")}
+                    className="btn"
+                  >
+                    <LayoutPanelTop size={16} /> Dock
                   </button>
-                  {previewHtml && (
-                    <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                      <button
-                        onClick={() =>
-                          setPreviewZoom((z) =>
-                            z === "fit" ? 0.75 : typeof z === "number" ? Math.max(0.25, z - 0.25) : 0.75
-                          )
-                        }
-                        className="btn-sm"
+                </div>
+              </div>
+            ) : (
+              <div className="report-builder-preview-panel">
+                <div className="report-builder-preview-header">
+                  <div className="report-builder-preview-title">
+                    Live preview <span>Updates as you edit</span>
+                  </div>
+                  <div className="report-builder-preview-actions">
+                    <button
+                      onClick={() => setPreviewMode("dock")}
+                      className="btn-sm"
+                    >
+                      <LayoutPanelTop size={14} /> Dock
+                    </button>
+                    <button
+                      onClick={() => {
+                        openFloatPreviewWindow();
+                        setPreviewMode("float");
+                      }}
+                      disabled={!previewHtml}
+                      className="btn-sm"
+                    >
+                      <Move size={14} /> Float
+                    </button>
+                    {previewHtml && (
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 4,
+                        }}
                       >
-                        <ZoomOut size={14} />
-                      </button>
-                      <button
-                        onClick={() => setPreviewZoom("fit")}
-                        className="btn-sm"
-                        style={{ minWidth: 52 }}
-                      >
-                        {previewZoom === "fit" ? "Fit" : `${Math.round((previewZoom as number) * 100)}%`}
-                      </button>
-                      <button
-                        onClick={() =>
-                          setPreviewZoom((z) =>
-                            z === "fit" ? 1.25 : typeof z === "number" ? Math.min(2, z + 0.25) : 1.25
-                          )
-                        }
-                        className="btn-sm"
-                      >
-                        <ZoomIn size={14} />
-                      </button>
+                        <button
+                          onClick={() =>
+                            setPreviewZoom((z) =>
+                              z === "fit"
+                                ? 0.75
+                                : typeof z === "number"
+                                  ? Math.max(0.25, z - 0.25)
+                                  : 0.75,
+                            )
+                          }
+                          className="btn-sm"
+                        >
+                          <ZoomOut size={14} />
+                        </button>
+                        <button
+                          onClick={() => setPreviewZoom("fit")}
+                          className="btn-sm"
+                          style={{ minWidth: 52 }}
+                        >
+                          {previewZoom === "fit"
+                            ? "Fit"
+                            : `${Math.round((previewZoom as number) * 100)}%`}
+                        </button>
+                        <button
+                          onClick={() =>
+                            setPreviewZoom((z) =>
+                              z === "fit"
+                                ? 1.25
+                                : typeof z === "number"
+                                  ? Math.min(2, z + 0.25)
+                                  : 1.25,
+                            )
+                          }
+                          className="btn-sm"
+                        >
+                          <ZoomIn size={14} />
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <div
+                  ref={previewContainerRef}
+                  className="report-builder-preview-content"
+                >
+                  {previewHtml ? (
+                    <div
+                      style={{
+                        width: Math.ceil(previewScale * iframeWidth),
+                        height: Math.ceil(iframeHeight * previewScale),
+                        position: "relative",
+                        overflow: "visible",
+                      }}
+                    >
+                      <iframe
+                        key={`preview-${effectiveFilters.countMode}`}
+                        title="Report preview"
+                        srcDoc={previewHtml}
+                        sandbox="allow-same-origin allow-scripts"
+                        scrolling="no"
+                        style={{
+                          width: iframeWidth,
+                          height: iframeHeight,
+                          transform: `scale(${previewScale})`,
+                          transformOrigin: "0 0",
+                          border: "none",
+                          display: "block",
+                        }}
+                      />
+                    </div>
+                  ) : (
+                    <div
+                      style={{
+                        display: "flex",
+                        height: "100%",
+                        minHeight: 320,
+                        alignItems: "center",
+                        justifyContent: "center",
+                        ...sans,
+                        fontSize: 13,
+                        color: "var(--app-fg-secondary)",
+                      }}
+                    >
+                      {reportError ? "Preview unavailable" : "Loading report…"}
                     </div>
                   )}
                 </div>
               </div>
-              <div ref={previewContainerRef} className="report-builder-preview-content">
-                {previewHtml ? (
-                  <div
-                    style={{
-                      width: Math.ceil(previewScale * iframeWidth),
-                      height: Math.ceil(iframeHeight * previewScale),
-                      position: "relative",
-                      overflow: "visible",
-                    }}
-                  >
-                    <iframe
-                      key={`preview-${effectiveFilters.countMode}`}
-                      title="Report preview"
-                      srcDoc={previewHtml}
-                      sandbox="allow-same-origin allow-scripts"
-                      scrolling="no"
-                      style={{
-                        width: iframeWidth,
-                        height: iframeHeight,
-                        transform: `scale(${previewScale})`,
-                        transformOrigin: "0 0",
-                        border: "none",
-                        display: "block",
-                      }}
-                    />
-                  </div>
-                ) : (
-                  <div style={{ display: "flex", height: "100%", minHeight: 320, alignItems: "center", justifyContent: "center", ...sans, fontSize: 13, color: "var(--app-fg-secondary)" }}>
-                    {reportError ? "Preview unavailable" : "Loading report…"}
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-        </ResizablePanel>
-      </ResizablePanelGroup>
+            )}
+          </ResizablePanel>
+        </ResizablePanelGroup>
       </div>
 
       {/* Modals */}
-      <Modal open={savePresetOpen} onClose={() => setSavePresetOpen(false)} title="Save as preset" desc="Save the current report so you can load it later.">
+      <Modal
+        open={savePresetOpen}
+        onClose={() => setSavePresetOpen(false)}
+        title="Save as preset"
+        desc="Save the current report so you can load it later."
+      >
         <div className="form-row">
           <label className="form-label">Preset name</label>
           <input
@@ -1961,12 +2688,25 @@ export function ReportBuilderView({
           />
         </div>
         <div className="report-builder-modal-footer">
-          <button onClick={() => setSavePresetOpen(false)} className="btn">Cancel</button>
-          <button onClick={saveCurrentAsPreset} disabled={!savePresetName.trim()} className="btn btn-primary">Save preset</button>
+          <button onClick={() => setSavePresetOpen(false)} className="btn">
+            Cancel
+          </button>
+          <button
+            onClick={saveCurrentAsPreset}
+            disabled={!savePresetName.trim()}
+            className="btn btn-primary"
+          >
+            Save preset
+          </button>
         </div>
       </Modal>
 
-      <Modal open={saveReportOpen} onClose={() => setSaveReportOpen(false)} title="Save report" desc="Save the report definition. Load from Saved reports.">
+      <Modal
+        open={saveReportOpen}
+        onClose={() => setSaveReportOpen(false)}
+        title="Save report"
+        desc="Save the report definition. Load from Saved reports."
+      >
         <div className="form-row">
           <label className="form-label">Report name</label>
           <input
@@ -1978,14 +2718,25 @@ export function ReportBuilderView({
           />
         </div>
         <div className="report-builder-modal-footer">
-          <button onClick={() => setSaveReportOpen(false)} className="btn">Cancel</button>
-          <button onClick={saveCurrentReport} className="btn btn-primary">Save report</button>
+          <button onClick={() => setSaveReportOpen(false)} className="btn">
+            Cancel
+          </button>
+          <button onClick={saveCurrentReport} className="btn btn-primary">
+            Save report
+          </button>
         </div>
       </Modal>
 
-      <Modal open={emailDialogOpen} onClose={() => setEmailDialogOpen(false)} title="Email report" desc="Send the report as HTML email. Requires /api/report/email endpoint.">
+      <Modal
+        open={emailDialogOpen}
+        onClose={() => setEmailDialogOpen(false)}
+        title="Email report"
+        desc="Send the report as HTML email. Requires /api/report/email endpoint."
+      >
         <div className="form-row">
-          <label className="form-label">Recipients (comma- or space-separated)</label>
+          <label className="form-label">
+            Recipients (comma- or space-separated)
+          </label>
           <textarea
             value={emailRecipients}
             onChange={(e) => setEmailRecipients(e.target.value)}
@@ -1997,8 +2748,20 @@ export function ReportBuilderView({
           />
         </div>
         <div className="report-builder-modal-footer">
-          <button onClick={() => setEmailDialogOpen(false)} disabled={emailSending} className="btn">Cancel</button>
-          <button onClick={handleSendEmail} disabled={emailSending} className="btn btn-primary">{emailSending ? "Sending…" : "Send"}</button>
+          <button
+            onClick={() => setEmailDialogOpen(false)}
+            disabled={emailSending}
+            className="btn"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSendEmail}
+            disabled={emailSending}
+            className="btn btn-primary"
+          >
+            {emailSending ? "Sending…" : "Send"}
+          </button>
         </div>
       </Modal>
     </div>

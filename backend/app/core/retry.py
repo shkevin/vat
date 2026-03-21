@@ -29,6 +29,12 @@ async def retry_async(
             last_exc = e
             if attempt < max_attempts - 1:
                 delay = min(base_delay * (2**attempt), max_delay)
-                logger.warning("Attempt %d/%d failed: %s. Retrying in %.1fs", attempt + 1, max_attempts, e, delay)
+                logger.warning(
+                    "Attempt %d/%d failed: %s. Retrying in %.1fs",
+                    attempt + 1,
+                    max_attempts,
+                    e,
+                    delay,
+                )
                 await asyncio.sleep(delay)
     raise last_exc

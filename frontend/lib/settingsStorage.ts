@@ -20,7 +20,10 @@ function loadFromStorage(): StoredSettings | null {
     if (parsed && typeof parsed === "object") {
       return {
         sources: Array.isArray(parsed.sources) ? parsed.sources : [],
-        tracker: parsed.tracker && typeof parsed.tracker === "object" ? parsed.tracker : {},
+        tracker:
+          parsed.tracker && typeof parsed.tracker === "object"
+            ? parsed.tracker
+            : {},
         labels: Array.isArray(parsed.labels) ? parsed.labels : [],
       };
     }
@@ -33,7 +36,11 @@ function loadFromStorage(): StoredSettings | null {
 export function saveToStorage(settings: Partial<StoredSettings>): void {
   if (typeof window === "undefined") return;
   try {
-    const current = loadFromStorage() ?? { sources: [], tracker: {}, labels: [] };
+    const current = loadFromStorage() ?? {
+      sources: [],
+      tracker: {},
+      labels: [],
+    };
     const merged: StoredSettings = {
       sources: settings.sources ?? current.sources,
       tracker: settings.tracker ?? current.tracker,
@@ -47,7 +54,12 @@ export function saveToStorage(settings: Partial<StoredSettings>): void {
 
 export function loadSettingsFromStorage(): StoredSettings {
   const stored = loadFromStorage();
-  if (stored && (stored.sources.length > 0 || Object.keys(stored.tracker).length > 0 || stored.labels.length > 0)) {
+  if (
+    stored &&
+    (stored.sources.length > 0 ||
+      Object.keys(stored.tracker).length > 0 ||
+      stored.labels.length > 0)
+  ) {
     return stored;
   }
   return { sources: [], tracker: {}, labels: [] };

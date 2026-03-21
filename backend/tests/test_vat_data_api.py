@@ -96,4 +96,6 @@ async def test_vat_data_returns_all_findings(client, vat_data_test_setup):
     assert len(findings) == 3, f"Expected 3 findings, got {len(findings)}"
     # Verify groupKey: 2 findings share same group (firefox-esr), 1 is different (openssl)
     group_keys = [f.get("groupKey") for f in findings]
-    assert len(set(group_keys)) == 2, f"Expected 2 unique groups, got {len(set(group_keys))}: {group_keys}"
+    assert (
+        len(set(group_keys)) == 2
+    ), f"Expected 2 unique groups, got {len(set(group_keys))}: {group_keys}"

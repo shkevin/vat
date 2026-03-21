@@ -11,7 +11,11 @@ import {
   type ABCCriteriaResult,
   type ABCIssueInput,
 } from "./ora";
-import type { VATReportIssue, VATReportIssueGroup, VATReportRepo } from "./vatReportAdapter";
+import type {
+  VATReportIssue,
+  VATReportIssueGroup,
+  VATReportRepo,
+} from "./vatReportAdapter";
 
 export interface SeverityCounts {
   critical: number;
@@ -98,7 +102,7 @@ export interface TopVulnerability {
   age: number;
   score: number;
   hasTask: boolean;
-  aikidoUrl?: string;
+  sourceUrl?: string;
 }
 
 function safeAge(dateStr: string): number {
@@ -113,7 +117,10 @@ function safeDate(dateStr: string): Date | null {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
-export function normalizeSeverity(severity: string, score?: number): keyof SeverityCounts {
+export function normalizeSeverity(
+  severity: string,
+  score?: number,
+): keyof SeverityCounts {
   const s = (severity ?? "").toLowerCase().trim();
   if (s === "critical") return "critical";
   if (s === "high") return "high";
@@ -145,7 +152,9 @@ const EXCLUDED_OPEN_STATUSES = [
 
 export function isOpen(issue: VATReportIssue): boolean {
   const st = (issue.status ?? "").toLowerCase();
-  return !EXCLUDED_OPEN_STATUSES.includes(st as (typeof EXCLUDED_OPEN_STATUSES)[number]);
+  return !EXCLUDED_OPEN_STATUSES.includes(
+    st as (typeof EXCLUDED_OPEN_STATUSES)[number],
+  );
 }
 
 function isMitigated(issue: VATReportIssue): boolean {
@@ -155,29 +164,41 @@ function isMitigated(issue: VATReportIssue): boolean {
 function issuesForTrend(issues: VATReportIssue[]): VATReportIssue[] {
   return issues.filter((i) => {
     const st = (i.status ?? "").toLowerCase();
-    const isExcluded = EXCLUDED_OPEN_STATUSES.includes(st as (typeof EXCLUDED_OPEN_STATUSES)[number]);
+    const isExcluded = EXCLUDED_OPEN_STATUSES.includes(
+      st as (typeof EXCLUDED_OPEN_STATUSES)[number],
+    );
     if (isExcluded && !i.closed_at) return false;
     return true;
   });
 }
 
-export function computeSeverityCounts(issues: VATReportIssue[]): SeverityCounts {
+export function computeSeverityCounts(
+  issues: VATReportIssue[],
+): SeverityCounts {
   return issues.reduce(
     (acc, issue) => {
       acc[normalizeSeverity(issue.severity, issue.severity_score)]++;
       return acc;
     },
-    { critical: 0, high: 0, medium: 0, low: 0, info: 0 } as SeverityCounts
+    { critical: 0, high: 0, medium: 0, low: 0, info: 0 } as SeverityCounts,
   );
 }
 
 /** Severity rank for comparing worst (higher = more severe). Group severity = max across instances. */
 function severityRank(sev: keyof SeverityCounts): number {
-  const order: Record<string, number> = { critical: 4, high: 3, medium: 2, low: 1, info: 0 };
+  const order: Record<string, number> = {
+    critical: 4,
+    high: 3,
+    medium: 2,
+    low: 1,
+    info: 0,
+  };
   return order[sev] ?? 0;
 }
 
-export function computeSeverityCountsByGroups(issues: VATReportIssue[]): SeverityCounts {
+export function computeSeverityCountsByGroups(
+  issues: VATReportIssue[],
+): SeverityCounts {
   const byGroup = new Map<number, keyof SeverityCounts>();
   for (const issue of issues) {
     const gid = issue.issue_group_id ?? 0;
@@ -187,8 +208,15 @@ export function computeSeverityCountsByGroups(issues: VATReportIssue[]): Severit
       byGroup.set(gid, sev);
     }
   }
-  const counts: SeverityCounts = { critical: 0, high: 0, medium: 0, low: 0, info: 0 };
-  for (const sev of Array.from(byGroup.values())) counts[sev as keyof SeverityCounts]++;
+  const counts: SeverityCounts = {
+    critical: 0,
+    high: 0,
+    medium: 0,
+    low: 0,
+    info: 0,
+  };
+  for (const sev of Array.from(byGroup.values()))
+    counts[sev as keyof SeverityCounts]++;
   return counts;
 }
 
@@ -197,12 +225,24 @@ export type CountMode = "groups" | "instances";
 export interface ResolvedOpenCounts {
   totalOpen: number;
   counts: SeverityCounts;
-  source: "issueCounts" | "computed-groups" | "computed-instances" | "computed-groups-from-groups";
+  source:
+    | "issueCounts"
+    | "computed-groups"
+    | "computed-instances"
+    | "computed-groups-from-groups";
 }
 
 /** Compute severity counts from issueGroups. Use when the data provider supplies canonical group metadata. */
-export function computeSeverityCountsFromGroups(issueGroups: VATReportIssueGroup[]): SeverityCounts {
-  const counts: SeverityCounts = { critical: 0, high: 0, medium: 0, low: 0, info: 0 };
+export function computeSeverityCountsFromGroups(
+  issueGroups: VATReportIssueGroup[],
+): SeverityCounts {
+  const counts: SeverityCounts = {
+    critical: 0,
+    high: 0,
+    medium: 0,
+    low: 0,
+    info: 0,
+  };
   for (const g of issueGroups) {
     const sev = normalizeSeverity(g.severity, g.severity_score);
     counts[sev]++;
@@ -214,13 +254,24 @@ export function resolveOpenCounts(
   openIssues: VATReportIssue[],
   options: {
     countMode: CountMode;
-    issueCounts?: { open: number; critical: number; high: number; medium: number; low: number } | null;
+    issueCounts?: {
+      open: number;
+      critical: number;
+      high: number;
+      medium: number;
+      low: number;
+    } | null;
     issueGroups?: VATReportIssueGroup[];
     hasFilters?: boolean;
-  }
+  },
 ): ResolvedOpenCounts {
   const { countMode, issueCounts, issueGroups, hasFilters } = options;
-  if (!hasFilters && countMode === "groups" && issueCounts && issueCounts.open > 0) {
+  if (
+    !hasFilters &&
+    countMode === "groups" &&
+    issueCounts &&
+    issueCounts.open > 0
+  ) {
     return {
       totalOpen: issueCounts.open,
       counts: {
@@ -234,7 +285,9 @@ export function resolveOpenCounts(
     };
   }
   if (countMode === "groups" && issueGroups && issueGroups.length > 0) {
-    const groupIdsInOpenIssues = new Set(openIssues.map((i) => i.issue_group_id ?? 0));
+    const groupIdsInOpenIssues = new Set(
+      openIssues.map((i) => i.issue_group_id ?? 0),
+    );
     const groupSev = new Map<number, keyof SeverityCounts>();
     for (const g of issueGroups) {
       const gid = g.group_id ?? 0;
@@ -242,15 +295,27 @@ export function resolveOpenCounts(
         groupSev.set(gid, normalizeSeverity(g.severity, g.severity_score));
       }
     }
-    const counts: SeverityCounts = { critical: 0, high: 0, medium: 0, low: 0, info: 0 };
+    const counts: SeverityCounts = {
+      critical: 0,
+      high: 0,
+      medium: 0,
+      low: 0,
+      info: 0,
+    };
     for (const sev of groupSev.values()) counts[sev]++;
-    const total = counts.critical + counts.high + counts.medium + counts.low + counts.info;
+    const total =
+      counts.critical + counts.high + counts.medium + counts.low + counts.info;
     return { totalOpen: total, counts, source: "computed-groups-from-groups" };
   }
   if (countMode === "groups") {
     const counts = computeSeverityCountsByGroups(openIssues);
     return {
-      totalOpen: counts.critical + counts.high + counts.medium + counts.low + counts.info,
+      totalOpen:
+        counts.critical +
+        counts.high +
+        counts.medium +
+        counts.low +
+        counts.info,
       counts,
       source: "computed-groups",
     };
@@ -259,7 +324,10 @@ export function resolveOpenCounts(
   return { totalOpen: openIssues.length, counts, source: "computed-instances" };
 }
 
-export function countTotalIssues(issues: VATReportIssue[], countMode: CountMode = "groups"): number {
+export function countTotalIssues(
+  issues: VATReportIssue[],
+  countMode: CountMode = "groups",
+): number {
   if (countMode === "instances") return issues.length;
   const seen = new Set<number>();
   for (const i of issues) seen.add(i.issue_group_id ?? 0);
@@ -268,14 +336,26 @@ export function countTotalIssues(issues: VATReportIssue[], countMode: CountMode 
 
 export function computeTrendData(
   issues: VATReportIssue[],
-  countMode: CountMode = "groups"
+  countMode: CountMode = "groups",
 ): TrendDataPoint[] {
   const trendIssues = issuesForTrend(issues);
   const now = new Date();
   const months: TrendDataPoint[] = [];
   for (let i = 11; i >= 0; i--) {
-    const monthEnd = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i + 1, 0, 23, 59, 59, 999));
-    const label = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i, 1)).toLocaleDateString("en-US", {
+    const monthEnd = new Date(
+      Date.UTC(
+        now.getUTCFullYear(),
+        now.getUTCMonth() - i + 1,
+        0,
+        23,
+        59,
+        59,
+        999,
+      ),
+    );
+    const label = new Date(
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i, 1),
+    ).toLocaleDateString("en-US", {
       month: "short",
       year: "2-digit",
     });
@@ -286,10 +366,16 @@ export function computeTrendData(
       return !cls || cls.getTime() > monthEnd.getTime();
     });
     const counts =
-      countMode === "groups" ? computeSeverityCountsByGroups(openAtMonth) : computeSeverityCounts(openAtMonth);
+      countMode === "groups"
+        ? computeSeverityCountsByGroups(openAtMonth)
+        : computeSeverityCounts(openAtMonth);
     const total =
       countMode === "groups"
-        ? counts.critical + counts.high + counts.medium + counts.low + counts.info
+        ? counts.critical +
+          counts.high +
+          counts.medium +
+          counts.low +
+          counts.info
         : openAtMonth.length;
     months.push({ date: label, ...counts, total });
   }
@@ -305,7 +391,7 @@ export interface PeriodChange {
 
 function openAtDate(
   issues: VATReportIssue[],
-  atDate: Date
+  atDate: Date,
 ): { total: number; criticalHigh: number; issues: VATReportIssue[] } {
   const ts = atDate.getTime();
   const open: VATReportIssue[] = [];
@@ -322,7 +408,11 @@ function openAtDate(
   return { total: open.length, criticalHigh, issues: open };
 }
 
-function avgMttrInRange(issues: VATReportIssue[], start: Date, end: Date): number | undefined {
+function avgMttrInRange(
+  issues: VATReportIssue[],
+  start: Date,
+  end: Date,
+): number | undefined {
   const days: number[] = [];
   const startTs = start.getTime();
   const endTs = end.getTime();
@@ -344,7 +434,7 @@ export function computePeriodOverPeriodChange(
   issues: VATReportIssue[],
   dateFrom: string | null,
   dateTo: string | null,
-  countMode: CountMode = "groups"
+  countMode: CountMode = "groups",
 ): {
   openIssues: PeriodChange;
   criticalHigh: PeriodChange;
@@ -358,22 +448,42 @@ export function computePeriodOverPeriodChange(
   const current = openAtDate(issues, to);
   const previous = openAtDate(issues, from);
   const currentCounts =
-    countMode === "groups" ? computeSeverityCountsByGroups(current.issues) : computeSeverityCounts(current.issues);
+    countMode === "groups"
+      ? computeSeverityCountsByGroups(current.issues)
+      : computeSeverityCounts(current.issues);
   const previousCounts =
-    countMode === "groups" ? computeSeverityCountsByGroups(previous.issues) : computeSeverityCounts(previous.issues);
+    countMode === "groups"
+      ? computeSeverityCountsByGroups(previous.issues)
+      : computeSeverityCounts(previous.issues);
   const currentTotal =
     countMode === "groups"
-      ? currentCounts.critical + currentCounts.high + currentCounts.medium + currentCounts.low + currentCounts.info
+      ? currentCounts.critical +
+        currentCounts.high +
+        currentCounts.medium +
+        currentCounts.low +
+        currentCounts.info
       : current.total;
   const previousTotal =
     countMode === "groups"
-      ? previousCounts.critical + previousCounts.high + previousCounts.medium + previousCounts.low + previousCounts.info
+      ? previousCounts.critical +
+        previousCounts.high +
+        previousCounts.medium +
+        previousCounts.low +
+        previousCounts.info
       : previous.total;
   const currentCriticalHigh = currentCounts.critical + currentCounts.high;
   const previousCriticalHigh = previousCounts.critical + previousCounts.high;
-  const pct = (curr: number, prev: number) => (prev === 0 ? (curr > 0 ? 100 : 0) : Math.round(((curr - prev) / prev) * 100));
-  const dir = (curr: number, prev: number): "up" | "down" | "flat" => (curr > prev ? "up" : curr < prev ? "down" : "flat");
-  const periodDays = Math.round((to.getTime() - from.getTime()) / (1000 * 60 * 60 * 24));
+  const pct = (curr: number, prev: number) =>
+    prev === 0
+      ? curr > 0
+        ? 100
+        : 0
+      : Math.round(((curr - prev) / prev) * 100);
+  const dir = (curr: number, prev: number): "up" | "down" | "flat" =>
+    curr > prev ? "up" : curr < prev ? "down" : "flat";
+  const periodDays = Math.round(
+    (to.getTime() - from.getTime()) / (1000 * 60 * 60 * 24),
+  );
   const prevStart = new Date(from);
   prevStart.setDate(prevStart.getDate() - periodDays);
   const currentRisk = computeReportRiskScore(currentCounts);
@@ -384,7 +494,11 @@ export function computePeriodOverPeriodChange(
           current: currentRisk,
           previous: previousRisk,
           pctChange:
-            previousRisk === 0 ? (currentRisk > 0 ? 100 : 0) : Math.round(((currentRisk - previousRisk) / previousRisk) * 100),
+            previousRisk === 0
+              ? currentRisk > 0
+                ? 100
+                : 0
+              : Math.round(((currentRisk - previousRisk) / previousRisk) * 100),
           direction: dir(currentRisk, previousRisk),
         }
       : null;
@@ -396,7 +510,11 @@ export function computePeriodOverPeriodChange(
           current: currentMttr,
           previous: previousMttr,
           pctChange:
-            previousMttr === 0 ? (currentMttr > 0 ? 100 : 0) : Math.round(((currentMttr - previousMttr) / previousMttr) * 100),
+            previousMttr === 0
+              ? currentMttr > 0
+                ? 100
+                : 0
+              : Math.round(((currentMttr - previousMttr) / previousMttr) * 100),
           direction: dir(currentMttr, previousMttr),
         }
       : null;
@@ -422,7 +540,7 @@ export function computePeriodOverPeriodChange(
 export function computeTrendDataLastDays(
   issues: VATReportIssue[],
   days: number,
-  countMode: CountMode = "groups"
+  countMode: CountMode = "groups",
 ): TrendDataPoint[] {
   const trendIssues = issuesForTrend(issues);
   const now = new Date();
@@ -435,7 +553,10 @@ export function computeTrendDataLastDays(
     const weekStart = new Date(weekEnd);
     weekStart.setDate(weekStart.getDate() - 6);
     weekStart.setHours(0, 0, 0, 0);
-    const label = weekStart.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+    const label = weekStart.toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+    });
     const openAtWeek = trendIssues.filter((issue) => {
       const det = safeDate(issue.first_detected_at);
       if (!det || det > weekEnd) return false;
@@ -443,10 +564,16 @@ export function computeTrendDataLastDays(
       return !cls || cls > weekEnd;
     });
     const counts =
-      countMode === "groups" ? computeSeverityCountsByGroups(openAtWeek) : computeSeverityCounts(openAtWeek);
+      countMode === "groups"
+        ? computeSeverityCountsByGroups(openAtWeek)
+        : computeSeverityCounts(openAtWeek);
     const total =
       countMode === "groups"
-        ? counts.critical + counts.high + counts.medium + counts.low + counts.info
+        ? counts.critical +
+          counts.high +
+          counts.medium +
+          counts.low +
+          counts.info
         : openAtWeek.length;
     buckets.push({ date: label, ...counts, total });
   }
@@ -455,7 +582,7 @@ export function computeTrendDataLastDays(
 
 export function computeScannerBreakdown(
   issues: VATReportIssue[],
-  countMode: CountMode = "groups"
+  countMode: CountMode = "groups",
 ): ScannerBreakdown[] {
   const map = new Map<string, ScannerBreakdown>();
   const seenGroups = countMode === "groups" ? new Set<number>() : null;
@@ -466,7 +593,15 @@ export function computeScannerBreakdown(
       seenGroups.add(gid);
     }
     const scanner = issue.scanner_type || "Unknown";
-    if (!map.has(scanner)) map.set(scanner, { scanner, count: 0, critical: 0, high: 0, medium: 0, low: 0 });
+    if (!map.has(scanner))
+      map.set(scanner, {
+        scanner,
+        count: 0,
+        critical: 0,
+        high: 0,
+        medium: 0,
+        low: 0,
+      });
     const e = map.get(scanner)!;
     e.count++;
     const sev = normalizeSeverity(issue.severity, issue.severity_score);
@@ -485,18 +620,29 @@ function issueMatchesRepo(issueRepo: string, repoName: string): boolean {
   return false;
 }
 
-function resolveToTrackedRepoName(issueRepo: string, repos: VATReportRepo[]): string | null {
+function resolveToTrackedRepoName(
+  issueRepo: string,
+  repos: VATReportRepo[],
+): string | null {
   if (!repos.length || !issueRepo?.trim()) return null;
   const match = repos.find((r) => issueMatchesRepo(issueRepo, r.name));
   return match ? match.name : null;
 }
 
-function filterIssuesToTrackedRepos(issues: VATReportIssue[], repos: VATReportRepo[]): VATReportIssue[] {
+function filterIssuesToTrackedRepos(
+  issues: VATReportIssue[],
+  repos: VATReportRepo[],
+): VATReportIssue[] {
   if (repos.length === 0) return issues;
-  return issues.filter((i) => resolveToTrackedRepoName(i.repository ?? "", repos) !== null);
+  return issues.filter(
+    (i) => resolveToTrackedRepoName(i.repository ?? "", repos) !== null,
+  );
 }
 
-export function issueMatchesContainer(issueRepo: string, containerName: string): boolean {
+export function issueMatchesContainer(
+  issueRepo: string,
+  containerName: string,
+): boolean {
   const a = (issueRepo ?? "").trim().toLowerCase();
   const b = (containerName ?? "").trim().toLowerCase();
   if (!a || !b) return false;
@@ -509,7 +655,7 @@ export function issueMatchesContainer(issueRepo: string, containerName: string):
 export function getEffectiveContainers(
   containers: VATReportRepo[],
   issues: VATReportIssue[],
-  codeRepos: VATReportRepo[] = []
+  codeRepos: VATReportRepo[] = [],
 ): VATReportRepo[] {
   const openIssues = issues.filter(isOpen);
   const apiNames = new Set(containers.map((c) => c.name.toLowerCase()));
@@ -535,30 +681,49 @@ export function getEffectiveContainers(
     apiNames.add(key);
     derived.push(emptyContainer(r));
   }
-  return containers.length === 0 && derived.length > 0 ? derived : [...containers, ...derived];
+  return containers.length === 0 && derived.length > 0
+    ? derived
+    : [...containers, ...derived];
 }
 
 export function computeRepoRiskScores(
   issues: VATReportIssue[],
   repos: VATReportRepo[],
   issueGroups: VATReportIssueGroup[] = [],
-  countMode: CountMode = "instances"
+  countMode: CountMode = "instances",
 ): RepoRiskScore[] {
   const repoMap = new Map<string, RepoRiskScore>();
   const openIssues = issues.filter(isOpen);
-  const trackedOpenIssues = repos.length > 0 ? filterIssuesToTrackedRepos(openIssues, repos) : openIssues;
+  const trackedOpenIssues =
+    repos.length > 0
+      ? filterIssuesToTrackedRepos(openIssues, repos)
+      : openIssues;
   const ensureRepo = (name: string) => {
     if (!repoMap.has(name)) {
-      repoMap.set(name, { repo: name, score: 0, critical: 0, high: 0, medium: 0, low: 0, total: 0 });
+      repoMap.set(name, {
+        repo: name,
+        score: 0,
+        critical: 0,
+        high: 0,
+        medium: 0,
+        low: 0,
+        total: 0,
+      });
     }
     return repoMap.get(name)!;
   };
   const repoMitigated = new Map<string, SeverityCounts>();
   if (countMode === "groups") {
-    const repoGroupSev = new Map<string, Map<number, { sev: keyof SeverityCounts; mitigated: boolean }>>();
+    const repoGroupSev = new Map<
+      string,
+      Map<number, { sev: keyof SeverityCounts; mitigated: boolean }>
+    >();
     for (const issue of trackedOpenIssues) {
       const repo =
-        repos.length > 0 ? resolveToTrackedRepoName(issue.repository ?? "", repos) ?? "Unassigned" : (issue.repository || "Unassigned");
+        repos.length > 0
+          ? resolveToTrackedRepoName(issue.repository ?? "", repos) ??
+            "Unassigned"
+          : issue.repository || "Unassigned";
       const gid = issue.issue_group_id ?? 0;
       if (!repoGroupSev.has(repo)) repoGroupSev.set(repo, new Map());
       const groupMap = repoGroupSev.get(repo)!;
@@ -569,12 +734,20 @@ export function computeRepoRiskScores(
     }
     for (const [repo, groupMap] of Array.from(repoGroupSev)) {
       const entry = ensureRepo(repo);
-      const mitigated: SeverityCounts = { critical: 0, high: 0, medium: 0, low: 0, info: 0 };
+      const mitigated: SeverityCounts = {
+        critical: 0,
+        high: 0,
+        medium: 0,
+        low: 0,
+        info: 0,
+      };
       for (const { sev, mitigated: mit } of Array.from(groupMap.values())) {
         entry.total++;
         if (sev !== "info") {
           if (mit) mitigated[sev]++;
-          else (entry as unknown as Record<string, number>)[sev] = ((entry as unknown as Record<string, number>)[sev] ?? 0) + 1;
+          else
+            (entry as unknown as Record<string, number>)[sev] =
+              ((entry as unknown as Record<string, number>)[sev] ?? 0) + 1;
         }
       }
       repoMitigated.set(repo, mitigated);
@@ -582,13 +755,22 @@ export function computeRepoRiskScores(
   } else {
     for (const issue of trackedOpenIssues) {
       const repo =
-        repos.length > 0 ? resolveToTrackedRepoName(issue.repository ?? "", repos) ?? "Unassigned" : (issue.repository || "Unassigned");
+        repos.length > 0
+          ? resolveToTrackedRepoName(issue.repository ?? "", repos) ??
+            "Unassigned"
+          : issue.repository || "Unassigned";
       const entry = ensureRepo(repo);
       entry.total++;
       const sev = normalizeSeverity(issue.severity, issue.severity_score);
       if (sev !== "info") {
         if (isMitigated(issue)) {
-          const m = repoMitigated.get(repo) ?? { critical: 0, high: 0, medium: 0, low: 0, info: 0 };
+          const m = repoMitigated.get(repo) ?? {
+            critical: 0,
+            high: 0,
+            medium: 0,
+            low: 0,
+            info: 0,
+          };
           m[sev]++;
           repoMitigated.set(repo, m);
         } else {
@@ -602,8 +784,11 @@ export function computeRepoRiskScores(
       repoMap.clear();
       for (const group of issueGroups) {
         const sev = normalizeSeverity(group.severity, group.severity_score);
-        const count = countMode === "groups" ? 1 : (group.issue_count || 1);
-        const groupRepos = group.affected_repos && group.affected_repos.length > 0 ? group.affected_repos : ["Unassigned"];
+        const count = countMode === "groups" ? 1 : group.issue_count || 1;
+        const groupRepos =
+          group.affected_repos && group.affected_repos.length > 0
+            ? group.affected_repos
+            : ["Unassigned"];
         for (const repoName of groupRepos) {
           const entry = ensureRepo(repoName);
           entry.total += count;
@@ -625,14 +810,21 @@ export function computeContainerRiskScores(
   issues: VATReportIssue[] = [],
   issueGroups: VATReportIssueGroup[] = [],
   countMode: CountMode = "instances",
-  codeRepos: VATReportRepo[] = []
+  codeRepos: VATReportRepo[] = [],
 ): ContainerRiskScore[] {
-  const effectiveContainers = getEffectiveContainers(containers, issues, codeRepos);
+  const effectiveContainers = getEffectiveContainers(
+    containers,
+    issues,
+    codeRepos,
+  );
   const openIssues = issues.filter(isOpen);
   return effectiveContainers
     .map((c) => {
       const fromApi =
-        (c.critical_count ?? 0) + (c.high_count ?? 0) + (c.medium_count ?? 0) + (c.low_count ?? 0);
+        (c.critical_count ?? 0) +
+        (c.high_count ?? 0) +
+        (c.medium_count ?? 0) +
+        (c.low_count ?? 0);
       let critical = c.critical_count ?? 0;
       let high = c.high_count ?? 0;
       let medium = c.medium_count ?? 0;
@@ -696,7 +888,7 @@ export function computeContainerRiskScores(
           const repos = group.affected_repos ?? [];
           if (!repos.some((r) => issueMatchesContainer(r, c.name))) continue;
           const sev = normalizeSeverity(group.severity, group.severity_score);
-          const count = countMode === "groups" ? 1 : (group.issue_count ?? 1);
+          const count = countMode === "groups" ? 1 : group.issue_count ?? 1;
           if (sev === "critical") critical += count;
           else if (sev === "high") high += count;
           else if (sev === "medium") medium += count;
@@ -711,7 +903,12 @@ export function computeContainerRiskScores(
         low: low - mitigatedLow,
         info: 0,
       };
-      const mitigatedCounts = { critical: mitigatedCritical, high: mitigatedHigh, medium: mitigatedMedium, low: mitigatedLow };
+      const mitigatedCounts = {
+        critical: mitigatedCritical,
+        high: mitigatedHigh,
+        medium: mitigatedMedium,
+        low: mitigatedLow,
+      };
       const score = computeORAPenalty(counts, mitigatedCounts);
       return { repo: c.name, score, critical, high, medium, low, total };
     })
@@ -724,7 +921,7 @@ export function computeAssetMix(
   containers: VATReportRepo[],
   vms: VATReportRepo[],
   countMode: CountMode = "groups",
-  packageRepos: VATReportRepo[] = []
+  packageRepos: VATReportRepo[] = [],
 ): AssetMix {
   const open = issues.filter(isOpen);
   const seenGroups = countMode === "groups" ? new Set<number>() : null;
@@ -747,9 +944,11 @@ export function computeAssetMix(
     // Prioritize explicit asset matches over heuristic — simple repo names (my-repo, kamiwaza)
     // would otherwise match looksLikePackageOrPath (no slash, no colon) and be misclassified as Package
     if (repos.some((r) => issueMatchesRepo(repo, r.name))) code++;
-    else if (containers.some((c) => issueMatchesContainer(repo, c.name))) container++;
+    else if (containers.some((c) => issueMatchesContainer(repo, c.name)))
+      container++;
     else if (vms.some((v) => issueMatchesRepo(repo, v.name))) vm++;
-    else if (packageRepos.some((p) => issueMatchesRepo(repo, p.name))) package_++;
+    else if (packageRepos.some((p) => issueMatchesRepo(repo, p.name)))
+      package_++;
     else if (looksLikePackageOrPath(repo)) package_++;
     else other++;
   }
@@ -775,12 +974,13 @@ export function getAssetTypeForIssue(
   repoNames: string[],
   containerNames: string[],
   vmNames: string[],
-  packageNames: string[] = []
+  packageNames: string[] = [],
 ): "Code" | "Container" | "VM" | "Package" | "Other" {
   const repo = (repository ?? "").trim();
   if (!repo) return "Other";
   if (repoNames.some((r) => issueMatchesRepo(repo, r))) return "Code";
-  if (containerNames.some((c) => issueMatchesContainer(repo, c))) return "Container";
+  if (containerNames.some((c) => issueMatchesContainer(repo, c)))
+    return "Container";
   if (vmNames.some((v) => issueMatchesRepo(repo, v))) return "VM";
   if (packageNames.some((p) => issueMatchesRepo(repo, p))) return "Package";
   if (looksLikePackageOrPath(repo)) return "Package";
@@ -790,7 +990,7 @@ export function getAssetTypeForIssue(
 export function computeReachabilityMatrix(
   _issues: VATReportIssue[],
   _reachabilityByIssueId?: Record<number, { exploitable?: boolean }>,
-  countMode: CountMode = "groups"
+  countMode: CountMode = "groups",
 ): ReachabilityMatrixRow[] {
   return [];
 }
@@ -798,7 +998,7 @@ export function computeReachabilityMatrix(
 export function getIssuesForRepo(
   issues: VATReportIssue[],
   issueGroups: VATReportIssueGroup[],
-  repoName: string
+  repoName: string,
 ): VATReportIssue[] {
   const directMatch = issues.filter((i) => i.repository === repoName);
   if (directMatch.length > 0) return directMatch;
@@ -806,14 +1006,15 @@ export function getIssuesForRepo(
   for (const g of issueGroups) {
     if (g.affected_repos?.includes(repoName)) groupIds.add(g.group_id);
   }
-  if (groupIds.size > 0) return issues.filter((i) => groupIds.has(i.issue_group_id));
+  if (groupIds.size > 0)
+    return issues.filter((i) => groupIds.has(i.issue_group_id));
   return [];
 }
 
 export function getIssuesForContainer(
   issues: VATReportIssue[],
   issueGroups: VATReportIssueGroup[],
-  containerName: string
+  containerName: string,
 ): VATReportIssue[] {
   const matches = (repo: string) => issueMatchesContainer(repo, containerName);
   const directMatch = issues.filter((i) => matches(i.repository ?? ""));
@@ -822,17 +1023,19 @@ export function getIssuesForContainer(
   for (const g of issueGroups) {
     if (g.affected_repos?.some((r) => matches(r))) groupIds.add(g.group_id);
   }
-  if (groupIds.size > 0) return issues.filter((i) => groupIds.has(i.issue_group_id));
+  if (groupIds.size > 0)
+    return issues.filter((i) => groupIds.has(i.issue_group_id));
   return [];
 }
 
 export function getIssuesForRepos(
   issues: VATReportIssue[],
   issueGroups: VATReportIssueGroup[],
-  repoNames: string[]
+  repoNames: string[],
 ): VATReportIssue[] {
   if (repoNames.length === 0) return issues;
-  if (repoNames.length === 1) return getIssuesForRepo(issues, issueGroups, repoNames[0]);
+  if (repoNames.length === 1)
+    return getIssuesForRepo(issues, issueGroups, repoNames[0]);
   const seen = new Set<number>();
   const result: VATReportIssue[] = [];
   for (const repo of repoNames) {
@@ -849,14 +1052,17 @@ export function getIssuesForRepos(
 
 /** Unified: match issue by repo or container semantics. Used for asset filter across all types. */
 function issueMatchesAsset(issueRepo: string, assetName: string): boolean {
-  return issueMatchesRepo(issueRepo, assetName) || issueMatchesContainer(issueRepo, assetName);
+  return (
+    issueMatchesRepo(issueRepo, assetName) ||
+    issueMatchesContainer(issueRepo, assetName)
+  );
 }
 
 /** Get issues matching any asset name (repos, containers, packages, VMs, etc.). */
 export function getIssuesForAssets(
   issues: VATReportIssue[],
   issueGroups: VATReportIssueGroup[],
-  assetNames: string[]
+  assetNames: string[],
 ): VATReportIssue[] {
   if (assetNames.length === 0) return issues;
   const seen = new Set<number>();
@@ -874,14 +1080,19 @@ export function getIssuesForAssets(
   return result;
 }
 
-export function computeMTTR(issues: VATReportIssue[], countMode: CountMode = "groups"): MTTRData[] {
-  const raw: Array<{ sev: keyof SeverityCounts; gid: number; days: number }> = [];
+export function computeMTTR(
+  issues: VATReportIssue[],
+  countMode: CountMode = "groups",
+): MTTRData[] {
+  const raw: Array<{ sev: keyof SeverityCounts; gid: number; days: number }> =
+    [];
   for (const issue of issues) {
     if (!issue.closed_at || !issue.first_detected_at) continue;
     const detected = safeDate(issue.first_detected_at);
     const closed = safeDate(issue.closed_at);
     if (!detected || !closed || closed < detected) continue;
-    const days = (closed.getTime() - detected.getTime()) / (1000 * 60 * 60 * 24);
+    const days =
+      (closed.getTime() - detected.getTime()) / (1000 * 60 * 60 * 24);
     if (!Number.isFinite(days) || days < 0) continue;
     const sev = normalizeSeverity(issue.severity, issue.severity_score);
     raw.push({ sev, gid: issue.issue_group_id ?? 0, days });
@@ -906,12 +1117,15 @@ export function computeMTTR(issues: VATReportIssue[], countMode: CountMode = "gr
     }
   }
   return ["critical", "high", "medium", "low", "info"]
-    .filter((sev) => severityGroups.has(sev) && severityGroups.get(sev)!.length > 0)
+    .filter(
+      (sev) => severityGroups.has(sev) && severityGroups.get(sev)!.length > 0,
+    )
     .map((sev) => {
       const days = severityGroups.get(sev)!.sort((a, b) => a - b);
       const avg = days.reduce((s, d) => s + d, 0) / days.length;
       const mid = Math.floor(days.length / 2);
-      const median = days.length % 2 === 0 ? (days[mid - 1]! + days[mid]!) / 2 : days[mid]!;
+      const median =
+        days.length % 2 === 0 ? (days[mid - 1]! + days[mid]!) / 2 : days[mid]!;
       return {
         severity: sev.charAt(0).toUpperCase() + sev.slice(1),
         avgDays: Number.isFinite(avg) ? Math.round(avg * 10) / 10 : 0,
@@ -923,7 +1137,7 @@ export function computeMTTR(issues: VATReportIssue[], countMode: CountMode = "gr
 
 export function computeAgingBuckets(
   issues: VATReportIssue[],
-  countMode: CountMode = "groups"
+  countMode: CountMode = "groups",
 ): AgingBucket[] {
   const buckets: AgingBucket[] = [
     { range: "0-7d", critical: 0, high: 0, medium: 0, low: 0 },
@@ -942,7 +1156,8 @@ export function computeAgingBuckets(
     const age = safeAge(issue.first_detected_at);
     const sev = normalizeSeverity(issue.severity, issue.severity_score);
     if (sev === "info") continue;
-    const idx = age <= 7 ? 0 : age <= 30 ? 1 : age <= 90 ? 2 : age <= 180 ? 3 : 4;
+    const idx =
+      age <= 7 ? 0 : age <= 30 ? 1 : age <= 90 ? 2 : age <= 180 ? 3 : 4;
     buckets[idx]![sev]++;
   }
   return buckets;
@@ -956,7 +1171,9 @@ export function computeRiskScore(counts: SeverityCounts): number {
 
 /** Risk level from display ORA score (toDisplayORA output, range 10–100).
  * Converts to raw ORA scale before applying thresholds; fixes scale mismatch. */
-export function getRiskLevel(score: number): "Critical" | "High" | "Medium" | "Low" {
+export function getRiskLevel(
+  score: number,
+): "Critical" | "High" | "Medium" | "Low" {
   const rawORA = (score - 10) / 0.9;
   return getORARiskLevel(rawORA);
 }
@@ -972,7 +1189,9 @@ export function computeReportRiskScore(counts: SeverityCounts): number {
 }
 
 /** Risk level from report risk score (higher = worse). */
-export function getReportRiskLevel(score: number): "Critical" | "High" | "Medium" | "Low" {
+export function getReportRiskLevel(
+  score: number,
+): "Critical" | "High" | "Medium" | "Low" {
   if (score >= 75) return "Critical";
   if (score >= 50) return "High";
   if (score >= 25) return "Medium";
@@ -980,7 +1199,13 @@ export function getReportRiskLevel(score: number): "Critical" | "High" | "Medium
 }
 
 function severityOrder(sev: string): number {
-  const order: Record<string, number> = { critical: 4, high: 3, medium: 2, low: 1, info: 0 };
+  const order: Record<string, number> = {
+    critical: 4,
+    high: 3,
+    medium: 2,
+    low: 1,
+    info: 0,
+  };
   return order[sev] ?? 0;
 }
 
@@ -988,7 +1213,7 @@ export function getTopVulnerabilities(
   issues: VATReportIssue[],
   issueGroups: VATReportIssueGroup[],
   limit = 10,
-  countMode: CountMode = "groups"
+  countMode: CountMode = "groups",
 ): TopVulnerability[] {
   const groupMap = new Map<number, VATReportIssueGroup>();
   for (const g of issueGroups) groupMap.set(g.group_id, g);
@@ -999,8 +1224,14 @@ export function getTopVulnerabilities(
     for (const i of open) {
       const gid = i.issue_group_id ?? 0;
       const existing = byGroup.get(gid);
-      const iSev = severityOrder(normalizeSeverity(i.severity, i.severity_score));
-      const eSev = existing ? severityOrder(normalizeSeverity(existing.severity, existing.severity_score)) : -1;
+      const iSev = severityOrder(
+        normalizeSeverity(i.severity, i.severity_score),
+      );
+      const eSev = existing
+        ? severityOrder(
+            normalizeSeverity(existing.severity, existing.severity_score),
+          )
+        : -1;
       const iScore = i.severity_score ?? 0;
       const eScore = existing?.severity_score ?? 0;
       const iAge = safeAge(i.first_detected_at);
@@ -1008,7 +1239,8 @@ export function getTopVulnerabilities(
       if (
         !existing ||
         iSev > eSev ||
-        (iSev === eSev && (iScore > eScore || (iScore === eScore && iAge > eAge)))
+        (iSev === eSev &&
+          (iScore > eScore || (iScore === eScore && iAge > eAge)))
       ) {
         byGroup.set(gid, i);
       }
@@ -1029,10 +1261,15 @@ export function getTopVulnerabilities(
         age: safeAge(i.first_detected_at),
         score: i.severity_score || 0,
         hasTask: group?.has_task ?? false,
-        aikidoUrl: group?.aikido_url,
+        sourceUrl: i.source_url || group?.source_url,
       };
     })
-    .sort((a, b) => severityOrder(b.severity) - severityOrder(a.severity) || b.score - a.score || b.age - a.age)
+    .sort(
+      (a, b) =>
+        severityOrder(b.severity) - severityOrder(a.severity) ||
+        b.score - a.score ||
+        b.age - a.age,
+    )
     .slice(0, limit);
 }
 
@@ -1040,7 +1277,8 @@ export function computeAvgMttr(mttrData: MTTRData[]): number | undefined {
   if (mttrData.length === 0) return undefined;
   const totalCount = mttrData.reduce((s, m) => s + m.count, 0);
   if (totalCount === 0) return undefined;
-  const weighted = mttrData.reduce((s, m) => s + m.avgDays * m.count, 0) / totalCount;
+  const weighted =
+    mttrData.reduce((s, m) => s + m.avgDays * m.count, 0) / totalCount;
   return Number.isFinite(weighted) ? Math.round(weighted * 10) / 10 : undefined;
 }
 
@@ -1063,8 +1301,13 @@ const ABC_SLA_DAYS = {
 
 export function computeSlaCompliance(
   issues: VATReportIssue[],
-  config: { criticalDays?: number; highDays?: number; mediumDays?: number; lowDays?: number } = {},
-  countMode: CountMode = "groups"
+  config: {
+    criticalDays?: number;
+    highDays?: number;
+    mediumDays?: number;
+    lowDays?: number;
+  } = {},
+  countMode: CountMode = "groups",
 ): SlaComplianceResult {
   const criticalDays = config.criticalDays ?? ABC_SLA_DAYS.critical;
   const highDays = config.highDays ?? ABC_SLA_DAYS.high;
@@ -1113,7 +1356,7 @@ export function computeSlaCompliance(
 /** ABC compliance for VAT issues. Uses SLAs, max counts, CVE age tolerance. */
 export function computeABCComplianceForIssues(
   issues: VATReportIssue[],
-  countMode: CountMode = "groups"
+  countMode: CountMode = "groups",
 ): ABCCriteriaResult {
   const open = issues.filter(isOpen);
   const seenGroups = countMode === "groups" ? new Set<number>() : null;
@@ -1177,7 +1420,15 @@ function getCalendarWeekBoundsUtc(now: Date): {
   const day = now.getUTCDay();
   const diff = (day - 1 + 7) % 7;
   const thisWeekStart = new Date(
-    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - diff, 0, 0, 0, 0)
+    Date.UTC(
+      now.getUTCFullYear(),
+      now.getUTCMonth(),
+      now.getUTCDate() - diff,
+      0,
+      0,
+      0,
+      0,
+    ),
   );
   const thisWeekEnd = new Date(thisWeekStart);
   thisWeekEnd.setUTCDate(thisWeekStart.getUTCDate() + 6);
@@ -1192,25 +1443,38 @@ function getCalendarWeekBoundsUtc(now: Date): {
 
 export function computeTrendMetrics(
   issues: VATReportIssue[],
-  countMode: CountMode = "groups"
+  countMode: CountMode = "groups",
 ): TrendMetrics {
   const trendIssues = issuesForTrend(issues);
   const now = new Date();
-  const { thisWeekStart, thisWeekEnd, lastWeekStart, lastWeekEnd } = getCalendarWeekBoundsUtc(now);
+  const { thisWeekStart, thisWeekEnd, lastWeekStart, lastWeekEnd } =
+    getCalendarWeekBoundsUtc(now);
   const current = openAtDate(trendIssues, now);
   const previous = openAtDate(trendIssues, lastWeekEnd);
   const currentOpen =
     countMode === "groups"
       ? (() => {
           const counts = computeSeverityCountsByGroups(current.issues);
-          return counts.critical + counts.high + counts.medium + counts.low + counts.info;
+          return (
+            counts.critical +
+            counts.high +
+            counts.medium +
+            counts.low +
+            counts.info
+          );
         })()
       : current.total;
   const openOneWeekAgo =
     countMode === "groups"
       ? (() => {
           const counts = computeSeverityCountsByGroups(previous.issues);
-          return counts.critical + counts.high + counts.medium + counts.low + counts.info;
+          return (
+            counts.critical +
+            counts.high +
+            counts.medium +
+            counts.low +
+            counts.info
+          );
         })()
       : previous.total;
   const thisStartTs = thisWeekStart.getTime();
@@ -1221,7 +1485,8 @@ export function computeTrendMetrics(
   let resolvedLastWeek = 0;
   let newThisWeek = 0;
   let newLastWeek = 0;
-  const isResolvedStatus = (st: string) => ["resolved", "closed"].includes((st ?? "").toLowerCase());
+  const isResolvedStatus = (st: string) =>
+    ["resolved", "closed"].includes((st ?? "").toLowerCase());
   for (const i of trendIssues) {
     const closed = i.closed_at ? safeDate(i.closed_at) : null;
     if (closed && isResolvedStatus(i.status ?? "")) {
@@ -1235,7 +1500,8 @@ export function computeTrendMetrics(
   const excludeNewStatuses = ["ignored", "auto_ignored", "suppressed"] as const;
   for (const i of issues) {
     const st = (i.status ?? "").toLowerCase();
-    if (excludeNewStatuses.includes(st as (typeof excludeNewStatuses)[number])) continue;
+    if (excludeNewStatuses.includes(st as (typeof excludeNewStatuses)[number]))
+      continue;
     const det = safeDate(i.first_detected_at);
     if (det) {
       const ts = det.getTime();

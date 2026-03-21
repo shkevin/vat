@@ -40,7 +40,16 @@ def _extract_container_ref(component: dict, doc: dict) -> str:
                 continue
             name = str(p.get("name") or "").strip().lower()
             val = str(p.get("value") or "").strip()
-            if name in {"vat:container_ref", "vat.container_ref", "container_ref", "container.image.ref"} and val:
+            if (
+                name
+                in {
+                    "vat:container_ref",
+                    "vat.container_ref",
+                    "container_ref",
+                    "container.image.ref",
+                }
+                and val
+            ):
                 return val
     # Backward compatibility: old scanner versions stamped container refs in group.
     group = str(component.get("group") or "").strip()
@@ -55,7 +64,16 @@ def _extract_container_ref(component: dict, doc: dict) -> str:
                 continue
             name = str(p.get("name") or "").strip().lower()
             val = str(p.get("value") or "").strip()
-            if name in {"vat:container_ref", "vat.container_ref", "container_ref", "container.image.ref"} and val:
+            if (
+                name
+                in {
+                    "vat:container_ref",
+                    "vat.container_ref",
+                    "container_ref",
+                    "container.image.ref",
+                }
+                and val
+            ):
                 return val
     md_component = md.get("component") or {}
     if isinstance(md_component, dict):
@@ -92,13 +110,15 @@ def _parse_cyclonedx(doc: dict) -> list[dict]:
         component = _extract_container_ref(c, doc)
         language = c.get("language") or ""
 
-        out.append({
-            "name": name,
-            "version": version,
-            "license_id": license_id,
-            "component": str(component) if component else None,
-            "language": str(language) if language else None,
-        })
+        out.append(
+            {
+                "name": name,
+                "version": version,
+                "license_id": license_id,
+                "component": str(component) if component else None,
+                "language": str(language) if language else None,
+            }
+        )
     return out
 
 
@@ -128,9 +148,7 @@ async def import_sbom(
         license_id = _clip(pkg.get("license_id"), 64)
         risk = license_risk_tier(license_id) if license_id else None
 
-        result = await db.execute(
-            select(SbomPackage).where(SbomPackage.id == pkg_id)
-        )
+        result = await db.execute(select(SbomPackage).where(SbomPackage.id == pkg_id))
         existing = result.scalar_one_or_none()
 
         if existing:
@@ -158,23 +176,35 @@ async def import_sbom(
             # Auto-create License finding for Critical/High risk (PRD §5.8.3)
             if risk in ("Critical", "High"):
                 from app.services.dedup import make_fingerprint
+
                 cve_id = f"LICENSE-{license_id or 'unknown'}-{pkg['name']}"
                 fp = make_fingerprint(cve_id, pkg["name"])
-                res = await db.execute(select(Finding).where(Finding.fingerprint_id == fp))
+                res = await db.execute(
+                    select(Finding).where(Finding.fingerprint_id == fp)
+                )
                 if res.scalar_one_or_none() is None:
                     finding = Finding(
                         id=f"f-{fp[:8]}",
                         finding_type=FindingType.License,
                         fingerprint_id=fp,
                         cve_id=cve_id,
-                        severity=Severity.Critical if risk == "Critical" else Severity.High,
+                        severity=Severity.Critical
+                        if risk == "Critical"
+                        else Severity.High,
                         status=Status.Open,
                         component=pkg["name"],
                         title=f"{license_id} license in {pkg['name']}",
                         description=f"SBOM import detected {risk} risk license {license_id}",
                         source=source,
                         sources=[source_entry],
-                        audit=[{"ts": _now(), "user": "system", "action": "License finding from SBOM", "note": None}],
+                        audit=[
+                            {
+                                "ts": _now(),
+                                "user": "system",
+                                "action": "License finding from SBOM",
+                                "note": None,
+                            }
+                        ],
                     )
                     db.add(finding)
 
@@ -197,7 +227,9 @@ async def list_sbom_packages(
     if component:
         q = q.where(SbomPackage.component.ilike(f"%{component}%"))
     if tenant_id:
-        q = q.where(or_(SbomPackage.tenant_id == tenant_id, SbomPackage.tenant_id.is_(None)))
+        q = q.where(
+            or_(SbomPackage.tenant_id == tenant_id, SbomPackage.tenant_id.is_(None))
+        )
     q = q.limit(limit)
     result = await db.execute(q)
     rows = result.scalars().all()

@@ -2,7 +2,11 @@
 
 import logging
 
-from app.schemas.ingest import CanonicalFindingPayload, CanonicalFindingType, CanonicalSeverity
+from app.schemas.ingest import (
+    CanonicalFindingPayload,
+    CanonicalFindingType,
+    CanonicalSeverity,
+)
 from app.parsers.base import IngestParser
 
 logger = logging.getLogger(__name__)
@@ -79,7 +83,9 @@ class CyclonedxParser(IngestParser):
                     payloads.append(p)
         return payloads
 
-    def _vuln_to_payloads(self, v: dict, components: dict, asset: str) -> list[CanonicalFindingPayload]:
+    def _vuln_to_payloads(
+        self, v: dict, components: dict, asset: str
+    ) -> list[CanonicalFindingPayload]:
         payloads: list[CanonicalFindingPayload] = []
         vuln_id = v.get("id") or "unknown"
         desc = v.get("description") or ""
@@ -97,7 +103,11 @@ class CyclonedxParser(IngestParser):
         recommendation = v.get("recommendation") or ""
         if recommendation:
             desc = f"{desc}\nRecommendation: {recommendation}".strip()
-        cve_ids = [ref.get("id") for ref in (v.get("references") or []) if isinstance(ref, dict) and ref.get("id")]
+        cve_ids = [
+            ref.get("id")
+            for ref in (v.get("references") or [])
+            if isinstance(ref, dict) and ref.get("id")
+        ]
         if vuln_id and vuln_id.startswith("CVE-"):
             cve_ids.insert(0, vuln_id)
         cve_id = cve_ids[0] if cve_ids else vuln_id
@@ -108,7 +118,11 @@ class CyclonedxParser(IngestParser):
             if not ref:
                 continue
             comp = components.get(ref, {})
-            name = comp.get("name") or ref.split("@")[0].split("/")[-1] if "@" in ref else ref
+            name = (
+                comp.get("name") or ref.split("@")[0].split("/")[-1]
+                if "@" in ref
+                else ref
+            )
             version = comp.get("version") or _parse_purl_version(comp.get("purl", ""))
             component = f"{name} {version}".strip()
             if not component:

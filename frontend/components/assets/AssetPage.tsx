@@ -4,7 +4,12 @@ import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useVATData } from "@/contexts/VATDataContext";
-import { getAssetById, computeMetricsFromFindings, getFindingTag, getAssetTypeFromAsset } from "@/lib/assetUtils";
+import {
+  getAssetById,
+  computeMetricsFromFindings,
+  getFindingTag,
+  getAssetTypeFromAsset,
+} from "@/lib/assetUtils";
 import { getGroupedFindings } from "@/lib/findingGroupUtils";
 import { FINDING_TYPES, SEV_ORDER, SEV } from "@/lib/constants";
 import { displayTitle, displaySourceName } from "@/lib/utils";
@@ -14,7 +19,10 @@ import { DetailPanel } from "@/components/detail/DetailPanel";
 import { WaiversTab } from "@/components/waivers/WaiversTab";
 import { SBOMTab } from "@/components/sbom/SBOMTab";
 import { ReviewQueue } from "@/components/review/ReviewQueue";
-import { AssetSubTabs, type AssetTabId } from "@/components/assets/AssetSubTabs";
+import {
+  AssetSubTabs,
+  type AssetTabId,
+} from "@/components/assets/AssetSubTabs";
 import { useUserPreferences } from "@/contexts/UserPreferencesContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { mono, sans } from "@/lib/styles";
@@ -83,7 +91,6 @@ function formatStatusSummary(breakdown: Record<string, number>): string {
   return parts.slice(0, 4).join(" · ") || "—";
 }
 
-
 interface AssetPageProps {
   config: AppConfig;
 }
@@ -91,7 +98,8 @@ interface AssetPageProps {
 export function AssetPage({ config }: AssetPageProps) {
   const params = useParams();
   const router = useRouter();
-  const assetId = typeof params.id === "string" ? decodeURIComponent(params.id) : null;
+  const assetId =
+    typeof params.id === "string" ? decodeURIComponent(params.id) : null;
   const data = useVATData();
   const { preferences, setPreferences } = useUserPreferences();
   const { user, token } = useAuth();
@@ -101,7 +109,9 @@ export function AssetPage({ config }: AssetPageProps) {
   const [assetTab, setAssetTab] = useState<AssetTabId>("findings");
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [deletingAsset, setDeletingAsset] = useState(false);
-  const [selectedSourceIndex, setSelectedSourceIndex] = useState<number | undefined>();
+  const [selectedSourceIndex, setSelectedSourceIndex] = useState<
+    number | undefined
+  >();
 
   const {
     loading,
@@ -142,13 +152,19 @@ export function AssetPage({ config }: AssetPageProps) {
   }, [assetId, findings, reportAssets]);
 
   const assetWaivers = useMemo(
-    () => (asset ? waivers.filter((f) => asset.findings.some((af) => af.id === f.id)) : []),
-    [asset, waivers]
+    () =>
+      asset
+        ? waivers.filter((f) => asset.findings.some((af) => af.id === f.id))
+        : [],
+    [asset, waivers],
   );
 
   const assetReviewQueue = useMemo(
-    () => (asset ? reviewQueue.filter((f) => asset.findings.some((af) => af.id === f.id)) : []),
-    [asset, reviewQueue]
+    () =>
+      asset
+        ? reviewQueue.filter((f) => asset.findings.some((af) => af.id === f.id))
+        : [],
+    [asset, reviewQueue],
   );
 
   const assetSbom = useMemo(() => {
@@ -157,7 +173,7 @@ export function AssetPage({ config }: AssetPageProps) {
     return sbom.filter(
       (p) =>
         (p.component ?? "").toLowerCase().includes(name) ||
-        name.includes((p.component ?? p.name ?? "").toLowerCase())
+        name.includes((p.component ?? p.name ?? "").toLowerCase()),
     );
   }, [asset, sbom]);
 
@@ -190,27 +206,42 @@ export function AssetPage({ config }: AssetPageProps) {
       const hasOthers = [...v].some((x) => x !== "Archived");
       setShowArchived(hasArchived && hasOthers ? "both" : hasArchived);
     },
-    [setStatusFilter, setShowArchived]
+    [setStatusFilter, setShowArchived],
   );
 
   // When statusFilter is restored from localStorage, sync showArchived
   const hasArchivedInFilter = statusFilter.has("Archived");
-  const hasOtherStatusInFilter = [...statusFilter].some((x) => x !== "Archived");
+  const hasOtherStatusInFilter = [...statusFilter].some(
+    (x) => x !== "Archived",
+  );
   useEffect(() => {
-    const target = hasArchivedInFilter && hasOtherStatusInFilter ? "both" : hasArchivedInFilter;
+    const target =
+      hasArchivedInFilter && hasOtherStatusInFilter
+        ? "both"
+        : hasArchivedInFilter;
     if (target !== showArchived) {
       setShowArchived(target);
     }
-  }, [hasArchivedInFilter, hasOtherStatusInFilter, showArchived, setShowArchived]);
+  }, [
+    hasArchivedInFilter,
+    hasOtherStatusInFilter,
+    showArchived,
+    setShowArchived,
+  ]);
 
   const prevAssetIdRef = useRef<string | null>(null);
   const hasInitializedBranchRef = useRef(false);
   const hasInitializedTagRef = useRef(false);
 
-  const assetType = useMemo(() => (asset ? getAssetTypeFromAsset(asset) : null), [asset]);
+  const assetType = useMemo(
+    () => (asset ? getAssetTypeFromAsset(asset) : null),
+    [asset],
+  );
   const uniqueBranches = useMemo(() => {
     if (!asset || assetType !== "repo") return [];
-    const fromFindings = [...new Set(asset.findings.map((f) => f.branch).filter(Boolean))] as string[];
+    const fromFindings = [
+      ...new Set(asset.findings.map((f) => f.branch).filter(Boolean)),
+    ] as string[];
     if (fromFindings.length > 0) return fromFindings;
     const fromAsset = (asset.branch ?? "")
       .split(",")
@@ -220,7 +251,9 @@ export function AssetPage({ config }: AssetPageProps) {
   }, [asset, assetType]);
   const uniqueTags = useMemo(() => {
     if (!asset || assetType !== "container") return [];
-    const fromFindings = [...new Set(asset.findings.map(getFindingTag).filter(Boolean))] as string[];
+    const fromFindings = [
+      ...new Set(asset.findings.map(getFindingTag).filter(Boolean)),
+    ] as string[];
     if (fromFindings.length > 0) return fromFindings;
     if (asset.tag) return [asset.tag];
     return ["latest"];
@@ -239,11 +272,20 @@ export function AssetPage({ config }: AssetPageProps) {
       return;
     }
     const favoriteCtx = assetId ? getFavoriteContextForAsset(assetId) : null;
-    if (assetType === "repo" && uniqueBranches.length > 0 && !hasInitializedBranchRef.current) {
+    if (
+      assetType === "repo" &&
+      uniqueBranches.length > 0 &&
+      !hasInitializedBranchRef.current
+    ) {
       if (!branchFilter) {
         hasInitializedBranchRef.current = true;
-        const favBranch = favoriteCtx?.branch && uniqueBranches.includes(favoriteCtx.branch) ? favoriteCtx.branch : null;
-        const defaultBranch = favBranch ?? (uniqueBranches.includes("main") ? "main" : uniqueBranches[0]!);
+        const favBranch =
+          favoriteCtx?.branch && uniqueBranches.includes(favoriteCtx.branch)
+            ? favoriteCtx.branch
+            : null;
+        const defaultBranch =
+          favBranch ??
+          (uniqueBranches.includes("main") ? "main" : uniqueBranches[0]!);
         setBranchFilter(defaultBranch);
       } else {
         hasInitializedBranchRef.current = true;
@@ -252,11 +294,19 @@ export function AssetPage({ config }: AssetPageProps) {
       hasInitializedBranchRef.current = true;
       if (branchFilter) setBranchFilter("");
     }
-    if (assetType === "container" && uniqueTags.length > 0 && !hasInitializedTagRef.current) {
+    if (
+      assetType === "container" &&
+      uniqueTags.length > 0 &&
+      !hasInitializedTagRef.current
+    ) {
       if (!tagFilter) {
         hasInitializedTagRef.current = true;
-        const favTag = favoriteCtx?.tag && uniqueTags.includes(favoriteCtx.tag) ? favoriteCtx.tag : null;
-        const defaultTag = favTag ?? (uniqueTags.includes("latest") ? "latest" : uniqueTags[0]!);
+        const favTag =
+          favoriteCtx?.tag && uniqueTags.includes(favoriteCtx.tag)
+            ? favoriteCtx.tag
+            : null;
+        const defaultTag =
+          favTag ?? (uniqueTags.includes("latest") ? "latest" : uniqueTags[0]!);
         setTagFilter(defaultTag);
       } else {
         hasInitializedTagRef.current = true;
@@ -265,7 +315,18 @@ export function AssetPage({ config }: AssetPageProps) {
       hasInitializedTagRef.current = true;
       if (tagFilter) setTagFilter("");
     }
-  }, [assetId, assetType, uniqueBranches, uniqueTags, branchFilter, tagFilter, hasRestored, setBranchFilter, setTagFilter, getFavoriteContextForAsset]);
+  }, [
+    assetId,
+    assetType,
+    uniqueBranches,
+    uniqueTags,
+    branchFilter,
+    tagFilter,
+    hasRestored,
+    setBranchFilter,
+    setTagFilter,
+    getFavoriteContextForAsset,
+  ]);
 
   const branchTagFilteredFindings = useMemo(() => {
     if (!asset) return [];
@@ -314,17 +375,31 @@ export function AssetPage({ config }: AssetPageProps) {
     const list = branchTagFilteredFindings;
     const statusForFilter = (s: string | undefined) =>
       s === "Synced to Tracker" ? "Open" : s;
-    const statuses = [...new Set(list.map((f) => statusForFilter(f.status)).filter(Boolean))] as string[];
-    const severities = [...new Set(list.map((f) => f.severity).filter(Boolean))] as string[];
+    const statuses = [
+      ...new Set(list.map((f) => statusForFilter(f.status)).filter(Boolean)),
+    ] as string[];
+    const severities = [
+      ...new Set(list.map((f) => f.severity).filter(Boolean)),
+    ] as string[];
     // Include sources from findings AND configured sources (e.g. OpenSCAP) so users can filter
     // even when a source has 0 findings (e.g. Chainguard images passing all STIG checks)
-    const fromFindings = [...new Set(list.map((f) => f.source).filter(Boolean))] as string[];
+    const fromFindings = [
+      ...new Set(list.map((f) => f.source).filter(Boolean)),
+    ] as string[];
     const fromConfig = sources.map((s) => s.id).filter(Boolean);
     const sourcesList = [...new Set([...fromFindings, ...fromConfig])].sort();
-    const types = [...new Set(list.map((f) => f.findingType).filter(Boolean))] as string[];
+    const types = [
+      ...new Set(list.map((f) => f.findingType).filter(Boolean)),
+    ] as string[];
     return {
-      statuses: statuses.sort((a, b) => STATUS_PRIORITY.indexOf(a) - STATUS_PRIORITY.indexOf(b)),
-      severities: severities.sort((a, b) => SEV_ORDER.indexOf(a as (typeof SEV_ORDER)[number]) - SEV_ORDER.indexOf(b as (typeof SEV_ORDER)[number])),
+      statuses: statuses.sort(
+        (a, b) => STATUS_PRIORITY.indexOf(a) - STATUS_PRIORITY.indexOf(b),
+      ),
+      severities: severities.sort(
+        (a, b) =>
+          SEV_ORDER.indexOf(a as (typeof SEV_ORDER)[number]) -
+          SEV_ORDER.indexOf(b as (typeof SEV_ORDER)[number]),
+      ),
       sources: sourcesList,
       types: types.sort(),
     };
@@ -338,7 +413,8 @@ export function AssetPage({ config }: AssetPageProps) {
     if (statusFilter.size > 0) {
       list = list.filter((f) => {
         const s = f.status === "Synced to Tracker" ? "Open" : f.status;
-        const matchesStatus = statusesToFilter.length > 0 && s && statusesToFilter.includes(s);
+        const matchesStatus =
+          statusesToFilter.length > 0 && s && statusesToFilter.includes(s);
         const matchesArchived = hasArchived && f.archived;
         return matchesArchived || matchesStatus;
       });
@@ -350,7 +426,9 @@ export function AssetPage({ config }: AssetPageProps) {
       list = list.filter((f) => f.source && sourceFilter.has(f.source));
     }
     if (findingTypeFilter.size > 0) {
-      list = list.filter((f) => f.findingType && findingTypeFilter.has(f.findingType));
+      list = list.filter(
+        (f) => f.findingType && findingTypeFilter.has(f.findingType),
+      );
     }
     if (findingsSearch.trim()) {
       const q = findingsSearch.toLowerCase().trim();
@@ -361,10 +439,17 @@ export function AssetPage({ config }: AssetPageProps) {
           displayTitle(f).toLowerCase().includes(q) ||
           (f.component ?? "").toLowerCase().includes(q) ||
           (f.team ?? "").toLowerCase().includes(q) ||
-          (f.owner ?? "").toLowerCase().includes(q)
+          (f.owner ?? "").toLowerCase().includes(q),
       );
     }
-    const validSortKeys = new Set(["severity", "status", "cve", "title", "source", "sla"]);
+    const validSortKeys = new Set([
+      "severity",
+      "status",
+      "cve",
+      "title",
+      "source",
+      "sla",
+    ]);
     const [sortKey, desc] = (() => {
       const d = sortBy.endsWith("-desc");
       const key = d ? sortBy.slice(0, -5) : sortBy;
@@ -378,7 +463,20 @@ export function AssetPage({ config }: AssetPageProps) {
           SEV_ORDER.indexOf(a.severity as (typeof SEV_ORDER)[number]) -
           SEV_ORDER.indexOf(b.severity as (typeof SEV_ORDER)[number]);
       } else if (sortKey === "status") {
-        const statusOrder = ["Open", "In Review", "Rejected", "Reopened", "Risk Accepted", "Resolved", "False Positive", "Suppressed", "Not Applicable", "Approved", "Mitigated", "Duplicate"];
+        const statusOrder = [
+          "Open",
+          "In Review",
+          "Rejected",
+          "Reopened",
+          "Risk Accepted",
+          "Resolved",
+          "False Positive",
+          "Suppressed",
+          "Not Applicable",
+          "Approved",
+          "Mitigated",
+          "Duplicate",
+        ];
         cmp = statusOrder.indexOf(a.status) - statusOrder.indexOf(b.status);
       } else if (sortKey === "cve") {
         cmp = (a.cveId ?? "").localeCompare(b.cveId ?? "");
@@ -407,9 +505,10 @@ export function AssetPage({ config }: AssetPageProps) {
 
   const displayRows = useMemo(() => {
     if (!groupFindings) {
-      const sorted = [...filteredFindings].sort((a, b) =>
-        SEV_ORDER.indexOf(a.severity as (typeof SEV_ORDER)[number]) -
-        SEV_ORDER.indexOf(b.severity as (typeof SEV_ORDER)[number])
+      const sorted = [...filteredFindings].sort(
+        (a, b) =>
+          SEV_ORDER.indexOf(a.severity as (typeof SEV_ORDER)[number]) -
+          SEV_ORDER.indexOf(b.severity as (typeof SEV_ORDER)[number]),
       );
       return sorted.flatMap((f) => {
         const srcCount = f.sources?.length ?? 0;
@@ -421,7 +520,14 @@ export function AssetPage({ config }: AssetPageProps) {
             sourceName: s.name ?? "",
           }));
         }
-        return [{ finding: f, groupCount: undefined, sourceIndex: undefined as number | undefined, sourceName: undefined as string | undefined }];
+        return [
+          {
+            finding: f,
+            groupCount: undefined,
+            sourceIndex: undefined as number | undefined,
+            sourceName: undefined as string | undefined,
+          },
+        ];
       });
     }
     const groups = getGroupedFindings(filteredFindings, SEV_ORDER);
@@ -430,17 +536,33 @@ export function AssetPage({ config }: AssetPageProps) {
         SEV_ORDER.indexOf(a.severity as (typeof SEV_ORDER)[number]) <
         SEV_ORDER.indexOf(b.severity as (typeof SEV_ORDER)[number])
           ? a
-          : b
+          : b,
       );
       const srcCount = worst.sources?.length ?? 0;
       const count = list.length > 1 ? list.length : Math.max(1, srcCount);
-      return [{ finding: worst, groupCount: count, sourceIndex: undefined as number | undefined, sourceName: undefined as string | undefined }];
+      return [
+        {
+          finding: worst,
+          groupCount: count,
+          sourceIndex: undefined as number | undefined,
+          sourceName: undefined as string | undefined,
+        },
+      ];
     });
   }, [filteredFindings, groupFindings]);
 
   const severityCounts = useMemo(() => {
-    const CLOSED = ["Resolved", "False Positive", "Duplicate", "Not Applicable", "Approved", "Suppressed"];
-    const openRows = displayRows.filter((r) => !CLOSED.includes(r.finding.status ?? ""));
+    const CLOSED = [
+      "Resolved",
+      "False Positive",
+      "Duplicate",
+      "Not Applicable",
+      "Approved",
+      "Suppressed",
+    ];
+    const openRows = displayRows.filter(
+      (r) => !CLOSED.includes(r.finding.status ?? ""),
+    );
     const counts: Record<string, number> = {};
     for (const sev of SEV_ORDER) counts[sev] = 0;
     for (const r of openRows) {
@@ -456,18 +578,23 @@ export function AssetPage({ config }: AssetPageProps) {
   const handleDeleteAsset = useCallback(async () => {
     if (!asset || deletingAsset) return;
     const confirmed = window.confirm(
-      `Delete asset "${asset.name}" and all its findings? This cannot be undone.`
+      `Delete asset "${asset.name}" and all its findings? This cannot be undone.`,
     );
     if (!confirmed) return;
     setDeleteError(null);
     setDeletingAsset(true);
     try {
-      await deleteAsset(asset.id, { token: token ?? undefined, userEmail: user?.email });
+      await deleteAsset(asset.id, {
+        token: token ?? undefined,
+        userEmail: user?.email,
+      });
       setSelected(null);
       await refetch({ silent: true });
       router.push("/");
     } catch (err) {
-      setDeleteError(err instanceof Error ? err.message : "Failed to delete asset");
+      setDeleteError(
+        err instanceof Error ? err.message : "Failed to delete asset",
+      );
     } finally {
       setDeletingAsset(false);
     }
@@ -556,12 +683,7 @@ export function AssetPage({ config }: AssetPageProps) {
     }
 
     if (assetTab === "waivers") {
-      return (
-        <WaiversTab
-          waivers={assetWaivers}
-          onSelect={setSelected}
-        />
-      );
+      return <WaiversTab waivers={assetWaivers} onSelect={setSelected} />;
     }
 
     if (assetTab === "sbom") {
@@ -599,518 +721,618 @@ export function AssetPage({ config }: AssetPageProps) {
           }}
         >
           <div style={{ flexShrink: 0, marginBottom: 16 }}>
-        <Link
-          href="/"
-          style={{
-            color: "var(--app-accent)",
-            textDecoration: "none",
-            fontSize: 13,
-            marginBottom: 12,
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 6,
-            ...sans,
-          }}
-        >
-          ← Back to Assets
-        </Link>
-
-        {/* Asset header */}
-        <div
-          style={{
-            display: "flex",
-            flexWrap: "wrap",
-            gap: 20,
-            alignItems: "flex-start",
-            marginTop: 12,
-            padding: 20,
-            background: "var(--app-card-bg)",
-            borderRadius: 8,
-            border: "1px solid var(--app-border)",
-          }}
-        >
-          {/* Asset name + branch/tag dropdown */}
-          <div style={{ display: "flex", gap: 14, alignItems: "flex-start", flex: 1, minWidth: 0 }}>
-            <div
+            <Link
+              href="/"
               style={{
-                width: 48,
-                height: 48,
-                borderRadius: 6,
-                background: "var(--app-input-bg)",
-                display: "flex",
+                color: "var(--app-accent)",
+                textDecoration: "none",
+                fontSize: 13,
+                marginBottom: 12,
+                display: "inline-flex",
                 alignItems: "center",
-                justifyContent: "center",
-                flexShrink: 0,
-                ...mono,
-                fontSize: 20,
-                fontWeight: 700,
-                color: "var(--app-muted)",
+                gap: 6,
+                ...sans,
               }}
             >
-              {asset.name.charAt(0).toUpperCase()}
-            </div>
-            <div style={{ minWidth: 0, flex: 1 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-                <h1
+              ← Back to Assets
+            </Link>
+
+            {/* Asset header */}
+            <div
+              style={{
+                display: "flex",
+                flexWrap: "wrap",
+                gap: 20,
+                alignItems: "flex-start",
+                marginTop: 12,
+                padding: 20,
+                background: "var(--app-card-bg)",
+                borderRadius: 8,
+                border: "1px solid var(--app-border)",
+              }}
+            >
+              {/* Asset name + branch/tag dropdown */}
+              <div
+                style={{
+                  display: "flex",
+                  gap: 14,
+                  alignItems: "flex-start",
+                  flex: 1,
+                  minWidth: 0,
+                }}
+              >
+                <div
                   style={{
-                    ...mono,
-                    fontSize: 18,
-                    fontWeight: 700,
-                    color: "var(--app-fg)",
-                    margin: 0,
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  {asset.name}
-                </h1>
-                <button
-                  type="button"
-                  onClick={() =>
-                    asset &&
-                    toggleFavorite(asset.id, {
-                      branch: branchFilter || undefined,
-                      tag: tagFilter || undefined,
-                    })
-                  }
-                  aria-label={favoriteAssetIds.has(asset.id) ? "Unfavorite" : "Favorite"}
-                  style={{
-                    background: "none",
-                    border: "none",
-                    padding: 0,
-                    cursor: "pointer",
+                    width: 48,
+                    height: 48,
+                    borderRadius: 6,
+                    background: "var(--app-input-bg)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
                     flexShrink: 0,
+                    ...mono,
                     fontSize: 20,
-                    color: favoriteAssetIds.has(asset.id) ? "var(--app-danger)" : "var(--app-muted)",
+                    fontWeight: 700,
+                    color: "var(--app-muted)",
                   }}
                 >
-                  {favoriteAssetIds.has(asset.id) ? "♥" : "♡"}
-                </button>
-                {isAdmin && (
-                  <button
-                    type="button"
-                    onClick={handleDeleteAsset}
-                    disabled={deletingAsset}
-                    aria-label={`Delete asset ${asset.name}`}
+                  {asset.name.charAt(0).toUpperCase()}
+                </div>
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                      marginBottom: 6,
+                    }}
+                  >
+                    <h1
+                      style={{
+                        ...mono,
+                        fontSize: 18,
+                        fontWeight: 700,
+                        color: "var(--app-fg)",
+                        margin: 0,
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {asset.name}
+                    </h1>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        asset &&
+                        toggleFavorite(asset.id, {
+                          branch: branchFilter || undefined,
+                          tag: tagFilter || undefined,
+                        })
+                      }
+                      aria-label={
+                        favoriteAssetIds.has(asset.id)
+                          ? "Unfavorite"
+                          : "Favorite"
+                      }
+                      style={{
+                        background: "none",
+                        border: "none",
+                        padding: 0,
+                        cursor: "pointer",
+                        flexShrink: 0,
+                        fontSize: 20,
+                        color: favoriteAssetIds.has(asset.id)
+                          ? "var(--app-danger)"
+                          : "var(--app-muted)",
+                      }}
+                    >
+                      {favoriteAssetIds.has(asset.id) ? "♥" : "♡"}
+                    </button>
+                    {isAdmin && (
+                      <button
+                        type="button"
+                        onClick={handleDeleteAsset}
+                        disabled={deletingAsset}
+                        aria-label={`Delete asset ${asset.name}`}
+                        style={{
+                          ...mono,
+                          fontSize: 11,
+                          borderRadius: 6,
+                          border: "1px solid var(--app-danger)",
+                          background: "transparent",
+                          color: "var(--app-danger)",
+                          padding: "4px 10px",
+                          cursor: deletingAsset ? "not-allowed" : "pointer",
+                          opacity: deletingAsset ? 0.7 : 1,
+                        }}
+                      >
+                        {deletingAsset ? "Deleting…" : "Delete asset"}
+                      </button>
+                    )}
+                  </div>
+                  <div
+                    style={{ ...mono, fontSize: 11, color: "var(--app-muted)" }}
+                  >
+                    {asset.tag && `Tag: ${asset.tag} · `}
+                    {displayRows.length} findings
+                    {(branchFilter || tagFilter) &&
+                      ` (of ${asset.findings.length})`}
+                  </div>
+                </div>
+              </div>
+
+              {/* Branch / Tag dropdown */}
+              {(assetType === "repo" || assetType === "container") && (
+                <div
+                  style={{
+                    display: "flex",
+                    gap: 16,
+                    alignItems: "center",
+                    flexWrap: "wrap",
+                  }}
+                >
+                  {assetType === "repo" && (
+                    <ThemedSelect
+                      value={branchFilter}
+                      options={[
+                        {
+                          value: "",
+                          label:
+                            uniqueBranches.length > 0 ? "All branches" : "—",
+                        },
+                        ...uniqueBranches.map((b) => ({ value: b, label: b })),
+                      ]}
+                      onChange={(v) => setBranchFilter(v)}
+                      icon={
+                        <GitBranch
+                          size={14}
+                          style={{ color: "var(--app-muted)", flexShrink: 0 }}
+                        />
+                      }
+                      aria-label="Filter by branch"
+                    />
+                  )}
+                  {assetType === "container" && (
+                    <ThemedSelect
+                      value={tagFilter}
+                      options={[
+                        {
+                          value: "",
+                          label: uniqueTags.length > 0 ? "All tags" : "—",
+                        },
+                        ...uniqueTags.map((t) => ({ value: t, label: t })),
+                      ]}
+                      onChange={(v) => setTagFilter(v)}
+                      icon={
+                        <Tag
+                          size={14}
+                          style={{ color: "var(--app-muted)", flexShrink: 0 }}
+                        />
+                      }
+                      aria-label="Filter by tag"
+                    />
+                  )}
+                </div>
+              )}
+
+              {/* Metric pills + severity breakdown */}
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 12,
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    gap: 10,
+                    flexWrap: "wrap",
+                    alignItems: "center",
+                  }}
+                >
+                  <span
                     style={{
                       ...mono,
                       fontSize: 11,
-                      borderRadius: 6,
-                      border: "1px solid var(--app-danger)",
-                      background: "transparent",
-                      color: "var(--app-danger)",
-                      padding: "4px 10px",
-                      cursor: deletingAsset ? "not-allowed" : "pointer",
-                      opacity: deletingAsset ? 0.7 : 1,
+                      padding: "6px 12px",
+                      borderRadius: 20,
+                      background:
+                        "color-mix(in srgb, var(--app-accent) 15%, transparent)",
+                      color: "var(--app-accent)",
                     }}
                   >
-                    {deletingAsset ? "Deleting…" : "Delete asset"}
-                  </button>
-                )}
-              </div>
-              <div style={{ ...mono, fontSize: 11, color: "var(--app-muted)" }}>
-                {asset.tag && `Tag: ${asset.tag} · `}
-                {displayRows.length} findings
-                {(branchFilter || tagFilter) && ` (of ${asset.findings.length})`}
+                    Findings Verified: {metricsFromAsset.verifiedPct}%
+                  </span>
+                  <ThemedTooltip content={ABC_TOOLTIP} placement="top">
+                    <span
+                      style={{
+                        ...mono,
+                        fontSize: 11,
+                        padding: "6px 12px",
+                        borderRadius: 20,
+                        background:
+                          metricsFromAsset.verifiedPct === 100
+                            ? "color-mix(in srgb, var(--app-success) 15%, transparent)"
+                            : metricsFromAsset.verifiedPct > 0
+                              ? "color-mix(in srgb, var(--app-warning) 15%, transparent)"
+                              : "color-mix(in srgb, var(--app-danger) 15%, transparent)",
+                        color:
+                          metricsFromAsset.verifiedPct === 100
+                            ? "var(--app-success)"
+                            : metricsFromAsset.verifiedPct > 0
+                              ? "var(--app-warning)"
+                              : "var(--app-danger)",
+                      }}
+                    >
+                      ABC:{" "}
+                      {metricsFromAsset.verifiedPct === 100
+                        ? "Compliant"
+                        : metricsFromAsset.verifiedPct > 0
+                          ? "Compliant With Warnings"
+                          : "Non-compliant"}
+                    </span>
+                  </ThemedTooltip>
+                  <ThemedTooltip content={ORA_TOOLTIP} placement="top">
+                    <span
+                      style={{
+                        ...mono,
+                        fontSize: 11,
+                        padding: "6px 12px",
+                        borderRadius: 20,
+                        background:
+                          "color-mix(in srgb, var(--app-muted) 15%, transparent)",
+                        color: "var(--app-fg)",
+                      }}
+                    >
+                      ORA: {metricsFromAsset.oraPct}%
+                    </span>
+                  </ThemedTooltip>
+                </div>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  {severityCounts.map(({ severity, count }) => {
+                    const s = SEV[severity] ?? SEV.Informational;
+                    return (
+                      <span
+                        key={severity}
+                        style={{
+                          ...mono,
+                          fontSize: 11,
+                          padding: "4px 10px",
+                          borderRadius: 20,
+                          background: s.bg,
+                          color: s.c,
+                          border: `1px solid ${s.c}40`,
+                        }}
+                      >
+                        {severity}: {count}
+                      </span>
+                    );
+                  })}
+                </div>
               </div>
             </div>
-          </div>
+            {deleteError && (
+              <div
+                style={{
+                  marginTop: 12,
+                  border:
+                    "1px solid color-mix(in srgb, var(--app-danger) 60%, transparent)",
+                  background:
+                    "color-mix(in srgb, var(--app-danger) 10%, transparent)",
+                  color: "var(--app-danger)",
+                  borderRadius: 8,
+                  padding: "8px 12px",
+                  ...sans,
+                  fontSize: 12,
+                }}
+              >
+                {deleteError}
+              </div>
+            )}
 
-          {/* Branch / Tag dropdown */}
-          {(assetType === "repo" || assetType === "container") && (
-            <div style={{ display: "flex", gap: 16, alignItems: "center", flexWrap: "wrap" }}>
-              {assetType === "repo" && (
-                <ThemedSelect
-                  value={branchFilter}
-                  options={[
-                    { value: "", label: uniqueBranches.length > 0 ? "All branches" : "—" },
-                    ...uniqueBranches.map((b) => ({ value: b, label: b })),
-                  ]}
-                  onChange={(v) => setBranchFilter(v)}
-                  icon={<GitBranch size={14} style={{ color: "var(--app-muted)", flexShrink: 0 }} />}
-                  aria-label="Filter by branch"
-                />
-              )}
-              {assetType === "container" && (
-                <ThemedSelect
-                  value={tagFilter}
-                  options={[
-                    { value: "", label: uniqueTags.length > 0 ? "All tags" : "—" },
-                    ...uniqueTags.map((t) => ({ value: t, label: t })),
-                  ]}
-                  onChange={(v) => setTagFilter(v)}
-                  icon={<Tag size={14} style={{ color: "var(--app-muted)", flexShrink: 0 }} />}
-                  aria-label="Filter by tag"
-                />
-              )}
-            </div>
-          )}
-
-          {/* Metric pills + severity breakdown */}
-          <div
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              gap: 12,
-            }}
-          >
+            {/* Sort, multi-filter by column, search */}
             <div
               style={{
                 display: "flex",
                 gap: 10,
+                marginTop: 14,
                 flexWrap: "wrap",
                 alignItems: "center",
               }}
             >
-              <span
-                style={{
-                  ...mono,
-                  fontSize: 11,
-                  padding: "6px 12px",
-                  borderRadius: 20,
-                  background: "color-mix(in srgb, var(--app-accent) 15%, transparent)",
-                  color: "var(--app-accent)",
-                }}
-              >
-                Findings Verified: {metricsFromAsset.verifiedPct}%
-              </span>
-              <ThemedTooltip content={ABC_TOOLTIP} placement="top">
-                <span
-                  style={{
-                    ...mono,
-                    fontSize: 11,
-                    padding: "6px 12px",
-                    borderRadius: 20,
-                    background:
-                      metricsFromAsset.verifiedPct === 100
-                        ? "color-mix(in srgb, var(--app-success) 15%, transparent)"
-                        : metricsFromAsset.verifiedPct > 0
-                          ? "color-mix(in srgb, var(--app-warning) 15%, transparent)"
-                          : "color-mix(in srgb, var(--app-danger) 15%, transparent)",
-                    color:
-                      metricsFromAsset.verifiedPct === 100
-                        ? "var(--app-success)"
-                        : metricsFromAsset.verifiedPct > 0
-                          ? "var(--app-warning)"
-                          : "var(--app-danger)",
-                  }}
-                >
-                  ABC: {metricsFromAsset.verifiedPct === 100 ? "Compliant" : metricsFromAsset.verifiedPct > 0 ? "Compliant With Warnings" : "Non-compliant"}
-                </span>
-              </ThemedTooltip>
-              <ThemedTooltip content={ORA_TOOLTIP} placement="top">
-                <span
-                  style={{
-                    ...mono,
-                    fontSize: 11,
-                    padding: "6px 12px",
-                    borderRadius: 20,
-                    background: "color-mix(in srgb, var(--app-muted) 15%, transparent)",
-                    color: "var(--app-fg)",
-                  }}
-                >
-                  ORA: {metricsFromAsset.oraPct}%
-                </span>
-              </ThemedTooltip>
-            </div>
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              {severityCounts.map(({ severity, count }) => {
-                  const s = SEV[severity] ?? SEV.Informational;
-                  return (
-                    <span
-                      key={severity}
-                      style={{
-                        ...mono,
-                        fontSize: 11,
-                        padding: "4px 10px",
-                        borderRadius: 20,
-                        background: s.bg,
-                        color: s.c,
-                        border: `1px solid ${s.c}40`,
-                      }}
-                    >
-                      {severity}: {count}
-                    </span>
-                  );
-                })}
-              </div>
-          </div>
-        </div>
-        {deleteError && (
-          <div
-            style={{
-              marginTop: 12,
-              border: "1px solid color-mix(in srgb, var(--app-danger) 60%, transparent)",
-              background: "color-mix(in srgb, var(--app-danger) 10%, transparent)",
-              color: "var(--app-danger)",
-              borderRadius: 8,
-              padding: "8px 12px",
-              ...sans,
-              fontSize: 12,
-            }}
-          >
-            {deleteError}
-          </div>
-        )}
-
-        {/* Sort, multi-filter by column, search */}
-        <div
-          style={{
-            display: "flex",
-            gap: 10,
-            marginTop: 14,
-            flexWrap: "wrap",
-            alignItems: "center",
-          }}
-        >
-          <label
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-              cursor: "pointer",
-              ...sans,
-              fontSize: 12,
-              color: "var(--app-muted)",
-            }}
-          >
-            <input
-              type="checkbox"
-              checked={groupFindings}
-              onChange={(e) => setPreferences({ groupFindings: e.target.checked })}
-              aria-label="Group findings"
-              style={{ accentColor: "var(--app-accent-emerald)" }}
-            />
-            Group findings
-          </label>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span style={{ ...mono, fontSize: 11, color: "var(--app-muted)" }}>Sort:</span>
-            <select
-              value={sortBy.endsWith("-desc") ? sortBy.slice(0, -5) : sortBy}
-              onChange={(e) => setSortBy(e.target.value as (typeof SORT_OPTS)[number]["value"])}
-              style={{
-                background: "var(--app-input-bg)",
-                border: "1px solid var(--app-border)",
-                borderRadius: 6,
-                padding: "6px 12px",
-                color: "var(--app-fg)",
-                fontSize: 12,
-                ...mono,
-              }}
-            >
-              {SORT_OPTS.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
-          </div>
-          <MultiSelectFilter
-            label="Type"
-            options={uniqueColumnValues.types.map((t) => ({
-              value: t,
-              label: `${FINDING_TYPES[t]?.icon ?? ""} ${FINDING_TYPES[t]?.label ?? t}`.trim(),
-            }))}
-            selected={findingTypeFilter}
-            onChange={setFindingTypeFilter}
-          />
-          <MultiSelectFilter
-            label="Status"
-            options={statusOptionsWithCounts}
-            selected={statusFilter}
-            onChange={handleStatusFilterChange}
-          />
-          <MultiSelectFilter
-            label="Severity"
-            options={uniqueColumnValues.severities.map((s) => ({ value: s, label: s }))}
-            selected={severityFilter}
-            onChange={setSeverityFilter}
-          />
-          <MultiSelectFilter
-            label="Source"
-            options={uniqueColumnValues.sources.map((id) => {
-              const cfg = sources.find((s) => s.id === id);
-              const label = displaySourceName(cfg?.name ?? id) || id;
-              return { value: id, label };
-            })}
-            selected={sourceFilter}
-            onChange={setSourceFilter}
-          />
-          <input
-            type="search"
-            value={findingsSearch}
-            onChange={(e) => setFindingsSearch(e.target.value)}
-            placeholder="Search CVE, title, component, team…"
-            aria-label="Search findings"
-            style={{
-              flex: 1,
-              minWidth: 200,
-              background: "var(--app-input-bg)",
-              border: "1px solid var(--app-border)",
-              borderRadius: 6,
-              padding: "8px 14px",
-              color: "var(--app-fg)",
-              fontSize: 13,
-              ...sans,
-            }}
-          />
-        </div>
-        {checked.size > 0 && (
-          <BulkBar
-            count={checked.size}
-            onAction={handleBulk}
-            onDeselect={clearChecked}
-          />
-        )}
-      </div>
-
-      <div
-        style={{
-          flex: 1,
-          minHeight: 0,
-          display: "flex",
-          flexDirection: "column",
-          overflow: "hidden",
-          border: "1px solid var(--app-border)",
-          borderRadius: 2,
-        }}
-      >
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "26px 4px 32px 130px 1fr 160px 60px 100px 90px 80px",
-            gap: 8,
-            padding: HEADER_PADDING[density],
-            background: "var(--app-header-bg)",
-            ...mono,
-            fontSize: 9,
-            fontWeight: 700,
-            letterSpacing: "0.1em",
-            color: "var(--app-muted)",
-            textTransform: "uppercase",
-          }}
-        >
-          {FINDINGS_COLUMNS.map((col, i) => {
-            const isSortable = !!col.sortKey;
-            const isActive = sortBy === col.sortKey || sortBy === `${col.sortKey}-desc`;
-            const isDesc = sortBy.endsWith("-desc");
-            const handleClick = () => {
-              if (!isSortable) return;
-              if (isActive) {
-                setSortBy(isDesc ? col.sortKey : `${col.sortKey}-desc`);
-              } else {
-                setSortBy(col.sortKey);
-              }
-            };
-            return (
-              <span
-                key={i}
-                onClick={handleClick}
-                role={isSortable ? "button" : undefined}
-                tabIndex={isSortable ? 0 : undefined}
-                onKeyDown={isSortable ? (e) => e.key === "Enter" && handleClick() : undefined}
+              <label
                 style={{
                   display: "flex",
                   alignItems: "center",
-                  gap: 4,
-                  cursor: isSortable ? "pointer" : undefined,
-                  userSelect: "none",
-                  color: isActive ? "var(--app-fg)" : undefined,
+                  gap: 8,
+                  cursor: "pointer",
+                  ...sans,
+                  fontSize: 12,
+                  color: "var(--app-muted)",
                 }}
               >
-                {col.label}
-                {isSortable && isActive && (isDesc ? <ChevronDown size={10} /> : <ChevronUp size={10} />)}
-              </span>
-            );
-          })}
-        </div>
-        <div
-          style={{
-            flex: 1,
-            minHeight: 0,
-            overflow: "auto",
-          }}
-        >
-          {displayRows.length === 0 ? (
+                <input
+                  type="checkbox"
+                  checked={groupFindings}
+                  onChange={(e) =>
+                    setPreferences({ groupFindings: e.target.checked })
+                  }
+                  aria-label="Group findings"
+                  style={{ accentColor: "var(--app-accent-emerald)" }}
+                />
+                Group findings
+              </label>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span
+                  style={{ ...mono, fontSize: 11, color: "var(--app-muted)" }}
+                >
+                  Sort:
+                </span>
+                <select
+                  value={
+                    sortBy.endsWith("-desc") ? sortBy.slice(0, -5) : sortBy
+                  }
+                  onChange={(e) =>
+                    setSortBy(
+                      e.target.value as (typeof SORT_OPTS)[number]["value"],
+                    )
+                  }
+                  style={{
+                    background: "var(--app-input-bg)",
+                    border: "1px solid var(--app-border)",
+                    borderRadius: 6,
+                    padding: "6px 12px",
+                    color: "var(--app-fg)",
+                    fontSize: 12,
+                    ...mono,
+                  }}
+                >
+                  {SORT_OPTS.map((o) => (
+                    <option key={o.value} value={o.value}>
+                      {o.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <MultiSelectFilter
+                label="Type"
+                options={uniqueColumnValues.types.map((t) => ({
+                  value: t,
+                  label: `${FINDING_TYPES[t]?.icon ?? ""} ${
+                    FINDING_TYPES[t]?.label ?? t
+                  }`.trim(),
+                }))}
+                selected={findingTypeFilter}
+                onChange={setFindingTypeFilter}
+              />
+              <MultiSelectFilter
+                label="Status"
+                options={statusOptionsWithCounts}
+                selected={statusFilter}
+                onChange={handleStatusFilterChange}
+              />
+              <MultiSelectFilter
+                label="Severity"
+                options={uniqueColumnValues.severities.map((s) => ({
+                  value: s,
+                  label: s,
+                }))}
+                selected={severityFilter}
+                onChange={setSeverityFilter}
+              />
+              <MultiSelectFilter
+                label="Source"
+                options={uniqueColumnValues.sources.map((id) => {
+                  const cfg = sources.find((s) => s.id === id);
+                  const label = displaySourceName(cfg?.name ?? id) || id;
+                  return { value: id, label };
+                })}
+                selected={sourceFilter}
+                onChange={setSourceFilter}
+              />
+              <input
+                type="search"
+                value={findingsSearch}
+                onChange={(e) => setFindingsSearch(e.target.value)}
+                placeholder="Search CVE, title, component, team…"
+                aria-label="Search findings"
+                style={{
+                  flex: 1,
+                  minWidth: 200,
+                  background: "var(--app-input-bg)",
+                  border: "1px solid var(--app-border)",
+                  borderRadius: 6,
+                  padding: "8px 14px",
+                  color: "var(--app-fg)",
+                  fontSize: 13,
+                  ...sans,
+                }}
+              />
+            </div>
+            {checked.size > 0 && (
+              <BulkBar
+                count={checked.size}
+                onAction={handleBulk}
+                onDeselect={clearChecked}
+              />
+            )}
+          </div>
+
+          <div
+            style={{
+              flex: 1,
+              minHeight: 0,
+              display: "flex",
+              flexDirection: "column",
+              overflow: "hidden",
+              border: "1px solid var(--app-border)",
+              borderRadius: 2,
+            }}
+          >
             <div
               style={{
-                ...sans,
-                fontSize: 12,
+                display: "grid",
+                gridTemplateColumns:
+                  "26px 4px 32px 130px 1fr 160px 60px 100px 90px 80px",
+                gap: 8,
+                padding: HEADER_PADDING[density],
+                background: "var(--app-header-bg)",
+                ...mono,
+                fontSize: 9,
+                fontWeight: 700,
+                letterSpacing: "0.1em",
                 color: "var(--app-muted)",
-                padding: 40,
-                textAlign: "center",
+                textTransform: "uppercase",
               }}
             >
-              {findingsSearch ? "No findings match your search." : "No findings."}
+              {FINDINGS_COLUMNS.map((col, i) => {
+                const isSortable = !!col.sortKey;
+                const isActive =
+                  sortBy === col.sortKey || sortBy === `${col.sortKey}-desc`;
+                const isDesc = sortBy.endsWith("-desc");
+                const handleClick = () => {
+                  if (!isSortable) return;
+                  if (isActive) {
+                    setSortBy(isDesc ? col.sortKey : `${col.sortKey}-desc`);
+                  } else {
+                    setSortBy(col.sortKey);
+                  }
+                };
+                return (
+                  <span
+                    key={i}
+                    onClick={handleClick}
+                    role={isSortable ? "button" : undefined}
+                    tabIndex={isSortable ? 0 : undefined}
+                    onKeyDown={
+                      isSortable
+                        ? (e) => e.key === "Enter" && handleClick()
+                        : undefined
+                    }
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 4,
+                      cursor: isSortable ? "pointer" : undefined,
+                      userSelect: "none",
+                      color: isActive ? "var(--app-fg)" : undefined,
+                    }}
+                  >
+                    {col.label}
+                    {isSortable &&
+                      isActive &&
+                      (isDesc ? (
+                        <ChevronDown size={10} />
+                      ) : (
+                        <ChevronUp size={10} />
+                      ))}
+                  </span>
+                );
+              })}
             </div>
-          ) : (
-            displayRows.map(({ finding: f, groupCount, sourceIndex, sourceName }) => (
-              <FindingRow
-                key={sourceIndex != null ? `${f.id}-${sourceIndex}` : f.id}
-                finding={f}
-                sources={sources}
-                selected={selected?.id === f.id && (sourceIndex == null || selectedSourceIndex === sourceIndex)}
-                checked={checked.has(f.id)}
-                onCheck={(v) => toggleCheck(f.id, v)}
-                onClick={() => {
-                  setSelected(f);
-                  setSelectedSourceIndex(sourceIndex);
-                }}
-                groupCount={groupCount}
-                instanceSource={sourceName}
-              />
-            ))
+            <div
+              style={{
+                flex: 1,
+                minHeight: 0,
+                overflow: "auto",
+              }}
+            >
+              {displayRows.length === 0 ? (
+                <div
+                  style={{
+                    ...sans,
+                    fontSize: 12,
+                    color: "var(--app-muted)",
+                    padding: 40,
+                    textAlign: "center",
+                  }}
+                >
+                  {findingsSearch
+                    ? "No findings match your search."
+                    : "No findings."}
+                </div>
+              ) : (
+                displayRows.map(
+                  ({ finding: f, groupCount, sourceIndex, sourceName }) => (
+                    <FindingRow
+                      key={
+                        sourceIndex != null ? `${f.id}-${sourceIndex}` : f.id
+                      }
+                      finding={f}
+                      sources={sources}
+                      selected={
+                        selected?.id === f.id &&
+                        (sourceIndex == null ||
+                          selectedSourceIndex === sourceIndex)
+                      }
+                      checked={checked.has(f.id)}
+                      onCheck={(v) => toggleCheck(f.id, v)}
+                      onClick={() => {
+                        setSelected(f);
+                        setSelectedSourceIndex(sourceIndex);
+                      }}
+                      groupCount={groupCount}
+                      instanceSource={sourceName}
+                    />
+                  ),
+                )
+              )}
+            </div>
+
+            <div
+              style={{
+                flexShrink: 0,
+                padding: "6px 14px",
+                background: "var(--app-header-bg)",
+                borderTop: "1px solid var(--app-border)",
+                ...mono,
+                fontSize: 11,
+                color: "var(--app-muted)",
+              }}
+            >
+              {displayRows.length}{" "}
+              {groupFindings
+                ? displayRows.length === 1
+                  ? "group"
+                  : "groups"
+                : displayRows.length === 1
+                  ? "finding"
+                  : "findings"}
+              {groupFindings &&
+                displayRows.length !== filteredFindings.length &&
+                ` (${filteredFindings.length} total)`}
+            </div>
+          </div>
+
+          {selected && (
+            <DetailPanel
+              finding={selected}
+              allFindings={branchTagFilteredFindings}
+              sources={sources}
+              tracker={tracker}
+              trackers={trackers}
+              onClose={() => {
+                setSelected(null);
+                setSelectedSourceIndex(undefined);
+              }}
+              onUpdate={handleUpdate}
+              onArchive={handleArchive}
+              onUnarchive={handleUnarchive}
+              onRevert={handleRevert}
+              onOverrideFingerprint={handleOverrideFingerprint}
+              readOnly={readOnly}
+              isAdmin={isAdmin}
+              repoBaseUrl={config.repoBaseUrl}
+              repoUrlType={config.repoUrlType}
+              groupFindings={groupFindings}
+              selectedSourceIndex={
+                !groupFindings ? selectedSourceIndex : undefined
+              }
+            />
           )}
-        </div>
-
-        <div
-          style={{
-            flexShrink: 0,
-            padding: "6px 14px",
-            background: "var(--app-header-bg)",
-            borderTop: "1px solid var(--app-border)",
-            ...mono,
-            fontSize: 11,
-            color: "var(--app-muted)",
-          }}
-        >
-          {displayRows.length}{" "}
-          {groupFindings
-            ? displayRows.length === 1
-              ? "group"
-              : "groups"
-            : displayRows.length === 1
-              ? "finding"
-              : "findings"}
-          {groupFindings && displayRows.length !== filteredFindings.length && ` (${filteredFindings.length} total)`}
-        </div>
-        </div>
-
-      {selected && (
-        <DetailPanel
-          finding={selected}
-          allFindings={branchTagFilteredFindings}
-          sources={sources}
-          tracker={tracker}
-          trackers={trackers}
-          onClose={() => {
-            setSelected(null);
-            setSelectedSourceIndex(undefined);
-          }}
-          onUpdate={handleUpdate}
-          onArchive={handleArchive}
-          onUnarchive={handleUnarchive}
-          onRevert={handleRevert}
-          onOverrideFingerprint={handleOverrideFingerprint}
-          readOnly={readOnly}
-          isAdmin={isAdmin}
-          repoBaseUrl={config.repoBaseUrl}
-          repoUrlType={config.repoUrlType}
-          groupFindings={groupFindings}
-          selectedSourceIndex={!groupFindings ? selectedSourceIndex : undefined}
-        />
-      )}
         </div>
       );
     }

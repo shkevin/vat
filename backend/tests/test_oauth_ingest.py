@@ -129,7 +129,9 @@ async def _admin_token(client, db):
     )
     await db.commit()
 
-    login_res = await client.post("/api/auth/login", json={"username": "admin", "password": "admin"})
+    login_res = await client.post(
+        "/api/auth/login", json={"username": "admin", "password": "admin"}
+    )
     assert login_res.status_code == 200
     return login_res.json()["token"]
 
@@ -200,7 +202,10 @@ async def test_settings_oauth_clients_crud(client, db):
     # Create
     create_res = await client.post(
         "/api/settings/oauth-clients",
-        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+        },
         json={"sourceId": "trivy-ci"},
     )
     assert create_res.status_code == 200
@@ -217,7 +222,9 @@ async def test_settings_oauth_clients_crud(client, db):
     assert keys_res.status_code == 200
     keys_data = keys_res.json()
     assert "oauthClients" in keys_data
-    oauth = next((c for c in keys_data["oauthClients"] if c["sourceId"] == "trivy-ci"), None)
+    oauth = next(
+        (c for c in keys_data["oauthClients"] if c["sourceId"] == "trivy-ci"), None
+    )
     assert oauth is not None
     assert oauth["clientId"] == data["clientId"]
 
@@ -266,18 +273,45 @@ async def test_ingest_with_oauth_token(client, db):
 
     r = await db.execute(select(SettingsKV).where(SettingsKV.key == "sources"))
     row = r.scalar_one_or_none()
-    sources = [{"id": "trivy-ci", "name": "trivy-ci", "adapter": "manual", "parser": "canonical"}]
+    sources = [
+        {
+            "id": "trivy-ci",
+            "name": "trivy-ci",
+            "adapter": "manual",
+            "parser": "canonical",
+        }
+    ]
     if row:
         row.value = sources
     else:
-        db.add(SettingsKV(key="sources", value=sources, updated_at=datetime.now(timezone.utc).replace(tzinfo=None)))
+        db.add(
+            SettingsKV(
+                key="sources",
+                value=sources,
+                updated_at=datetime.now(timezone.utc).replace(tzinfo=None),
+            )
+        )
     await db.commit()
 
     # Ingest with OAuth token (component + branch required for asset context)
-    payload = {"source": "trivy-ci", "findings": [{"cve_id": "CVE-2024-9999", "severity": "High", "description": "Test", "component": "test-pkg 1.0", "branch": "main"}]}
+    payload = {
+        "source": "trivy-ci",
+        "findings": [
+            {
+                "cve_id": "CVE-2024-9999",
+                "severity": "High",
+                "description": "Test",
+                "component": "test-pkg 1.0",
+                "branch": "main",
+            }
+        ],
+    }
     ingest_res = await client.post(
         "/api/ingest",
-        headers={"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"},
+        headers={
+            "Authorization": f"Bearer {access_token}",
+            "Content-Type": "application/json",
+        },
         json=payload,
     )
     assert ingest_res.status_code == 200

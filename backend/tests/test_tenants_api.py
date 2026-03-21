@@ -43,7 +43,10 @@ async def test_delete_default_tenant_blocked_when_single_admin(client, db):
     )
     assert res.status_code == 400
     assert "default tenant" in res.json().get("detail", "").lower()
-    assert "single admin" in res.json().get("detail", "").lower() or "one admin" in res.json().get("detail", "").lower()
+    assert (
+        "single admin" in res.json().get("detail", "").lower()
+        or "one admin" in res.json().get("detail", "").lower()
+    )
 
 
 @pytest.mark.asyncio

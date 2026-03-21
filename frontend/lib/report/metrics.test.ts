@@ -12,7 +12,7 @@ import type { VATReportIssue, VATReportIssueGroup } from "./vatReportAdapter";
 function mkIssue(
   issueId: number,
   groupId: number,
-  status = "open"
+  status = "open",
 ): VATReportIssue {
   return {
     issue_id: issueId,
@@ -39,7 +39,7 @@ function mkGroup(groupId: number, severity = "high"): VATReportIssueGroup {
     affected_repos: ["test-repo"],
     scanner_type: "VAT",
     has_task: false,
-    aikido_url: "",
+    source_url: "",
   };
 }
 
@@ -102,7 +102,13 @@ describe("getRiskLevel display-scale thresholds", () => {
     expect(getRiskLevel(100)).toBe("Low");
   });
   it("matches computeRiskScore for severe counts", () => {
-    const score = computeRiskScore({ critical: 39, high: 0, medium: 0, low: 0, info: 0 });
+    const score = computeRiskScore({
+      critical: 39,
+      high: 0,
+      medium: 0,
+      low: 0,
+      info: 0,
+    });
     expect(score).toBe(10);
     expect(getRiskLevel(score)).toBe("Critical");
   });

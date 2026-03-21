@@ -1,7 +1,7 @@
 """Tests for ingest API key service."""
 
 import pytest
-from sqlalchemy import select, update
+from sqlalchemy import update
 
 from app.models.settings_model import SettingsKV
 from app.services.ingest_keys import (

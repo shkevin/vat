@@ -6,7 +6,10 @@
 import type { Finding, Asset } from "@/types";
 import { getAssetTypeFromAsset } from "@/lib/assetUtils";
 import { displaySourceName } from "@/lib/utils";
-import { getFindingGroupKey, groupFindingsByKey } from "@/lib/findingGroupUtils";
+import {
+  getFindingGroupKey,
+  groupFindingsByKey,
+} from "@/lib/findingGroupUtils";
 
 /** VAT-compatible issue shape for report engine (matches AikidoIssue fields used by metrics/report-engine) */
 export interface VATReportIssue {
@@ -30,6 +33,8 @@ export interface VATReportIssue {
   affected_package?: string;
   affected_version?: string;
   fixed_version?: string;
+  /** External source platform link for this finding (e.g. Aikido). */
+  source_url?: string;
 }
 
 /** VAT-compatible issue group (for repo/container risk, top vulns) */
@@ -45,7 +50,7 @@ export interface VATReportIssueGroup {
   scanner_type: string;
   cve_id?: string;
   has_task: boolean;
-  aikido_url: string;
+  source_url: string;
 }
 
 /** VAT-compatible repo/container shape */
@@ -86,7 +91,13 @@ export interface VATDashboardData {
   tasksByGroupId?: Record<number, unknown[]>;
   cveDetailsByCveId?: Record<string, { epss_score?: number; in_kev?: boolean }>;
   /** Aikido authoritative counts (GET /issues/counts). Used when no filters for accurate totals. */
-  issueCounts?: { open: number; critical: number; high: number; medium: number; low: number } | null;
+  issueCounts?: {
+    open: number;
+    critical: number;
+    high: number;
+    medium: number;
+    low: number;
+  } | null;
 }
 
 function sevToScore(sev: string): number {
@@ -116,7 +127,7 @@ function groupByLegacy(findings: Finding[]): Map<string, Finding[]> {
 
 export function findingsToVATReportIssues(
   findings: Finding[],
-  options: FindingGroupOptions = {}
+  options: FindingGroupOptions = {},
 ): VATReportIssue[] {
   const { groupFindings = true } = options;
   const byKey = groupFindings
@@ -131,14 +142,22 @@ export function findingsToVATReportIssues(
   const result: VATReportIssue[] = [];
   let issueId = 1;
   for (const f of findings) {
-    const key = groupFindings ? getFindingGroupKey(f) : (f.cveId || f.id);
+    const key = groupFindings ? getFindingGroupKey(f) : f.cveId || f.id;
     const gid = groupMap.get(key) ?? 0;
-    const detected = f.firstDetectedAt ?? f.created ?? f.audit?.[0]?.ts ?? new Date().toISOString();
+    const detected =
+      f.firstDetectedAt ??
+      f.created ??
+      f.audit?.[0]?.ts ??
+      new Date().toISOString();
     // Use closed_at only when from source (Aikido). Never invent from audit — vulnerability-dashboard
     // matches Aikido by requiring real closed_at for "resolved this week"; invented dates inflate counts.
     const closedAt = f.closedAt ?? undefined;
+    const sourceUrl =
+      (f.externalLinks ?? []).find((l) => l.kind === "source" && l.url)?.url ??
+      undefined;
     // Prefer sourceGroupSeverity when available (e.g. from Aikido) for report consistency
-      const issueSeverity = (f.sourceGroupSeverity?.trim() || f.severity) ?? "info";
+    const issueSeverity =
+      (f.sourceGroupSeverity?.trim() || f.severity) ?? "info";
     result.push({
       issue_id: issueId++,
       issue_group_id: gid,
@@ -155,6 +174,7 @@ export function findingsToVATReportIssues(
       affected_package: f.component,
       scanner_type: displaySourceName(f.source) || "VAT",
       closed_at: closedAt,
+      source_url: sourceUrl,
     });
   }
   return result;
@@ -162,7 +182,7 @@ export function findingsToVATReportIssues(
 
 export function findingsToVATReportIssueGroups(
   findings: Finding[],
-  options: FindingGroupOptions = {}
+  options: FindingGroupOptions = {},
 ): VATReportIssueGroup[] {
   const { groupFindings = true } = options;
   const byKey = groupFindings
@@ -171,35 +191,61 @@ export function findingsToVATReportIssueGroups(
 
   return Array.from(byKey.entries()).map(([, list], i) => {
     const worst = list.reduce((a, b) =>
-      sevToScore(a.severity) >= sevToScore(b.severity) ? a : b
+      sevToScore(a.severity) >= sevToScore(b.severity) ? a : b,
     );
     // Prefer sourceGroupSeverity when available (e.g. from Aikido) for consistency with source dashboard
     const withSourceSev = list.filter((f) => f.sourceGroupSeverity?.trim());
     const groupSeverity =
       withSourceSev.length > 0
         ? withSourceSev.reduce((a, b) =>
-            sevToScore(a.sourceGroupSeverity!) >= sevToScore(b.sourceGroupSeverity!) ? a : b
+            sevToScore(a.sourceGroupSeverity!) >=
+            sevToScore(b.sourceGroupSeverity!)
+              ? a
+              : b,
           ).sourceGroupSeverity!
         : worst.severity ?? "info";
-    const repos = Array.from(new Set(list.map((f) => f.image ?? f.component ?? "unknown").filter(Boolean)));
+    const repos = Array.from(
+      new Set(
+        list.map((f) => f.image ?? f.component ?? "unknown").filter(Boolean),
+      ),
+    );
+    const sourceUrl =
+      list
+        .map(
+          (f) =>
+            (f.externalLinks ?? []).find((l) => l.kind === "source" && l.url)
+              ?.url,
+        )
+        .find(Boolean) ?? "";
     return {
       group_id: i + 1,
       title: worst.title ?? worst.cveId ?? "Unknown",
       severity: groupSeverity,
       severity_score: sevToScore(groupSeverity),
       status: (worst.status ?? "open").toLowerCase(),
-      first_detected_at: worst.firstDetectedAt ?? worst.created ?? worst.audit?.[0]?.ts ?? new Date().toISOString(),
+      first_detected_at:
+        worst.firstDetectedAt ??
+        worst.created ??
+        worst.audit?.[0]?.ts ??
+        new Date().toISOString(),
       issue_count: list.length,
       affected_repos: repos,
       scanner_type: displaySourceName(worst.source) || "VAT",
       cve_id: worst.cveId,
       has_task: Boolean(worst.trackerId),
-      aikido_url: "",
+      source_url: sourceUrl,
     };
   });
 }
 
-const ASSET_CLOSED = ["Resolved", "False Positive", "Duplicate", "Not Applicable", "Approved", "Suppressed"];
+const ASSET_CLOSED = [
+  "Resolved",
+  "False Positive",
+  "Duplicate",
+  "Not Applicable",
+  "Approved",
+  "Suppressed",
+];
 
 function isMitigated(f: Finding): boolean {
   return (f.status ?? "").toLowerCase() === "mitigated";
@@ -207,7 +253,7 @@ function isMitigated(f: Finding): boolean {
 
 /** Use sourceGroupSeverity when available for consistency with report engine (Aikido group-level severity). */
 function severityKey(f: Finding): "critical" | "high" | "medium" | "low" {
-    const s = ((f.sourceGroupSeverity?.trim() || f.severity) ?? "").toLowerCase();
+  const s = ((f.sourceGroupSeverity?.trim() || f.severity) ?? "").toLowerCase();
   if (s === "critical") return "critical";
   if (s === "high") return "high";
   if (s === "medium" || s === "moderate") return "medium";
@@ -216,7 +262,9 @@ function severityKey(f: Finding): "critical" | "high" | "medium" | "low" {
 
 export function assetsToVATReportRepos(assets: Asset[]): VATReportRepo[] {
   return assets.map((a, i) => {
-    const openFindings = a.findings.filter((f) => !ASSET_CLOSED.includes(f.status ?? ""));
+    const openFindings = a.findings.filter(
+      (f) => !ASSET_CLOSED.includes(f.status ?? ""),
+    );
     const critical: Finding[] = [];
     const high: Finding[] = [];
     const medium: Finding[] = [];
@@ -249,7 +297,7 @@ export function toVATDashboardData(
   findings: Finding[],
   assets: Asset[],
   workspaceName = "VAT",
-  options: FindingGroupOptions = {}
+  options: FindingGroupOptions = {},
 ): VATDashboardData {
   const issues = findingsToVATReportIssues(findings, options);
   const issueGroups = findingsToVATReportIssueGroups(findings, options);

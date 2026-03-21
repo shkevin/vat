@@ -3,7 +3,12 @@
 import { useMemo, useState, useCallback, useRef, useEffect } from "react";
 import { useVATData } from "@/contexts/VATDataContext";
 import { useUserPreferences } from "@/contexts/UserPreferencesContext";
-import { ABC_TOOLTIP, ORA_TOOLTIP, ASSET_TYPES, ASSET_TYPE_LABELS } from "@/lib/constants";
+import {
+  ABC_TOOLTIP,
+  ORA_TOOLTIP,
+  ASSET_TYPES,
+  ASSET_TYPE_LABELS,
+} from "@/lib/constants";
 import type { AssetLoadout } from "@/lib/assetLoadoutStorage";
 import { ThemedTooltip } from "@/components/ui/ThemedTooltip";
 import { mono, sans } from "@/lib/styles";
@@ -19,11 +24,17 @@ const ABC_OPTS = ["Compliant", "Compliant With Warnings", "Non-compliant"];
 
 interface FilterSidebarProps {
   filterFindingStatuses?: Set<string>;
-  onFilterFindingStatusesChange: (v: Set<string> | ((prev: Set<string>) => Set<string>)) => void;
+  onFilterFindingStatusesChange: (
+    v: Set<string> | ((prev: Set<string>) => Set<string>),
+  ) => void;
   filterAssetTypes?: Set<string>;
-  onFilterAssetTypesChange: (v: Set<string> | ((prev: Set<string>) => Set<string>)) => void;
+  onFilterAssetTypesChange: (
+    v: Set<string> | ((prev: Set<string>) => Set<string>),
+  ) => void;
   filterABC?: Set<string>;
-  onFilterABCChange: (v: Set<string> | ((prev: Set<string>) => Set<string>)) => void;
+  onFilterABCChange: (
+    v: Set<string> | ((prev: Set<string>) => Set<string>),
+  ) => void;
   filterVerifiedRange?: [number, number];
   onFilterVerifiedRangeChange: (v: [number, number]) => void;
   filterORARange?: [number, number];
@@ -85,7 +96,13 @@ export function FilterSidebar({
         filterVerifiedRange,
         filterORARange,
       }),
-    [filterFindingStatuses, filterAssetTypes, filterABC, filterVerifiedRange, filterORARange]
+    [
+      filterFindingStatuses,
+      filterAssetTypes,
+      filterABC,
+      filterVerifiedRange,
+      filterORARange,
+    ],
   );
 
   const clearAll = () => {
@@ -130,206 +147,77 @@ export function FilterSidebar({
             marginBottom: 16,
           }}
         >
-        <h2
-          style={{
-            ...mono,
-            fontSize: 11,
-            fontWeight: 700,
-            letterSpacing: "0.08em",
-            color: "var(--app-fg)",
-            textTransform: "uppercase",
-            margin: 0,
-          }}
-        >
-          Filters
-        </h2>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          {onClose && (
-            <button
-              type="button"
-              onClick={onClose}
-              aria-label="Close filters"
-              style={{
-                background: "none",
-                border: "none",
-                color: "var(--app-muted)",
-                fontSize: 14,
-                cursor: "pointer",
-                padding: 4,
-                ...sans,
-              }}
-            >
-              ✕
-            </button>
-          )}
-          {activeCount > 0 && (
-            <button
-              type="button"
-              onClick={clearAll}
-              aria-label="Clear all filters"
-              style={{
-                background: "none",
-                border: "none",
-                color: "var(--app-muted)",
-                fontSize: 11,
-                cursor: "pointer",
-                textDecoration: "underline",
-                ...sans,
-              }}
-            >
-              Clear all
-            </button>
-          )}
+          <h2
+            style={{
+              ...mono,
+              fontSize: 11,
+              fontWeight: 700,
+              letterSpacing: "0.08em",
+              color: "var(--app-fg)",
+              textTransform: "uppercase",
+              margin: 0,
+            }}
+          >
+            Filters
+          </h2>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            {onClose && (
+              <button
+                type="button"
+                onClick={onClose}
+                aria-label="Close filters"
+                style={{
+                  background: "none",
+                  border: "none",
+                  color: "var(--app-muted)",
+                  fontSize: 14,
+                  cursor: "pointer",
+                  padding: 4,
+                  ...sans,
+                }}
+              >
+                ✕
+              </button>
+            )}
+            {activeCount > 0 && (
+              <button
+                type="button"
+                onClick={clearAll}
+                aria-label="Clear all filters"
+                style={{
+                  background: "none",
+                  border: "none",
+                  color: "var(--app-muted)",
+                  fontSize: 11,
+                  cursor: "pointer",
+                  textDecoration: "underline",
+                  ...sans,
+                }}
+              >
+                Clear all
+              </button>
+            )}
+          </div>
         </div>
-      </div>
 
-      <div style={{ marginBottom: 16 }} role="group" aria-labelledby="filter-favorites-label">
-        <span
-          id="filter-favorites-label"
-          style={{
-            ...mono,
-            fontSize: 10,
-            fontWeight: 600,
-            color: "var(--app-fg-group)",
-            display: "block",
-            marginBottom: 8,
-          }}
-        >
-          Favorites
-        </span>
         <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            gap: 8,
-          }}
+          style={{ marginBottom: 16 }}
+          role="group"
+          aria-labelledby="filter-favorites-label"
         >
-          <label
-            htmlFor="only-favorites-switch"
+          <span
+            id="filter-favorites-label"
             style={{
-              ...sans,
-              fontSize: 12,
-              color: "var(--app-fg-secondary)",
-              cursor: "pointer",
-              flex: 1,
+              ...mono,
+              fontSize: 10,
+              fontWeight: 600,
+              color: "var(--app-fg-group)",
+              display: "block",
+              marginBottom: 8,
             }}
           >
-            Only Favorites
-          </label>
-          <button
-            id="only-favorites-switch"
-            type="button"
-            role="switch"
-            aria-checked={onlyFavorites}
-            aria-label="Show only favorite findings"
-            onClick={onOnlyFavoritesToggle}
-            onKeyDown={(e) => {
-              if (e.key === " " || e.key === "Enter") {
-                e.preventDefault();
-                onOnlyFavoritesToggle();
-              }
-            }}
-            tabIndex={0}
-            style={{
-              width: 36,
-              height: 20,
-              borderRadius: 10,
-              background: onlyFavorites ? "var(--app-accent-emerald)" : "var(--app-border)",
-              position: "relative",
-              cursor: "pointer",
-              flexShrink: 0,
-              border: "none",
-              padding: 0,
-            }}
-          >
-            <span
-              style={{
-                position: "absolute",
-                top: 2,
-                left: onlyFavorites ? 18 : 2,
-                width: 16,
-                height: 16,
-                borderRadius: 8,
-                background: "#fff",
-                transition: "left 0.15s ease-out",
-              }}
-              aria-hidden
-            />
-          </button>
-        </div>
-      </div>
-
-      <AssetLoadoutsSection />
-
-      <FilterCheckboxSection
-        label="Finding Statuses"
-        selected={filterFindingStatuses}
-        options={FINDING_STATUS_OPTS}
-        onChange={onFilterFindingStatusesChange}
-      />
-
-      <FilterCheckboxSection
-        label="Asset Type"
-        selected={filterAssetTypes}
-        options={[...ASSET_TYPES]}
-        onChange={onFilterAssetTypesChange}
-        optionLabels={Object.fromEntries(ASSET_TYPES.map((t) => [t, ASSET_TYPE_LABELS[t]]))}
-      />
-
-      <FilterCheckboxSection
-        label="Acceptance Baseline Criteria"
-        title={ABC_TOOLTIP}
-        selected={filterABC}
-        options={ABC_OPTS}
-        onChange={onFilterABCChange}
-      />
-
-      <CollapsiblePanel label="Findings Verified" defaultOpen={true}>
-        <RangeSlider
-          min={0}
-          max={100}
-          value={filterVerifiedRange}
-          onChange={onFilterVerifiedRangeChange}
-          suffix="%"
-        />
-      </CollapsiblePanel>
-
-      <CollapsiblePanel label="Operational Risk Assessment" title={ORA_TOOLTIP} defaultOpen={true}>
-        <RangeSlider
-          min={0}
-          max={100}
-          value={filterORARange}
-          onChange={onFilterORARangeChange}
-          suffix="%"
-        />
-      </CollapsiblePanel>
-
-      <CollapsiblePanel label="Options" defaultOpen={true}>
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          <label
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-              cursor: "pointer",
-              ...sans,
-              fontSize: 12,
-              color: "var(--app-fg-secondary)",
-            }}
-          >
-            <input
-              type="checkbox"
-              checked={showArchived}
-              onChange={onShowArchivedToggle}
-              aria-label="Include archived findings"
-              style={{ accentColor: "var(--app-accent-emerald)" }}
-            />
-            Include archived
-          </label>
-
-          <GroupFindingsToggle />
-
+            Favorites
+          </span>
           <div
             style={{
               display: "flex",
@@ -339,7 +227,7 @@ export function FilterSidebar({
             }}
           >
             <label
-              htmlFor="needs-justification-switch"
+              htmlFor="only-favorites-switch"
               style={{
                 ...sans,
                 fontSize: 12,
@@ -348,19 +236,19 @@ export function FilterSidebar({
                 flex: 1,
               }}
             >
-              Needs justification only
+              Only Favorites
             </label>
             <button
-              id="needs-justification-switch"
+              id="only-favorites-switch"
               type="button"
               role="switch"
-              aria-checked={needsJustification}
-              aria-label="Show only findings that need justification"
-              onClick={onNeedsJustificationToggle}
+              aria-checked={onlyFavorites}
+              aria-label="Show only favorite findings"
+              onClick={onOnlyFavoritesToggle}
               onKeyDown={(e) => {
                 if (e.key === " " || e.key === "Enter") {
                   e.preventDefault();
-                  onNeedsJustificationToggle();
+                  onOnlyFavoritesToggle();
                 }
               }}
               tabIndex={0}
@@ -368,7 +256,9 @@ export function FilterSidebar({
                 width: 36,
                 height: 20,
                 borderRadius: 10,
-                background: needsJustification ? "var(--app-accent-emerald)" : "var(--app-border)",
+                background: onlyFavorites
+                  ? "var(--app-accent-emerald)"
+                  : "var(--app-border)",
                 position: "relative",
                 cursor: "pointer",
                 flexShrink: 0,
@@ -380,7 +270,7 @@ export function FilterSidebar({
                 style={{
                   position: "absolute",
                   top: 2,
-                  left: needsJustification ? 18 : 2,
+                  left: onlyFavorites ? 18 : 2,
                   width: 16,
                   height: 16,
                   borderRadius: 8,
@@ -392,7 +282,148 @@ export function FilterSidebar({
             </button>
           </div>
         </div>
-      </CollapsiblePanel>
+
+        <AssetLoadoutsSection />
+
+        <FilterCheckboxSection
+          label="Finding Statuses"
+          selected={filterFindingStatuses}
+          options={FINDING_STATUS_OPTS}
+          onChange={onFilterFindingStatusesChange}
+        />
+
+        <FilterCheckboxSection
+          label="Asset Type"
+          selected={filterAssetTypes}
+          options={[...ASSET_TYPES]}
+          onChange={onFilterAssetTypesChange}
+          optionLabels={Object.fromEntries(
+            ASSET_TYPES.map((t) => [t, ASSET_TYPE_LABELS[t]]),
+          )}
+        />
+
+        <FilterCheckboxSection
+          label="Acceptance Baseline Criteria"
+          title={ABC_TOOLTIP}
+          selected={filterABC}
+          options={ABC_OPTS}
+          onChange={onFilterABCChange}
+        />
+
+        <CollapsiblePanel label="Findings Verified" defaultOpen={true}>
+          <RangeSlider
+            min={0}
+            max={100}
+            value={filterVerifiedRange}
+            onChange={onFilterVerifiedRangeChange}
+            suffix="%"
+          />
+        </CollapsiblePanel>
+
+        <CollapsiblePanel
+          label="Operational Risk Assessment"
+          title={ORA_TOOLTIP}
+          defaultOpen={true}
+        >
+          <RangeSlider
+            min={0}
+            max={100}
+            value={filterORARange}
+            onChange={onFilterORARangeChange}
+            suffix="%"
+          />
+        </CollapsiblePanel>
+
+        <CollapsiblePanel label="Options" defaultOpen={true}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            <label
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                cursor: "pointer",
+                ...sans,
+                fontSize: 12,
+                color: "var(--app-fg-secondary)",
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={showArchived}
+                onChange={onShowArchivedToggle}
+                aria-label="Include archived findings"
+                style={{ accentColor: "var(--app-accent-emerald)" }}
+              />
+              Include archived
+            </label>
+
+            <GroupFindingsToggle />
+
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 8,
+              }}
+            >
+              <label
+                htmlFor="needs-justification-switch"
+                style={{
+                  ...sans,
+                  fontSize: 12,
+                  color: "var(--app-fg-secondary)",
+                  cursor: "pointer",
+                  flex: 1,
+                }}
+              >
+                Needs justification only
+              </label>
+              <button
+                id="needs-justification-switch"
+                type="button"
+                role="switch"
+                aria-checked={needsJustification}
+                aria-label="Show only findings that need justification"
+                onClick={onNeedsJustificationToggle}
+                onKeyDown={(e) => {
+                  if (e.key === " " || e.key === "Enter") {
+                    e.preventDefault();
+                    onNeedsJustificationToggle();
+                  }
+                }}
+                tabIndex={0}
+                style={{
+                  width: 36,
+                  height: 20,
+                  borderRadius: 10,
+                  background: needsJustification
+                    ? "var(--app-accent-emerald)"
+                    : "var(--app-border)",
+                  position: "relative",
+                  cursor: "pointer",
+                  flexShrink: 0,
+                  border: "none",
+                  padding: 0,
+                }}
+              >
+                <span
+                  style={{
+                    position: "absolute",
+                    top: 2,
+                    left: needsJustification ? 18 : 2,
+                    width: 16,
+                    height: 16,
+                    borderRadius: 8,
+                    background: "#fff",
+                    transition: "left 0.15s ease-out",
+                  }}
+                  aria-hidden
+                />
+              </button>
+            </div>
+          </div>
+        </CollapsiblePanel>
       </div>
 
       {onApply && (
@@ -434,7 +465,9 @@ function AssetLoadoutsSection() {
   } = useVATData();
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const [saveMode, setSaveMode] = useState<"idle" | "saving" | "editing">("idle");
+  const [saveMode, setSaveMode] = useState<"idle" | "saving" | "editing">(
+    "idle",
+  );
   const [saveName, setSaveName] = useState("");
   const [editId, setEditId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
@@ -465,7 +498,7 @@ function AssetLoadoutsSection() {
         setSaveMode("idle");
       }
     },
-    [editName, favoriteEntries, saveLoadout]
+    [editName, favoriteEntries, saveLoadout],
   );
 
   const handleRename = useCallback(
@@ -478,7 +511,7 @@ function AssetLoadoutsSection() {
         setSaveMode("idle");
       }
     },
-    [editName, renameLoadout]
+    [editName, renameLoadout],
   );
 
   const handleApply = useCallback(
@@ -486,13 +519,16 @@ function AssetLoadoutsSection() {
       applyLoadout(loadout);
       setDropdownOpen(false);
     },
-    [applyLoadout]
+    [applyLoadout],
   );
 
   useEffect(() => {
     if (!dropdownOpen) return;
     const onDocClick = (e: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+      if (
+        dropdownRef.current &&
+        !dropdownRef.current.contains(e.target as Node)
+      ) {
         setDropdownOpen(false);
         setSearchQuery("");
       }
@@ -502,7 +538,11 @@ function AssetLoadoutsSection() {
   }, [dropdownOpen]);
 
   return (
-    <div style={{ marginBottom: 16 }} role="group" aria-labelledby="loadouts-label">
+    <div
+      style={{ marginBottom: 16 }}
+      role="group"
+      aria-labelledby="loadouts-label"
+    >
       <span
         id="loadouts-label"
         style={{
@@ -540,12 +580,20 @@ function AssetLoadoutsSection() {
             ...sans,
           }}
         >
-          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          <span
+            style={{
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+            }}
+          >
             {loadouts.length === 0
               ? "No loadouts"
               : `${loadouts.length} loadout${loadouts.length !== 1 ? "s" : ""}`}
           </span>
-          <span style={{ flexShrink: 0, color: "var(--app-muted)", fontSize: 10 }}>
+          <span
+            style={{ flexShrink: 0, color: "var(--app-muted)", fontSize: 10 }}
+          >
             {dropdownOpen ? "▲" : "▼"}
           </span>
         </button>
@@ -601,8 +649,17 @@ function AssetLoadoutsSection() {
               }}
             >
               {filteredLoadouts.length === 0 && (
-                <span style={{ ...sans, fontSize: 11, color: "var(--app-fg-secondary)", padding: 4 }}>
-                  {searchQuery.trim() ? "No matching loadouts" : "Save favorites as named loadouts for quick switching."}
+                <span
+                  style={{
+                    ...sans,
+                    fontSize: 11,
+                    color: "var(--app-fg-secondary)",
+                    padding: 4,
+                  }}
+                >
+                  {searchQuery.trim()
+                    ? "No matching loadouts"
+                    : "Save favorites as named loadouts for quick switching."}
                 </span>
               )}
               {filteredLoadouts.map((loadout) => (
@@ -616,7 +673,15 @@ function AssetLoadoutsSection() {
                   }}
                 >
                   {editId === loadout.id ? (
-                    <div style={{ flex: 1, minWidth: 0, display: "flex", gap: 4, flexWrap: "wrap" }}>
+                    <div
+                      style={{
+                        flex: 1,
+                        minWidth: 0,
+                        display: "flex",
+                        gap: 4,
+                        flexWrap: "wrap",
+                      }}
+                    >
                       <input
                         type="text"
                         value={editName}
@@ -624,7 +689,8 @@ function AssetLoadoutsSection() {
                         onKeyDown={(e) => {
                           e.stopPropagation();
                           if (e.key === "Enter") {
-                            if (saveMode === "saving") handleSaveOverwrite(loadout.id);
+                            if (saveMode === "saving")
+                              handleSaveOverwrite(loadout.id);
                             else handleRename(loadout.id);
                           }
                           if (e.key === "Escape") {
@@ -633,7 +699,11 @@ function AssetLoadoutsSection() {
                             setSaveMode("idle");
                           }
                         }}
-                        placeholder={saveMode === "saving" ? "Name (overwrite)" : "New name"}
+                        placeholder={
+                          saveMode === "saving"
+                            ? "Name (overwrite)"
+                            : "New name"
+                        }
                         autoFocus
                         style={{
                           flex: "1 1 80px",
@@ -654,7 +724,11 @@ function AssetLoadoutsSection() {
                             ? handleSaveOverwrite(loadout.id)
                             : handleRename(loadout.id)
                         }
-                        aria-label={saveMode === "saving" ? "Overwrite loadout" : "Save rename"}
+                        aria-label={
+                          saveMode === "saving"
+                            ? "Overwrite loadout"
+                            : "Save rename"
+                        }
                         style={{
                           padding: "4px 8px",
                           fontSize: 10,
@@ -713,12 +787,17 @@ function AssetLoadoutsSection() {
                         }}
                       >
                         {loadout.name}
-                        <span style={{ color: "var(--app-muted)", marginLeft: 4 }}>
-                          ({(loadout.entries?.length ?? loadout.assetIds.length)})
+                        <span
+                          style={{ color: "var(--app-muted)", marginLeft: 4 }}
+                        >
+                          ({loadout.entries?.length ?? loadout.assetIds.length})
                         </span>
                       </button>
                       <div style={{ display: "flex", flexShrink: 0, gap: 2 }}>
-                        <ThemedTooltip content="Overwrite with current" placement="top">
+                        <ThemedTooltip
+                          content="Overwrite with current"
+                          placement="top"
+                        >
                           <button
                             type="button"
                             onClick={(e) => {
@@ -826,7 +905,14 @@ function AssetLoadoutsSection() {
                 + Save current
               </button>
             ) : saveMode === "saving" && !editId ? (
-              <div style={{ display: "flex", gap: 4, alignItems: "center", flexWrap: "wrap" }}>
+              <div
+                style={{
+                  display: "flex",
+                  gap: 4,
+                  alignItems: "center",
+                  flexWrap: "wrap",
+                }}
+              >
                 <input
                   type="text"
                   value={saveName}
@@ -908,18 +994,21 @@ function GroupFindingsToggle() {
         gap: 8,
       }}
     >
-        <label
-          htmlFor="group-findings-switch"
-          style={{
-            ...sans,
-            fontSize: 12,
-            color: "var(--app-fg-secondary)",
-            cursor: "pointer",
-            flex: 1,
-          }}
-        >
-          Group findings <span style={{ opacity: 0.8 }}>({groupFindings ? "groups" : "instances"})</span>
-        </label>
+      <label
+        htmlFor="group-findings-switch"
+        style={{
+          ...sans,
+          fontSize: 12,
+          color: "var(--app-fg-secondary)",
+          cursor: "pointer",
+          flex: 1,
+        }}
+      >
+        Group findings{" "}
+        <span style={{ opacity: 0.8 }}>
+          ({groupFindings ? "groups" : "instances"})
+        </span>
+      </label>
       <button
         id="group-findings-switch"
         type="button"
@@ -938,7 +1027,9 @@ function GroupFindingsToggle() {
           width: 36,
           height: 20,
           borderRadius: 10,
-          background: groupFindings ? "var(--app-accent-emerald)" : "var(--app-border)",
+          background: groupFindings
+            ? "var(--app-accent-emerald)"
+            : "var(--app-border)",
           position: "relative",
           cursor: "pointer",
           flexShrink: 0,
@@ -1133,7 +1224,9 @@ function RangeSlider({
             }}
             aria-label="Minimum value"
             className="range-slider-input-min"
-            style={{ clipPath: `inset(0 ${Math.max(0, 100 - midPct - buffer)}% 0 0)` }}
+            style={{
+              clipPath: `inset(0 ${Math.max(0, 100 - midPct - buffer)}% 0 0)`,
+            }}
           />
           <input
             type="range"
@@ -1146,13 +1239,21 @@ function RangeSlider({
             }}
             aria-label="Maximum value"
             className="range-slider-input-max"
-            style={{ clipPath: `inset(0 0 0 ${Math.max(0, midPct - buffer)}%)` }}
+            style={{
+              clipPath: `inset(0 0 0 ${Math.max(0, midPct - buffer)}%)`,
+            }}
           />
         </div>
       </div>
       <div className="range-slider-values">
-        <span className="range-slider-value">{low}{suffix}</span>
-        <span className="range-slider-value">{high}{suffix}</span>
+        <span className="range-slider-value">
+          {low}
+          {suffix}
+        </span>
+        <span className="range-slider-value">
+          {high}
+          {suffix}
+        </span>
       </div>
     </div>
   );
@@ -1170,8 +1271,12 @@ function CollapsiblePanel({
   children: React.ReactNode;
 }) {
   const [open, setOpen] = useState(defaultOpen);
-  const id = `filter-collapse-${label.replace(/\s/g, "-").replace(/[()]/g, "")}`;
-  const btnId = `filter-collapse-btn-${label.replace(/\s/g, "-").replace(/[()]/g, "")}`;
+  const id = `filter-collapse-${label
+    .replace(/\s/g, "-")
+    .replace(/[()]/g, "")}`;
+  const btnId = `filter-collapse-btn-${label
+    .replace(/\s/g, "-")
+    .replace(/[()]/g, "")}`;
 
   return (
     <div style={{ marginBottom: 16 }}>

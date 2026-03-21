@@ -23,7 +23,11 @@ def get_tracker_issue_id(finding: Finding, adapter_key: str) -> Optional[str]:
     """Get tracker issue_id for adapter. Returns None if no link."""
     links = finding.external_links or []
     for link in links:
-        if isinstance(link, dict) and link.get("kind") == "tracker" and link.get("adapter_key") == adapter_key:
+        if (
+            isinstance(link, dict)
+            and link.get("kind") == "tracker"
+            and link.get("adapter_key") == adapter_key
+        ):
             return link.get("issue_id")
     return None
 
@@ -32,7 +36,11 @@ def get_tracker_issue_uuid(finding: Finding, adapter_key: str) -> Optional[str]:
     """Get tracker issue UUID for adapter (for Linear API filtering). Returns None if no link or no UUID stored."""
     links = finding.external_links or []
     for link in links:
-        if isinstance(link, dict) and link.get("kind") == "tracker" and link.get("adapter_key") == adapter_key:
+        if (
+            isinstance(link, dict)
+            and link.get("kind") == "tracker"
+            and link.get("adapter_key") == adapter_key
+        ):
             return link.get("issue_uuid")
     return None
 
@@ -41,7 +49,11 @@ def get_source_issue_id(finding: Finding, adapter_key: str) -> Optional[str]:
     """Get source issue_id for adapter. Returns None if no link."""
     links = finding.external_links or []
     for link in links:
-        if isinstance(link, dict) and link.get("kind") == "source" and link.get("adapter_key") == adapter_key:
+        if (
+            isinstance(link, dict)
+            and link.get("kind") == "source"
+            and link.get("adapter_key") == adapter_key
+        ):
             return link.get("issue_id")
     return None
 
@@ -60,7 +72,15 @@ def remove_tracker_link(finding: Finding, adapter_key: str) -> bool:
     """Remove tracker link for adapter. Returns True if a link was removed."""
     links = finding.external_links or []
     before = len(links)
-    links = [l for l in links if not (isinstance(l, dict) and l.get("kind") == "tracker" and l.get("adapter_key") == adapter_key)]
+    links = [
+        l
+        for l in links
+        if not (
+            isinstance(l, dict)
+            and l.get("kind") == "tracker"
+            and l.get("adapter_key") == adapter_key
+        )
+    ]
     finding.external_links = links
     return len(links) < before
 
@@ -79,7 +99,15 @@ def add_tracker_link(
     """
     links = list(finding.external_links or [])
     # Remove existing link for this adapter
-    links = [l for l in links if not (isinstance(l, dict) and l.get("kind") == "tracker" and l.get("adapter_key") == adapter_key)]
+    links = [
+        l
+        for l in links
+        if not (
+            isinstance(l, dict)
+            and l.get("kind") == "tracker"
+            and l.get("adapter_key") == adapter_key
+        )
+    ]
     link: dict = {
         "adapter_key": adapter_key,
         "kind": "tracker",
@@ -103,7 +131,15 @@ def add_source_link(
 ) -> None:
     """Add or replace source link. Mutates finding.external_links in place."""
     links = list(finding.external_links or [])
-    links = [l for l in links if not (isinstance(l, dict) and l.get("kind") == "source" and l.get("adapter_key") == adapter_key)]
+    links = [
+        l
+        for l in links
+        if not (
+            isinstance(l, dict)
+            and l.get("kind") == "source"
+            and l.get("adapter_key") == adapter_key
+        )
+    ]
     link = {
         "adapter_key": adapter_key,
         "kind": "source",
@@ -118,7 +154,15 @@ def add_source_link(
 def _is_uuid(value: str) -> bool:
     """True if value looks like a Linear/UUID format (e.g. 8f7e6d5c-4b3a-2198-7f6e-5d4c3b2a1098)."""
     import re
-    return bool(value and re.match(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", str(value).strip(), re.I))
+
+    return bool(
+        value
+        and re.match(
+            r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+            str(value).strip(),
+            re.I,
+        )
+    )
 
 
 async def find_finding_by_external_id(
@@ -131,9 +175,12 @@ async def find_finding_by_external_id(
     Returns first match when multiple findings share the same link (data integrity edge case).
     """
     needle = [{"adapter_key": adapter_key, "issue_id": issue_id}]
-    stmt = select(Finding).where(
-        Finding.external_links.op("@>")(type_coerce(needle, JSONB))
-    ).order_by(Finding.created_at.desc()).limit(1)
+    stmt = (
+        select(Finding)
+        .where(Finding.external_links.op("@>")(type_coerce(needle, JSONB)))
+        .order_by(Finding.created_at.desc())
+        .limit(1)
+    )
     result = await db.execute(stmt)
     return result.scalar_one_or_none()
 
@@ -165,9 +212,12 @@ async def find_finding_by_linear_issue_id_or_uuid(
     return None
 
 
-async def _find_finding_by_linear_uuid(db: AsyncSession, issue_uuid: str) -> Optional[Finding]:
+async def _find_finding_by_linear_uuid(
+    db: AsyncSession, issue_uuid: str
+) -> Optional[Finding]:
     """Find finding by Linear issue UUID (stored in external_links issue_uuid)."""
     from sqlalchemy import text
+
     stmt = text("""
         SELECT f.id FROM findings f
         WHERE f.archived = false
@@ -214,7 +264,9 @@ def get_source_issue_url(finding: Finding) -> Optional[str]:
     return None
 
 
-async def get_all_linear_tracker_issue_ids(db: AsyncSession) -> list[tuple[str, Optional[str]]]:
+async def get_all_linear_tracker_issue_ids(
+    db: AsyncSession,
+) -> list[tuple[str, Optional[str]]]:
     """
     Get all (issue_id, issue_uuid) for findings with Linear tracker links.
     Used by poll to fetch only VAT-tracked issues. Returns deduplicated list.
@@ -240,7 +292,11 @@ async def get_all_linear_tracker_issue_ids(db: AsyncSession) -> list[tuple[str, 
         if not links:
             continue
         for link in links:
-            if not isinstance(link, dict) or link.get("kind") != "tracker" or link.get("adapter_key") != "linear":
+            if (
+                not isinstance(link, dict)
+                or link.get("kind") != "tracker"
+                or link.get("adapter_key") != "linear"
+            ):
                 continue
             issue_id = link.get("issue_id")
             if not issue_id or issue_id in seen:

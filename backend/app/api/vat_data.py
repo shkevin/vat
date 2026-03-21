@@ -10,7 +10,10 @@ from app.core.database import get_db
 from app.schemas.auth import UserContext
 from app.schemas.finding import FindingRead
 from app.services.assets_service import get_assets_with_findings
-from app.services.findings_service import enrich_findings_with_source_group_severity, list_findings
+from app.services.findings_service import (
+    enrich_findings_with_source_group_severity,
+    list_findings,
+)
 from app.services.grouping import get_finding_group_key
 
 router = APIRouter()

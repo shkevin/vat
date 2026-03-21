@@ -1,6 +1,12 @@
 "use client";
 
-import React, { createContext, useCallback, useContext, useEffect, useState } from "react";
+import React, {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useState,
+} from "react";
 import { setOnUnauthorized } from "@/lib/onUnauthorized";
 
 const STORAGE_KEY = "vat-user";
@@ -73,7 +79,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     } else {
       setUserState(u);
-      const tok = t !== undefined ? t : (typeof window !== "undefined" ? localStorage.getItem(STORAGE_KEY_TOKEN) : null);
+      const tok =
+        t !== undefined
+          ? t
+          : typeof window !== "undefined"
+            ? localStorage.getItem(STORAGE_KEY_TOKEN)
+            : null;
       setTokenState(tok);
       if (typeof window !== "undefined") {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(u));

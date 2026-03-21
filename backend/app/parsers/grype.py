@@ -2,7 +2,11 @@
 
 import logging
 
-from app.schemas.ingest import CanonicalFindingPayload, CanonicalFindingType, CanonicalSeverity
+from app.schemas.ingest import (
+    CanonicalFindingPayload,
+    CanonicalFindingType,
+    CanonicalSeverity,
+)
 from app.parsers.base import IngestParser
 from app.parsers.utils import extract_scan_tag
 
@@ -39,7 +43,9 @@ class GrypeParser(IngestParser):
         source = raw.get("source") or {}
         target_val = source.get("target") if isinstance(source, dict) else None
         if isinstance(target_val, dict):
-            asset = (target_val.get("userInput") or target_val.get("target") or "").strip()
+            asset = (
+                target_val.get("userInput") or target_val.get("target") or ""
+            ).strip()
         else:
             asset = str(target_val or "").strip()
         payloads: list[CanonicalFindingPayload] = []
@@ -54,7 +60,9 @@ class GrypeParser(IngestParser):
                 logger.debug("Skipping Grype match: %s", e)
         return payloads
 
-    def _parse_match(self, m: dict, asset: str, scan_tag: str | None = None) -> CanonicalFindingPayload | None:
+    def _parse_match(
+        self, m: dict, asset: str, scan_tag: str | None = None
+    ) -> CanonicalFindingPayload | None:
         vuln = m.get("vulnerability") or {}
         artifact = m.get("artifact") or {}
         vuln_id = vuln.get("id") or "unknown"

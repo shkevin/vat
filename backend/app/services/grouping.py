@@ -97,7 +97,9 @@ def _normalize_rule_title(title: str | None, *, strip_locations: bool = True) ->
         flags=re.IGNORECASE,
     )
     # " at line N in <path>" or " at line N-N in <path>"
-    t = re.sub(r"\s+at\s+line\s+\d+(-\d+)?\s+in\s+[\w./-]+$", "", t, flags=re.IGNORECASE)
+    t = re.sub(
+        r"\s+at\s+line\s+\d+(-\d+)?\s+in\s+[\w./-]+$", "", t, flags=re.IGNORECASE
+    )
     return t.strip().lower()
 
 

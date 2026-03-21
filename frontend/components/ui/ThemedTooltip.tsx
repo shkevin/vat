@@ -19,13 +19,18 @@ export function ThemedTooltip({
   style,
 }: ThemedTooltipProps) {
   const [visible, setVisible] = useState(false);
-  const [coords, setCoords] = useState<{ top: number; left: number; transform: string } | null>(null);
+  const [coords, setCoords] = useState<{
+    top: number;
+    left: number;
+    transform: string;
+  } | null>(null);
   const ref = useRef<HTMLSpanElement>(null);
 
   useEffect(() => {
     if (!visible || !ref.current) return;
     const onOutside = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setVisible(false);
+      if (ref.current && !ref.current.contains(e.target as Node))
+        setVisible(false);
     };
     document.addEventListener("mousedown", onOutside);
     return () => document.removeEventListener("mousedown", onOutside);

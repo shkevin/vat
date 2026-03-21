@@ -15,7 +15,11 @@ export interface SavedReportMeta {
 export interface ReportDefinitionPersistence {
   list(): Promise<SavedReportMeta[]>;
   load(id: string): Promise<ReportDefinition | null>;
-  save(id: string | null, name: string, definition: ReportDefinition): Promise<string>;
+  save(
+    id: string | null,
+    name: string,
+    definition: ReportDefinition,
+  ): Promise<string>;
   delete(id: string): Promise<void>;
 }
 
@@ -42,7 +46,7 @@ function readStored(): StoredReport[] {
         typeof (r as StoredReport).id === "string" &&
         typeof (r as StoredReport).name === "string" &&
         typeof (r as StoredReport).updatedAt === "string" &&
-        typeof (r as StoredReport).definition === "object"
+        typeof (r as StoredReport).definition === "object",
     );
   } catch {
     return [];
@@ -63,20 +67,31 @@ export function createLocalStoragePersistence(): ReportDefinitionPersistence {
     async list(): Promise<SavedReportMeta[]> {
       const reports = readStored();
       return reports
-        .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
+        .sort(
+          (a, b) =>
+            new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
+        )
         .map((r) => ({ id: r.id, name: r.name, updatedAt: r.updatedAt }));
     },
     async load(id: string): Promise<ReportDefinition | null> {
       const reports = readStored();
       const found = reports.find((r) => r.id === id);
       if (!found) return null;
-      const def = normalizeReportDefinitionLayout(JSON.parse(JSON.stringify(found.definition)));
+      const def = normalizeReportDefinitionLayout(
+        JSON.parse(JSON.stringify(found.definition)),
+      );
       return def;
     },
-    async save(id: string | null, name: string, definition: ReportDefinition): Promise<string> {
+    async save(
+      id: string | null,
+      name: string,
+      definition: ReportDefinition,
+    ): Promise<string> {
       const reports = readStored();
       const now = new Date().toISOString();
-      const normalized = normalizeReportDefinitionLayout(JSON.parse(JSON.stringify(definition)));
+      const normalized = normalizeReportDefinitionLayout(
+        JSON.parse(JSON.stringify(definition)),
+      );
       if (id) {
         const idx = reports.findIndex((r) => r.id === id);
         if (idx >= 0) {
@@ -90,7 +105,9 @@ export function createLocalStoragePersistence(): ReportDefinitionPersistence {
           return id;
         }
       }
-      const newId = `report-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+      const newId = `report-${Date.now()}-${Math.random()
+        .toString(36)
+        .slice(2, 9)}`;
       reports.push({
         id: newId,
         name: name.trim() || "Untitled report",

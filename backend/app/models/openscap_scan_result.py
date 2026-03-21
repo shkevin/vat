@@ -21,6 +21,10 @@ class OpenSCAPScanResult(Base):
     source_id: Mapped[str] = mapped_column(String(64), primary_key=True)
     raw_xccdf_xml: Mapped[bytes] = mapped_column(LargeBinary(), nullable=False)
     benchmark_id: Mapped[str | None] = mapped_column(String(256), nullable=True)
-    parser_id: Mapped[str] = mapped_column(String(32), nullable=False)  # openscap | openscap_oval
-    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
+    parser_id: Mapped[str] = mapped_column(
+        String(32), nullable=False
+    )  # openscap | openscap_oval
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, default=datetime.utcnow
+    )
     tenant_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)

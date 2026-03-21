@@ -166,7 +166,14 @@ export function AlertsPanel({ alerts, onNavigate }: AlertsPanelProps) {
                 {meta.icon}
               </span>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 2 }}>
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    marginBottom: 2,
+                  }}
+                >
                   <Tag color={meta.color}>{meta.label}</Tag>
                   {a.waiverRef && (
                     <span

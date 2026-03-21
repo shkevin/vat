@@ -8,7 +8,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.auth import get_current_user_context, require_admin, require_reviewer
 from app.core.database import get_db
 from app.schemas.auth import UserContext
-from app.schemas.finding import FindingArchive, FindingBulkUpdate, FindingRead, FindingRevert, FindingUpdate
+from app.schemas.finding import (
+    FindingArchive,
+    FindingBulkUpdate,
+    FindingRead,
+    FindingRevert,
+    FindingUpdate,
+)
 from app.services.findings_service import (
     archive_finding,
     bulk_update_findings,
@@ -22,6 +28,7 @@ from app.services.findings_service import (
 from app.services.grouping import get_finding_group_key
 from app.services.sync_service import sync_single_finding_to_tracker
 from app.tasks.sync_tasks import trigger_sync_worker
+
 router = APIRouter()
 
 
@@ -113,12 +120,16 @@ async def get_findings_groups(
     groups_list = []
     for key, flist in groups_map.items():
         max_sev = max(flist, key=lambda x: _sev_index(x.severity.value))
-        groups_list.append({
-            "groupKey": key,
-            "severity": max_sev.severity.value,
-            "findingCount": len(flist),
-            "findings": [FindingRead.model_validate(f).to_api_dict() for f in flist],
-        })
+        groups_list.append(
+            {
+                "groupKey": key,
+                "severity": max_sev.severity.value,
+                "findingCount": len(flist),
+                "findings": [
+                    FindingRead.model_validate(f).to_api_dict() for f in flist
+                ],
+            }
+        )
     # Sort by worst severity
     groups_list.sort(key=lambda g: _sev_index(g["severity"]))
     total = len(groups_list)
@@ -136,7 +147,12 @@ async def post_bulk_update(
     """Bulk update findings to a shared status and justification. Sync to tracker/source enqueued."""
     user = ctx.email or ctx.raw_identity
     findings = await bulk_update_findings(
-        db, body.ids, body.status, body.justification, tenant_id=ctx.tenant_id, user=user
+        db,
+        body.ids,
+        body.status,
+        body.justification,
+        tenant_id=ctx.tenant_id,
+        user=user,
     )
     return {"updated": len(findings), "message": f"Updated {len(findings)} findings"}
 
@@ -149,7 +165,12 @@ async def get_finding_by_id(
 ):
     """Get a single finding by ID."""
     finding = await get_finding(db, finding_id)
-    if finding and ctx.tenant_id and finding.tenant_id and finding.tenant_id != ctx.tenant_id:
+    if (
+        finding
+        and ctx.tenant_id
+        and finding.tenant_id
+        and finding.tenant_id != ctx.tenant_id
+    ):
         raise HTTPException(status_code=404, detail="Finding not found")
     if not finding:
         raise HTTPException(status_code=404, detail="Finding not found")
@@ -166,7 +187,12 @@ async def patch_finding(
     """Update a finding. Accepts camelCase from frontend. Sync to tracker/source enqueued."""
     user = ctx.email or ctx.raw_identity
     finding = await get_finding(db, finding_id)
-    if finding and ctx.tenant_id and finding.tenant_id and finding.tenant_id != ctx.tenant_id:
+    if (
+        finding
+        and ctx.tenant_id
+        and finding.tenant_id
+        and finding.tenant_id != ctx.tenant_id
+    ):
         raise HTTPException(status_code=404, detail="Finding not found")
     data = body.model_dump(exclude_unset=True)
     finding = await update_finding(db, finding_id, data, user=user)
@@ -185,7 +211,12 @@ async def post_archive_finding(
     """Archive a finding with a reason."""
     user = ctx.email or ctx.raw_identity
     finding = await get_finding(db, finding_id)
-    if finding and ctx.tenant_id and finding.tenant_id and finding.tenant_id != ctx.tenant_id:
+    if (
+        finding
+        and ctx.tenant_id
+        and finding.tenant_id
+        and finding.tenant_id != ctx.tenant_id
+    ):
         raise HTTPException(status_code=404, detail="Finding not found")
     finding = await archive_finding(db, finding_id, body.reason, user=user)
     if not finding:
@@ -203,11 +234,19 @@ async def post_revert_finding(
     """Revert finding to previous status. Reason required. PRD §5.4.3."""
     user = ctx.email or ctx.raw_identity
     finding = await get_finding(db, finding_id)
-    if finding and ctx.tenant_id and finding.tenant_id and finding.tenant_id != ctx.tenant_id:
+    if (
+        finding
+        and ctx.tenant_id
+        and finding.tenant_id
+        and finding.tenant_id != ctx.tenant_id
+    ):
         raise HTTPException(status_code=404, detail="Finding not found")
     finding = await revert_finding(db, finding_id, body.reason, user=user)
     if not finding:
-        raise HTTPException(status_code=404, detail="Finding not found or no previous status to revert to")
+        raise HTTPException(
+            status_code=404,
+            detail="Finding not found or no previous status to revert to",
+        )
     return FindingRead.model_validate(finding).to_api_dict()
 
 
@@ -220,7 +259,12 @@ async def post_unarchive_finding(
     """Unarchive a finding."""
     user = ctx.email or ctx.raw_identity
     finding = await get_finding(db, finding_id)
-    if finding and ctx.tenant_id and finding.tenant_id and finding.tenant_id != ctx.tenant_id:
+    if (
+        finding
+        and ctx.tenant_id
+        and finding.tenant_id
+        and finding.tenant_id != ctx.tenant_id
+    ):
         raise HTTPException(status_code=404, detail="Finding not found")
     finding = await unarchive_finding(db, finding_id, user=user)
     if not finding:
@@ -237,7 +281,12 @@ async def post_override_fingerprint(
     """Override fingerprint when dedup incorrectly merged. PRD §5.1.2."""
     user = ctx.email or ctx.raw_identity
     finding = await get_finding(db, finding_id)
-    if finding and ctx.tenant_id and finding.tenant_id and finding.tenant_id != ctx.tenant_id:
+    if (
+        finding
+        and ctx.tenant_id
+        and finding.tenant_id
+        and finding.tenant_id != ctx.tenant_id
+    ):
         raise HTTPException(status_code=404, detail="Finding not found")
     finding = await override_fingerprint(db, finding_id, user=user)
     if not finding:

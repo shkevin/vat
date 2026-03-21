@@ -9,7 +9,13 @@ import type { Finding } from "@/types";
 function languageToPurlType(lang: string): string {
   const l = (lang ?? "").toLowerCase();
   if (l.includes("java") || l === "java") return "maven";
-  if (l.includes("js") || l.includes("ts") || l === "javascript" || l === "typescript") return "npm";
+  if (
+    l.includes("js") ||
+    l.includes("ts") ||
+    l === "javascript" ||
+    l === "typescript"
+  )
+    return "npm";
   if (l.includes("py") || l === "python") return "pypi";
   if (l.includes("go")) return "golang";
   if (l.includes("rust")) return "cargo";
@@ -39,7 +45,7 @@ function supplierFromPurlType(purlType: string): { name: string } | undefined {
 function toCycloneDX(
   packages: SBOMPackage[],
   _findingCountByComponent: Map<string, number>,
-  assetId: string | null | undefined
+  assetId: string | null | undefined,
 ): object {
   const now = new Date().toISOString();
   const uuid =
@@ -59,8 +65,12 @@ function toCycloneDX(
       const ver = p.version || "0.0.0";
       const purl =
         purlTypeVal === "generic"
-          ? `pkg:generic/${encodeURIComponent(p.name)}@${encodeURIComponent(ver)}`
-          : `pkg:${purlTypeVal}/${encodeURIComponent(p.name)}@${encodeURIComponent(ver)}`;
+          ? `pkg:generic/${encodeURIComponent(p.name)}@${encodeURIComponent(
+              ver,
+            )}`
+          : `pkg:${purlTypeVal}/${encodeURIComponent(
+              p.name,
+            )}@${encodeURIComponent(ver)}`;
       if (seenPurl.has(purl)) return null;
       seenPurl.add(purl);
 
@@ -69,7 +79,10 @@ function toCycloneDX(
         name: p.name,
         version: p.version || undefined,
         purl,
-        licenses: p.license && p.license !== "Unknown" ? [{ license: { id: p.license } }] : undefined,
+        licenses:
+          p.license && p.license !== "Unknown"
+            ? [{ license: { id: p.license } }]
+            : undefined,
         language: p.language || undefined,
       };
       const supplier = supplierFromPurlType(purlTypeVal);
@@ -100,7 +113,7 @@ function downloadDisplayedSbom(
   packages: SBOMPackage[],
   findingCountByComponent: Map<string, number>,
   format: "cyclonedx" | "csv",
-  assetId: string | null | undefined
+  assetId: string | null | undefined,
 ) {
   const safeComponent = (assetId ?? "all").replace(/[/\\]/g, "-").slice(0, 50);
   const dateStr = new Date().toISOString().slice(0, 10);
@@ -123,7 +136,15 @@ function downloadDisplayedSbom(
   }
 
   // CSV (human-readable summary for audits)
-  const header = ["Package", "Version", "License", "License Risk", "Component", "Language", "Findings"];
+  const header = [
+    "Package",
+    "Version",
+    "License",
+    "License Risk",
+    "Component",
+    "Language",
+    "Findings",
+  ];
   const escape = (s: string) => {
     const str = String(s ?? "");
     return str.includes(",") || str.includes('"') || str.includes("\n")
@@ -141,7 +162,7 @@ function downloadDisplayedSbom(
         escape(p.component),
         escape(p.language),
         String(findingCountByComponent.get(p.id) ?? 0),
-      ].join(",")
+      ].join(","),
     ),
   ];
   const content = lines.join("\n");
@@ -175,14 +196,20 @@ interface SBOMTabProps {
 
 const RISK_ORDER = ["Critical", "High", "Medium", "Low", "Unknown"] as const;
 const RISK_SORT_INDEX: Record<string, number> = Object.fromEntries(
-  RISK_ORDER.map((r, i) => [r, i])
+  RISK_ORDER.map((r, i) => [r, i]),
 );
 
 function getLicenseRisk(license: string): string {
   return LICENSE_RISK[license] ?? "Low";
 }
 
-type SortKey = "name" | "version" | "license" | "component" | "risk" | "findings";
+type SortKey =
+  | "name"
+  | "version"
+  | "license"
+  | "component"
+  | "risk"
+  | "findings";
 type SortDir = "asc" | "desc";
 
 function parseCycloneDX(jsonStr: string): SBOMPackage[] {
@@ -198,7 +225,8 @@ function parseCycloneDX(jsonStr: string): SBOMPackage[] {
         const key = `${name}@${version}`;
         if (seen.has(key)) return null;
         seen.add(key);
-        const licenses = (c.licenses as Array<{ license?: { id?: string } }>) ?? [];
+        const licenses =
+          (c.licenses as Array<{ license?: { id?: string } }>) ?? [];
         const license = licenses[0]?.license?.id ?? "Unknown";
         return {
           id: `sb-${i}-${name.slice(0, 8)}`,
@@ -228,20 +256,24 @@ export function SBOMTab({ sbom, findings, onImport, assetId }: SBOMTabProps) {
     const m = new Map<string, number>();
     for (const f of findings) {
       // Extract package identifiers: componentBase (normalized), or first word of component (pkgName from "pkgName version"), or full component
-      const compBase = (f as { componentBase?: string }).componentBase?.trim().toLowerCase();
+      const compBase = (f as { componentBase?: string }).componentBase
+        ?.trim()
+        .toLowerCase();
       const comp = (f.component ?? "").trim().toLowerCase();
       const pkgNames: string[] = [];
       if (compBase) pkgNames.push(compBase);
       if (comp) {
         const firstWord = comp.split(/\s+/)[0];
-        if (firstWord && !pkgNames.includes(firstWord)) pkgNames.push(firstWord);
+        if (firstWord && !pkgNames.includes(firstWord))
+          pkgNames.push(firstWord);
         if (comp !== firstWord && !pkgNames.includes(comp)) pkgNames.push(comp);
       }
       for (const pkg of packages) {
         const pkgName = (pkg.name ?? "").toLowerCase();
         if (!pkgName) continue;
         const matches = pkgNames.some(
-          (pn) => pn === pkgName || pn.includes(pkgName) || pkgName.includes(pn)
+          (pn) =>
+            pn === pkgName || pn.includes(pkgName) || pkgName.includes(pn),
         );
         if (matches) {
           m.set(pkg.id, (m.get(pkg.id) ?? 0) + 1);
@@ -261,7 +293,12 @@ export function SBOMTab({ sbom, findings, onImport, assetId }: SBOMTabProps) {
   };
 
   const byRisk = useMemo(() => {
-    const acc: Record<string, SBOMPackage[]> = { Critical: [], High: [], Medium: [], Low: [] };
+    const acc: Record<string, SBOMPackage[]> = {
+      Critical: [],
+      High: [],
+      Medium: [],
+      Low: [],
+    };
     for (const p of packages) {
       const r = getLicenseRisk(p.license);
       if (acc[r]) acc[r].push(p);
@@ -281,7 +318,9 @@ export function SBOMTab({ sbom, findings, onImport, assetId }: SBOMTabProps) {
         return sortDir === "desc" ? cmp : -cmp;
       }
       if (sortKey === "findings") {
-        cmp = (findingCountByComponent.get(a.id) ?? 0) - (findingCountByComponent.get(b.id) ?? 0);
+        cmp =
+          (findingCountByComponent.get(a.id) ?? 0) -
+          (findingCountByComponent.get(b.id) ?? 0);
       } else if (sortKey === "name") {
         cmp = (a.name ?? "").localeCompare(b.name ?? "");
       } else if (sortKey === "version") {
@@ -309,12 +348,17 @@ export function SBOMTab({ sbom, findings, onImport, assetId }: SBOMTabProps) {
     (format: "cyclonedx" | "csv") => {
       setDownloadLoading(true);
       try {
-        downloadDisplayedSbom(sortedPackages, findingCountByComponent, format, assetId ?? undefined);
+        downloadDisplayedSbom(
+          sortedPackages,
+          findingCountByComponent,
+          format,
+          assetId ?? undefined,
+        );
       } finally {
         setDownloadLoading(false);
       }
     },
-    [sortedPackages, findingCountByComponent, assetId]
+    [sortedPackages, findingCountByComponent, assetId],
   );
 
   const SortableHeader = ({
@@ -456,14 +500,21 @@ export function SBOMTab({ sbom, findings, onImport, assetId }: SBOMTabProps) {
         </div>
       )}
 
-      <div style={{ display: "flex", gap: 12, marginBottom: 16, flexWrap: "wrap" }}>
+      <div
+        style={{ display: "flex", gap: 12, marginBottom: 16, flexWrap: "wrap" }}
+      >
         {(["Critical", "High", "Medium", "Low"] as const).map((risk) => (
           <div
             key={risk}
             style={{
               ...mono,
               fontSize: 11,
-              color: risk === "Critical" ? "var(--app-danger)" : risk === "High" ? "var(--app-warning)" : "var(--app-muted)",
+              color:
+                risk === "Critical"
+                  ? "var(--app-danger)"
+                  : risk === "High"
+                    ? "var(--app-warning)"
+                    : "var(--app-muted)",
             }}
           >
             {risk}: {(byRisk[risk] ?? []).length}
@@ -534,7 +585,12 @@ export function SBOMTab({ sbom, findings, onImport, assetId }: SBOMTabProps) {
               >
                 {risk}
               </span>
-              <span style={{ color: findingCount > 0 ? "var(--app-danger)" : "var(--app-muted)" }}>
+              <span
+                style={{
+                  color:
+                    findingCount > 0 ? "var(--app-danger)" : "var(--app-muted)",
+                }}
+              >
                 {findingCount}
               </span>
             </div>

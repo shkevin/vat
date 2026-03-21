@@ -3,12 +3,23 @@
 import json
 from pathlib import Path
 
-import pytest
 
 from app.parsers.npm_audit import NpmAuditParser
 
-_SAMPLES = Path(__file__).resolve().parent.parent.parent / "django-DefectDojo" / "unittests" / "scans" / "npm_audit"
-_NPM7 = Path(__file__).resolve().parent.parent.parent / "django-DefectDojo" / "unittests" / "scans" / "npm_audit_7_plus"
+_SAMPLES = (
+    Path(__file__).resolve().parent.parent.parent
+    / "django-DefectDojo"
+    / "unittests"
+    / "scans"
+    / "npm_audit"
+)
+_NPM7 = (
+    Path(__file__).resolve().parent.parent.parent
+    / "django-DefectDojo"
+    / "unittests"
+    / "scans"
+    / "npm_audit_7_plus"
+)
 
 
 def _load(name: str) -> dict:
@@ -40,6 +51,7 @@ def test_npm_audit_v6_many():
 
 def test_npm_audit_v7_one():
     import json
+
     parser = NpmAuditParser()
     sample = _NPM7 / "one_vuln.json"
     if not sample.exists():
@@ -51,4 +63,3 @@ def test_npm_audit_v7_one():
     p = payloads[0]
     assert p.component
     assert "debug" in p.component.lower() or p.cve_id
-

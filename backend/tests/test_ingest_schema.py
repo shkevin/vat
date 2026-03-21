@@ -26,9 +26,13 @@ def test_canonical_finding_payload_required_fields():
 
 
 def test_canonical_finding_payload_severity_normalization():
-    p = CanonicalFindingPayload(cve_id="x", severity="critical", description="", file_path="src", image="repo")
+    p = CanonicalFindingPayload(
+        cve_id="x", severity="critical", description="", file_path="src", image="repo"
+    )
     assert p.severity == CanonicalSeverity.CRITICAL
-    p2 = CanonicalFindingPayload(cve_id="x", severity="info", description="", file_path="src", branch="main")
+    p2 = CanonicalFindingPayload(
+        cve_id="x", severity="info", description="", file_path="src", branch="main"
+    )
     assert p2.severity == CanonicalSeverity.INFORMATIONAL
 
 
@@ -49,7 +53,9 @@ def test_canonical_finding_payload_optional_fields():
 
 def test_canonical_finding_payload_missing_cve_id():
     with pytest.raises(ValidationError):
-        CanonicalFindingPayload(cve_id="", severity="High", description="test", component="x", image="repo")
+        CanonicalFindingPayload(
+            cve_id="", severity="High", description="test", component="x", image="repo"
+        )
 
 
 def test_canonical_finding_payload_requires_asset_context():

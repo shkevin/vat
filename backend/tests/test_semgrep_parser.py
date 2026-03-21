@@ -50,7 +50,12 @@ def test_semgrep_parser_cwe_array():
                 "extra": {
                     "message": "SQL injection",
                     "severity": "ERROR",
-                    "metadata": {"cwe": ["CWE-89: SQL Injection", "CWE-943: Improper Neutralization"]},
+                    "metadata": {
+                        "cwe": [
+                            "CWE-89: SQL Injection",
+                            "CWE-943: Improper Neutralization",
+                        ]
+                    },
                 },
             }
         ]

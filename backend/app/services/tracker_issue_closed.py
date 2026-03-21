@@ -5,12 +5,11 @@ remains open. We detect this and reopen the tracker issue so VAT stays source of
 """
 
 import logging
-from typing import Optional
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.adapters.linear import LinearAdapter
-from app.models.finding import Finding, Status
+from app.models.finding import Status
 from app.services.external_links_service import find_finding_by_external_id
 
 logger = logging.getLogger(__name__)

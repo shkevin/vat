@@ -100,21 +100,29 @@ async def lifespan(app: FastAPI):
                 if not keys:
                     _key_id, full_key, key_prefix, _msg = await create_admin_key(db)
                     token_path.write_text(f"VAT_ADMIN_TOKEN={full_key}\n")
-                    token_path.chmod(0o644)  # Readable by host user for docker compose env_file
-                    logger.info("Dev: created scanner admin token (prefix %s) at data/.vat-scanner-token", key_prefix)
+                    token_path.chmod(
+                        0o644
+                    )  # Readable by host user for docker compose env_file
+                    logger.info(
+                        "Dev: created scanner admin token (prefix %s) at data/.vat-scanner-token",
+                        key_prefix,
+                    )
     except Exception as e:
         logger.warning("Dev scanner token bootstrap failed (non-fatal): %s", e)
     # Process any stale 'processing' sync events (worker crash recovery)
     try:
         from app.core.database import async_session
         from app.services.sync_service import process_pending_sync_events
-        from sqlalchemy import select, update
+        from sqlalchemy import update
         from app.models.sync_event import SyncEvent
-        from datetime import datetime, timezone
 
         async with async_session() as db:
             # Reset stale processing (worker crash) to pending for retry
-            await db.execute(update(SyncEvent).where(SyncEvent.status == "processing").values(status="pending", next_retry_at=None))
+            await db.execute(
+                update(SyncEvent)
+                .where(SyncEvent.status == "processing")
+                .values(status="pending", next_retry_at=None)
+            )
             await db.commit()
         async with async_session() as db:
             processed = await process_pending_sync_events(db, limit=20)

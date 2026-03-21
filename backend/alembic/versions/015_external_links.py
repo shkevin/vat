@@ -22,7 +22,12 @@ def upgrade() -> None:
     # Add external_links column
     op.add_column(
         "findings",
-        sa.Column("external_links", postgresql.JSONB(astext_type=sa.Text()), nullable=False, server_default="[]"),
+        sa.Column(
+            "external_links",
+            postgresql.JSONB(astext_type=sa.Text()),
+            nullable=False,
+            server_default="[]",
+        ),
     )
 
     # Backfill: migrate tracker_id and source_issue_ids into external_links
@@ -90,7 +95,9 @@ def downgrade() -> None:
     )
     op.add_column(
         "findings",
-        sa.Column("source_issue_ids", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
+        sa.Column(
+            "source_issue_ids", postgresql.JSONB(astext_type=sa.Text()), nullable=True
+        ),
     )
 
     # Extract tracker_id and source_issue_ids from external_links (first tracker wins)

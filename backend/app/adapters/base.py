@@ -1,6 +1,6 @@
 """Base adapter interfaces — VAT schema contracts."""
 
-from typing import Optional, Protocol, runtime_checkable
+from typing import Protocol, runtime_checkable
 
 from app.schemas.vat import (
     VatFindingSchema,
@@ -39,4 +39,6 @@ class TrackerAdapter(Protocol):
 
     async def update_issue(self, request: VatTrackerUpdateIssueRequest) -> None: ...
 
-    def to_vat_comment_update(self, payload: dict) -> VatTrackerCommentUpdate | None: ...
+    def to_vat_comment_update(
+        self, payload: dict
+    ) -> VatTrackerCommentUpdate | None: ...

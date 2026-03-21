@@ -6,7 +6,11 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { computeReportContext } from "./report-engine";
+import {
+  buildReportHtmlFromDefinition,
+  computeReportContext,
+  createDefaultReportDefinition,
+} from "./report-engine";
 import { toVATDashboardData } from "./vatReportAdapter";
 import type { Finding, Asset } from "@/types";
 
@@ -14,7 +18,7 @@ function mkFinding(
   id: string,
   cveId: string,
   component: string,
-  componentBase: string
+  componentBase: string,
 ): Finding {
   return {
     id,
@@ -49,14 +53,42 @@ describe("computeReportContext countMode", () => {
   };
 
   it("returns openIssues=2 when countMode is groups (2 groups)", () => {
-    const data = toVATDashboardData(findings, assets, "VAT", { groupFindings: true });
-    const ctx = computeReportContext(data, { ...baseFilters, countMode: "groups" });
+    const data = toVATDashboardData(findings, assets, "VAT", {
+      groupFindings: true,
+    });
+    const ctx = computeReportContext(data, {
+      ...baseFilters,
+      countMode: "groups",
+    });
     expect(ctx.openIssues).toBe(2);
   });
 
   it("returns openIssues=3 when countMode is instances (3 instances)", () => {
-    const data = toVATDashboardData(findings, assets, "VAT", { groupFindings: true });
-    const ctx = computeReportContext(data, { ...baseFilters, countMode: "instances" });
+    const data = toVATDashboardData(findings, assets, "VAT", {
+      groupFindings: true,
+    });
+    const ctx = computeReportContext(data, {
+      ...baseFilters,
+      countMode: "instances",
+    });
     expect(ctx.openIssues).toBe(3);
+  });
+});
+
+describe("trend stacked dropdown filters", () => {
+  it("does not gate trend chart updates behind server counts", () => {
+    const findings: Finding[] = [
+      mkFinding("f1", "CVE-2024-1111", "pkg-a 1.0.0", "pkg-a"),
+    ];
+    const data = toVATDashboardData(findings, [], "VAT", {
+      groupFindings: true,
+    });
+    data.issueCounts = { open: 1, critical: 0, high: 1, medium: 0, low: 0 };
+    const definition = createDefaultReportDefinition("VAT");
+    const ctx = computeReportContext(data, definition.filters);
+    const html = buildReportHtmlFromDefinition(ctx, definition, {
+      preview: true,
+    });
+    expect(html).not.toContain("&& !useServerCounts");
   });
 });

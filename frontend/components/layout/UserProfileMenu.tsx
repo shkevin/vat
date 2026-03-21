@@ -28,7 +28,10 @@ interface UserProfileMenuProps {
   onViewChange?: (id: string) => void;
 }
 
-export function UserProfileMenu({ onPreferencesChange, onViewChange }: UserProfileMenuProps) {
+export function UserProfileMenu({
+  onPreferencesChange,
+  onViewChange,
+}: UserProfileMenuProps) {
   const { user } = useAuth();
   const [paneOpen, setPaneOpen] = useState(false);
 
@@ -63,8 +66,12 @@ export function UserProfileMenu({ onPreferencesChange, onViewChange }: UserProfi
         open={paneOpen}
         onClose={() => setPaneOpen(false)}
         onPreferencesChange={onPreferencesChange}
-        onNavigateToReport={onViewChange ? () => onViewChange("report") : undefined}
-        onNavigateToFindings={onViewChange ? () => onViewChange("findings") : undefined}
+        onNavigateToReport={
+          onViewChange ? () => onViewChange("report") : undefined
+        }
+        onNavigateToFindings={
+          onViewChange ? () => onViewChange("findings") : undefined
+        }
       />
     </>
   );

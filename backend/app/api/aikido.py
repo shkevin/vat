@@ -22,17 +22,20 @@ from app.api.settings import (
     has_aikido_source_on_canvas,
 )
 from app.core.auth import require_admin, require_reviewer
-from app.core.config import get_settings
 from app.core.database import async_session, get_db
 from app.schemas.auth import UserContext
-from app.models.finding import Finding, Status
+from app.models.finding import Finding
 from app.services.ingest import ingest_finding, _parse_iso_datetime
-from app.services.dedup import make_fingerprint, component_base
-from app.services.aikido_dashboard_sync import get_aikido_dashboard_cached, sync_aikido_dashboard
+from app.services.dedup import make_fingerprint
+from app.services.aikido_dashboard_sync import (
+    get_aikido_dashboard_cached,
+    sync_aikido_dashboard,
+)
 from app.services.aikido_full_sync import run_full_sync
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
 
 # Sync status per source_id for progress bar persistence across page refresh (in-memory, per process).
 # Each Aikido source node tracks its own sync progress independently.
@@ -116,9 +119,15 @@ async def aikido_debug_sample(
             if isinstance(v, str) and v.startswith("http"):
                 url_fields[k] = v[:120]
     # Date fields for first_detected_at debugging (report trend alignment)
-    date_fields = {k: v for k, v in first.items() if isinstance(v, (str, int, float)) and any(
-        d in k.lower() for d in ("detect", "created", "seen", "discover", "timestamp", "date")
-    )}
+    date_fields = {
+        k: v
+        for k, v in first.items()
+        if isinstance(v, (str, int, float))
+        and any(
+            d in k.lower()
+            for d in ("detect", "created", "seen", "discover", "timestamp", "date")
+        )
+    }
     return {
         "message": "Sample from first issue",
         "keys": list(first.keys()),
@@ -149,10 +158,9 @@ async def aikido_debug_branches(
     repo_filter = repo.lower()
 
     def _matches_repo(issue: dict) -> bool:
-        name = (
-            str(issue.get("code_repo_name") or issue.get("codeRepoName") or "")
-            .lower()
-        )
+        name = str(
+            issue.get("code_repo_name") or issue.get("codeRepoName") or ""
+        ).lower()
         locs = issue.get("locations") or issue.get("instances") or []
         for loc in locs if isinstance(locs, list) else []:
             if isinstance(loc, dict):
@@ -171,7 +179,12 @@ async def aikido_debug_branches(
         if not _matches_repo(raw):
             continue
         repo_name = raw.get("code_repo_name") or raw.get("codeRepoName") or ""
-        locs = raw.get("locations") or raw.get("instances") or raw.get("locations_list") or []
+        locs = (
+            raw.get("locations")
+            or raw.get("instances")
+            or raw.get("locations_list")
+            or []
+        )
         repo_names_seen.add(repo_name)
 
         # Extract all possible branch-related fields
@@ -186,15 +199,22 @@ async def aikido_debug_branches(
             "code_repository": raw.get("code_repository") or raw.get("codeRepository"),
             "repository": raw.get("repository"),
             "locations": locs[:2] if isinstance(locs, list) else locs,
-            "top_level_keys": [k for k in raw.keys() if "branch" in k.lower() or "repo" in k.lower()],
+            "top_level_keys": [
+                k for k in raw.keys() if "branch" in k.lower() or "repo" in k.lower()
+            ],
         }
         if isinstance(locs, list) and locs and isinstance(locs[0], dict):
             loc0 = locs[0]
             branch_data["locations[0]"] = {
-                k: v for k, v in loc0.items()
+                k: v
+                for k, v in loc0.items()
                 if "branch" in k.lower() or "name" in k.lower() or "type" in k.lower()
             }
-            b = loc0.get("branch") or loc0.get("scanned_branch") or loc0.get("git_branch")
+            b = (
+                loc0.get("branch")
+                or loc0.get("scanned_branch")
+                or loc0.get("git_branch")
+            )
             if b:
                 branches_seen.add(str(b))
 
@@ -269,20 +289,35 @@ async def aikido_debug_branch_mapping(
         if key not in samples_by_key:
             samples_by_key[key] = []
         if len(samples_by_key[key]) < 2:
-            samples_by_key[key].append({
-                "id": raw.get("id"),
-                "code_repo_id": repo_id,
-                "code_repo_name": raw.get("code_repo_name"),
-                "title": (str(raw.get("title") or raw.get("rule") or raw.get("affected_package") or raw.get("cve_id") or ""))[:80],
-            })
+            samples_by_key[key].append(
+                {
+                    "id": raw.get("id"),
+                    "code_repo_id": repo_id,
+                    "code_repo_name": raw.get("code_repo_name"),
+                    "title": (
+                        str(
+                            raw.get("title")
+                            or raw.get("rule")
+                            or raw.get("affected_package")
+                            or raw.get("cve_id")
+                            or ""
+                        )
+                    )[:80],
+                }
+            )
 
     kamiwaza_repo_ids = {1211371, 1489682, 1544101}
-    repo_map_kamiwaza = {str(k): v for k, v in repo_map.items() if isinstance(k, int) and k in kamiwaza_repo_ids}
+    repo_map_kamiwaza = {
+        str(k): v
+        for k, v in repo_map.items()
+        if isinstance(k, int) and k in kamiwaza_repo_ids
+    }
     return {
         "repo_filter": repo_filter,
         "repo_map_kamiwaza": repo_map_kamiwaza,
         "counts_by_code_repo_id_and_branch": [
-            {"code_repo_id": k[0], "branch": k[1], "count": v} for k, v in sorted(counts.items())
+            {"code_repo_id": k[0], "branch": k[1], "count": v}
+            for k, v in sorted(counts.items())
         ],
         "samples": {f"{k[0]}_{k[1]}": v for k, v in samples_by_key.items()},
     }
@@ -307,7 +342,11 @@ async def aikido_debug_repos(
     if not repos:
         return {"message": "No code repositories", "repos": []}
     # Filter kamiwaza-related and show full structure of first few
-    kamiwaza_repos = [r for r in repos if isinstance(r, dict) and "kamiwaza" in str(r.get("name", "")).lower()]
+    kamiwaza_repos = [
+        r
+        for r in repos
+        if isinstance(r, dict) and "kamiwaza" in str(r.get("name", "")).lower()
+    ]
     sample = kamiwaza_repos[:10] if kamiwaza_repos else repos[:5]
     first_keys = list(repos[0].keys()) if repos and isinstance(repos[0], dict) else []
     return {
@@ -337,13 +376,23 @@ async def aikido_debug_db(
         ).limit(10)
     )
     sample = [
-        {"id": row[0], "image": row[1], "component": row[2], "branch": row[3], "tenant_id": row[4]}
+        {
+            "id": row[0],
+            "image": row[1],
+            "component": row[2],
+            "branch": row[3],
+            "tenant_id": row[4],
+        }
         for row in r
     ]
     count_r = await db.execute(select(func.count(Finding.id)))
     total = count_r.scalar() or 0
-    with_img = await db.execute(select(func.count(Finding.id)).where(Finding.image.isnot(None)))
-    with_comp = await db.execute(select(func.count(Finding.id)).where(Finding.component.isnot(None)))
+    with_img = await db.execute(
+        select(func.count(Finding.id)).where(Finding.image.isnot(None))
+    )
+    with_comp = await db.execute(
+        select(func.count(Finding.id)).where(Finding.component.isnot(None))
+    )
     return {
         "total_findings": total,
         "with_image": with_img.scalar() or 0,
@@ -388,7 +437,9 @@ async def aikido_sync(
     source_id scopes the progress bar to the node that initiated sync (for multiple Aikido sources).
     """
     if not source_id:
-        raise HTTPException(status_code=400, detail="source_id is required for Aikido sync")
+        raise HTTPException(
+            status_code=400, detail="source_id is required for Aikido sync"
+        )
     creds = await get_aikido_credentials(db, source_id)
     if not _aikido_configured(creds):
         raise HTTPException(
@@ -418,7 +469,9 @@ async def aikido_sync(
 
     async def _bg():
         try:
-            result = await run_full_sync(creds, source_id=source_id, on_progress=_on_progress)
+            result = await run_full_sync(
+                creds, source_id=source_id, on_progress=_on_progress
+            )
             pull_err = result.get("pull", {}).get("error")
             dash_err = result.get("dashboard", {}).get("error")
             if pull_err or dash_err:
@@ -428,7 +481,9 @@ async def aikido_sync(
                 slot["message"] = str(err_msg)[:500]
             else:
                 slot["status"] = "success"
-                slot["message"] = "Sync complete. Refresh the Report tab to see updated data."
+                slot["message"] = (
+                    "Sync complete. Refresh the Report tab to see updated data."
+                )
         except Exception as e:
             logger.exception("Background Aikido sync failed: %s", e)
             slot["status"] = "error"
@@ -488,7 +543,10 @@ async def aikido_dashboard_data(
     """Return cached Aikido data synced to VAT. Run POST /aikido/sync or /aikido/sync-dashboard first. source_id scopes to per-source cache."""
     data = await get_aikido_dashboard_cached(db, source_id)
     if not data:
-        raise HTTPException(status_code=404, detail="No Aikido data synced yet. Run POST /aikido/sync-dashboard first.")
+        raise HTTPException(
+            status_code=404,
+            detail="No Aikido data synced yet. Run POST /aikido/sync-dashboard first.",
+        )
     return data
 
 
@@ -547,7 +605,9 @@ async def aikido_backfill_first_detected(
     async with async_session() as session:
         for raw in raw_issues:
             try:
-                transformed = await adapter.to_vat_finding(raw, repo_map=repo_map, repo_id_to_name=repo_id_to_name)
+                transformed = await adapter.to_vat_finding(
+                    raw, repo_map=repo_map, repo_id_to_name=repo_id_to_name
+                )
                 fd_str = getattr(transformed, "first_detected_at", None)
                 fd_dt = _parse_iso_datetime(fd_str) if fd_str else None
                 cd_str = getattr(transformed, "closed_at", None)
@@ -561,7 +621,9 @@ async def aikido_backfill_first_detected(
                     transformed.cve_id, comp, image=img, branch=branch, tag=tag
                 )
 
-                result = await session.execute(select(Finding).where(Finding.fingerprint_id == fp))
+                result = await session.execute(
+                    select(Finding).where(Finding.fingerprint_id == fp)
+                )
                 existing = result.scalar_one_or_none()
                 if not existing:
                     continue
@@ -582,7 +644,11 @@ async def aikido_backfill_first_detected(
                     await session.commit()
             except Exception as e:
                 await session.rollback()
-                logger.warning("Backfill failed for issue %s: %s", raw.get("id", "?"), str(e).split("\n")[0][:200] if str(e) else type(e).__name__)
+                logger.warning(
+                    "Backfill failed for issue %s: %s",
+                    raw.get("id", "?"),
+                    str(e).split("\n")[0][:200] if str(e) else type(e).__name__,
+                )
 
     return {
         "message": "Backfill complete",
@@ -652,7 +718,13 @@ async def aikido_bootstrap(
             if not isinstance(c, dict) or c.get("id") is None:
                 continue
             sid = str(c["id"])
-            name = c.get("name") or c.get("image") or c.get("repository_name") or c.get("repositoryName") or ""
+            name = (
+                c.get("name")
+                or c.get("image")
+                or c.get("repository_name")
+                or c.get("repositoryName")
+                or ""
+            )
             if name:
                 name_str = str(name).strip()
                 name_no_tag = _strip_tag_from_container_name(name_str) or name_str
@@ -678,7 +750,10 @@ async def aikido_bootstrap(
                 )
 
                 finding, is_new = await ingest_finding(
-                    session, transformed, source_name="Aikido", tenant_id=tenant_id,
+                    session,
+                    transformed,
+                    source_name="Aikido",
+                    tenant_id=tenant_id,
                     auto_sync_to_tracker=create_tracker_issues,
                 )
                 if is_new:
@@ -688,8 +763,14 @@ async def aikido_bootstrap(
             except Exception as e:
                 await session.rollback()
                 msg = str(e).split("\n")[0][:200] if str(e) else type(e).__name__
-                logger.warning("Bootstrap ingest failed for issue %s: %s", raw.get("id", "?"), msg)
-                logger.debug("Bootstrap ingest failed for issue %s", raw.get("id", "?"), exc_info=True)
+                logger.warning(
+                    "Bootstrap ingest failed for issue %s: %s", raw.get("id", "?"), msg
+                )
+                logger.debug(
+                    "Bootstrap ingest failed for issue %s",
+                    raw.get("id", "?"),
+                    exc_info=True,
+                )
 
     # Backfill: set image=component for findings with no image (fixes old data)
     # Also clear tenant_id on Aikido findings so they're visible to all users/tenants
@@ -700,9 +781,7 @@ async def aikido_bootstrap(
             .values(image=Finding.component)
         )
         await session.execute(
-            update(Finding)
-            .where(Finding.source == "Aikido")
-            .values(tenant_id=None)
+            update(Finding).where(Finding.source == "Aikido").values(tenant_id=None)
         )
         await session.commit()
 
@@ -714,10 +793,12 @@ async def aikido_bootstrap(
                 Finding.image,
                 Finding.component,
                 Finding.tenant_id,
-            )
-            .limit(10)
+            ).limit(10)
         )
-        sample = [{"id": row[0], "image": row[1], "component": row[2], "tenant_id": row[3]} for row in r]
+        sample = [
+            {"id": row[0], "image": row[1], "component": row[2], "tenant_id": row[3]}
+            for row in r
+        ]
         count_r = await session.execute(select(func.count(Finding.id)))
         total = count_r.scalar() or 0
         with_img = await session.execute(

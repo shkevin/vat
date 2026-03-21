@@ -22,11 +22,12 @@ function getSection(f: Finding): WaiverSection {
   return "healthy";
 }
 
-const SECTION_LABELS: Record<WaiverSection, { label: string; color: string }> = {
-  expired: { label: "Expired — Action Required", color: "var(--app-danger)" },
-  expiring: { label: "Expiring within 30 days", color: "var(--app-warning)" },
-  healthy: { label: "Healthy", color: "var(--app-success)" },
-};
+const SECTION_LABELS: Record<WaiverSection, { label: string; color: string }> =
+  {
+    expired: { label: "Expired — Action Required", color: "var(--app-danger)" },
+    expiring: { label: "Expiring within 30 days", color: "var(--app-warning)" },
+    healthy: { label: "Healthy", color: "var(--app-success)" },
+  };
 
 export function WaiversTab({ waivers, onSelect }: WaiversTabProps) {
   const bySection = waivers.reduce(
@@ -36,7 +37,7 @@ export function WaiversTab({ waivers, onSelect }: WaiversTabProps) {
       acc[s].push(f);
       return acc;
     },
-    {} as Record<WaiverSection, Finding[]>
+    {} as Record<WaiverSection, Finding[]>,
   );
 
   const order: WaiverSection[] = ["expired", "expiring", "healthy"];
@@ -94,7 +95,11 @@ export function WaiversTab({ waivers, onSelect }: WaiversTabProps) {
                   onClick={() => onSelect(f)}
                   style={{
                     background: "var(--app-card-bg)",
-                    border: `1px solid ${section === "expired" ? "color-mix(in srgb, var(--app-danger) 40%, transparent)" : "var(--app-border)"}`,
+                    border: `1px solid ${
+                      section === "expired"
+                        ? "color-mix(in srgb, var(--app-danger) 40%, transparent)"
+                        : "var(--app-border)"
+                    }`,
                     borderRadius: 6,
                     padding: "14px 16px",
                     marginBottom: 8,

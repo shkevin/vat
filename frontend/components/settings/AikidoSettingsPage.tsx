@@ -2,7 +2,12 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { mono, sans } from "@/lib/styles";
-import { fetchAikidoStatus, fetchAikidoSyncStatus, putAikidoCredentials, syncAikido } from "@/lib/api";
+import {
+  fetchAikidoStatus,
+  fetchAikidoSyncStatus,
+  putAikidoCredentials,
+  syncAikido,
+} from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 import { useVATData } from "@/contexts/VATDataContext";
 import type { Tracker } from "@/types";
@@ -26,7 +31,11 @@ interface AikidoSettingsPageProps {
   onTrackerChange?: (tracker: Tracker) => void;
 }
 
-export function AikidoSettingsPage({ sourceId, tracker, onTrackerChange }: AikidoSettingsPageProps) {
+export function AikidoSettingsPage({
+  sourceId,
+  tracker,
+  onTrackerChange,
+}: AikidoSettingsPageProps) {
   const { token } = useAuth();
   const { refetch } = useVATData();
   const auth = { token };
@@ -44,7 +53,11 @@ export function AikidoSettingsPage({ sourceId, tracker, onTrackerChange }: Aikid
   const [syncing, setSyncing] = useState(false);
   const [syncResult, setSyncResult] = useState<string | null>(null);
   const [syncError, setSyncError] = useState<string | null>(null);
-  const [syncStep, setSyncStep] = useState<{ step: number; total: number; label: string } | null>(null);
+  const [syncStep, setSyncStep] = useState<{
+    step: number;
+    total: number;
+    label: string;
+  } | null>(null);
   const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -88,8 +101,12 @@ export function AikidoSettingsPage({ sourceId, tracker, onTrackerChange }: Aikid
         } else if (s.status === "success" || s.status === "error") {
           setSyncing(false);
           setSyncStep(null);
-          setSyncResult(s.status === "success" ? (s.message ?? "Sync complete.") : null);
-          setSyncError(s.status === "error" ? (s.message ?? "Sync failed") : null);
+          setSyncResult(
+            s.status === "success" ? s.message ?? "Sync complete." : null,
+          );
+          setSyncError(
+            s.status === "error" ? s.message ?? "Sync failed" : null,
+          );
           if (s.status === "success") refetch({ silent: true });
         }
       })
@@ -116,7 +133,13 @@ export function AikidoSettingsPage({ sourceId, tracker, onTrackerChange }: Aikid
           setSyncStep(null);
           setSyncError(s.message ?? "Sync failed");
           setSyncResult(null);
-        } else if (s.status === "running" && s.step != null && s.total != null && s.total > 0 && s.label) {
+        } else if (
+          s.status === "running" &&
+          s.step != null &&
+          s.total != null &&
+          s.total > 0 &&
+          s.label
+        ) {
           setSyncStep({ step: s.step, total: s.total, label: s.label });
         }
       } catch {
@@ -146,7 +169,7 @@ export function AikidoSettingsPage({ sourceId, tracker, onTrackerChange }: Aikid
           region: region || undefined,
           webhookSecret: webhookSecret || undefined,
         },
-        auth
+        auth,
       );
       setClientId("");
       setClientSecret("");
@@ -171,20 +194,35 @@ export function AikidoSettingsPage({ sourceId, tracker, onTrackerChange }: Aikid
       // Sync runs in background; fetch status immediately to show first progress step
       fetchAikidoSyncStatus(auth, sourceId)
         .then((s) => {
-          if (s.status === "running" && s.step != null && s.total != null && s.total > 0 && s.label) {
+          if (
+            s.status === "running" &&
+            s.step != null &&
+            s.total != null &&
+            s.total > 0 &&
+            s.label
+          ) {
             setSyncStep({ step: s.step, total: s.total, label: s.label });
           }
         })
         .catch(() => {});
     } catch (e) {
-      setSyncError(e instanceof Error ? e.message : "Failed to sync with Aikido");
+      setSyncError(
+        e instanceof Error ? e.message : "Failed to sync with Aikido",
+      );
       setSyncing(false);
     }
   }, [token, sourceId]);
 
   if (loading) {
     return (
-      <div style={{ ...sans, fontSize: 12, color: "var(--app-muted)", padding: 20 }}>
+      <div
+        style={{
+          ...sans,
+          fontSize: 12,
+          color: "var(--app-muted)",
+          padding: 20,
+        }}
+      >
         Loading Aikido status…
       </div>
     );
@@ -201,7 +239,9 @@ export function AikidoSettingsPage({ sourceId, tracker, onTrackerChange }: Aikid
           marginBottom: 20,
         }}
       >
-        <div style={{ ...sans, fontSize: 12, color: "var(--app-danger)" }}>{error}</div>
+        <div style={{ ...sans, fontSize: 12, color: "var(--app-danger)" }}>
+          {error}
+        </div>
         <button
           onClick={load}
           style={{
@@ -248,20 +288,43 @@ export function AikidoSettingsPage({ sourceId, tracker, onTrackerChange }: Aikid
           padding: 20,
         }}
       >
-        <div style={{ ...sans, fontSize: 12, color: "var(--app-muted)", marginBottom: 16, lineHeight: 1.5 }}>
-          Aikido pushes findings to VAT via webhook. Configure the webhook in your Aikido dashboard and enter credentials below.
+        <div
+          style={{
+            ...sans,
+            fontSize: 12,
+            color: "var(--app-muted)",
+            marginBottom: 16,
+            lineHeight: 1.5,
+          }}
+        >
+          Aikido pushes findings to VAT via webhook. Configure the webhook in
+          your Aikido dashboard and enter credentials below.
         </div>
 
         <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
           <div>
-            <label style={{ ...mono, fontSize: 9, fontWeight: 600, color: "var(--app-muted)", textTransform: "uppercase", display: "block", marginBottom: 6 }}>
+            <label
+              style={{
+                ...mono,
+                fontSize: 9,
+                fontWeight: 600,
+                color: "var(--app-muted)",
+                textTransform: "uppercase",
+                display: "block",
+                marginBottom: 6,
+              }}
+            >
               Client ID (OAuth)
             </label>
             <input
               type="password"
               value={clientId}
               onChange={(e) => setClientId(e.target.value)}
-              placeholder={status.clientIdConfigured ? "•••••••• (leave blank to keep)" : "AIK_CLIENT_xxx"}
+              placeholder={
+                status.clientIdConfigured
+                  ? "•••••••• (leave blank to keep)"
+                  : "AIK_CLIENT_xxx"
+              }
               autoComplete="off"
               style={{
                 ...mono,
@@ -276,14 +339,28 @@ export function AikidoSettingsPage({ sourceId, tracker, onTrackerChange }: Aikid
             />
           </div>
           <div>
-            <label style={{ ...mono, fontSize: 9, fontWeight: 600, color: "var(--app-muted)", textTransform: "uppercase", display: "block", marginBottom: 6 }}>
+            <label
+              style={{
+                ...mono,
+                fontSize: 9,
+                fontWeight: 600,
+                color: "var(--app-muted)",
+                textTransform: "uppercase",
+                display: "block",
+                marginBottom: 6,
+              }}
+            >
               Client secret (OAuth)
             </label>
             <input
               type="password"
               value={clientSecret}
               onChange={(e) => setClientSecret(e.target.value)}
-              placeholder={status.clientSecretConfigured ? "•••••••• (leave blank to keep)" : "AIK_SECRET_xxx"}
+              placeholder={
+                status.clientSecretConfigured
+                  ? "•••••••• (leave blank to keep)"
+                  : "AIK_SECRET_xxx"
+              }
               autoComplete="off"
               style={{
                 ...mono,
@@ -298,7 +375,17 @@ export function AikidoSettingsPage({ sourceId, tracker, onTrackerChange }: Aikid
             />
           </div>
           <div>
-            <label style={{ ...mono, fontSize: 9, fontWeight: 600, color: "var(--app-muted)", textTransform: "uppercase", display: "block", marginBottom: 6 }}>
+            <label
+              style={{
+                ...mono,
+                fontSize: 9,
+                fontWeight: 600,
+                color: "var(--app-muted)",
+                textTransform: "uppercase",
+                display: "block",
+                marginBottom: 6,
+              }}
+            >
               Region
             </label>
             <select
@@ -321,14 +408,28 @@ export function AikidoSettingsPage({ sourceId, tracker, onTrackerChange }: Aikid
             </select>
           </div>
           <div>
-            <label style={{ ...mono, fontSize: 9, fontWeight: 600, color: "var(--app-muted)", textTransform: "uppercase", display: "block", marginBottom: 6 }}>
+            <label
+              style={{
+                ...mono,
+                fontSize: 9,
+                fontWeight: 600,
+                color: "var(--app-muted)",
+                textTransform: "uppercase",
+                display: "block",
+                marginBottom: 6,
+              }}
+            >
               Webhook secret
             </label>
             <input
               type="password"
               value={webhookSecret}
               onChange={(e) => setWebhookSecret(e.target.value)}
-              placeholder={status.webhookSecretConfigured ? "•••••••• (leave blank to keep)" : "Enter webhook secret"}
+              placeholder={
+                status.webhookSecretConfigured
+                  ? "•••••••• (leave blank to keep)"
+                  : "Enter webhook secret"
+              }
               autoComplete="off"
               style={{
                 ...mono,
@@ -344,14 +445,22 @@ export function AikidoSettingsPage({ sourceId, tracker, onTrackerChange }: Aikid
           </div>
           {(clientId || clientSecret || region || webhookSecret) && (
             <>
-              {saveError && <div style={{ ...sans, fontSize: 12, color: "var(--app-danger)" }}>{saveError}</div>}
+              {saveError && (
+                <div
+                  style={{ ...sans, fontSize: 12, color: "var(--app-danger)" }}
+                >
+                  {saveError}
+                </div>
+              )}
               <button
                 onClick={handleSaveCredentials}
                 disabled={saving}
                 style={{
                   ...mono,
                   padding: "8px 16px",
-                  background: saving ? "var(--app-border)" : "var(--app-accent)",
+                  background: saving
+                    ? "var(--app-border)"
+                    : "var(--app-accent)",
                   border: "none",
                   borderRadius: 6,
                   color: "var(--app-fg)",
@@ -364,54 +473,80 @@ export function AikidoSettingsPage({ sourceId, tracker, onTrackerChange }: Aikid
               </button>
             </>
           )}
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginTop: 16, paddingTop: 16, borderTop: "1px solid var(--app-border)" }}>
-                <div>
-                  <span style={{ ...mono, fontSize: 10, fontWeight: 600, color: "var(--app-fg)", display: "block" }}>
-                    Sync VAT status back to Aikido
-                  </span>
-                  <span style={{ ...sans, fontSize: 10, color: "var(--app-muted)" }}>
-                    When enabled, status changes (e.g. false-positive, mitigated) in VAT are sent to Aikido (ignore/unignore).
-                  </span>
-                </div>
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={syncBackEnabled}
-                  onClick={async () => {
-                    if (!sourceId) return;
-                    const next = !syncBackEnabled;
-                    setSyncBackEnabled(next);
-                    try {
-                      await putAikidoCredentials({ sourceId, syncBackEnabled: next }, auth);
-                      setStatus((s) => s ? { ...s, syncBackEnabled: next } : s);
-                    } catch {
-                      setSyncBackEnabled(syncBackEnabled);
-                    }
-                  }}
-                  style={{
-                    flexShrink: 0,
-                    width: 40,
-                    height: 22,
-                    borderRadius: 11,
-                    border: "none",
-                    background: syncBackEnabled ? "var(--app-accent)" : "var(--app-border)",
-                    cursor: "pointer",
-                    position: "relative",
-                  }}
-                >
-                  <span
-                    style={{
-                      position: "absolute",
-                      top: 2,
-                      left: syncBackEnabled ? 20 : 2,
-                      width: 18,
-                      height: 18,
-                      borderRadius: 9,
-                      background: "var(--app-fg)",
-                      transition: "left 0.15s ease",
-                    }}
-                  />
-                </button>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 12,
+              marginTop: 16,
+              paddingTop: 16,
+              borderTop: "1px solid var(--app-border)",
+            }}
+          >
+            <div>
+              <span
+                style={{
+                  ...mono,
+                  fontSize: 10,
+                  fontWeight: 600,
+                  color: "var(--app-fg)",
+                  display: "block",
+                }}
+              >
+                Sync VAT status back to Aikido
+              </span>
+              <span
+                style={{ ...sans, fontSize: 10, color: "var(--app-muted)" }}
+              >
+                When enabled, status changes (e.g. false-positive, mitigated) in
+                VAT are sent to Aikido (ignore/unignore).
+              </span>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={syncBackEnabled}
+              onClick={async () => {
+                if (!sourceId) return;
+                const next = !syncBackEnabled;
+                setSyncBackEnabled(next);
+                try {
+                  await putAikidoCredentials(
+                    { sourceId, syncBackEnabled: next },
+                    auth,
+                  );
+                  setStatus((s) => (s ? { ...s, syncBackEnabled: next } : s));
+                } catch {
+                  setSyncBackEnabled(syncBackEnabled);
+                }
+              }}
+              style={{
+                flexShrink: 0,
+                width: 40,
+                height: 22,
+                borderRadius: 11,
+                border: "none",
+                background: syncBackEnabled
+                  ? "var(--app-accent)"
+                  : "var(--app-border)",
+                cursor: "pointer",
+                position: "relative",
+              }}
+            >
+              <span
+                style={{
+                  position: "absolute",
+                  top: 2,
+                  left: syncBackEnabled ? 20 : 2,
+                  width: 18,
+                  height: 18,
+                  borderRadius: 9,
+                  background: "var(--app-fg)",
+                  transition: "left 0.15s ease",
+                }}
+              />
+            </button>
           </div>
           {onTrackerChange && (
             <div
@@ -424,12 +559,23 @@ export function AikidoSettingsPage({ sourceId, tracker, onTrackerChange }: Aikid
                 borderTop: "1px solid var(--app-border)",
               }}
             >
-              <label style={{ ...sans, fontSize: 12, color: "var(--app-fg)", flex: 1, cursor: "pointer" }}>
+              <label
+                style={{
+                  ...sans,
+                  fontSize: 12,
+                  color: "var(--app-fg)",
+                  flex: 1,
+                  cursor: "pointer",
+                }}
+              >
                 <input
                   type="checkbox"
                   checked={!!tracker?.useAikidoTracking}
                   onChange={async (e) => {
-                    const next = { ...(tracker || {}), useAikidoTracking: e.target.checked } as Tracker;
+                    const next = {
+                      ...(tracker || {}),
+                      useAikidoTracking: e.target.checked,
+                    } as Tracker;
                     await onTrackerChange?.(next);
                   }}
                   style={{ marginRight: 10 }}
@@ -437,33 +583,64 @@ export function AikidoSettingsPage({ sourceId, tracker, onTrackerChange }: Aikid
                 Use Aikido&apos;s Linear integration for tracking
               </label>
               <span style={{ ...mono, fontSize: 9, color: "var(--app-muted)" }}>
-                VAT pulls linked Linear tasks from Aikido during sync; findings show tracker links.
+                VAT pulls linked Linear tasks from Aikido during sync; findings
+                show tracker links.
               </span>
             </div>
           )}
           {status.oauthConfigured && (
-            <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 8 }}>
-              <span style={{ ...mono, fontSize: 10, color: "var(--app-muted)" }}>
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: 8,
+                marginTop: 8,
+              }}
+            >
+              <span
+                style={{ ...mono, fontSize: 10, color: "var(--app-muted)" }}
+              >
                 Sync data from Aikido to VAT
               </span>
               {sourceId == null && (
-                <div style={{ ...sans, fontSize: 11, color: "var(--app-muted)", padding: "8px 12px", background: "var(--app-input-bg)", borderRadius: 6, border: "1px solid var(--app-border)" }}>
+                <div
+                  style={{
+                    ...sans,
+                    fontSize: 11,
+                    color: "var(--app-muted)",
+                    padding: "8px 12px",
+                    background: "var(--app-input-bg)",
+                    borderRadius: 6,
+                    border: "1px solid var(--app-border)",
+                  }}
+                >
                   Add the Aikido source to the canvas first to enable sync.
                 </div>
               )}
-                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 16,
+                    flexWrap: "wrap",
+                  }}
+                >
                   <button
                     onClick={handleSync}
                     disabled={syncing || sourceId == null}
                     style={{
                       ...mono,
                       padding: "8px 16px",
-                      background: syncing || sourceId == null ? "var(--app-border)" : "var(--app-accent)",
+                      background:
+                        syncing || sourceId == null
+                          ? "var(--app-border)"
+                          : "var(--app-accent)",
                       border: "none",
                       borderRadius: 6,
                       color: "var(--app-fg)",
-                      cursor: syncing || sourceId == null ? "not-allowed" : "pointer",
+                      cursor:
+                        syncing || sourceId == null ? "not-allowed" : "pointer",
                       fontSize: 11,
                       fontWeight: 600,
                       opacity: syncing || sourceId == null ? 0.6 : 1,
@@ -472,7 +649,13 @@ export function AikidoSettingsPage({ sourceId, tracker, onTrackerChange }: Aikid
                     {syncing ? "Syncing…" : "Sync"}
                   </button>
                   {lastSyncedAt && (
-                    <span style={{ ...sans, fontSize: 11, color: "var(--app-muted)" }}>
+                    <span
+                      style={{
+                        ...sans,
+                        fontSize: 11,
+                        color: "var(--app-muted)",
+                      }}
+                    >
                       Last synced: {new Date(lastSyncedAt).toLocaleString()}
                     </span>
                   )}
@@ -488,43 +671,88 @@ export function AikidoSettingsPage({ sourceId, tracker, onTrackerChange }: Aikid
                           <div
                             className="sync-progress-bar-indicator"
                             style={{
-                              width: `${(syncStep.step / syncStep.total) * 100}%`,
+                              width: `${
+                                (syncStep.step / syncStep.total) * 100
+                              }%`,
                               animation: "none",
                             }}
                           />
                         </div>
-                        <span style={{ ...sans, fontSize: 11, color: "var(--app-muted)" }}>
+                        <span
+                          style={{
+                            ...sans,
+                            fontSize: 11,
+                            color: "var(--app-muted)",
+                          }}
+                        >
                           {syncStep.step}/{syncStep.total} {syncStep.label}
                         </span>
                       </div>
                     ) : (
-                      <div className="sync-progress-bar" style={{ width: "100%", maxWidth: 280 }}>
+                      <div
+                        className="sync-progress-bar"
+                        style={{ width: "100%", maxWidth: 280 }}
+                      >
                         <div className="sync-progress-bar-indicator" />
                       </div>
                     )}
                     {syncResult && !syncStep && (
-                      <span style={{ ...sans, fontSize: 11, color: "var(--app-muted)" }}>
+                      <span
+                        style={{
+                          ...sans,
+                          fontSize: 11,
+                          color: "var(--app-muted)",
+                        }}
+                      >
                         {syncResult}
                       </span>
                     )}
                   </>
                 )}
                 {!syncing && syncResult && (
-                  <span style={{ ...sans, fontSize: 11, color: "var(--app-success)" }}>
+                  <span
+                    style={{
+                      ...sans,
+                      fontSize: 11,
+                      color: "var(--app-success)",
+                    }}
+                  >
                     {syncResult}
                   </span>
                 )}
                 {!syncing && syncError && (
-                  <span style={{ ...sans, fontSize: 11, color: "var(--app-danger)" }}>{syncError}</span>
+                  <span
+                    style={{
+                      ...sans,
+                      fontSize: 11,
+                      color: "var(--app-danger)",
+                    }}
+                  >
+                    {syncError}
+                  </span>
                 )}
-                </div>
+              </div>
             </div>
           )}
-          <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 8 }}>
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: 8,
+              marginTop: 8,
+            }}
+          >
             <span style={{ ...mono, fontSize: 10, color: "var(--app-muted)" }}>
               Webhook URL
             </span>
-            <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 12,
+                flexWrap: "wrap",
+              }}
+            >
               <code
                 style={{
                   ...mono,
@@ -546,7 +774,9 @@ export function AikidoSettingsPage({ sourceId, tracker, onTrackerChange }: Aikid
                 style={{
                   ...mono,
                   padding: "6px 12px",
-                  background: copied ? "var(--app-success)" : "var(--app-border)",
+                  background: copied
+                    ? "var(--app-success)"
+                    : "var(--app-border)",
                   border: "1px solid var(--app-border)",
                   borderRadius: 4,
                   color: copied ? "var(--app-bg)" : "var(--app-muted)",
@@ -570,7 +800,10 @@ export function AikidoSettingsPage({ sourceId, tracker, onTrackerChange }: Aikid
             borderTop: "1px solid var(--app-border)",
           }}
         >
-          <strong style={{ color: "var(--app-muted)" }}>Supported events:</strong> issue.created, issue.updated, issue.closed
+          <strong style={{ color: "var(--app-muted)" }}>
+            Supported events:
+          </strong>{" "}
+          issue.created, issue.updated, issue.closed
         </div>
 
         <div style={{ marginTop: 12 }}>

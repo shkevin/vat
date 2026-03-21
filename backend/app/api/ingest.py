@@ -26,12 +26,16 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
-def _extract_asset_from_report(raw: dict | list | bytes, parser_id: str) -> Optional[str]:
+def _extract_asset_from_report(
+    raw: dict | list | bytes, parser_id: str
+) -> Optional[str]:
     """Extract asset/target from raw report for zero-finding scans. Used to create Asset record."""
     if parser_id == "trivy" and isinstance(raw, dict):
         results = raw.get("Results") or raw.get("results") or []
         if results and isinstance(results[0], dict):
-            return (results[0].get("Target") or results[0].get("target") or "").strip() or None
+            return (
+                results[0].get("Target") or results[0].get("target") or ""
+            ).strip() or None
     if parser_id == "grype" and isinstance(raw, dict):
         src = raw.get("source") or {}
         if isinstance(src, dict):
@@ -46,7 +50,10 @@ def _extract_asset_from_report(raw: dict | list | bytes, parser_id: str) -> Opti
             from defusedxml import ElementTree
 
             root = ElementTree.fromstring(raw)
-            for ns in ("{http://checklists.nist.gov/xccdf/1.1}", "{http://checklists.nist.gov/xccdf/1.2}"):
+            for ns in (
+                "{http://checklists.nist.gov/xccdf/1.1}",
+                "{http://checklists.nist.gov/xccdf/1.2}",
+            ):
                 tr = root.find(f".//{ns}TestResult")
                 if tr is not None:
                     t = tr.find(f"{ns}target")
@@ -101,7 +108,9 @@ async def _ensure_asset_record(
     return True
 
 
-def _apply_asset_type_transform(payload: VatFindingSchema, asset_type: Optional[str]) -> VatFindingSchema:
+def _apply_asset_type_transform(
+    payload: VatFindingSchema, asset_type: Optional[str]
+) -> VatFindingSchema:
     """
     When asset_type=package, rewrite image→component so VAT infers package instead of container.
     Skip when both image and component are present (container+package): keep image as asset, component as package.
@@ -183,14 +192,30 @@ async def _ingest_from_parser(
 
     if not payloads:
         # Ensure Asset record so zero-finding scans appear in frontend
-        base_asset = asset_override or source_image_override or _extract_asset_from_report(raw, parser_id)
-        asset_type = (source_config or {}).get("asset_type") or (source_config or {}).get("assetType") or "package"
+        base_asset = (
+            asset_override
+            or source_image_override
+            or _extract_asset_from_report(raw, parser_id)
+        )
+        asset_type = (
+            (source_config or {}).get("asset_type")
+            or (source_config or {}).get("assetType")
+            or "package"
+        )
         if base_asset:
             await _ensure_asset_record(db, base_asset, source, asset_type)
         if parser_id in ("openscap", "openscap_oval"):
-            logger.info("OpenSCAP ingest %s: source=%s created=0 merged=0 (no fail results in XML)", parser_id, source)
+            logger.info(
+                "OpenSCAP ingest %s: source=%s created=0 merged=0 (no fail results in XML)",
+                parser_id,
+                source,
+            )
             if isinstance(raw, bytes) and base_asset:
-                stig_asset_id = f"{base_asset}_{source_image_override}"[:256] if source_image_override else base_asset
+                stig_asset_id = (
+                    f"{base_asset}_{source_image_override}"[:256]
+                    if source_image_override
+                    else base_asset
+                )
                 try:
                     await store_openscap_scan_result(
                         db, raw, parser_id, source, stig_asset_id, tenant_id=None
@@ -205,7 +230,12 @@ async def _ingest_from_parser(
                     db, sbom_doc, source=source, component=sbom_component
                 )
                 if sbom_created or sbom_updated:
-                    logger.info("SBOM import: %d created, %d updated from %s", sbom_created, sbom_updated, source)
+                    logger.info(
+                        "SBOM import: %d created, %d updated from %s",
+                        sbom_created,
+                        sbom_updated,
+                        source,
+                    )
             except Exception as e:
                 logger.warning("SBOM import failed for %s: %s", source, e)
         return {
@@ -218,7 +248,9 @@ async def _ingest_from_parser(
             "message": f"No findings in {parser_id} payload",
         }
 
-    asset_type = (source_config or {}).get("asset_type") or (source_config or {}).get("assetType")
+    asset_type = (source_config or {}).get("asset_type") or (source_config or {}).get(
+        "assetType"
+    )
     created = 0
     merged = 0
     for p in payloads:
@@ -256,7 +288,9 @@ async def _ingest_from_parser(
             if source_image_override and parser_id in ("openscap", "openscap_oval"):
                 comp = (p.component or "").strip()
                 if comp and comp != source_image_override:
-                    p = p.model_copy(update={"component": f"{source_image_override} ({comp})"})
+                    p = p.model_copy(
+                        update={"component": f"{source_image_override} ({comp})"}
+                    )
                 else:
                     p = p.model_copy(update={"component": source_image_override})
             p = _apply_asset_type_transform(p, asset_type)
@@ -306,7 +340,12 @@ async def _ingest_from_parser(
                 db, sbom_doc, source=source, component=sbom_component
             )
             if sbom_created or sbom_updated:
-                logger.info("SBOM import: %d created, %d updated from %s", sbom_created, sbom_updated, source)
+                logger.info(
+                    "SBOM import: %d created, %d updated from %s",
+                    sbom_created,
+                    sbom_updated,
+                    source,
+                )
         except Exception as e:
             logger.warning("SBOM import failed for %s: %s", source, e)
 
@@ -474,7 +513,6 @@ async def post_ingest(
             strict_asset_mapping=strict_asset_mapping,
         )
 
-
 @router.post("/sarif")
 async def post_ingest_sarif_body(
     body: dict,
@@ -508,7 +546,8 @@ async def post_ingest_sarif_file(
     Ingest SARIF from file upload.
     """
     if not file.filename or not (
-        file.filename.lower().endswith(".sarif") or file.filename.lower().endswith(".json")
+        file.filename.lower().endswith(".sarif")
+        or file.filename.lower().endswith(".json")
     ):
         raise HTTPException(status_code=400, detail="Expected .sarif or .json file")
 
@@ -524,6 +563,8 @@ async def post_ingest_sarif_file(
             status_code=401,
             detail="Ingest requires API key. Use Authorization: Bearer <key> or X-VAT-API-Key.",
         )
-    fallback = source or (file.filename.replace(".sarif", "").replace(".json", "") or "sarif")
+    fallback = source or (
+        file.filename.replace(".sarif", "").replace(".json", "") or "sarif"
+    )
     source_name = auth_source or fallback
     return await _ingest_from_parser(db, body, "sarif", source_name, None)

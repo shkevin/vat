@@ -15,7 +15,9 @@ function normalizeSeverity(s: string): string {
   if (lower === "high") return "High";
   if (lower === "medium" || lower === "moderate") return "Medium";
   if (lower === "low") return "Low";
-  return s ? s.charAt(0).toUpperCase() + s.slice(1).toLowerCase() : "Informational";
+  return s
+    ? s.charAt(0).toUpperCase() + s.slice(1).toLowerCase()
+    : "Informational";
 }
 
 interface MetricsDashboardProps {
@@ -50,12 +52,17 @@ function KeyMetricsTable({
         <tbody>
           {metrics.map((m, i) => {
             const isWarn = m.warn && m.value > 0;
-            const valColor = isWarn ? "var(--app-danger)" : m.color ?? "var(--app-fg)";
+            const valColor = isWarn
+              ? "var(--app-danger)"
+              : m.color ?? "var(--app-fg)";
             return (
               <tr
                 key={m.label}
                 style={{
-                  borderBottom: i < metrics.length - 1 ? "1px solid var(--app-border-subtle)" : undefined,
+                  borderBottom:
+                    i < metrics.length - 1
+                      ? "1px solid var(--app-border-subtle)"
+                      : undefined,
                 }}
               >
                 <td
@@ -266,16 +273,20 @@ export function MetricsDashboard({
           SEV_ORDER.indexOf(a.severity as (typeof SEV_ORDER)[number]) <=
           SEV_ORDER.indexOf(b.severity as (typeof SEV_ORDER)[number])
             ? a
-            : b
+            : b,
         );
         const s = normalizeSeverity(worst.severity ?? "Informational");
-        const key = (SEV_ORDER as readonly string[]).includes(s) ? s : "Informational";
+        const key = (SEV_ORDER as readonly string[]).includes(s)
+          ? s
+          : "Informational";
         counts[key] = (counts[key] ?? 0) + 1;
       }
     } else {
       for (const f of active) {
         const s = normalizeSeverity(f.severity ?? "Informational");
-        const key = (SEV_ORDER as readonly string[]).includes(s) ? s : "Informational";
+        const key = (SEV_ORDER as readonly string[]).includes(s)
+          ? s
+          : "Informational";
         counts[key] = (counts[key] ?? 0) + 1;
       }
     }
@@ -290,8 +301,18 @@ export function MetricsDashboard({
     { label: "Open", value: open },
     { label: "In review", value: inRev, color: "var(--app-accent)" },
     { label: "SLA overdue", value: overdue, warn: true },
-    { label: "Alerts", value: alerts.length, warn: true, color: "var(--app-danger)" },
-    { label: "Waiver expiring", value: waiverExpiring, color: "var(--app-warning)", warn: waiverExpiring > 0 },
+    {
+      label: "Alerts",
+      value: alerts.length,
+      warn: true,
+      color: "var(--app-danger)",
+    },
+    {
+      label: "Waiver expiring",
+      value: waiverExpiring,
+      color: "var(--app-warning)",
+      warn: waiverExpiring > 0,
+    },
     { label: "Archived", value: archivedCount },
   ];
 
@@ -327,8 +348,8 @@ export function MetricsDashboard({
         {Object.keys(FINDING_TYPES).map((type) => {
           const ft = FINDING_TYPES[type];
           const n = groupFindings
-            ? getGroupedFindings(active, SEV_ORDER).filter(
-                (g) => g.findings.some((f) => f.findingType === type)
+            ? getGroupedFindings(active, SEV_ORDER).filter((g) =>
+                g.findings.some((f) => f.findingType === type),
               ).length
             : active.filter((f) => f.findingType === type).length;
           if (!n) return null;

@@ -21,7 +21,13 @@ interface MainAppShellProps {
   children: React.ReactNode;
 }
 
-const VALID_TABS = ["findings", "review", "report", "dash", "settings"] as const;
+const VALID_TABS = [
+  "findings",
+  "review",
+  "report",
+  "dash",
+  "settings",
+] as const;
 
 export function MainAppShell({ config, children }: MainAppShellProps) {
   const pathname = usePathname();
@@ -73,15 +79,24 @@ export function MainAppShell({ config, children }: MainAppShellProps) {
     if (s.tab !== d.view) d.setView(s.tab);
     if (s.search !== d.search) d.setSearch(s.search);
     const statusSet = new Set(s.status ?? []);
-    if (statusSet.size !== d.filterFindingStatuses.size || [...statusSet].some((x) => !d.filterFindingStatuses.has(x))) {
+    if (
+      statusSet.size !== d.filterFindingStatuses.size ||
+      [...statusSet].some((x) => !d.filterFindingStatuses.has(x))
+    ) {
       d.setFilterFindingStatuses(statusSet);
     }
     const abcSet = new Set(s.abc ?? []);
-    if (abcSet.size !== d.filterABC.size || [...abcSet].some((x) => !d.filterABC.has(x))) {
+    if (
+      abcSet.size !== d.filterABC.size ||
+      [...abcSet].some((x) => !d.filterABC.has(x))
+    ) {
       d.setFilterABC(abcSet);
     }
     const vr: [number, number] = [s.verifiedMin ?? 0, s.verifiedMax ?? 100];
-    if (vr[0] !== d.filterVerifiedRange[0] || vr[1] !== d.filterVerifiedRange[1]) {
+    if (
+      vr[0] !== d.filterVerifiedRange[0] ||
+      vr[1] !== d.filterVerifiedRange[1]
+    ) {
       d.setFilterVerifiedRange(vr);
     }
     const or: [number, number] = [s.oraMin ?? 0, s.oraMax ?? 100];
@@ -89,12 +104,16 @@ export function MainAppShell({ config, children }: MainAppShellProps) {
       d.setFilterORARange(or);
     }
     const atSet = new Set(s.assetTypes ?? []);
-    if (atSet.size !== d.filterAssetTypes.size || [...atSet].some((x) => !d.filterAssetTypes.has(x))) {
+    if (
+      atSet.size !== d.filterAssetTypes.size ||
+      [...atSet].some((x) => !d.filterAssetTypes.has(x))
+    ) {
       d.setFilterAssetTypes(atSet);
     }
     if (s.archived !== d.showArchived) d.setShowArchived(s.archived);
     if (s.favorites !== d.onlyFavorites) d.setOnlyFavorites(s.favorites);
-    if (s.needsJustification !== d.needsJustification) d.setNeedsJustification(s.needsJustification);
+    if (s.needsJustification !== d.needsJustification)
+      d.setNeedsJustification(s.needsJustification);
   }, [isAssetPage, dashboardState, data.loading]);
 
   // Persist VAT filter state to localStorage when user changes filters in sidebar.
@@ -141,7 +160,10 @@ export function MainAppShell({ config, children }: MainAppShellProps) {
 
   // Close detail pane only when navigating to a different page
   useEffect(() => {
-    if (prevPathnameRef.current !== null && prevPathnameRef.current !== pathname) {
+    if (
+      prevPathnameRef.current !== null &&
+      prevPathnameRef.current !== pathname
+    ) {
       data.setSelected(null);
     }
     prevPathnameRef.current = pathname;
@@ -152,7 +174,7 @@ export function MainAppShell({ config, children }: MainAppShellProps) {
       data.setSearch(v);
       if (!isAssetPage) setDashboardState({ search: v });
     },
-    [isAssetPage, data.setSearch, setDashboardState]
+    [isAssetPage, data.setSearch, setDashboardState],
   );
 
   const handleViewChange = useCallback(
@@ -161,23 +183,30 @@ export function MainAppShell({ config, children }: MainAppShellProps) {
         const stored = loadDashboardFiltersFromStorage();
         const params = new URLSearchParams();
         params.set("tab", tabId);
-        if (stored?.status?.length) params.set("status", stored.status.join(","));
+        if (stored?.status?.length)
+          params.set("status", stored.status.join(","));
         if (stored?.abc?.length) params.set("abc", stored.abc.join(","));
-        if (stored?.verifiedMin != null) params.set("verifiedMin", String(stored.verifiedMin));
-        if (stored?.verifiedMax != null) params.set("verifiedMax", String(stored.verifiedMax));
+        if (stored?.verifiedMin != null)
+          params.set("verifiedMin", String(stored.verifiedMin));
+        if (stored?.verifiedMax != null)
+          params.set("verifiedMax", String(stored.verifiedMax));
         if (stored?.oraMin != null) params.set("oraMin", String(stored.oraMin));
         if (stored?.oraMax != null) params.set("oraMax", String(stored.oraMax));
-        if (stored?.assetTypes?.length) params.set("assetTypes", stored.assetTypes.join(","));
+        if (stored?.assetTypes?.length)
+          params.set("assetTypes", stored.assetTypes.join(","));
         if (stored?.archived) params.set("archived", "true");
         if (stored?.favorites) params.set("favorites", "true");
-        if (stored?.needsJustification) params.set("needsJustification", "true");
+        if (stored?.needsJustification)
+          params.set("needsJustification", "true");
         router.push(`/?${params.toString()}`);
       } else {
         data.setView(tabId);
-        setDashboardState({ tab: tabId as "findings" | "review" | "report" | "dash" | "settings" });
+        setDashboardState({
+          tab: tabId as "findings" | "review" | "report" | "dash" | "settings",
+        });
       }
     },
-    [isAssetPage, data.setView, router, setDashboardState]
+    [isAssetPage, data.setView, router, setDashboardState],
   );
 
   const tabs = [
@@ -195,47 +224,49 @@ export function MainAppShell({ config, children }: MainAppShellProps) {
         onOpenChange={setFilterSidebarOpen}
       >
         <div
-        style={{
-          display: "flex",
-          flexDirection: "column",
-          minHeight: "100vh",
-          height: "100%",
-          background: "var(--app-bg)",
-        }}
-      >
-        {config.banner.classification && (
-          <ClassificationBanner classification={config.banner.classification} />
-        )}
-        <AppBanner
-        config={config.banner}
-        tabs={tabs}
-        currentView={currentView}
-        onViewChange={handleViewChange}
-        searchValue={data.search}
-        onSearchChange={handleSearchChange}
-        alertCount={data.alerts.length}
-        waiverExpiringCount={data.waiverExpiring}
-        hideSearch={!isAssetPage && data.view === "findings"}
-        showFilterButton={isSidebarCollapsed && !isAssetPage}
-        onFilterClick={() => setFilterSidebarOpen(true)}
-        />
-        <div
           style={{
-            flex: 1,
-            minHeight: 0,
-            overflow: "auto",
             display: "flex",
             flexDirection: "column",
+            minHeight: "100vh",
+            height: "100%",
+            background: "var(--app-bg)",
           }}
         >
-          {children}
-        </div>
-        {config.footer.classification && (
-          <AppFooter
-            classification={config.footer.classification}
-            suffix={config.footer.suffix}
+          {config.banner.classification && (
+            <ClassificationBanner
+              classification={config.banner.classification}
+            />
+          )}
+          <AppBanner
+            config={config.banner}
+            tabs={tabs}
+            currentView={currentView}
+            onViewChange={handleViewChange}
+            searchValue={data.search}
+            onSearchChange={handleSearchChange}
+            alertCount={data.alerts.length}
+            waiverExpiringCount={data.waiverExpiring}
+            hideSearch={!isAssetPage && data.view === "findings"}
+            showFilterButton={isSidebarCollapsed && !isAssetPage}
+            onFilterClick={() => setFilterSidebarOpen(true)}
           />
-        )}
+          <div
+            style={{
+              flex: 1,
+              minHeight: 0,
+              overflow: "auto",
+              display: "flex",
+              flexDirection: "column",
+            }}
+          >
+            {children}
+          </div>
+          {config.footer.classification && (
+            <AppFooter
+              classification={config.footer.classification}
+              suffix={config.footer.suffix}
+            />
+          )}
         </div>
       </FilterSidebarProvider>
     </ShellProvider>

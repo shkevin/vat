@@ -141,7 +141,12 @@ def test_trivy_parser_mixed():
             {
                 "Target": "app/",
                 "Vulnerabilities": [
-                    {"VulnerabilityID": "CVE-1", "PkgName": "a", "Severity": "MEDIUM", "Title": "T1"}
+                    {
+                        "VulnerabilityID": "CVE-1",
+                        "PkgName": "a",
+                        "Severity": "MEDIUM",
+                        "Title": "T1",
+                    }
                 ],
                 "Secrets": [{"RuleID": "secret-1", "Severity": "HIGH", "Match": "x"}],
             }
@@ -151,7 +156,9 @@ def test_trivy_parser_mixed():
     payloads = parser.parse(trivy)
     assert len(payloads) == 2
     cve_payloads = [p for p in payloads if p.finding_type == CanonicalFindingType.SCA]
-    secret_payloads = [p for p in payloads if p.finding_type == CanonicalFindingType.SECRET]
+    secret_payloads = [
+        p for p in payloads if p.finding_type == CanonicalFindingType.SECRET
+    ]
     assert len(cve_payloads) == 1
     assert len(secret_payloads) == 1
 
@@ -217,7 +224,10 @@ def test_trivy_parser_secrets_nested_with_filepath():
     assert payloads[0].cve_id == "private-key"
     assert payloads[0].finding_type == CanonicalFindingType.SECRET
     # Location: source_image:path within image
-    assert payloads[0].file_path == "kamiwaza-images-core-release-0.11.0:/app/config/key.pem"
+    assert (
+        payloads[0].file_path
+        == "kamiwaza-images-core-release-0.11.0:/app/config/key.pem"
+    )
 
 
 def test_trivy_parser_secrets_flat_with_source_image():
@@ -266,4 +276,7 @@ def test_trivy_parser_secrets_with_source_path():
     payloads = parser.parse(trivy)
     assert len(payloads) == 1
     assert "extracted" in payloads[0].file_path
-    assert payloads[0].file_path == "extracted/wrap-abc123/images/core-release-0.11.0.layout/.env"
+    assert (
+        payloads[0].file_path
+        == "extracted/wrap-abc123/images/core-release-0.11.0.layout/.env"
+    )

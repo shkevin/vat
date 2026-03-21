@@ -21,7 +21,6 @@ logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import async_session
 from app.models.finding import Finding
@@ -43,6 +42,7 @@ def _parse_excel_repo(repo_str: str) -> tuple[str, str | None]:
     Code repos use 'repo (branch)' or 'repo - branch'.
     """
     import re
+
     if not repo_str or str(repo_str).lower() == "nan":
         return ("", None)
     s = str(repo_str).strip()
@@ -62,7 +62,9 @@ async def main():
     if path and Path(path).exists():
         path = Path(path)
     elif exports.exists():
-        files = sorted(exports.glob("*.xlsx"), key=lambda p: p.stat().st_mtime, reverse=True)
+        files = sorted(
+            exports.glob("*.xlsx"), key=lambda p: p.stat().st_mtime, reverse=True
+        )
         path = files[0] if files else None
 
     if not path or not path.exists():
@@ -76,7 +78,11 @@ async def main():
         sys.exit(1)
 
     df = pd.read_excel(path, sheet_name="Issues")
-    df = df.rename(columns=lambda c: c.strip().lower().replace(" ", "_") if isinstance(c, str) else c)
+    df = df.rename(
+        columns=lambda c: c.strip().lower().replace(" ", "_")
+        if isinstance(c, str)
+        else c
+    )
 
     # --- Excel reference ---
     excel_by_asset: dict[str, list] = defaultdict(list)
@@ -148,18 +154,26 @@ async def main():
 
         print("-" * 90)
         print(f"ASSET: {display_asset}")
-        print(f"  image={img or '(none)'}  branch={br or '(none)'}  tag={tg or '(none)'}")
-        print(f"  VAT findings: {len(vat_findings)}  |  VAT groups: {len(vat_groups)}  |  Excel issues: {len(excel_rows)}")
+        print(
+            f"  image={img or '(none)'}  branch={br or '(none)'}  tag={tg or '(none)'}"
+        )
+        print(
+            f"  VAT findings: {len(vat_findings)}  |  VAT groups: {len(vat_groups)}  |  Excel issues: {len(excel_rows)}"
+        )
 
         if not vat_findings:
             if excel_rows:
-                print("  [NOTE] Excel has issues for this asset but VAT DB has none (sync gap?)")
+                print(
+                    "  [NOTE] Excel has issues for this asset but VAT DB has none (sync gap?)"
+                )
             continue
 
         # Group key format check: must end with #asset and suffix must match
         for gk, flist in vat_groups.items():
             if "#" not in gk:
-                issues_found.append(f"Asset {display_asset}: group key missing asset suffix: {gk}")
+                issues_found.append(
+                    f"Asset {display_asset}: group key missing asset suffix: {gk}"
+                )
             else:
                 suffix = gk.split("#", 1)[1]
                 if suffix != asset_key:
@@ -188,14 +202,22 @@ async def main():
                 sample = flist[0]
                 ft = sample.finding_type.value
                 if ft == "SCA":
-                    pkgs = list(set(f.component_base or f.component or "" for f in flist))[:3]
+                    pkgs = list(
+                        set(f.component_base or f.component or "" for f in flist)
+                    )[:3]
                     cves = list(set(f.cve_id for f in flist))[:3]
-                    print(f"    {gk}: {len(flist)} findings, pkgs={pkgs}, cves={cves[:3]}...")
+                    print(
+                        f"    {gk}: {len(flist)} findings, pkgs={pkgs}, cves={cves[:3]}..."
+                    )
                 elif ft == "SAST":
-                    rules = list(set(getattr(f, "rule_id", None) or f.title for f in flist))[:3]
+                    rules = list(
+                        set(getattr(f, "rule_id", None) or f.title for f in flist)
+                    )[:3]
                     print(f"    {gk}: {len(flist)} findings, rules={rules}")
                 elif ft == "Secret":
-                    print(f"    {gk}: {len(flist)} findings, secret_type={sample.secret_type}")
+                    print(
+                        f"    {gk}: {len(flist)} findings, secret_type={sample.secret_type}"
+                    )
                 else:
                     print(f"    {gk}: {len(flist)} findings")
         else:
@@ -210,7 +232,9 @@ async def main():
 
         # Excel vs VAT comparison (when both have data for this asset)
         if excel_rows and vat_findings:
-            excel_aikido_groups = len(set(str(r.get("issue_group_id", "")) for r in excel_rows))
+            excel_aikido_groups = len(
+                set(str(r.get("issue_group_id", "")) for r in excel_rows)
+            )
             print(f"  Excel Aikido groups: {excel_aikido_groups}")
             print(f"  VAT computed groups: {len(vat_groups)}")
 
@@ -230,19 +254,25 @@ async def main():
         for i in issues_found:
             print(f"  - {i}")
     else:
-        print("No logical issues detected. Grouping is within-asset; all keys include asset suffix.")
+        print(
+            "No logical issues detected. Grouping is within-asset; all keys include asset suffix."
+        )
 
     # --- Excel vs VAT overall ---
     print()
     print("EXCEL vs VAT (overall):")
-    excel_aikido_groups = len(set(str(r.get("issue_group_id", "")) for _, r in df.iterrows()))
+    excel_aikido_groups = len(
+        set(str(r.get("issue_group_id", "")) for _, r in df.iterrows())
+    )
     vat_total_groups = sum(len(g) for g in vat_groups_by_asset.values())
     print(f"  Excel issues: {len(df)}")
     print(f"  Excel Aikido groups: {excel_aikido_groups}")
     print(f"  VAT findings: {len(findings)}")
     print(f"  VAT computed groups: {vat_total_groups}")
     print()
-    print("  Note: VAT groups by ecosystem+package (SCA), rule_id (SAST), etc. Aikido may differ.")
+    print(
+        "  Note: VAT groups by ecosystem+package (SCA), rule_id (SAST), etc. Aikido may differ."
+    )
     print("  Grouping is scoped within asset (image|branch|tag) per §13.12.")
     print("=" * 90)
 

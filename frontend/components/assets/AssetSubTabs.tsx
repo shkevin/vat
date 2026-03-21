@@ -18,7 +18,11 @@ interface AssetSubTabsProps {
   onTabChange: (tab: AssetTabId) => void;
 }
 
-export function AssetSubTabs({ config, currentTab, onTabChange }: AssetSubTabsProps) {
+export function AssetSubTabs({
+  config,
+  currentTab,
+  onTabChange,
+}: AssetSubTabsProps) {
   const isAdmin = config.isAdmin ?? false;
 
   return (
@@ -28,7 +32,8 @@ export function AssetSubTabs({ config, currentTab, onTabChange }: AssetSubTabsPr
         alignItems: "center",
         gap: 2,
         padding: "0 20px",
-        background: "color-mix(in srgb, var(--app-header-bg) 95%, var(--app-border))",
+        background:
+          "color-mix(in srgb, var(--app-header-bg) 95%, var(--app-border))",
         borderBottom: "1px solid var(--app-header-border)",
         minHeight: 36,
       }}
@@ -44,7 +49,9 @@ export function AssetSubTabs({ config, currentTab, onTabChange }: AssetSubTabsPr
               ...mono,
               background: "none",
               border: "none",
-              borderBottom: active ? "2px solid var(--app-accent-emerald)" : "2px solid transparent",
+              borderBottom: active
+                ? "2px solid var(--app-accent-emerald)"
+                : "2px solid transparent",
               color: active ? "var(--app-accent-emerald)" : "var(--app-muted)",
               padding: "6px 12px",
               marginBottom: -1,

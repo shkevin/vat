@@ -5,6 +5,7 @@ Debug Linear labels API. Run in container:
 
 Uses credentials from DB (Linear settings) or VAT_LINEAR_* env.
 """
+
 import asyncio
 import json
 import os
@@ -14,7 +15,6 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import httpx
-from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 
 from app.core.config import get_settings
@@ -26,7 +26,9 @@ async def _get_db_creds():
     """Get Linear creds from DB."""
     settings = get_settings()
     engine = create_async_engine(settings.database_url)
-    session_factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    session_factory = async_sessionmaker(
+        engine, class_=AsyncSession, expire_on_commit=False
+    )
     async with session_factory() as db:
         api_key, team_id, _ = await get_linear_credentials(db)
         return api_key, team_id
@@ -37,14 +39,18 @@ async def linear_request(api_key: str, query: str, variables: dict) -> dict:
     url = os.environ.get("VAT_LINEAR_API_URL") or "https://api.linear.app/graphql"
     headers = {"Authorization": api_key, "Content-Type": "application/json"}
     async with httpx.AsyncClient(timeout=30) as client:
-        resp = await client.post(url, json={"query": query, "variables": variables}, headers=headers)
+        resp = await client.post(
+            url, json={"query": query, "variables": variables}, headers=headers
+        )
         return resp.json()
 
 
 async def main():
     api_key, team_id = await _get_db_creds()
     if not api_key or not team_id:
-        print("No Linear credentials in DB. Set via VAT UI or VAT_LINEAR_API_KEY + VAT_LINEAR_TEAM_ID env.")
+        print(
+            "No Linear credentials in DB. Set via VAT UI or VAT_LINEAR_API_KEY + VAT_LINEAR_TEAM_ID env."
+        )
         return
 
     print(f"team_id config: {team_id!r}")
@@ -87,7 +93,9 @@ async def main():
         }
     }
     """
-    r2 = await linear_request(api_key, q2, {"filter": {"team": {"id": {"eq": team_uuid}}}})
+    r2 = await linear_request(
+        api_key, q2, {"filter": {"team": {"id": {"eq": team_uuid}}}}
+    )
     if "errors" in r2:
         print("ERROR:", json.dumps(r2["errors"], indent=2))
     else:
@@ -114,7 +122,9 @@ async def main():
         print(f"Found {len(nodes)} labels (showing first 20)")
         for n in nodes[:10]:
             team_info = n.get("team") or {}
-            print(f"  {n.get('name')!r} id={n.get('id')} team={team_info.get('key') or team_info.get('id')}")
+            print(
+                f"  {n.get('name')!r} id={n.get('id')} team={team_info.get('key') or team_info.get('id')}"
+            )
 
     # 4. Introspect: what fields does Team have?
     print("\n=== Query 4: Team __schema (fields) ===")

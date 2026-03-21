@@ -16,11 +16,11 @@
 
 /* DoD/IronBank classification banner colors (ODNI ACCMR, STIG) */
 :root {
-  --app-classification-unclassified: #007A33;
-  --app-classification-confidential: #0033A0;
-  --app-classification-secret: #C8102E;
-  --app-classification-topsecret: #FF8C00;
-  --app-classification-cui: #502B85;
+  --app-classification-unclassified: #007a33;
+  --app-classification-confidential: #0033a0;
+  --app-classification-secret: #c8102e;
+  --app-classification-topsecret: #ff8c00;
+  --app-classification-cui: #502b85;
 }
 
 /* Theme variables — applied via data-theme on html
@@ -301,7 +301,11 @@ select option {
   top: 0;
   bottom: 0;
   border-radius: 4px;
-  background: linear-gradient(90deg, var(--app-accent) 0%, var(--app-accent-emerald) 100%);
+  background: linear-gradient(
+    90deg,
+    var(--app-accent) 0%,
+    var(--app-accent-emerald) 100%
+  );
   pointer-events: none;
 }
 
@@ -340,7 +344,9 @@ select option {
   pointer-events: auto;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
   border: 2px solid var(--app-fg);
-  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  transition:
+    transform 0.15s ease,
+    box-shadow 0.15s ease;
 }
 
 .range-slider-inputs input[type="range"]::-webkit-slider-thumb:hover {
@@ -362,7 +368,9 @@ select option {
   pointer-events: auto;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
   border: 2px solid var(--app-fg);
-  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  transition:
+    transform 0.15s ease,
+    box-shadow 0.15s ease;
 }
 
 .range-slider-inputs input[type="range"]::-moz-range-thumb:hover {
@@ -393,8 +401,12 @@ select option {
 
 /* Indeterminate progress bar (sync in progress) */
 @keyframes sync-progress-indeterminate {
-  0% { transform: translateX(-100%); }
-  100% { transform: translateX(400%); }
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(400%);
+  }
 }
 
 .sync-progress-bar {
@@ -438,7 +450,7 @@ select option {
   background: var(--app-card-bg);
   border: 1px solid var(--app-border-subtle);
   border-radius: 6px;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
   font-family: var(--font-sans), "IBM Plex Sans", system-ui, sans-serif;
   font-size: 12px;
   line-height: 1.5;
@@ -459,7 +471,11 @@ select option {
   flex-shrink: 0;
   padding: 24px 28px 20px;
   border-bottom: 1px solid var(--app-border);
-  background: linear-gradient(180deg, var(--app-pane-header-bg) 0%, var(--app-bg) 100%);
+  background: linear-gradient(
+    180deg,
+    var(--app-pane-header-bg) 0%,
+    var(--app-bg) 100%
+  );
 }
 .report-builder-header h1 {
   font-family: var(--font-sans), "IBM Plex Sans", system-ui, sans-serif;
@@ -918,7 +934,9 @@ select option {
   line-height: 1;
   flex-shrink: 0;
   border-radius: 4px;
-  transition: color 0.15s, background 0.15s;
+  transition:
+    color 0.15s,
+    background 0.15s;
 }
 .detail-panel-close:hover {
   color: var(--app-fg);
@@ -946,7 +964,9 @@ select option {
   font-weight: 500;
   letter-spacing: 0.05em;
   text-transform: uppercase;
-  transition: color 0.15s, border-color 0.15s;
+  transition:
+    color 0.15s,
+    border-color 0.15s;
 }
 .detail-panel-tab:hover {
   color: var(--app-fg-secondary);
@@ -985,7 +1005,9 @@ select option {
   opacity: 0.9;
   cursor: pointer;
 }
-html:not([data-theme="light"]) .detail-panel input[type="date"]::-webkit-calendar-picker-indicator {
+html:not([data-theme="light"])
+  .detail-panel
+  input[type="date"]::-webkit-calendar-picker-indicator {
   filter: invert(1);
 }
 .detail-panel input[type="date"]::-moz-calendar-picker-indicator {
@@ -1146,9 +1168,15 @@ html:not([data-theme="light"]) .detail-panel input[type="date"]::-webkit-calenda
   font-weight: 700;
   color: var(--app-fg);
 }
-.detail-panel-metric-pill.sla-urgent .metric-value { color: var(--app-danger); }
-.detail-panel-metric-pill.sla-warning .metric-value { color: var(--app-warning); }
-.detail-panel-metric-pill.sla-ok .metric-value { color: var(--app-success); }
+.detail-panel-metric-pill.sla-urgent .metric-value {
+  color: var(--app-danger);
+}
+.detail-panel-metric-pill.sla-warning .metric-value {
+  color: var(--app-warning);
+}
+.detail-panel-metric-pill.sla-ok .metric-value {
+  color: var(--app-success);
+}
 
 /* Decision tab — status card and action groups */
 .detail-panel-status-card {
@@ -1257,7 +1285,9 @@ html:not([data-theme="light"]) .detail-panel input[type="date"]::-webkit-calenda
   border-radius: 6px;
   padding: 12px 14px;
   cursor: pointer;
-  transition: background 0.15s, border-color 0.15s;
+  transition:
+    background 0.15s,
+    border-color 0.15s;
 }
 .detail-panel-suppression-option:hover {
   background: var(--app-input-bg);
@@ -1274,7 +1304,8 @@ html:not([data-theme="light"]) .detail-panel input[type="date"]::-webkit-calenda
   color: var(--app-muted);
   margin-bottom: 4px;
 }
-.detail-panel-suppression-option.selected .detail-panel-suppression-option-label {
+.detail-panel-suppression-option.selected
+  .detail-panel-suppression-option-label {
   color: var(--app-accent);
 }
 .detail-panel-suppression-option-desc {
@@ -1301,7 +1332,9 @@ html:not([data-theme="light"]) .detail-panel input[type="date"]::-webkit-calenda
   font-size: 11px;
   font-weight: 600;
   color: var(--app-fg-secondary);
-  transition: background 0.15s, border-color 0.15s;
+  transition:
+    background 0.15s,
+    border-color 0.15s;
 }
 .detail-panel-collapsible-header:hover {
   background: var(--app-card-bg);

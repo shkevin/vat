@@ -19,12 +19,16 @@ class IngestParser(ABC):
         """Transform raw input to canonical payloads. Raises ValueError on parse failure."""
         pass
 
-    def _create_payload(self, fields: dict, asset: str | None = None) -> CanonicalFindingPayload:
+    def _create_payload(
+        self, fields: dict, asset: str | None = None
+    ) -> CanonicalFindingPayload:
         """Create a canonical payload with asset context. Injects image=asset when needed for validation."""
         has_asset = any(fields.get(k) for k in ("image", "branch", "tag"))
         if not has_asset:
             if asset:
                 fields = {**fields, "image": asset}
             else:
-                raise ValueError("Asset context required: provide asset or set image/branch/tag in fields")
+                raise ValueError(
+                    "Asset context required: provide asset or set image/branch/tag in fields"
+                )
         return CanonicalFindingPayload(**fields)

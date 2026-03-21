@@ -15,6 +15,12 @@ CanonicalSeverity = VatSeverity
 class CanonicalIngestRequest(BaseModel):
     """API request body for POST /api/ingest."""
 
-    name: Optional[str] = Field(default=None, max_length=128, description="Report name for audit")
-    source: str = Field(default="api", max_length=64, description="Source identifier (e.g. trivy, github-ci, manual)")
+    name: Optional[str] = Field(
+        default=None, max_length=128, description="Report name for audit"
+    )
+    source: str = Field(
+        default="api",
+        max_length=64,
+        description="Source identifier (e.g. trivy, github-ci, manual)",
+    )
     findings: list[VatFindingSchema] = Field(..., min_length=1, max_length=1000)

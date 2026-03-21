@@ -24,7 +24,9 @@ def _flatten_for_excel(obj: Any) -> Any:
     return str(obj)
 
 
-def _rows_from_dicts(items: list[dict], exclude_keys: set[str] | None = None) -> list[dict]:
+def _rows_from_dicts(
+    items: list[dict], exclude_keys: set[str] | None = None
+) -> list[dict]:
     """Flatten list of dicts for Excel; nested values become JSON strings."""
     exclude = exclude_keys or set()
     rows = []
@@ -40,7 +42,9 @@ def _rows_from_dicts(items: list[dict], exclude_keys: set[str] | None = None) ->
     return rows
 
 
-def _ensure_columns(rows: list[dict], column_order: list[str] | None = None) -> list[dict]:
+def _ensure_columns(
+    rows: list[dict], column_order: list[str] | None = None
+) -> list[dict]:
     """Ensure all rows have same columns; fill missing with empty string."""
     if not rows:
         return rows
@@ -80,7 +84,9 @@ def export_aikido_sync_to_excel(
     try:
         import pandas as pd
     except ImportError:
-        logger.warning("pandas not installed; skipping Aikido Excel export. pip install pandas openpyxl")
+        logger.warning(
+            "pandas not installed; skipping Aikido Excel export. pip install pandas openpyxl"
+        )
         return None
 
     try:
@@ -111,10 +117,17 @@ def export_aikido_sync_to_excel(
             # Issue counts (Aikido authoritative)
             counts = data.get("issueCounts") or data.get("issue_counts")
             if isinstance(counts, dict):
-                counts_flat = [{"key": k, "value": _flatten_for_excel(v)} for k, v in counts.items()]
-                pd.DataFrame(counts_flat).to_excel(writer, sheet_name="IssueCounts", index=False)
+                counts_flat = [
+                    {"key": k, "value": _flatten_for_excel(v)}
+                    for k, v in counts.items()
+                ]
+                pd.DataFrame(counts_flat).to_excel(
+                    writer, sheet_name="IssueCounts", index=False
+                )
             elif isinstance(counts, list):
-                pd.DataFrame(counts).to_excel(writer, sheet_name="IssueCounts", index=False)
+                pd.DataFrame(counts).to_excel(
+                    writer, sheet_name="IssueCounts", index=False
+                )
 
             # Normalized issues (what VAT uses for display)
             issues = data.get("issues", [])
@@ -128,7 +141,9 @@ def export_aikido_sync_to_excel(
             if groups:
                 rows = _rows_from_dicts(groups)
                 rows = _ensure_columns(rows)
-                pd.DataFrame(rows).to_excel(writer, sheet_name="IssueGroups", index=False)
+                pd.DataFrame(rows).to_excel(
+                    writer, sheet_name="IssueGroups", index=False
+                )
 
             # Raw issues (full Aikido export for validation)
             raw = raw_issues or []
@@ -138,7 +153,11 @@ def export_aikido_sync_to_excel(
                 pd.DataFrame(rows).to_excel(writer, sheet_name="RawIssues", index=False)
 
             # Repos, Containers, VMs
-            for name, key in [("Repos", "repos"), ("Containers", "containers"), ("VMs", "vms")]:
+            for name, key in [
+                ("Repos", "repos"),
+                ("Containers", "containers"),
+                ("VMs", "vms"),
+            ]:
                 items = data.get(key, [])
                 if items:
                     rows = _rows_from_dicts(items)

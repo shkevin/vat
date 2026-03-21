@@ -14,6 +14,7 @@ except ImportError:  # pragma: no cover - compatibility for pydantic v1 test env
 
 from app.models.finding import FindingType, Severity, Status, SuppressionScope
 
+
 def _external_links_to_camel(links: list) -> list:
     """Convert external_links items to camelCase for frontend API."""
     out = []
@@ -21,14 +22,16 @@ def _external_links_to_camel(links: list) -> list:
         if not isinstance(link, dict):
             out.append(link)
             continue
-        out.append({
-            "adapterKey": link.get("adapter_key"),
-            "kind": link.get("kind"),
-            "issueId": link.get("issue_id"),
-            "url": link.get("url"),
-            "createdAt": link.get("created_at"),
-            "lastSyncedAt": link.get("last_synced_at"),
-        })
+        out.append(
+            {
+                "adapterKey": link.get("adapter_key"),
+                "kind": link.get("kind"),
+                "issueId": link.get("issue_id"),
+                "url": link.get("url"),
+                "createdAt": link.get("created_at"),
+                "lastSyncedAt": link.get("last_synced_at"),
+            }
+        )
     return out
 
 
@@ -167,11 +170,17 @@ class FindingRead(BaseModel):
             "reviewerNote": self.reviewer_note,
             "trackerComment": self.tracker_comment,
             "sources": self.sources,
-            "suppressionScope": self.suppression_scope.value if self.suppression_scope else None,
+            "suppressionScope": self.suppression_scope.value
+            if self.suppression_scope
+            else None,
             "attestation": self.attestation,
             "regressionOf": self.regression_of,
             "regressionCount": self.regression_count,
-            "previousStatus": STATUS_DISPLAY.get(self.previous_status or "", self.previous_status) if self.previous_status else None,
+            "previousStatus": STATUS_DISPLAY.get(
+                self.previous_status or "", self.previous_status
+            )
+            if self.previous_status
+            else None,
             "audit": self.audit,
             "archived": self.archived,
             "archivedAt": self.archived_at.isoformat() if self.archived_at else None,
@@ -191,7 +200,9 @@ class FindingRead(BaseModel):
             "correlationConfidence": self.correlation_confidence,
             "correlatedTo": self.correlated_to,
             "created": self.created_at.isoformat() if self.created_at else None,
-            "firstDetectedAt": self.first_detected_at.isoformat() if self.first_detected_at else None,
+            "firstDetectedAt": self.first_detected_at.isoformat()
+            if self.first_detected_at
+            else None,
             "closedAt": self.closed_at.isoformat() if self.closed_at else None,
         }
 

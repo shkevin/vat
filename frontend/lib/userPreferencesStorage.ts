@@ -5,7 +5,15 @@
 
 const STORAGE_KEY = "vat-user-preferences";
 
-export type ThemeId = "vat" | "default" | "light" | "slate" | "dracula" | "nord" | "catppuccin" | "tokyo-night";
+export type ThemeId =
+  | "vat"
+  | "default"
+  | "light"
+  | "slate"
+  | "dracula"
+  | "nord"
+  | "catppuccin"
+  | "tokyo-night";
 
 export interface UserPreferences {
   /** Table density: compact, default, or comfortable */
@@ -32,13 +40,29 @@ function loadFromStorage(): UserPreferences | null {
     if (!raw) return null;
     const parsed = JSON.parse(raw) as UserPreferences;
     if (parsed && typeof parsed === "object") {
-      const validThemes = ["vat", "default", "light", "slate", "dracula", "nord", "catppuccin", "tokyo-night"];
+      const validThemes = [
+        "vat",
+        "default",
+        "light",
+        "slate",
+        "dracula",
+        "nord",
+        "catppuccin",
+        "tokyo-night",
+      ];
       return {
-        tableDensity: ["compact", "default", "comfortable"].includes(parsed.tableDensity ?? "")
+        tableDensity: ["compact", "default", "comfortable"].includes(
+          parsed.tableDensity ?? "",
+        )
           ? parsed.tableDensity
           : DEFAULTS.tableDensity,
-        collapsedSections: Array.isArray(parsed.collapsedSections) ? parsed.collapsedSections : DEFAULTS.collapsedSections,
-        groupFindings: typeof parsed.groupFindings === "boolean" ? parsed.groupFindings : DEFAULTS.groupFindings,
+        collapsedSections: Array.isArray(parsed.collapsedSections)
+          ? parsed.collapsedSections
+          : DEFAULTS.collapsedSections,
+        groupFindings:
+          typeof parsed.groupFindings === "boolean"
+            ? parsed.groupFindings
+            : DEFAULTS.groupFindings,
         themeId: (() => {
           const raw = String(parsed.themeId ?? "");
           if (raw === "kamiwaza") return "default"; /* migrate from kamiwaza */
@@ -63,9 +87,14 @@ export function saveUserPreferences(prefs: Partial<UserPreferences>): void {
   try {
     const current = loadFromStorage() ?? DEFAULTS;
     const merged: UserPreferences = {
-      tableDensity: prefs.tableDensity ?? current.tableDensity ?? DEFAULTS.tableDensity,
-      collapsedSections: prefs.collapsedSections ?? current.collapsedSections ?? DEFAULTS.collapsedSections,
-      groupFindings: prefs.groupFindings ?? current.groupFindings ?? DEFAULTS.groupFindings,
+      tableDensity:
+        prefs.tableDensity ?? current.tableDensity ?? DEFAULTS.tableDensity,
+      collapsedSections:
+        prefs.collapsedSections ??
+        current.collapsedSections ??
+        DEFAULTS.collapsedSections,
+      groupFindings:
+        prefs.groupFindings ?? current.groupFindings ?? DEFAULTS.groupFindings,
       themeId: prefs.themeId ?? current.themeId ?? DEFAULTS.themeId,
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));

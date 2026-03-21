@@ -16,7 +16,9 @@ class CanonicalParser(IngestParser):
         if not isinstance(findings, list):
             raise ValueError("Canonical input must have 'findings' array")
         try:
-            req = CanonicalIngestRequest(findings=findings, source=raw.get("source", "api"))
+            req = CanonicalIngestRequest(
+                findings=findings, source=raw.get("source", "api")
+            )
         except Exception as e:
             raise ValueError(f"Invalid canonical findings: {e}") from e
         return [f for f in req.findings]

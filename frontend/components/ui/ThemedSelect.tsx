@@ -44,7 +44,8 @@ export function ThemedSelect({
     return () => document.removeEventListener("mousedown", onOutside);
   }, [open]);
 
-  const selectedLabel = options.find((o) => o.value === value)?.label ?? (value || placeholder);
+  const selectedLabel =
+    options.find((o) => o.value === value)?.label ?? (value || placeholder);
 
   return (
     <div ref={ref} style={{ position: "relative", minWidth: 140 }}>
@@ -71,7 +72,14 @@ export function ThemedSelect({
         }}
       >
         {icon}
-        <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>
+        <span
+          style={{
+            flex: 1,
+            minWidth: 0,
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+          }}
+        >
           {selectedLabel}
         </span>
         <ChevronDown
@@ -127,7 +135,10 @@ export function ThemedSelect({
                 borderRadius: 4,
                 cursor: "pointer",
                 color: "var(--app-fg)",
-                background: opt.value === value ? "color-mix(in srgb, var(--app-accent) 20%, transparent)" : "transparent",
+                background:
+                  opt.value === value
+                    ? "color-mix(in srgb, var(--app-accent) 20%, transparent)"
+                    : "transparent",
                 fontSize: 12,
                 ...sans,
               }}
@@ -139,7 +150,8 @@ export function ThemedSelect({
               }}
               onMouseLeave={(e) => {
                 if (opt.value !== value) {
-                  (e.currentTarget as HTMLElement).style.background = "transparent";
+                  (e.currentTarget as HTMLElement).style.background =
+                    "transparent";
                 }
               }}
             >

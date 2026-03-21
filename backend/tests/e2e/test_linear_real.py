@@ -69,7 +69,10 @@ async def test_linear_create_issue(linear_adapter, unique_cve_id):
 
 async def test_linear_post_comment(linear_adapter, unique_cve_id):
     """Create issue, then post a comment. Verifies comment creation."""
-    from app.schemas.vat import VatTrackerCreateIssueRequest, VatTrackerPostDecisionRequest
+    from app.schemas.vat import (
+        VatTrackerCreateIssueRequest,
+        VatTrackerPostDecisionRequest,
+    )
 
     req = VatTrackerCreateIssueRequest(
         finding={
@@ -125,7 +128,9 @@ async def test_linear_find_existing_issue_for_cve(linear_adapter, unique_cve_id)
 
 async def test_linear_find_existing_issue_for_cve_not_found(linear_adapter):
     """find_existing_issue_for_cve returns None for non-existent CVE."""
-    found = await linear_adapter.find_existing_issue_for_cve("CVE-1999-00000-nonexistent")
+    found = await linear_adapter.find_existing_issue_for_cve(
+        "CVE-1999-00000-nonexistent"
+    )
     assert found is None
 
 
@@ -134,7 +139,9 @@ async def test_linear_find_existing_issue_for_cve_not_found(linear_adapter):
 # ---------------------------------------------------------------------------
 
 
-async def test_linear_webhook_comment_create(client, db, unique_cve_id, linear_credentials):
+async def test_linear_webhook_comment_create(
+    client, db, unique_cve_id, linear_credentials
+):
     """
     Simulate Linear Comment.create webhook with [VAT] block.
     Uses Linear credentials from VAT settings. Creates finding with matching CVE.
@@ -250,12 +257,17 @@ async def test_roundtrip_vat_to_linear(linear_adapter, db, unique_cve_id):
 
     # 3. Verify in Linear: fetch issues and find ours
     nodes, _ = await linear_adapter.list_issues(first=100, include_archived=False)
-    found = next((n for n in nodes if (n.get("identifier") or "").upper() == identifier.upper()), None)
+    found = next(
+        (n for n in nodes if (n.get("identifier") or "").upper() == identifier.upper()),
+        None,
+    )
     assert found is not None, f"Issue {identifier} not found in Linear"
     assert unique_cve_id in (found.get("title") or ""), "Title should contain CVE"
     desc = found.get("description") or ""
     # Linear may return markdown-escaped brackets (\ [VAT\]); check for template content
-    assert "VAT" in desc and "status:" in desc and unique_cve_id in desc, "Description should contain [VAT] template"
+    assert (
+        "VAT" in desc and "status:" in desc and unique_cve_id in desc
+    ), "Description should contain [VAT] template"
 
 
 async def test_roundtrip_linear_to_vat(linear_adapter, db, unique_cve_id):
@@ -264,7 +276,10 @@ async def test_roundtrip_linear_to_vat(linear_adapter, db, unique_cve_id):
     """
     from app.models.finding import Finding, FindingType, Severity, Status
     from app.services.dedup import make_fingerprint
-    from app.schemas.vat import VatTrackerCreateIssueRequest, VatTrackerPostDecisionRequest
+    from app.schemas.vat import (
+        VatTrackerCreateIssueRequest,
+        VatTrackerPostDecisionRequest,
+    )
     from app.services.linear_poll_service import poll_linear_for_updates
     from sqlalchemy import select
 
@@ -285,7 +300,11 @@ async def test_roundtrip_linear_to_vat(linear_adapter, db, unique_cve_id):
 
     # 2. Create Linear issue with CVE in title (so poll can associate)
     req = VatTrackerCreateIssueRequest(
-        finding={"cveId": unique_cve_id, "title": f"E2E {unique_cve_id}", "severity": "medium"},
+        finding={
+            "cveId": unique_cve_id,
+            "title": f"E2E {unique_cve_id}",
+            "severity": "medium",
+        },
         template="[VAT] {cve_id}\nstatus: ...\njustification: ...",
     )
     identifier = await linear_adapter.create_issue(req)
@@ -305,5 +324,9 @@ async def test_roundtrip_linear_to_vat(linear_adapter, db, unique_cve_id):
     r = await db.execute(select(Finding).where(Finding.id == finding_id))
     updated = r.scalar_one_or_none()
     assert updated is not None, "Finding not found after poll"
-    assert updated.status == Status.RiskAccepted, f"Expected RiskAccepted, got {updated.status}"
-    assert "E2E roundtrip" in (updated.justification or ""), f"Expected justification, got {updated.justification}"
+    assert (
+        updated.status == Status.RiskAccepted
+    ), f"Expected RiskAccepted, got {updated.status}"
+    assert "E2E roundtrip" in (
+        updated.justification or ""
+    ), f"Expected justification, got {updated.justification}"

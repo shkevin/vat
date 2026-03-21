@@ -22,7 +22,6 @@ logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import async_session
 from app.models.finding import Finding
@@ -42,7 +41,12 @@ def _infer_ecosystem_from_repo(repo: str, pkg: str) -> str:
     if pkg:
         if "." in pkg and not pkg.startswith("org.") and not pkg.startswith("com."):
             return "pypi"  # python-multipart, pdfminer.six
-        if pkg.startswith("org.") or pkg.startswith("com.") or "-" in pkg and "java" in pkg:
+        if (
+            pkg.startswith("org.")
+            or pkg.startswith("com.")
+            or "-" in pkg
+            and "java" in pkg
+        ):
             return "maven"
         if pkg in ("next.js", "nextjs", "react", "lodash") or pkg.endswith(".js"):
             return "npm"
@@ -55,7 +59,9 @@ async def main():
     if path and Path(path).exists():
         path = Path(path)
     elif exports.exists():
-        files = sorted(exports.glob("*.xlsx"), key=lambda p: p.stat().st_mtime, reverse=True)
+        files = sorted(
+            exports.glob("*.xlsx"), key=lambda p: p.stat().st_mtime, reverse=True
+        )
         path = files[0] if files else None
 
     if not path or not path.exists():
@@ -75,7 +81,11 @@ async def main():
         sys.exit(1)
 
     df = pd.read_excel(path, sheet_name="Issues")
-    df = df.rename(columns=lambda c: c.strip().lower().replace(" ", "_") if isinstance(c, str) else c)
+    df = df.rename(
+        columns=lambda c: c.strip().lower().replace(" ", "_")
+        if isinstance(c, str)
+        else c
+    )
 
     # Excel: Aikido grouping
     aikido_groups = df.groupby("issue_group_id")
@@ -113,7 +123,9 @@ async def main():
         if ft == "sca":
             eco = _infer_ecosystem_from_repo(repo, pkg)
             if pkg:
-                pkg_norm = pkg.lower().replace("_", "-") if eco == "pypi" else pkg.lower()
+                pkg_norm = (
+                    pkg.lower().replace("_", "-") if eco == "pypi" else pkg.lower()
+                )
                 return f"sca:{eco or ''}|{pkg_norm}"
             return f"cve:{cve.lower()}" if cve else f"sca:|{pkg.lower()}"
         if ft == "sast":
@@ -142,7 +154,9 @@ async def main():
     try:
         async with async_session() as session:
             result = await session.execute(
-                select(Finding).where(Finding.archived == False).where(Finding.source == "Aikido")
+                select(Finding)
+                .where(Finding.archived == False)
+                .where(Finding.source == "Aikido")
             )
             findings = list(result.scalars().all())
     except Exception as e:

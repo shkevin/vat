@@ -1,7 +1,7 @@
 """Adapter registry — source and tracker adapters register here."""
 
 from dataclasses import dataclass
-from typing import Any, Callable, TypeVar
+from typing import Callable, TypeVar
 
 # Adapter key -> adapter class
 SOURCE_ADAPTER_REGISTRY: dict[str, type] = {}

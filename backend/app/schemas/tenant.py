@@ -15,7 +15,9 @@ except ImportError:  # pragma: no cover - compatibility for pydantic v1 test env
 class TenantCreate(BaseModel):
     id: str = Field(..., min_length=1, max_length=64, pattern=r"^[a-zA-Z0-9_-]+$")
     name: str = Field(..., min_length=1, max_length=128)
-    auth_method: str = Field(default="local", pattern=r"^(local|google|generic_oidc|saml)$")
+    auth_method: str = Field(
+        default="local", pattern=r"^(local|google|generic_oidc|saml)$"
+    )
 
 
 class TenantRead(BaseModel):
@@ -32,4 +34,6 @@ class TenantRead(BaseModel):
 
 
 class TenantUpdate(BaseModel):
-    auth_method: Optional[str] = Field(default=None, pattern=r"^(local|google|generic_oidc|saml)$")
+    auth_method: Optional[str] = Field(
+        default=None, pattern=r"^(local|google|generic_oidc|saml)$"
+    )

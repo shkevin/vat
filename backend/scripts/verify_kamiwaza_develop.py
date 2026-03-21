@@ -32,7 +32,14 @@ from app.models.finding import Finding
 
 ASSET = "kamiwaza"
 BRANCH = "develop"
-CLOSED = {"Resolved", "False Positive", "Duplicate", "Not Applicable", "Approved", "Suppressed"}
+CLOSED = {
+    "Resolved",
+    "False Positive",
+    "Duplicate",
+    "Not Applicable",
+    "Approved",
+    "Suppressed",
+}
 
 
 def _status_display(s) -> str:
@@ -40,10 +47,14 @@ def _status_display(s) -> str:
     if s is None:
         return ""
     val = s.value if hasattr(s, "value") else str(s)
-    return str(val).replace("_", " ").replace("SyncedToTracker", "Synced to Tracker").replace(
-        "InReview", "In Review"
-    ).replace("FalsePositive", "False Positive").replace("NotApplicable", "Not Applicable").replace(
-        "RiskAccepted", "Risk Accepted"
+    return (
+        str(val)
+        .replace("_", " ")
+        .replace("SyncedToTracker", "Synced to Tracker")
+        .replace("InReview", "In Review")
+        .replace("FalsePositive", "False Positive")
+        .replace("NotApplicable", "Not Applicable")
+        .replace("RiskAccepted", "Risk Accepted")
     )
 
 
@@ -59,9 +70,15 @@ def load_excel_kamiwaza_develop(path: Path) -> dict | None:
     if df.empty:
         return None
 
-    df = df.rename(columns=lambda c: c.strip().lower().replace(" ", "_") if isinstance(c, str) else c)
-    repo_col = "repository" if "repository" in df.columns else next(
-        (c for c in df.columns if "repo" in str(c).lower()), "repository"
+    df = df.rename(
+        columns=lambda c: c.strip().lower().replace(" ", "_")
+        if isinstance(c, str)
+        else c
+    )
+    repo_col = (
+        "repository"
+        if "repository" in df.columns
+        else next((c for c in df.columns if "repo" in str(c).lower()), "repository")
     )
     # Aikido uses separate repos per branch; no branch column. Repository is "kamiwaza (develop)" etc.
     vat_col = "vat_status" if "vat_status" in df.columns else None
@@ -81,7 +98,15 @@ def load_excel_kamiwaza_develop(path: Path) -> dict | None:
             vat_status = str(row.get(vat_col, "") or "").strip() if vat_col else ""
             raw_status = str(row.get("status", "") or "").lower()
             if not vat_status:
-                vat_status = "Open" if raw_status == "open" else ("Resolved" if raw_status in ("closed", "resolved") else "Suppressed")
+                vat_status = (
+                    "Open"
+                    if raw_status == "open"
+                    else (
+                        "Resolved"
+                        if raw_status in ("closed", "resolved")
+                        else "Suppressed"
+                    )
+                )
             severity = str(row.get(sev_col, "") or "").strip() if sev_col else ""
             rows.append({"vat_status": vat_status, "severity": severity})
 
@@ -125,7 +150,9 @@ async def load_vat_db_kamiwaza_develop(session: AsyncSession) -> dict:
     for f in findings:
         disp = _status_display(f.status)
         status_counts[disp] += 1
-        sev = (f.severity.value if hasattr(f.severity, "value") else str(f.severity or ""))
+        sev = (
+            f.severity.value if hasattr(f.severity, "value") else str(f.severity or "")
+        )
         severity_counts[sev] += 1
 
     open_findings = [f for f in findings if _status_display(f.status) not in CLOSED]
@@ -152,7 +179,9 @@ def main_sync():
         path = Path(path)
     else:
         if exports.exists():
-            files = sorted(exports.glob("*.xlsx"), key=lambda p: p.stat().st_mtime, reverse=True)
+            files = sorted(
+                exports.glob("*.xlsx"), key=lambda p: p.stat().st_mtime, reverse=True
+            )
             if files:
                 path = files[0]
                 print(f"Using latest export: {path.name}\n")
@@ -162,7 +191,9 @@ def main_sync():
             path = None
 
     if not path or not path.exists():
-        print("No Excel export found. Run Aikido sync first (VAT_AIKIDO_EXPORT_EXCEL_DIR must be set).")
+        print(
+            "No Excel export found. Run Aikido sync first (VAT_AIKIDO_EXPORT_EXCEL_DIR must be set)."
+        )
         return None
 
     excel_data = load_excel_kamiwaza_develop(path)
@@ -183,8 +214,12 @@ async def main():
 
     if not excel_data:
         print("No kamiwaza (develop) rows found in Excel Issues sheet.")
-        print("Aikido uses separate repos per branch; repository should be 'kamiwaza (develop)'.")
-        print("Run a full Aikido sync to regenerate the export with repo_map enrichment.")
+        print(
+            "Aikido uses separate repos per branch; repository should be 'kamiwaza (develop)'."
+        )
+        print(
+            "Run a full Aikido sync to regenerate the export with repo_map enrichment."
+        )
         print()
         print("Proceeding with VAT DB comparison only...")
         excel_data = {"total": 0, "open": 0, "status_counts": {}, "severity_counts": {}}
@@ -221,8 +256,12 @@ async def main():
     print("-" * 40)
     match_total = excel_data["total"] == vat_data["total"]
     match_open = excel_data["open"] == vat_data["open"]
-    print(f"  Total:  Excel={excel_data['total']}  VAT={vat_data['total']}  {'OK' if match_total else 'MISMATCH'}")
-    print(f"  Open:   Excel={excel_data['open']}   VAT={vat_data['open']}   {'OK' if match_open else 'MISMATCH'}")
+    print(
+        f"  Total:  Excel={excel_data['total']}  VAT={vat_data['total']}  {'OK' if match_total else 'MISMATCH'}"
+    )
+    print(
+        f"  Open:   Excel={excel_data['open']}   VAT={vat_data['open']}   {'OK' if match_open else 'MISMATCH'}"
+    )
 
     # Status breakdown comparison
     ex_status = set(excel_data["status_counts"].keys())
@@ -239,8 +278,12 @@ async def main():
 
     print()
     if excel_data["total"] == 0:
-        print("RESULT: Excel has no kamiwaza (develop) data. Run full sync to get branch in export.")
-        print("VAT kamiwaza (develop) counts above are from DB for dashboard verification.")
+        print(
+            "RESULT: Excel has no kamiwaza (develop) data. Run full sync to get branch in export."
+        )
+        print(
+            "VAT kamiwaza (develop) counts above are from DB for dashboard verification."
+        )
     elif match_total and match_open and status_ok:
         print("RESULT: VAT dashboard data MATCHES the latest Excel export.")
     else:

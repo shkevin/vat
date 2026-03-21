@@ -3,13 +3,16 @@
  * Used with useQueryStates for type-safe URL state management.
  */
 
-import {
-  parseAsString,
-  parseAsArrayOf,
-  parseAsStringLiteral,
-} from "nuqs";
+import { parseAsString, parseAsArrayOf, parseAsStringLiteral } from "nuqs";
 
-const SORT_OPTS = ["severity", "status", "cve", "title", "source", "sla"] as const;
+const SORT_OPTS = [
+  "severity",
+  "status",
+  "cve",
+  "title",
+  "source",
+  "sla",
+] as const;
 
 export const assetParsers = {
   status: parseAsArrayOf(parseAsString).withDefault(["Open"]),

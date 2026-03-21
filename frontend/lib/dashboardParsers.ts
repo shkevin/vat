@@ -11,7 +11,13 @@ import {
   parseAsBoolean,
 } from "nuqs";
 
-const VALID_TABS = ["findings", "review", "report", "dash", "settings"] as const;
+const VALID_TABS = [
+  "findings",
+  "review",
+  "report",
+  "dash",
+  "settings",
+] as const;
 
 export const dashboardParsers = {
   tab: parseAsStringLiteral(VALID_TABS).withDefault("findings"),

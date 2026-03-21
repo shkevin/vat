@@ -3,7 +3,11 @@
 import logging
 import re
 
-from app.schemas.ingest import CanonicalFindingPayload, CanonicalFindingType, CanonicalSeverity
+from app.schemas.ingest import (
+    CanonicalFindingPayload,
+    CanonicalFindingType,
+    CanonicalSeverity,
+)
 from app.parsers.base import IngestParser
 from app.parsers.utils import extract_scan_tag, normalize_snippet
 
@@ -38,27 +42,41 @@ class GitleaksParser(IngestParser):
         elif isinstance(raw, dict):
             scan_tag = extract_scan_tag(raw)
             report_asset = raw.get("target") or raw.get("asset")
-            findings = raw.get("findings") or raw.get("Findings") or raw.get("results") or []
+            findings = (
+                raw.get("findings") or raw.get("Findings") or raw.get("results") or []
+            )
             if not isinstance(findings, list):
                 findings = []
         else:
-            raise ValueError("Gitleaks input must be a JSON object or array of findings")
+            raise ValueError(
+                "Gitleaks input must be a JSON object or array of findings"
+            )
 
         payloads: list[CanonicalFindingPayload] = []
         for f in findings:
             if not isinstance(f, dict):
                 continue
             try:
-                rule_id = f.get("RuleID") or f.get("ruleId") or f.get("rule_id") or "unknown"
-                secret_type = (f.get("Description") or f.get("description") or "").strip() or None
+                rule_id = (
+                    f.get("RuleID") or f.get("ruleId") or f.get("rule_id") or "unknown"
+                )
+                secret_type = (
+                    f.get("Description") or f.get("description") or ""
+                ).strip() or None
                 secret = f.get("Secret") or f.get("Match") or ""
-                desc = f"Secret detected ({rule_id})" if secret else (f.get("Description") or f.get("description") or rule_id)
+                desc = (
+                    f"Secret detected ({rule_id})"
+                    if secret
+                    else (f.get("Description") or f.get("description") or rule_id)
+                )
                 file_path = f.get("File") or f.get("file") or f.get("path")
                 if not file_path and f.get("Commit"):
                     file_path = f"commit:{str(f['Commit'])[:12]}"
                 start_line = f.get("StartLine") or f.get("start_line") or f.get("line")
                 if not file_path:
-                    logger.debug("Skipping Gitleaks finding without File or Commit: %s", rule_id)
+                    logger.debug(
+                        "Skipping Gitleaks finding without File or Commit: %s", rule_id
+                    )
                     continue
                 asset = (report_asset or str(file_path)).strip()
                 line_content = f.get("Content") or f.get("line") or f.get("Line") or ""

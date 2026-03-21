@@ -2,7 +2,11 @@
 
 import logging
 
-from app.schemas.ingest import CanonicalFindingPayload, CanonicalFindingType, CanonicalSeverity
+from app.schemas.ingest import (
+    CanonicalFindingPayload,
+    CanonicalFindingType,
+    CanonicalSeverity,
+)
 from app.parsers.base import IngestParser
 from app.parsers.utils import extract_cwe_id, extract_scan_tag, normalize_snippet
 
@@ -40,8 +44,17 @@ class SemgrepParser(IngestParser):
             if not isinstance(r, dict):
                 continue
             try:
-                check_id = r.get("check_id") or r.get("rule_id") or r.get("ruleId") or "unknown"
-                path = (r.get("path") or r.get("extra", {}).get("metadata", {}).get("source") or "").strip()
+                check_id = (
+                    r.get("check_id")
+                    or r.get("rule_id")
+                    or r.get("ruleId")
+                    or "unknown"
+                )
+                path = (
+                    r.get("path")
+                    or r.get("extra", {}).get("metadata", {}).get("source")
+                    or ""
+                ).strip()
                 if not path:
                     logger.debug("Skipping Semgrep result without path: %s", check_id)
                     continue

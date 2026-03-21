@@ -53,7 +53,11 @@ def _text(el: Any | None) -> str:
 def _collect_cves_from_refs(parent: Any) -> list[str]:
     """Extract CVE IDs from reference elements (source=CVE or ref_id matching CVE-)."""
     cves: list[str] = []
-    nss = [OVAL_DEF_NS, OVAL_COMMON_NS, "http://oval.mitre.org/XMLSchema/oval-definitions-5"]
+    nss = [
+        OVAL_DEF_NS,
+        OVAL_COMMON_NS,
+        "http://oval.mitre.org/XMLSchema/oval-definitions-5",
+    ]
     for ref in _all_ns(parent, "reference", nss):
         ref_id = (ref.get("ref_id") or ref.get("ref_id") or "").strip()
         source = (ref.get("source") or "").strip().upper()
@@ -162,7 +166,9 @@ class OpenSCAPOvalParser(IngestParser):
         if isinstance(raw, str):
             root = ElementTree.fromstring(raw)
         elif isinstance(raw, dict):
-            raise ValueError("OpenSCAP OVAL parser expects XML bytes or string, not JSON dict")
+            raise ValueError(
+                "OpenSCAP OVAL parser expects XML bytes or string, not JSON dict"
+            )
         else:
             raise ValueError("OpenSCAP OVAL parser expects XML bytes or string")
 
@@ -174,7 +180,9 @@ class OpenSCAPOvalParser(IngestParser):
                 "For XCCDF Benchmark, use parser=openscap."
             )
         if "oval_results" not in tag_lower:
-            raise ValueError("OpenSCAP OVAL parser expects OVAL Results XML (oval_results root)")
+            raise ValueError(
+                "OpenSCAP OVAL parser expects OVAL Results XML (oval_results root)"
+            )
 
         asset = _get_system_target(root)
         payloads: list[CanonicalFindingPayload] = []
@@ -189,15 +197,25 @@ class OpenSCAPOvalParser(IngestParser):
         if results is None:
             return []
 
-        systems = results.findall(f".//{{{OVAL_RES_NS}}}system") if results is not None else []
+        systems = (
+            results.findall(f".//{{{OVAL_RES_NS}}}system")
+            if results is not None
+            else []
+        )
         if not systems and results is not None:
-            systems = [el for el in results.iter() if (el.tag or "").split("}")[-1] == "system"]
+            systems = [
+                el for el in results.iter() if (el.tag or "").split("}")[-1] == "system"
+            ]
 
         for system in systems:
             defs_container = system.find(f".//{{{OVAL_RES_NS}}}definitions")
             if defs_container is None:
                 defs_container = next(
-                    (el for el in system.iter() if (el.tag or "").split("}")[-1] == "definitions"),
+                    (
+                        el
+                        for el in system.iter()
+                        if (el.tag or "").split("}")[-1] == "definitions"
+                    ),
                     None,
                 )
             if defs_container is None:
@@ -210,7 +228,9 @@ class OpenSCAPOvalParser(IngestParser):
                 if result_attr != "true":
                     continue
 
-                definition_id = (def_el.get("definition_id") or def_el.get("id") or "").strip()
+                definition_id = (
+                    def_el.get("definition_id") or def_el.get("id") or ""
+                ).strip()
                 if not definition_id:
                     continue
 
@@ -229,7 +249,9 @@ class OpenSCAPOvalParser(IngestParser):
 
                 refs = [f"oval:{definition_id}"]
                 if cves:
-                    refs = [f"https://nvd.nist.gov/vuln/detail/{c}" for c in cves[:5]] + refs
+                    refs = [
+                        f"https://nvd.nist.gov/vuln/detail/{c}" for c in cves[:5]
+                    ] + refs
 
                 component = _extract_component_from_title(title, definition_id)
 

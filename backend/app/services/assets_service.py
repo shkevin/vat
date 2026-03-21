@@ -150,11 +150,21 @@ def _build_asset_payload(
         if idx >= 0 and (worst_idx < 0 or idx < worst_idx):
             worst_idx = idx
 
-    verified_pct = round((verified_count / len(findings)) * 1000) / 10 if findings else 100
+    verified_pct = (
+        round((verified_count / len(findings)) * 1000) / 10 if findings else 100
+    )
     open_findings = [
         d
         for d in findings
-        if d.get("status") not in ("Resolved", "False Positive", "Duplicate", "Not Applicable", "Approved", "Suppressed")
+        if d.get("status")
+        not in (
+            "Resolved",
+            "False Positive",
+            "Duplicate",
+            "Not Applicable",
+            "Approved",
+            "Suppressed",
+        )
     ]
     counts = {"critical": 0, "high": 0, "medium": 0, "low": 0, "info": 0}
     for d in open_findings:
@@ -175,7 +185,9 @@ def _build_asset_payload(
         elif ":" in img:
             tag = img.split(":")[1]
 
-    resolved_type = asset_type if asset_type else _infer_asset_type_from_findings(findings)
+    resolved_type = (
+        asset_type if asset_type else _infer_asset_type_from_findings(findings)
+    )
     return {
         "id": asset_key,
         "name": asset_key,
@@ -214,7 +226,10 @@ async def get_assets_with_findings(
     Pass findings_dicts to avoid double fetch; otherwise uses list_findings.
     """
     if findings_dicts is None:
-        from app.services.findings_service import enrich_findings_with_source_group_severity, list_findings
+        from app.services.findings_service import (
+            enrich_findings_with_source_group_severity,
+            list_findings,
+        )
 
         findings = await list_findings(
             db,
@@ -230,7 +245,9 @@ async def get_assets_with_findings(
             limit=limit,
         )
         findings_dicts = [FindingRead.model_validate(f).to_api_dict() for f in findings]
-        findings_dicts = await enrich_findings_with_source_group_severity(db, findings_dicts)
+        findings_dicts = await enrich_findings_with_source_group_severity(
+            db, findings_dicts
+        )
 
     by_key: dict[str, list[dict]] = {}
     for d in findings_dicts:

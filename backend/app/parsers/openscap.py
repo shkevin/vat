@@ -159,11 +159,17 @@ class OpenSCAPParser(IngestParser):
         if isinstance(raw, str):
             root = ElementTree.fromstring(raw)
         elif isinstance(raw, dict):
-            raise ValueError("OpenSCAP parser expects XML bytes or string, not JSON dict")
+            raise ValueError(
+                "OpenSCAP parser expects XML bytes or string, not JSON dict"
+            )
         else:
             raise ValueError("OpenSCAP parser expects XML bytes or string")
 
-        if root.tag != _ns("Benchmark", XCCDF_NS_1_1) and root.tag != _ns("Benchmark", XCCDF_NS_1_2) and "Benchmark" not in (root.tag or ""):
+        if (
+            root.tag != _ns("Benchmark", XCCDF_NS_1_1)
+            and root.tag != _ns("Benchmark", XCCDF_NS_1_2)
+            and "Benchmark" not in (root.tag or "")
+        ):
             raise ValueError("OpenSCAP input must be XCCDF 1.1 or 1.2 Benchmark XML")
 
         xccdf_ns = _detect_xccdf_ns(root)
@@ -193,7 +199,9 @@ class OpenSCAPParser(IngestParser):
         payloads: list[CanonicalFindingPayload] = []
         for rr in test_result.findall(_ns("rule-result", xccdf_ns)):
             result_el = rr.find(_ns("result", xccdf_ns))
-            result_text = (result_el.text or "").strip().lower() if result_el is not None else ""
+            result_text = (
+                (result_el.text or "").strip().lower() if result_el is not None else ""
+            )
             if "fail" not in result_text:
                 continue
 

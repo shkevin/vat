@@ -8,7 +8,9 @@ _EMAIL_RE = re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b")
 _APPROVER_NAME_RE = re.compile(r"approver[:\s\"']+[^\"'\s]+(?:\s+[^\"'\s]+)?", re.I)
 _OWNER_RE = re.compile(r"owner[:\s]+['\"]?[^'\"]+@[^'\"]+['\"]?", re.I)
 # JSON-style: "approver":"John Doe" or "approver": "Jane"
-_APPROVER_JSON_RE = re.compile(r'"(?:approver|approverName|approver_name)"\s*:\s*"[^"]*"', re.I)
+_APPROVER_JSON_RE = re.compile(
+    r'"(?:approver|approverName|approver_name)"\s*:\s*"[^"]*"', re.I
+)
 _OWNER_JSON_RE = re.compile(r'"(?:owner|ownerEmail|owner_email)"\s*:\s*"[^"]*"', re.I)
 
 

@@ -25,7 +25,9 @@ async def test_integration_schemas_returns_sources_and_trackers(client, db):
     )
     await db.commit()
 
-    login_res = await client.post("/api/auth/login", json={"username": "admin", "password": "admin"})
+    login_res = await client.post(
+        "/api/auth/login", json={"username": "admin", "password": "admin"}
+    )
     assert login_res.status_code == 200
     token = login_res.json()["token"]
 

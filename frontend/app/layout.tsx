@@ -21,7 +21,8 @@ const jetbrainsMono = JetBrains_Mono({
 
 export const metadata: Metadata = {
   title: "VAT — Vulnerability Assessment Tracker",
-  description: "Authoritative source of record for vulnerability and security findings",
+  description:
+    "Authoritative source of record for vulnerability and security findings",
   icons: {
     icon: { url: "/vat-icon.svg", type: "image/svg+xml" },
   },
@@ -36,7 +37,11 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" data-theme={DEFAULT_THEME} className={`${ibmPlexSans.variable} ${jetbrainsMono.variable}`}>
+    <html
+      lang="en"
+      data-theme={DEFAULT_THEME}
+      className={`${ibmPlexSans.variable} ${jetbrainsMono.variable}`}
+    >
       <head>
         <link rel="icon" href="/vat-icon.svg" type="image/svg+xml" />
       </head>

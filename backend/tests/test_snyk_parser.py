@@ -33,7 +33,7 @@ def test_snyk_parser_vulnerabilities():
                 "severity": "critical",
                 "CVSSv3": "9.8",
             },
-        ]
+        ],
     }
     parser = SnykParser()
     payloads = parser.parse(snyk)

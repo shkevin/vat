@@ -16,10 +16,16 @@ class WebhookEvent(Base):
 
     __tablename__ = "webhook_events"
 
-    id: Mapped[UUID] = mapped_column(primary_key=True, server_default=text("gen_random_uuid()"))
-    idempotency_key: Mapped[str] = mapped_column(String(128), unique=True, nullable=False)
+    id: Mapped[UUID] = mapped_column(
+        primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    idempotency_key: Mapped[str] = mapped_column(
+        String(128), unique=True, nullable=False
+    )
     source: Mapped[str] = mapped_column(String(32), nullable=False)
     event_type: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     payload_hash: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
-    processed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    processed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
     result: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)

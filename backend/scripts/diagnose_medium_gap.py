@@ -12,7 +12,6 @@ Run from backend/: uv run python scripts/diagnose_medium_gap.py [path/to/excel.x
 """
 
 import asyncio
-import json
 import logging
 import sys
 from pathlib import Path
@@ -28,7 +27,14 @@ from app.models.finding import Finding
 
 ASSET = "kamiwaza"
 BRANCH = "develop"
-CLOSED = {"Resolved", "False Positive", "Duplicate", "Not Applicable", "Approved", "Suppressed"}
+CLOSED = {
+    "Resolved",
+    "False Positive",
+    "Duplicate",
+    "Not Applicable",
+    "Approved",
+    "Suppressed",
+}
 
 
 def _status_display(s) -> str:
@@ -69,7 +75,9 @@ async def query_medium_findings(session: AsyncSession) -> list:
     return list(r.scalars().all())
 
 
-async def query_medium_by_component(session: AsyncSession, component_substr: str) -> list:
+async def query_medium_by_component(
+    session: AsyncSession, component_substr: str
+) -> list:
     """Medium findings where component contains substring (might be mis-grouped)."""
     r = await session.execute(
         select(Finding).where(
@@ -128,7 +136,9 @@ async def main():
     if excel_path and Path(excel_path).exists():
         excel_path = Path(excel_path)
     else:
-        files = sorted(exports.glob("*.xlsx"), key=lambda p: p.stat().st_mtime, reverse=True)
+        files = sorted(
+            exports.glob("*.xlsx"), key=lambda p: p.stat().st_mtime, reverse=True
+        )
         excel_path = files[0] if files else None
 
     print("=" * 80)
@@ -140,7 +150,7 @@ async def main():
         mediums = await query_medium_findings(session)
         open_mediums = [f for f in mediums if _status_display(f.status) not in CLOSED]
 
-        print(f"\n1. VAT DB: kamiwaza (develop) MEDIUM findings")
+        print("\n1. VAT DB: kamiwaza (develop) MEDIUM findings")
         print(f"   Total: {len(mediums)}, Open: {len(open_mediums)}")
 
         # Group open mediums by getFindingGroupKey (same as frontend)
@@ -154,26 +164,40 @@ async def main():
             f = flist[0]
             n = len(flist)
             suffix = f" [{n} instances]" if n > 1 else ""
-            print(f"     - {key[:50]}... | {f.title[:45]}... | img={f.image} | comp={f.component} | {_status_display(f.status)}{suffix}")
+            print(
+                f"     - {key[:50]}... | {f.title[:45]}... | img={f.image} | comp={f.component} | {_status_display(f.status)}{suffix}"
+            )
 
         # 2. Search for suspected missing findings
         print("\n2. Search for 'Generic API Key', 'architecture.md', 'QUICKSTART.md':")
-        generic = await search_by_title_desc(session, "Generic API Key", "architecture.md", "QUICKSTART.md")
+        generic = await search_by_title_desc(
+            session, "Generic API Key", "architecture.md", "QUICKSTART.md"
+        )
         for f in generic:
-            print(f"     id={f.id} title={f.title[:50]}... image={f.image} branch={f.branch} comp={f.component} status={_status_display(f.status)}")
+            print(
+                f"     id={f.id} title={f.title[:50]}... image={f.image} branch={f.branch} comp={f.component} status={_status_display(f.status)}"
+            )
 
         print("\n3. Search for 'insecure util', 'missing input validation':")
-        insecure = await search_by_title_desc(session, "insecure util", "missing input validation")
+        insecure = await search_by_title_desc(
+            session, "insecure util", "missing input validation"
+        )
         for f in insecure:
-            print(f"     id={f.id} title={f.title[:50]}... image={f.image} branch={f.branch} comp={f.component} status={_status_display(f.status)}")
+            print(
+                f"     id={f.id} title={f.title[:50]}... image={f.image} branch={f.branch} comp={f.component} status={_status_display(f.status)}"
+            )
 
         print("\n4. Search for 'js-yaml', 'Prototype Pollution':")
         jsyaml = await search_by_title_desc(session, "js-yaml", "Prototype Pollution")
         for f in jsyaml:
-            print(f"     id={f.id} title={f.title[:50]}... image={f.image} branch={f.branch} comp={f.component} status={_status_display(f.status)}")
+            print(
+                f"     id={f.id} title={f.title[:50]}... image={f.image} branch={f.branch} comp={f.component} status={_status_display(f.status)}"
+            )
 
         # 3. Medium findings with image != kamiwaza (might be mis-grouped)
-        print("\n5. Aikido medium findings with image != kamiwaza (possible mis-grouping):")
+        print(
+            "\n5. Aikido medium findings with image != kamiwaza (possible mis-grouping):"
+        )
         r = await session.execute(
             select(Finding).where(
                 and_(
@@ -190,7 +214,9 @@ async def main():
         )
         other_mediums = list(r.scalars().all())
         for f in other_mediums[:20]:
-            print(f"     id={f.id} title={f.title[:50]}... image={f.image} branch={f.branch} comp={f.component}")
+            print(
+                f"     id={f.id} title={f.title[:50]}... image={f.image} branch={f.branch} comp={f.component}"
+            )
         if len(other_mediums) > 20:
             print(f"     ... and {len(other_mediums) - 20} more")
 
@@ -198,21 +224,30 @@ async def main():
         print("\n6. Findings in architecture.md or QUICKSTART.md:")
         arch = await search_by_file_path(session, "architecture.md", "QUICKSTART.md")
         for f in arch:
-            print(f"     id={f.id} title={f.title[:50]}... image={f.image} branch={f.branch} sev={f.severity} status={_status_display(f.status)}")
+            print(
+                f"     id={f.id} title={f.title[:50]}... image={f.image} branch={f.branch} sev={f.severity} status={_status_display(f.status)}"
+            )
 
     # 5. Load Excel and compare
     if excel_path and excel_path.exists():
         try:
             import pandas as pd
+
             df = pd.read_excel(excel_path, sheet_name="Issues")
-            df = df.rename(columns=lambda c: c.strip().lower().replace(" ", "_") if isinstance(c, str) else c)
+            df = df.rename(
+                columns=lambda c: c.strip().lower().replace(" ", "_")
+                if isinstance(c, str)
+                else c
+            )
             repo_col = "repository" if "repository" in df.columns else "repository"
             excel_kamiwaza = df[
                 (df[repo_col].astype(str).str.lower() == f"{ASSET} ({BRANCH})")
                 & (df["severity"].astype(str).str.lower() == "medium")
                 & (df["vat_status"].astype(str).str.lower() == "open")
             ]
-            print(f"\n7. Excel: kamiwaza (develop) open mediums = {len(excel_kamiwaza)}")
+            print(
+                f"\n7. Excel: kamiwaza (develop) open mediums = {len(excel_kamiwaza)}"
+            )
             print("   Titles:")
             for _, row in excel_kamiwaza.iterrows():
                 print(f"     - {str(row.get('title', ''))[:60]}...")

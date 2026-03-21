@@ -34,16 +34,24 @@ export function ReportTab({ findings, allAssets }: ReportTabProps) {
   // Match data structure to display mode: groups = canonical grouping, instances = one per finding.
   const data = useMemo(
     () => toVATDashboardData(findings, allAssets, "VAT", { groupFindings }),
-    [findings, allAssets, groupFindings]
+    [findings, allAssets, groupFindings],
   );
 
   return (
-    <div style={{ flex: 1, minHeight: 0, overflow: "hidden", display: "flex", flexDirection: "column" }}>
-    <ReportBuilderView
-      data={data}
-      allAssets={allAssets}
-      defaultCountMode={groupFindings ? "groups" : "instances"}
-    />
+    <div
+      style={{
+        flex: 1,
+        minHeight: 0,
+        overflow: "hidden",
+        display: "flex",
+        flexDirection: "column",
+      }}
+    >
+      <ReportBuilderView
+        data={data}
+        allAssets={allAssets}
+        defaultCountMode={groupFindings ? "groups" : "instances"}
+      />
     </div>
   );
 }

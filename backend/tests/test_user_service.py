@@ -71,7 +71,11 @@ async def test_get_user_by_email_case_insensitive(db: AsyncSession):
 async def test_get_google_tenant_returns_tenant_with_google_auth(db: AsyncSession):
     """get_google_tenant returns first tenant with auth_method=google."""
     # Isolate from other tests: remove users first (FK), then google tenants
-    await db.execute(text("DELETE FROM users WHERE tenant_id IN (SELECT id FROM tenants WHERE auth_method = 'google')"))
+    await db.execute(
+        text(
+            "DELETE FROM users WHERE tenant_id IN (SELECT id FROM tenants WHERE auth_method = 'google')"
+        )
+    )
     await db.execute(text("DELETE FROM tenants WHERE auth_method = 'google'"))
     await db.execute(
         text(
@@ -99,7 +103,11 @@ async def test_get_google_tenant_returns_tenant_with_google_auth(db: AsyncSessio
 async def test_get_google_tenant_returns_none_when_no_google_tenant(db: AsyncSession):
     """get_google_tenant returns None when no tenant has auth_method=google."""
     # Isolate from other tests: remove users first (FK), then google tenants
-    await db.execute(text("DELETE FROM users WHERE tenant_id IN (SELECT id FROM tenants WHERE auth_method = 'google')"))
+    await db.execute(
+        text(
+            "DELETE FROM users WHERE tenant_id IN (SELECT id FROM tenants WHERE auth_method = 'google')"
+        )
+    )
     await db.execute(text("DELETE FROM tenants WHERE auth_method = 'google'"))
     await db.execute(
         text(
@@ -140,7 +148,9 @@ async def test_get_user_by_email_in_google_tenant_returns_user(db: AsyncSession)
 
 
 @pytest.mark.asyncio
-async def test_get_user_by_email_in_google_tenant_returns_none_for_local_tenant(db: AsyncSession):
+async def test_get_user_by_email_in_google_tenant_returns_none_for_local_tenant(
+    db: AsyncSession,
+):
     """get_user_by_email_in_google_tenant returns None when user is in local-only tenant."""
     await db.execute(
         text(

@@ -68,7 +68,7 @@ export default function LoginPage() {
             role: payload.role ?? "reviewer",
             tenant_id: payload.tenant_id ?? null,
           },
-          token
+          token,
         );
         router.replace("/", { scroll: false });
       } else {
@@ -198,9 +198,17 @@ export default function LoginPage() {
                 marginBottom: 16,
               }}
             >
-              <div style={{ flex: 1, height: 1, background: "var(--app-border)" }} />
-              <span style={{ ...sans, fontSize: 11, color: "var(--app-muted)" }}>or</span>
-              <div style={{ flex: 1, height: 1, background: "var(--app-border)" }} />
+              <div
+                style={{ flex: 1, height: 1, background: "var(--app-border)" }}
+              />
+              <span
+                style={{ ...sans, fontSize: 11, color: "var(--app-muted)" }}
+              >
+                or
+              </span>
+              <div
+                style={{ flex: 1, height: 1, background: "var(--app-border)" }}
+              />
             </div>
           </>
         )}
