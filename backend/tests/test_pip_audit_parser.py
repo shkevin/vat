@@ -5,7 +5,13 @@ from pathlib import Path
 
 from app.parsers.pip_audit import PipAuditParser
 
-_SAMPLES = Path(__file__).resolve().parent.parent.parent / "django-DefectDojo" / "unittests" / "scans" / "pip_audit"
+_SAMPLES = (
+    Path(__file__).resolve().parent.parent.parent
+    / "django-DefectDojo"
+    / "unittests"
+    / "scans"
+    / "pip_audit"
+)
 
 
 def _load(name: str):
@@ -28,7 +34,12 @@ def test_pip_audit_many_legacy():
     p = payloads[0]
     assert p.cve_id
     assert p.component
-    assert "aiohttp" in p.component or "django" in p.component or "lxml" in p.component or "twisted" in p.component
+    assert (
+        "aiohttp" in p.component
+        or "django" in p.component
+        or "lxml" in p.component
+        or "twisted" in p.component
+    )
 
 
 def test_pip_audit_many_new():

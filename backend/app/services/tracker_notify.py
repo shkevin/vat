@@ -1,7 +1,6 @@
 """Tracker notification — post reviewer decisions to Linear. PRD §5.9.2 step 5."""
 
 import logging
-from typing import Optional
 
 from app.adapters.linear import LinearAdapter
 from app.core.config import get_settings
@@ -64,7 +63,9 @@ async def notify_tracker_decision(
     if finding.attestation:
         att = finding.attestation
         body_parts.append("")
-        body_parts.append(f"**Waiver:** {att.get('waiverRef', 'N/A')} | Expires: {att.get('expiresAt', 'N/A')}")
+        body_parts.append(
+            f"**Waiver:** {att.get('waiverRef', 'N/A')} | Expires: {att.get('expiresAt', 'N/A')}"
+        )
 
     body = "\n".join(body_parts)
 

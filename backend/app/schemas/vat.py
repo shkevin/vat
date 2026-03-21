@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 # --- Enums (VAT canonical) ---
 
+
 class VatSeverity(str, Enum):
     """Severity levels for VAT findings."""
 
@@ -34,11 +35,14 @@ class VatFindingType(str, Enum):
 
 # --- Inbound: External → VAT ---
 
+
 class VatFindingSchema(BaseModel):
     """VAT canonical finding. All sources must map to this."""
 
     # Required
-    cve_id: str = Field(..., min_length=1, max_length=128, description="CVE ID, secret ID, or rule ID")
+    cve_id: str = Field(
+        ..., min_length=1, max_length=128, description="CVE ID, secret ID, or rule ID"
+    )
     severity: VatSeverity
     description: str = Field(default="", max_length=10000)
 
@@ -51,19 +55,43 @@ class VatFindingSchema(BaseModel):
     file_path: Optional[str] = Field(default=None, max_length=1024)
     line: Optional[int] = Field(default=None, ge=1)
     source_file_url: Optional[str] = Field(default=None, max_length=2048)
-    snippet_masked: Optional[str] = Field(default=None, max_length=512, description="Line preview with sensitive parts masked (e.g. ***REDACTED***)")
+    snippet_masked: Optional[str] = Field(
+        default=None,
+        max_length=512,
+        description="Line preview with sensitive parts masked (e.g. ***REDACTED***)",
+    )
 
     # Optional — grouping (parsers populate when available; used for derived grouping)
-    rule_id: Optional[str] = Field(default=None, max_length=256, description="SAST/IaC/Secret rule or check ID")
-    cwe_id: Optional[str] = Field(default=None, max_length=32, description="CWE-XXX for SAST grouping")
-    ecosystem: Optional[str] = Field(default=None, max_length=64, description="Package ecosystem: npm, pypi, go, debian, etc.")
-    secret_type: Optional[str] = Field(default=None, max_length=128, description="Secret category, e.g. AWS Key, Generic Secret")
-    resource: Optional[str] = Field(default=None, max_length=512, description="IaC resource path/ARN for subissue display")
+    rule_id: Optional[str] = Field(
+        default=None, max_length=256, description="SAST/IaC/Secret rule or check ID"
+    )
+    cwe_id: Optional[str] = Field(
+        default=None, max_length=32, description="CWE-XXX for SAST grouping"
+    )
+    ecosystem: Optional[str] = Field(
+        default=None,
+        max_length=64,
+        description="Package ecosystem: npm, pypi, go, debian, etc.",
+    )
+    secret_type: Optional[str] = Field(
+        default=None,
+        max_length=128,
+        description="Secret category, e.g. AWS Key, Generic Secret",
+    )
+    resource: Optional[str] = Field(
+        default=None,
+        max_length=512,
+        description="IaC resource path/ARN for subissue display",
+    )
 
     # Optional — metadata
     source_issue_id: Optional[str] = Field(default=None, max_length=128)
-    source_issue_group_id: Optional[str] = Field(default=None, max_length=64)  # Aikido group_id when available
-    source_issue_url: Optional[str] = Field(default=None, max_length=2048)  # Deep link to view in source (e.g. Aikido dashboard)
+    source_issue_group_id: Optional[str] = Field(
+        default=None, max_length=64
+    )  # Aikido group_id when available
+    source_issue_url: Optional[str] = Field(
+        default=None, max_length=2048
+    )  # Deep link to view in source (e.g. Aikido dashboard)
     status: Optional[str] = Field(default=None, max_length=32)
     first_detected_at: Optional[str] = Field(default=None, max_length=64)
     closed_at: Optional[str] = Field(default=None, max_length=64)
@@ -122,6 +150,7 @@ class VatTrackerCommentUpdate(BaseModel):
 
 # --- Outbound: VAT → External ---
 
+
 class VatSourceIgnoreRequest(BaseModel):
     """Tell source to ignore/suppress issue."""
 
@@ -156,10 +185,14 @@ class LabelConfig(BaseModel):
 class VatTrackerCreateIssueRequest(BaseModel):
     """Create tracker issue for finding."""
 
-    finding: dict = Field(..., description="Finding snapshot: cve_id, title, severity, component, etc.")
+    finding: dict = Field(
+        ..., description="Finding snapshot: cve_id, title, severity, component, etc."
+    )
     template: str = Field(..., min_length=1, max_length=10000)
     label_names: Optional[list[str]] = Field(default=None, max_length=50)
-    label_configs: Optional[list[LabelConfig]] = Field(default=None, description="Name+color for auto-creation")
+    label_configs: Optional[list[LabelConfig]] = Field(
+        default=None, description="Name+color for auto-creation"
+    )
 
     @field_validator("finding")
     @classmethod
@@ -183,8 +216,14 @@ class VatTrackerUpdateIssueRequest(BaseModel):
     """Push VAT field changes to tracker issue."""
 
     issue_id: str = Field(..., min_length=1, max_length=64)
-    finding: dict = Field(..., description="Finding snapshot: cve_id, title, severity, etc.")
+    finding: dict = Field(
+        ..., description="Finding snapshot: cve_id, title, severity, etc."
+    )
     changed_fields: list[str] = Field(default_factory=list, max_length=20)
     label_names: Optional[list[str]] = Field(default=None, max_length=50)
-    label_configs: Optional[list[LabelConfig]] = Field(default=None, description="Name+color for auto-creation")
-    issue_uuid: Optional[str] = Field(default=None, description="Linear UUID; avoids resolve query when present")
+    label_configs: Optional[list[LabelConfig]] = Field(
+        default=None, description="Name+color for auto-creation"
+    )
+    issue_uuid: Optional[str] = Field(
+        default=None, description="Linear UUID; avoids resolve query when present"
+    )

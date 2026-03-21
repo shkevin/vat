@@ -89,17 +89,23 @@ def extract_sbom_from_trivy(raw: dict, source: str) -> Optional[dict]:
             licenses = pkg.get("Licenses") or pkg.get("licenses") or []
             if licenses and isinstance(licenses[0], dict):
                 lic = licenses[0]
-                license_id = lic.get("ID") or lic.get("id") or lic.get("Name") or lic.get("name")
+                license_id = (
+                    lic.get("ID") or lic.get("id") or lic.get("Name") or lic.get("name")
+                )
             elif licenses:
                 license_id = str(licenses[0])
-            components.append(_make_component(name, version, license_id, target, language))
+            components.append(
+                _make_component(name, version, license_id, target, language)
+            )
 
         # 2. Vulnerabilities (packages with vulns, may not be in Packages)
         for v in res.get("Vulnerabilities") or res.get("vulnerabilities") or []:
             if not isinstance(v, dict):
                 continue
             name = (v.get("PkgName") or v.get("pkgName") or "").strip()
-            version = (v.get("InstalledVersion") or v.get("installedVersion") or "").strip()
+            version = (
+                v.get("InstalledVersion") or v.get("installedVersion") or ""
+            ).strip()
             if not name:
                 continue
             key = (name, version, target)
@@ -114,20 +120,28 @@ def extract_sbom_from_trivy(raw: dict, source: str) -> Optional[dict]:
                 continue
             name = (lic.get("PkgName") or lic.get("pkgName") or "").strip()
             version = (lic.get("Version") or lic.get("version") or "").strip()
-            license_id = lic.get("Name") or lic.get("name") or lic.get("ID") or lic.get("id")
+            license_id = (
+                lic.get("Name") or lic.get("name") or lic.get("ID") or lic.get("id")
+            )
             if not name:
                 continue
             key = (name, version, target)
             if key in seen:
                 # Update license on existing component
                 for c in components:
-                    if c.get("name") == name and c.get("version") == version and c.get("group") == (target or None):
+                    if (
+                        c.get("name") == name
+                        and c.get("version") == version
+                        and c.get("group") == (target or None)
+                    ):
                         if not (c.get("licenses") or []) and license_id:
                             c["licenses"] = [{"license": {"id": license_id}}]
                         break
                 continue
             seen.add(key)
-            components.append(_make_component(name, version, license_id, target, language))
+            components.append(
+                _make_component(name, version, license_id, target, language)
+            )
 
     if not components:
         return None

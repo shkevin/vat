@@ -1,7 +1,6 @@
 """Linear API polling — use when webhooks aren't configured. Uses same credentials as Linear integration settings."""
 
 import logging
-from typing import Optional
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -9,11 +8,13 @@ from app.adapters.linear import LinearAdapter
 from app.api.settings import get_linear_credentials
 from app.core.config import get_settings
 from app.services.external_links_service import get_all_linear_tracker_issue_ids
-from app.services.linear_parsed_service import apply_vat_parsed_update, post_canonical_if_enabled
+from app.services.linear_parsed_service import (
+    apply_vat_parsed_update,
+    post_canonical_if_enabled,
+)
 from app.services.webhook_idempotency import (
     compute_idempotency_key,
     is_duplicate_webhook,
-    record_webhook_processed,
 )
 
 logger = logging.getLogger(__name__)
@@ -33,19 +34,41 @@ async def poll_linear_for_updates(db: AsyncSession, *, force: bool = False) -> d
 
     # When webhooks configured: don't poll unless force (manual sync or reconciliation)
     if not force and webhook_secret:
-        logger.debug("Linear poll skipped: webhook configured (use reconciliation for safety net)")
-        return {"issues_fetched": 0, "comments_processed": 0, "descriptions_processed": 0, "errors": []}
+        logger.debug(
+            "Linear poll skipped: webhook configured (use reconciliation for safety net)"
+        )
+        return {
+            "issues_fetched": 0,
+            "comments_processed": 0,
+            "descriptions_processed": 0,
+            "errors": [],
+        }
     if not force and not settings.linear_poll_enabled:
-        return {"issues_fetched": 0, "comments_processed": 0, "descriptions_processed": 0, "errors": []}
+        return {
+            "issues_fetched": 0,
+            "comments_processed": 0,
+            "descriptions_processed": 0,
+            "errors": [],
+        }
     if not api_key or not team_id:
         logger.debug("Linear poll skipped: not configured")
-        return {"issues_fetched": 0, "comments_processed": 0, "descriptions_processed": 0, "errors": []}
+        return {
+            "issues_fetched": 0,
+            "comments_processed": 0,
+            "descriptions_processed": 0,
+            "errors": [],
+        }
 
     # Only poll issues that VAT tracks — no fetching of unrelated team issues
     tracked = await get_all_linear_tracker_issue_ids(db)
     if not tracked:
         logger.debug("Linear poll skipped: no VAT-tracked Linear issues")
-        return {"issues_fetched": 0, "comments_processed": 0, "descriptions_processed": 0, "errors": []}
+        return {
+            "issues_fetched": 0,
+            "comments_processed": 0,
+            "descriptions_processed": 0,
+            "errors": [],
+        }
 
     adapter = LinearAdapter(api_key=api_key, team_id=team_id)
     comments_processed = 0
@@ -81,16 +104,27 @@ async def poll_linear_for_updates(db: AsyncSession, *, force: bool = False) -> d
             issue_body_hint = f"{title} {description}"
 
             # 1. Parse issue description
-            parsed_desc = LinearAdapter.parse_vat_block_from_text(description, cve_id_hint=None)
+            parsed_desc = LinearAdapter.parse_vat_block_from_text(
+                description, cve_id_hint=None
+            )
             if parsed_desc:
                 idempotency_key = compute_idempotency_key(
                     "linear", "Issue.update.description", issue_id, description[:200]
                 )
                 if not await is_duplicate_webhook(db, idempotency_key):
-                    data = {"source": "poll", "issue_id": issue_id, "type": "description"}
+                    data = {
+                        "source": "poll",
+                        "issue_id": issue_id,
+                        "type": "description",
+                    }
                     result = await apply_vat_parsed_update(
-                        db, parsed_desc, issue_id, issue_uuid, idempotency_key,
-                        "Issue.update.description", data,
+                        db,
+                        parsed_desc,
+                        issue_id,
+                        issue_uuid,
+                        idempotency_key,
+                        "Issue.update.description",
+                        data,
                     )
                     if result.get("finding_id"):
                         descriptions_processed += 1
@@ -110,15 +144,25 @@ async def poll_linear_for_updates(db: AsyncSession, *, force: bool = False) -> d
                         "body": body,
                         "id": comment_id,
                         "createdAt": created_at,
-                        "issue": {"identifier": issue_id, "id": issue_uuid, "title": title, "description": description},
+                        "issue": {
+                            "identifier": issue_id,
+                            "id": issue_uuid,
+                            "title": title,
+                            "description": description,
+                        },
                     }
                 }
-                comment_update = adapter.to_vat_comment_update(payload, issue_body_hint=issue_body_hint)
+                comment_update = adapter.to_vat_comment_update(
+                    payload, issue_body_hint=issue_body_hint
+                )
                 if not comment_update:
                     continue
 
                 idempotency_key = compute_idempotency_key(
-                    "linear", "Comment.create", comment_id or issue_id, created_at or issue_uuid
+                    "linear",
+                    "Comment.create",
+                    comment_id or issue_id,
+                    created_at or issue_uuid,
                 )
                 if await is_duplicate_webhook(db, idempotency_key):
                     continue
@@ -129,9 +173,19 @@ async def poll_linear_for_updates(db: AsyncSession, *, force: bool = False) -> d
                     "justification": comment_update.justification,
                     "compensating_controls": comment_update.compensating_controls or "",
                 }
-                data = {"source": "poll", "issue_id": issue_id, "comment_id": comment_id}
+                data = {
+                    "source": "poll",
+                    "issue_id": issue_id,
+                    "comment_id": comment_id,
+                }
                 result = await apply_vat_parsed_update(
-                    db, parsed, issue_id, issue_uuid, idempotency_key, "Comment.create", data,
+                    db,
+                    parsed,
+                    issue_id,
+                    issue_uuid,
+                    idempotency_key,
+                    "Comment.create",
+                    data,
                 )
                 if result.get("finding_id"):
                     comments_processed += 1
@@ -140,7 +194,9 @@ async def poll_linear_for_updates(db: AsyncSession, *, force: bool = False) -> d
 
         logger.info(
             "Linear poll: fetched %d issues, processed %d comments, %d descriptions",
-            fetched, comments_processed, descriptions_processed,
+            fetched,
+            comments_processed,
+            descriptions_processed,
         )
     except Exception as e:
         logger.exception("Linear poll failed: %s", e)

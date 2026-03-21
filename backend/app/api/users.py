@@ -87,7 +87,9 @@ async def delete_user(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     if user.role == "admin":
-        admin_count = await db.scalar(select(func.count()).select_from(User).where(User.role == "admin"))
+        admin_count = await db.scalar(
+            select(func.count()).select_from(User).where(User.role == "admin")
+        )
         if admin_count <= 1:
             raise HTTPException(
                 status_code=400,

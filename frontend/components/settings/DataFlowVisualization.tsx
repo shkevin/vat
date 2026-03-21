@@ -34,20 +34,27 @@ export function DataFlowVisualization({
   selectedAddSource,
   selectedAddTracker,
 }: DataFlowVisualizationProps) {
-  const sourceNames = sources.length > 0 ? sources.map((s) => s.name).join(", ") : "No sources";
+  const sourceNames =
+    sources.length > 0 ? sources.map((s) => s.name).join(", ") : "No sources";
   const trackerName = tracker?.name ?? "No tracker";
-  const sourceColor = sources[0] ? (SOURCE_NODE_REGISTRY[sources[0].adapter]?.color ?? sources[0].color) : "#475569";
-  const trackerColor = tracker ? (TRACKER_NODE_REGISTRY[tracker.type]?.color ?? "#818cf8") : "#475569";
+  const sourceColor = sources[0]
+    ? SOURCE_NODE_REGISTRY[sources[0].adapter]?.color ?? sources[0].color
+    : "#475569";
+  const trackerColor = tracker
+    ? TRACKER_NODE_REGISTRY[tracker.type]?.color ?? "#818cf8"
+    : "#475569";
 
   // Resolve source node: use registry component if adapter matches, else generic
   const firstSource = sources[0];
-  const SourceNodeComponent = firstSource && SOURCE_NODE_REGISTRY[firstSource.adapter]
-    ? SOURCE_NODE_REGISTRY[firstSource.adapter].Component
-    : null;
+  const SourceNodeComponent =
+    firstSource && SOURCE_NODE_REGISTRY[firstSource.adapter]
+      ? SOURCE_NODE_REGISTRY[firstSource.adapter].Component
+      : null;
 
-  const TrackerNodeComponent = tracker && TRACKER_NODE_REGISTRY[tracker.type]
-    ? TRACKER_NODE_REGISTRY[tracker.type].Component
-    : null;
+  const TrackerNodeComponent =
+    tracker && TRACKER_NODE_REGISTRY[tracker.type]
+      ? TRACKER_NODE_REGISTRY[tracker.type].Component
+      : null;
 
   return (
     <div
@@ -118,37 +125,151 @@ export function DataFlowVisualization({
             onClick={() => onAddSourceClick?.()}
             style={{ cursor: onAddSourceClick ? "pointer" : "default" }}
           >
-            <rect x={20} y={60} width={120} height={60} rx={6} fill="#0c1e38" stroke="#475569" strokeWidth={2} />
-            <text x={80} y={95} textAnchor="middle" fill="#64748b" style={{ ...mono, fontSize: 11 }}>—</text>
-            <text x={80} y={112} textAnchor="middle" fill="#64748b" style={{ ...sans, fontSize: 9 }}>No source</text>
+            <rect
+              x={20}
+              y={60}
+              width={120}
+              height={60}
+              rx={6}
+              fill="#0c1e38"
+              stroke="#475569"
+              strokeWidth={2}
+            />
+            <text
+              x={80}
+              y={95}
+              textAnchor="middle"
+              fill="#64748b"
+              style={{ ...mono, fontSize: 11 }}
+            >
+              —
+            </text>
+            <text
+              x={80}
+              y={112}
+              textAnchor="middle"
+              fill="#64748b"
+              style={{ ...sans, fontSize: 9 }}
+            >
+              No source
+            </text>
           </g>
         )}
 
         {onAddSourceClick && (
-          <AddSourceNode x={20} y={135} selected={selectedAddSource} onClick={onAddSourceClick} />
+          <AddSourceNode
+            x={20}
+            y={135}
+            selected={selectedAddSource}
+            onClick={onAddSourceClick}
+          />
         )}
 
         <g>
-          <line x1={140} y1={90} x2={200} y2={90} stroke="url(#flowGrad1)" strokeWidth={2} strokeDasharray="6 4" className="flow-line flow-line-1" />
+          <line
+            x1={140}
+            y1={90}
+            x2={200}
+            y2={90}
+            stroke="url(#flowGrad1)"
+            strokeWidth={2}
+            strokeDasharray="6 4"
+            className="flow-line flow-line-1"
+          />
           <polygon points="200,90 192,86 192,94" fill={sourceColor} />
-          <text x={170} y={80} textAnchor="middle" fill="#64748b" style={{ ...mono, fontSize: 8 }}>① webhook</text>
-          <text x={170} y={72} textAnchor="middle" fill="#475569" style={{ ...mono, fontSize: 7 }}>findings</text>
+          <text
+            x={170}
+            y={80}
+            textAnchor="middle"
+            fill="#64748b"
+            style={{ ...mono, fontSize: 8 }}
+          >
+            ① webhook
+          </text>
+          <text
+            x={170}
+            y={72}
+            textAnchor="middle"
+            fill="#475569"
+            style={{ ...mono, fontSize: 7 }}
+          >
+            findings
+          </text>
         </g>
 
         {/* ── VAT Backend ── */}
         <g className="flow-node flow-node-vat">
-          <rect x={200} y={40} width={200} height={100} rx={8} fill="#0c1e38" stroke="#38bdf8" strokeWidth={2} filter="url(#glow)" />
-          <text x={300} y={70} textAnchor="middle" fill="#38bdf8" style={{ ...mono, fontSize: 12, fontWeight: 700 }}>VAT Backend</text>
-          <text x={300} y={88} textAnchor="middle" fill="#64748b" style={{ ...sans, fontSize: 9 }}>Ingest → Dedup → DB</text>
-          <text x={300} y={125} textAnchor="middle" fill="#475569" style={{ ...mono, fontSize: 8 }}>/webhook/aikido · /webhook/linear</text>
+          <rect
+            x={200}
+            y={40}
+            width={200}
+            height={100}
+            rx={8}
+            fill="#0c1e38"
+            stroke="#38bdf8"
+            strokeWidth={2}
+            filter="url(#glow)"
+          />
+          <text
+            x={300}
+            y={70}
+            textAnchor="middle"
+            fill="#38bdf8"
+            style={{ ...mono, fontSize: 12, fontWeight: 700 }}
+          >
+            VAT Backend
+          </text>
+          <text
+            x={300}
+            y={88}
+            textAnchor="middle"
+            fill="#64748b"
+            style={{ ...sans, fontSize: 9 }}
+          >
+            Ingest → Dedup → DB
+          </text>
+          <text
+            x={300}
+            y={125}
+            textAnchor="middle"
+            fill="#475569"
+            style={{ ...mono, fontSize: 8 }}
+          >
+            /webhook/aikido · /webhook/linear
+          </text>
         </g>
 
         {/* ── Step 2: VAT → Tracker (create issue) ── */}
         <g>
-          <line x1={400} y1={90} x2={460} y2={90} stroke="url(#flowGrad2)" strokeWidth={2} strokeDasharray="6 4" className="flow-line flow-line-2" />
+          <line
+            x1={400}
+            y1={90}
+            x2={460}
+            y2={90}
+            stroke="url(#flowGrad2)"
+            strokeWidth={2}
+            strokeDasharray="6 4"
+            className="flow-line flow-line-2"
+          />
           <polygon points="460,90 452,86 452,94" fill={trackerColor} />
-          <text x={430} y={80} textAnchor="middle" fill="#64748b" style={{ ...mono, fontSize: 8 }}>② create issue</text>
-          <text x={430} y={72} textAnchor="middle" fill="#475569" style={{ ...mono, fontSize: 7 }}>+ [VAT] template</text>
+          <text
+            x={430}
+            y={80}
+            textAnchor="middle"
+            fill="#64748b"
+            style={{ ...mono, fontSize: 8 }}
+          >
+            ② create issue
+          </text>
+          <text
+            x={430}
+            y={72}
+            textAnchor="middle"
+            fill="#475569"
+            style={{ ...mono, fontSize: 7 }}
+          >
+            + [VAT] template
+          </text>
         </g>
 
         {/* ── Tracker node (uses registry component) ── */}
@@ -172,25 +293,87 @@ export function DataFlowVisualization({
 
         {/* ── Step 3: Engineer comments ── */}
         <g className="flow-node flow-node-engineer">
-          <rect x={460} y={135} width={120} height={40} rx={6} fill="#0c1e38" stroke="#50c878" strokeWidth={1.5} />
-          <text x={520} y={158} textAnchor="middle" fill="#50c878" style={{ ...sans, fontSize: 9, fontWeight: 600 }}>③ Engineer adds [VAT] comment in Linear</text>
+          <rect
+            x={460}
+            y={135}
+            width={120}
+            height={40}
+            rx={6}
+            fill="#0c1e38"
+            stroke="#50c878"
+            strokeWidth={1.5}
+          />
+          <text
+            x={520}
+            y={158}
+            textAnchor="middle"
+            fill="#50c878"
+            style={{ ...sans, fontSize: 9, fontWeight: 600 }}
+          >
+            ③ Engineer adds [VAT] comment in Linear
+          </text>
         </g>
 
         {/* ── Step 4: Tracker → VAT (comment webhook) ── */}
-        <path d="M 520 135 L 520 180 L 300 180 L 300 140" fill="none" stroke="url(#flowGrad3)" strokeWidth={2} strokeDasharray="6 4" className="flow-line flow-line-3" />
+        <path
+          d="M 520 135 L 520 180 L 300 180 L 300 140"
+          fill="none"
+          stroke="url(#flowGrad3)"
+          strokeWidth={2}
+          strokeDasharray="6 4"
+          className="flow-line flow-line-3"
+        />
         <polygon points="300,138 296,142 304,142" fill="#50c878" />
-        <text x={410} y={175} textAnchor="middle" fill="#64748b" style={{ ...mono, fontSize: 8 }}>④ comment webhook</text>
+        <text
+          x={410}
+          y={175}
+          textAnchor="middle"
+          fill="#64748b"
+          style={{ ...mono, fontSize: 8 }}
+        >
+          ④ comment webhook
+        </text>
 
         {/* ── Step 5: VAT → Tracker (post decision) ── */}
-        <path d="M 400 140 L 460 140 L 460 120" fill="none" stroke="url(#flowGrad4)" strokeWidth={2} strokeDasharray="6 4" className="flow-line flow-line-4" />
+        <path
+          d="M 400 140 L 460 140 L 460 120"
+          fill="none"
+          stroke="url(#flowGrad4)"
+          strokeWidth={2}
+          strokeDasharray="6 4"
+          className="flow-line flow-line-4"
+        />
         <polygon points="460,116 456,121 464,121" fill="#818cf8" />
-        <text x={430} y={135} textAnchor="middle" fill="#64748b" style={{ ...mono, fontSize: 8 }}>⑤ post decision</text>
+        <text
+          x={430}
+          y={135}
+          textAnchor="middle"
+          fill="#64748b"
+          style={{ ...mono, fontSize: 8 }}
+        >
+          ⑤ post decision
+        </text>
 
         {/* Flow path legend */}
         <g>
-          <text x={360} y={220} textAnchor="middle" fill="#334155" style={{ ...mono, fontSize: 9, fontWeight: 700 }}>DATA FLOW PATH</text>
-          <text x={360} y={238} textAnchor="middle" fill="#475569" style={{ ...sans, fontSize: 9 }}>
-            ① Findings webhook → ② Create issue → ③ Engineer responds → ④ Comment webhook → ⑤ Decision posted
+          <text
+            x={360}
+            y={220}
+            textAnchor="middle"
+            fill="#334155"
+            style={{ ...mono, fontSize: 9, fontWeight: 700 }}
+          >
+            DATA FLOW PATH
+          </text>
+          <text
+            x={360}
+            y={238}
+            textAnchor="middle"
+            fill="#475569"
+            style={{ ...sans, fontSize: 9 }}
+          >
+            ① Findings webhook → ② Create issue → ③ Engineer responds → ④
+            Comment webhook → ⑤ Decision posted
           </text>
         </g>
       </svg>
@@ -245,7 +428,10 @@ export function DataFlowVisualization({
           lineHeight: 1.5,
         }}
       >
-        Findings flow from {sourceNames} via webhook into VAT. VAT deduplicates, persists, and creates {trackerName} issues with the [VAT] template. Engineers respond in {trackerName}; VAT parses comments via webhook and advances status. Reviewer decisions are posted back to {trackerName}.
+        Findings flow from {sourceNames} via webhook into VAT. VAT deduplicates,
+        persists, and creates {trackerName} issues with the [VAT] template.
+        Engineers respond in {trackerName}; VAT parses comments via webhook and
+        advances status. Reviewer decisions are posted back to {trackerName}.
       </p>
     </div>
   );

@@ -18,7 +18,9 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     # PostgreSQL: cannot remove enum value directly. Create new type, migrate, drop old.
-    op.execute("CREATE TYPE findingtype_new AS ENUM ('SCA', 'Secret', 'IaC', 'SAST', 'License')")
+    op.execute(
+        "CREATE TYPE findingtype_new AS ENUM ('SCA', 'Secret', 'IaC', 'SAST', 'License')"
+    )
     op.execute("ALTER TABLE findings ADD COLUMN finding_type_new findingtype_new")
     op.execute(
         "UPDATE findings SET finding_type_new = CASE "
@@ -33,7 +35,9 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.execute("CREATE TYPE findingtype_old AS ENUM ('CVE', 'Secret', 'IaC', 'SAST', 'License')")
+    op.execute(
+        "CREATE TYPE findingtype_old AS ENUM ('CVE', 'Secret', 'IaC', 'SAST', 'License')"
+    )
     op.execute("ALTER TABLE findings ADD COLUMN finding_type_old findingtype_old")
     op.execute(
         "UPDATE findings SET finding_type_old = CASE "

@@ -33,10 +33,20 @@ const ROLE_OPTIONS = ["admin", "reviewer", "read_only"] as const;
 function RoleBadge({ role }: { role: string }) {
   const style =
     role === "admin"
-      ? { background: "color-mix(in srgb, var(--app-warning) 20%, transparent)", color: "var(--app-warning)" }
+      ? {
+          background: "color-mix(in srgb, var(--app-warning) 20%, transparent)",
+          color: "var(--app-warning)",
+        }
       : role === "reviewer"
-        ? { background: "color-mix(in srgb, var(--app-accent) 20%, transparent)", color: "var(--app-accent)" }
-        : { background: "color-mix(in srgb, var(--app-muted) 20%, transparent)", color: "var(--app-muted)" };
+        ? {
+            background:
+              "color-mix(in srgb, var(--app-accent) 20%, transparent)",
+            color: "var(--app-accent)",
+          }
+        : {
+            background: "color-mix(in srgb, var(--app-muted) 20%, transparent)",
+            color: "var(--app-muted)",
+          };
   return (
     <span
       style={{
@@ -56,7 +66,10 @@ function RoleBadge({ role }: { role: string }) {
 
 export function AccessSettingsPage() {
   const { token, user, setUser, isAdmin, setIsAdmin } = useAuth();
-  const auth = { token: token ?? undefined, userEmail: user?.email ?? undefined };
+  const auth = {
+    token: token ?? undefined,
+    userEmail: user?.email ?? undefined,
+  };
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [selectedTenantId, setSelectedTenantId] = useState<string | null>(null);
@@ -66,11 +79,22 @@ export function AccessSettingsPage() {
   const [addTenantOpen, setAddTenantOpen] = useState(false);
   const [addUserOpen, setAddUserOpen] = useState(false);
   const [deleteUserConfirm, setDeleteUserConfirm] = useState<User | null>(null);
-  const [deleteTenantConfirm, setDeleteTenantConfirm] = useState<Tenant | null>(null);
-  const [adminKeys, setAdminKeys] = useState<Array<{ id: string; keyPrefix: string; createdAt?: string }>>([]);
-  const [newAdminKey, setNewAdminKey] = useState<{ id: string; key: string; keyPrefix: string } | null>(null);
+  const [deleteTenantConfirm, setDeleteTenantConfirm] = useState<Tenant | null>(
+    null,
+  );
+  const [adminKeys, setAdminKeys] = useState<
+    Array<{ id: string; keyPrefix: string; createdAt?: string }>
+  >([]);
+  const [newAdminKey, setNewAdminKey] = useState<{
+    id: string;
+    key: string;
+    keyPrefix: string;
+  } | null>(null);
   const [adminKeysLoading, setAdminKeysLoading] = useState(false);
-  const [revokeAdminKeyConfirm, setRevokeAdminKeyConfirm] = useState<{ id: string; keyPrefix: string } | null>(null);
+  const [revokeAdminKeyConfirm, setRevokeAdminKeyConfirm] = useState<{
+    id: string;
+    keyPrefix: string;
+  } | null>(null);
 
   const loadTenants = useCallback(async () => {
     if (!auth.token && !auth.userEmail) return;
@@ -155,7 +179,7 @@ export function AccessSettingsPage() {
       setRevokeAdminKeyConfirm(null);
       loadAdminKeys();
     },
-    [auth.token, auth.userEmail, loadAdminKeys]
+    [auth.token, auth.userEmail, loadAdminKeys],
   );
 
   const handleCreateTenant = useCallback(
@@ -165,20 +189,25 @@ export function AccessSettingsPage() {
       setAddTenantOpen(false);
       loadTenants();
     },
-    [auth.token, auth.userEmail, loadTenants]
+    [auth.token, auth.userEmail, loadTenants],
   );
 
   const handleCreateUser = useCallback(
-    async (id: string, email: string, tenantId: string | null, role: string) => {
+    async (
+      id: string,
+      email: string,
+      tenantId: string | null,
+      role: string,
+    ) => {
       if (!auth.token && !auth.userEmail) return;
       await createUser(
         { id, tenant_id: tenantId ?? undefined, email, role },
-        auth
+        auth,
       );
       setAddUserOpen(false);
       loadUsers();
     },
-    [auth.token, auth.userEmail, loadUsers]
+    [auth.token, auth.userEmail, loadUsers],
   );
 
   const handleUpdateUserRole = useCallback(
@@ -187,7 +216,7 @@ export function AccessSettingsPage() {
       await updateUser(userId, { role }, auth);
       loadUsers();
     },
-    [auth.token, auth.userEmail, loadUsers]
+    [auth.token, auth.userEmail, loadUsers],
   );
 
   const handleDeleteUser = useCallback(
@@ -197,7 +226,7 @@ export function AccessSettingsPage() {
       setDeleteUserConfirm(null);
       loadUsers();
     },
-    [auth.token, auth.userEmail, loadUsers]
+    [auth.token, auth.userEmail, loadUsers],
   );
 
   const handleDeleteTenant = useCallback(
@@ -208,7 +237,7 @@ export function AccessSettingsPage() {
       setSelectedTenantId((prev) => (prev === t.id ? null : prev));
       loadTenants();
     },
-    [auth.token, auth.userEmail, loadTenants]
+    [auth.token, auth.userEmail, loadTenants],
   );
 
   const selectedTenant = tenants.find((t) => t.id === selectedTenantId);
@@ -229,7 +258,8 @@ export function AccessSettingsPage() {
           flexShrink: 0,
           padding: "24px 28px",
           borderBottom: "1px solid var(--app-card-bg)",
-          background: "linear-gradient(180deg, rgba(15,23,42,0.98) 0%, rgba(15,23,42,0.95) 100%)",
+          background:
+            "linear-gradient(180deg, rgba(15,23,42,0.98) 0%, rgba(15,23,42,0.95) 100%)",
         }}
       >
         <h1
@@ -331,7 +361,8 @@ export function AccessSettingsPage() {
               lineHeight: 1.5,
             }}
           >
-            Admin access required. Log in with an admin user to manage tenants and users.
+            Admin access required. Log in with an admin user to manage tenants
+            and users.
           </div>
         )}
 
@@ -466,7 +497,9 @@ export function AccessSettingsPage() {
                         display: "flex",
                         alignItems: "stretch",
                         background:
-                          selectedTenantId === t.id ? "var(--app-input-bg)" : "var(--app-card-bg)",
+                          selectedTenantId === t.id
+                            ? "var(--app-input-bg)"
+                            : "var(--app-card-bg)",
                         border:
                           selectedTenantId === t.id
                             ? "1px solid var(--app-accent)"
@@ -493,7 +526,8 @@ export function AccessSettingsPage() {
                         }}
                         onMouseEnter={(e) => {
                           if (selectedTenantId !== t.id) {
-                            e.currentTarget.style.background = "var(--app-border)";
+                            e.currentTarget.style.background =
+                              "var(--app-border)";
                           }
                         }}
                         onMouseLeave={(e) => {
@@ -532,7 +566,8 @@ export function AccessSettingsPage() {
                         }}
                         onMouseEnter={(e) => {
                           e.currentTarget.style.color = "var(--app-danger)";
-                          e.currentTarget.style.background = "rgba(248,112,96,0.1)";
+                          e.currentTarget.style.background =
+                            "rgba(248,112,96,0.1)";
                         }}
                         onMouseLeave={(e) => {
                           e.currentTarget.style.color = "var(--app-muted)";
@@ -699,7 +734,8 @@ export function AccessSettingsPage() {
                               transition: "background 0.1s",
                             }}
                             onMouseEnter={(e) => {
-                              e.currentTarget.style.background = "var(--app-bg)";
+                              e.currentTarget.style.background =
+                                "var(--app-bg)";
                             }}
                             onMouseLeave={(e) => {
                               e.currentTarget.style.background = "transparent";
@@ -758,35 +794,52 @@ export function AccessSettingsPage() {
                               }}
                             >
                               {(() => {
-                                const adminCount = users.filter((x) => x.role === "admin").length;
-                                const isLastAdmin = u.role === "admin" && adminCount <= 1;
+                                const adminCount = users.filter(
+                                  (x) => x.role === "admin",
+                                ).length;
+                                const isLastAdmin =
+                                  u.role === "admin" && adminCount <= 1;
                                 return (
                                   <button
-                                    onClick={() => !isLastAdmin && setDeleteUserConfirm(u)}
+                                    onClick={() =>
+                                      !isLastAdmin && setDeleteUserConfirm(u)
+                                    }
                                     disabled={isLastAdmin}
-                                    title={isLastAdmin ? "Cannot remove the last admin" : undefined}
+                                    title={
+                                      isLastAdmin
+                                        ? "Cannot remove the last admin"
+                                        : undefined
+                                    }
                                     style={{
                                       ...mono,
                                       padding: "4px 10px",
                                       background: "transparent",
                                       border: "1px solid var(--app-border)",
                                       borderRadius: 6,
-                                      color: isLastAdmin ? "var(--app-muted)" : "var(--app-muted)",
+                                      color: isLastAdmin
+                                        ? "var(--app-muted)"
+                                        : "var(--app-muted)",
                                       fontSize: 11,
-                                      cursor: isLastAdmin ? "not-allowed" : "pointer",
+                                      cursor: isLastAdmin
+                                        ? "not-allowed"
+                                        : "pointer",
                                       transition: "all 0.15s",
                                       opacity: isLastAdmin ? 0.6 : 1,
                                     }}
                                     onMouseEnter={(e) => {
                                       if (!isLastAdmin) {
-                                        e.currentTarget.style.color = "var(--app-danger)";
-                                        e.currentTarget.style.borderColor = "var(--app-danger)";
+                                        e.currentTarget.style.color =
+                                          "var(--app-danger)";
+                                        e.currentTarget.style.borderColor =
+                                          "var(--app-danger)";
                                       }
                                     }}
                                     onMouseLeave={(e) => {
                                       if (!isLastAdmin) {
-                                        e.currentTarget.style.color = "var(--app-muted)";
-                                        e.currentTarget.style.borderColor = "var(--app-border)";
+                                        e.currentTarget.style.color =
+                                          "var(--app-muted)";
+                                        e.currentTarget.style.borderColor =
+                                          "var(--app-border)";
                                       }
                                     }}
                                   >
@@ -861,7 +914,8 @@ export function AccessSettingsPage() {
                   lineHeight: 1.5,
                 }}
               >
-                Long-lived keys for automation (scripts, CI). Use as VAT_ADMIN_TOKEN. Key shown once.
+                Long-lived keys for automation (scripts, CI). Use as
+                VAT_ADMIN_TOKEN. Key shown once.
               </p>
               {newAdminKey && (
                 <div
@@ -1042,7 +1096,9 @@ export function AccessSettingsPage() {
                               padding: "14px 20px",
                             }}
                           >
-                            {k.createdAt ? new Date(k.createdAt).toLocaleString() : "—"}
+                            {k.createdAt
+                              ? new Date(k.createdAt).toLocaleString()
+                              : "—"}
                           </td>
                           <td
                             style={{
@@ -1051,7 +1107,12 @@ export function AccessSettingsPage() {
                             }}
                           >
                             <button
-                              onClick={() => setRevokeAdminKeyConfirm({ id: k.id, keyPrefix: k.keyPrefix })}
+                              onClick={() =>
+                                setRevokeAdminKeyConfirm({
+                                  id: k.id,
+                                  keyPrefix: k.keyPrefix,
+                                })
+                              }
                               style={{
                                 ...mono,
                                 padding: "4px 10px",
@@ -1064,12 +1125,16 @@ export function AccessSettingsPage() {
                                 transition: "all 0.15s",
                               }}
                               onMouseEnter={(e) => {
-                                e.currentTarget.style.color = "var(--app-danger)";
-                                e.currentTarget.style.borderColor = "var(--app-danger)";
+                                e.currentTarget.style.color =
+                                  "var(--app-danger)";
+                                e.currentTarget.style.borderColor =
+                                  "var(--app-danger)";
                               }}
                               onMouseLeave={(e) => {
-                                e.currentTarget.style.color = "var(--app-muted)";
-                                e.currentTarget.style.borderColor = "var(--app-border)";
+                                e.currentTarget.style.color =
+                                  "var(--app-muted)";
+                                e.currentTarget.style.borderColor =
+                                  "var(--app-border)";
                               }}
                             >
                               Revoke
@@ -1253,7 +1318,9 @@ function ConfirmModal({
             style={{
               ...mono,
               padding: "8px 16px",
-              background: confirmDanger ? "var(--app-danger)" : "var(--app-accent)",
+              background: confirmDanger
+                ? "var(--app-danger)"
+                : "var(--app-accent)",
               border: "none",
               borderRadius: 8,
               color: "var(--app-fg)",
@@ -1397,7 +1464,9 @@ function AddTenantModal({
             />
           </div>
           {err && (
-            <div style={{ ...sans, fontSize: 12, color: "var(--app-danger)" }}>{err}</div>
+            <div style={{ ...sans, fontSize: 12, color: "var(--app-danger)" }}>
+              {err}
+            </div>
           )}
           <div
             style={{
@@ -1429,12 +1498,16 @@ function AddTenantModal({
                 ...mono,
                 padding: "10px 18px",
                 background:
-                  id.trim() && name.trim() && !saving ? "var(--app-accent)" : "var(--app-border)",
+                  id.trim() && name.trim() && !saving
+                    ? "var(--app-accent)"
+                    : "var(--app-border)",
                 border: "none",
                 borderRadius: 8,
                 color: "var(--app-fg)",
                 cursor:
-                  id.trim() && name.trim() && !saving ? "pointer" : "not-allowed",
+                  id.trim() && name.trim() && !saving
+                    ? "pointer"
+                    : "not-allowed",
                 fontSize: 12,
                 fontWeight: 600,
               }}
@@ -1461,7 +1534,7 @@ function AddUserModal({
     id: string,
     email: string,
     tenantId: string | null,
-    role: string
+    role: string,
   ) => Promise<void>;
 }) {
   const [id, setId] = useState("");
@@ -1656,7 +1729,9 @@ function AddUserModal({
             </select>
           </div>
           {err && (
-            <div style={{ ...sans, fontSize: 12, color: "var(--app-danger)" }}>{err}</div>
+            <div style={{ ...sans, fontSize: 12, color: "var(--app-danger)" }}>
+              {err}
+            </div>
           )}
           <div
             style={{
@@ -1688,7 +1763,9 @@ function AddUserModal({
                 ...mono,
                 padding: "10px 18px",
                 background:
-                  id.trim() && email.trim() && !saving ? "var(--app-accent)" : "var(--app-border)",
+                  id.trim() && email.trim() && !saving
+                    ? "var(--app-accent)"
+                    : "var(--app-border)",
                 border: "none",
                 borderRadius: 8,
                 color: "var(--app-fg)",

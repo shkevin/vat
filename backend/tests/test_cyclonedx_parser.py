@@ -5,7 +5,13 @@ from pathlib import Path
 
 from app.parsers.cyclonedx import CyclonedxParser
 
-_SAMPLES = Path(__file__).resolve().parent.parent.parent / "django-DefectDojo" / "unittests" / "scans" / "cyclonedx"
+_SAMPLES = (
+    Path(__file__).resolve().parent.parent.parent
+    / "django-DefectDojo"
+    / "unittests"
+    / "scans"
+    / "cyclonedx"
+)
 
 
 def _load_json(name: str) -> dict:

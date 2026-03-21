@@ -1,7 +1,5 @@
 """Tests for app.parsers.utils."""
 
-import pytest
-
 from app.parsers.utils import extract_cwe_id, extract_scan_tag
 
 
@@ -35,9 +33,13 @@ def test_extract_cwe_id_none_empty():
 
 def test_extract_scan_tag_dict():
     """Extract scan tag from dict (injected by vat-local-scanner)."""
-    assert extract_scan_tag({"_vat_scan_tag": "2026-03-08_143052"}) == "2026-03-08_143052"
+    assert (
+        extract_scan_tag({"_vat_scan_tag": "2026-03-08_143052"}) == "2026-03-08_143052"
+    )
     assert extract_scan_tag({"_vat_scan_tag": "v1.2.3"}) == "v1.2.3"
-    assert extract_scan_tag({"Results": [], "_vat_scan_tag": "release-42"}) == "release-42"
+    assert (
+        extract_scan_tag({"Results": [], "_vat_scan_tag": "release-42"}) == "release-42"
+    )
 
 
 def test_extract_scan_tag_absent_or_list():

@@ -5,19 +5,29 @@ import json
 import uuid
 from datetime import datetime, timedelta, timezone
 from urllib.parse import quote
-from typing import Any, Optional
+from typing import Optional
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.schemas.finding import FindingRead
 from app.services.assets_service import get_assets_with_findings
-from app.services.findings_service import enrich_findings_with_source_group_severity, list_findings
+from app.services.findings_service import (
+    enrich_findings_with_source_group_severity,
+    list_findings,
+)
 from app.services.grouping import get_finding_group_key
 from app.services.openscap_storage import list_openscap_scan_results
 from app.services.sbom import list_sbom_packages
 
 SEV_ORDER = ("Critical", "High", "Medium", "Low", "Informational")
-ASSET_CLOSED = {"Resolved", "False Positive", "Duplicate", "Not Applicable", "Approved", "Suppressed"}
+ASSET_CLOSED = {
+    "Resolved",
+    "False Positive",
+    "Duplicate",
+    "Not Applicable",
+    "Approved",
+    "Suppressed",
+}
 
 
 def _safe_openscap_filename(asset_id: str) -> str:
@@ -93,7 +103,9 @@ def _build_cyclonedx_bom(packages: list[dict]) -> dict:
             "name": name,
             "version": ver or None,
             "purl": purl,
-            "licenses": [{"license": {"id": lic}}] if lic and lic != "Unknown" else None,
+            "licenses": [{"license": {"id": lic}}]
+            if lic and lic != "Unknown"
+            else None,
             "language": lang or None,
         }
         supplier = _supplier_from_purl_type(pt)
@@ -109,7 +121,9 @@ def _build_cyclonedx_bom(packages: list[dict]) -> dict:
         "version": 1,
         "metadata": {
             "timestamp": now,
-            "tools": [{"vendor": "Compliance", "name": "SBOM Export", "version": "1.0"}],
+            "tools": [
+                {"vendor": "Compliance", "name": "SBOM Export", "version": "1.0"}
+            ],
         },
         "components": components,
     }
@@ -149,7 +163,13 @@ def _parse_dt(s: Optional[str]) -> Optional[datetime]:
 
 def _escape(s: str) -> str:
     """Escape HTML special chars."""
-    return str(s).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
+    return (
+        str(s)
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace('"', "&quot;")
+    )
 
 
 def _build_executive_summary_html(
@@ -181,7 +201,13 @@ def _build_executive_summary_html(
     containers = [a for a in assets if a.get("type") == "container"]
 
     def _sev_cell(sev: str, val: int) -> str:
-        color = {"Critical": "#f87060", "High": "#f5a623", "Medium": "#f5d020", "Low": "#50c878", "Informational": "#7b8fa1"}.get(sev, "#7b8fa1")
+        color = {
+            "Critical": "#f87060",
+            "High": "#f5a623",
+            "Medium": "#f5d020",
+            "Low": "#50c878",
+            "Informational": "#7b8fa1",
+        }.get(sev, "#7b8fa1")
         return f'<td style="color:{color}">{val}</td>'
 
     sev_rows = "".join(
@@ -195,17 +221,24 @@ def _build_executive_summary_html(
         worst = a.get("worstSeverity", "Informational")
         return f"<tr><td>{_escape(name)}</td><td>{open_c}</td><td>{worst}</td></tr>"
 
-    repo_rows = "".join(_asset_row(a) for a in sorted(repos, key=lambda x: (x.get("name") or ""))[:100])
-    container_rows = "".join(_asset_row(a) for a in sorted(containers, key=lambda x: (x.get("name") or ""))[:100])
+    repo_rows = "".join(
+        _asset_row(a) for a in sorted(repos, key=lambda x: (x.get("name") or ""))[:100]
+    )
+    container_rows = "".join(
+        _asset_row(a)
+        for a in sorted(containers, key=lambda x: (x.get("name") or ""))[:100]
+    )
 
     def _issue_row(f: dict, i: int) -> str:
         sev = f.get("severity") or f.get("sourceGroupSeverity") or "Informational"
         title = f.get("title") or f.get("cveId") or "Unknown"
         asset = f.get("image") or f.get("component") or "-"
         status = f.get("status") or "Open"
-        return f'<tr><td>{i}</td><td>{_escape(title)}</td><td>{_escape(asset)}</td><td>{sev}</td><td>{status}</td></tr>'
+        return f"<tr><td>{i}</td><td>{_escape(title)}</td><td>{_escape(asset)}</td><td>{sev}</td><td>{status}</td></tr>"
 
-    issue_rows = "".join(_issue_row(f, i + 1) for i, f in enumerate(open_findings[:1000]))
+    issue_rows = "".join(
+        _issue_row(f, i + 1) for i, f in enumerate(open_findings[:1000])
+    )
 
     date_str = date_to.strftime("%Y-%m-%d")
     return f"""<!DOCTYPE html>
@@ -331,13 +364,17 @@ async def build_export_bundle(
             try:
                 xml_str = row.raw_xccdf_xml.decode("utf-8", errors="replace")
                 zf.writestr(filename, xml_str)
-                stig_manifest.append({
-                    "assetId": row.asset_id,
-                    "sourceId": row.source_id,
-                    "filename": f"{base_name}.{ext}",
-                    "parserId": row.parser_id,
-                    "createdAt": row.created_at.isoformat() if row.created_at else None,
-                })
+                stig_manifest.append(
+                    {
+                        "assetId": row.asset_id,
+                        "sourceId": row.source_id,
+                        "filename": f"{base_name}.{ext}",
+                        "parserId": row.parser_id,
+                        "createdAt": row.created_at.isoformat()
+                        if row.created_at
+                        else None,
+                    }
+                )
             except Exception:
                 pass
         if stig_manifest:

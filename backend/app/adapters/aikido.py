@@ -16,11 +16,9 @@ import asyncio
 import time
 from datetime import datetime, timezone
 from typing import Any, Optional
-from urllib.parse import quote
 
 import httpx
 
-from app.adapters.base import SourceAdapter
 from app.adapters.registry import SourceAdapterCapabilities, register_source_adapter
 from app.core.config import get_settings
 from app.services.dedup import component_base as extract_component_base
@@ -28,7 +26,6 @@ from app.schemas.integration_ui import IntegrationFieldSchema, IntegrationSettin
 from app.schemas.vat import (
     VatFindingSchema,
     VatFindingType,
-    VatSeverity,
     VatSourceIgnoreRequest,
     VatSourceUnignoreRequest,
 )
@@ -85,7 +82,9 @@ def _get_nested(obj: dict, *keys: str, default=None):
     return obj
 
 
-def _extract_branch(issue: dict, repo_map: Optional[dict[int | str, str]] = None) -> str | None:
+def _extract_branch(
+    issue: dict, repo_map: Optional[dict[int | str, str]] = None
+) -> str | None:
     """
     Extract git branch for code repos. Per Aikido API (apidocs.aikido.dev):
     - Top-level: branch, git_branch, code_repo_branch, scanned_branch, ref
@@ -107,18 +106,27 @@ def _extract_branch(issue: dict, repo_map: Optional[dict[int | str, str]] = None
                 return str(branch).strip()
 
     def _s(v) -> str | None:
-        if v is None or not isinstance(v, str): return None
+        if v is None or not isinstance(v, str):
+            return None
         t = v.strip()
         return t if t else None
 
     # Top-level keys (Aikido export / webhook)
     for key in (
-        "branch", "git_branch", "target_branch", "ref",
-        "code_repo_branch", "codeRepoBranch",
-        "scanned_branch", "scannedBranch",
-        "default_branch", "defaultBranch",
-        "base_branch", "baseBranch",
-        "repository_branch", "repositoryBranch",
+        "branch",
+        "git_branch",
+        "target_branch",
+        "ref",
+        "code_repo_branch",
+        "codeRepoBranch",
+        "scanned_branch",
+        "scannedBranch",
+        "default_branch",
+        "defaultBranch",
+        "base_branch",
+        "baseBranch",
+        "repository_branch",
+        "repositoryBranch",
     ):
         v = issue.get(key)
         if v and (r := _s(str(v))):
@@ -131,11 +139,20 @@ def _extract_branch(issue: dict, repo_map: Optional[dict[int | str, str]] = None
             if v and (r := _s(str(v))):
                 return r
     # locations array: [{ type: "code_repository", branch, scanned_branch, ... }]
-    locations = issue.get("locations") or issue.get("instances") or issue.get("locations_list")
+    locations = (
+        issue.get("locations") or issue.get("instances") or issue.get("locations_list")
+    )
     if isinstance(locations, list) and locations:
         for loc in locations:
             if isinstance(loc, dict):
-                for k in ("branch", "git_branch", "target_branch", "ref", "scanned_branch", "scannedBranch"):
+                for k in (
+                    "branch",
+                    "git_branch",
+                    "target_branch",
+                    "ref",
+                    "scanned_branch",
+                    "scannedBranch",
+                ):
                     v = loc.get(k)
                     if v and (r := _s(str(v))):
                         return r
@@ -154,8 +171,10 @@ def _strip_tag_from_container_name(name: str | None) -> str | None:
 
 def _extract_tag(issue: dict, asset_name: str | None) -> str | None:
     """Extract container image tag. From image (registry/image:tag) or container_tag, etc."""
+
     def _s(v) -> str | None:
-        if v is None or not isinstance(v, str): return None
+        if v is None or not isinstance(v, str):
+            return None
         t = v.strip()
         return t if t else None
 
@@ -165,7 +184,12 @@ def _extract_tag(issue: dict, asset_name: str | None) -> str | None:
         if v and (r := _s(str(v))):
             return r
     # From image/container_repo_name if it contains ":"
-    img = issue.get("image") or issue.get("container_repo_name") or issue.get("containerRepoName") or asset_name
+    img = (
+        issue.get("image")
+        or issue.get("container_repo_name")
+        or issue.get("containerRepoName")
+        or asset_name
+    )
     if img and isinstance(img, str) and ":" in img:
         tag_part = img.split(":")[-1]
         if tag_part and (r := _s(tag_part)):
@@ -180,6 +204,7 @@ def _parse_repo_name_with_branch(name: str) -> tuple[str, str | None]:
     "kamiwaza - main", etc. Returns (base_name, branch) or (name, None) if no branch suffix.
     """
     import re
+
     if not name or not isinstance(name, str):
         return (name or "", None)
     name = name.strip()
@@ -248,10 +273,18 @@ def _extract_file_location(issue: dict) -> tuple[str | None, int | None]:
         return (path_str, line_int)
 
     # locations[0] — first location often has path and line
-    locations = issue.get("locations") or issue.get("instances") or issue.get("locations_list")
+    locations = (
+        issue.get("locations") or issue.get("instances") or issue.get("locations_list")
+    )
     if isinstance(locations, list) and locations and isinstance(locations[0], dict):
         loc = locations[0]
-        path = loc.get("path") or loc.get("file_path") or loc.get("filePath") or loc.get("file") or loc.get("path")
+        path = (
+            loc.get("path")
+            or loc.get("file_path")
+            or loc.get("filePath")
+            or loc.get("file")
+            or loc.get("path")
+        )
         line = (
             loc.get("line")
             or loc.get("line_number")
@@ -268,6 +301,7 @@ def _extract_file_location(issue: dict) -> tuple[str | None, int | None]:
 
 def _extract_issue_url(issue: dict) -> str | None:
     """Extract dashboard URL for this issue from Aikido payload, if provided."""
+
     def _valid(v):
         if not v or not isinstance(v, str):
             return None
@@ -304,10 +338,14 @@ def _extract_resource_path_and_id(
     Uses attack_surface and available IDs per export schema.
     container_name_to_id: optional map from container name/path to numeric ID (from GET /containers).
     """
-    attack_surface = str(issue.get("attack_surface") or issue.get("attackSurface") or "").lower()
+    attack_surface = str(
+        issue.get("attack_surface") or issue.get("attackSurface") or ""
+    ).lower()
 
     def _container_rid() -> str | None:
-        rid = _to_resource_id(issue.get("container_repo_id") or issue.get("containerRepoId"))
+        rid = _to_resource_id(
+            issue.get("container_repo_id") or issue.get("containerRepoId")
+        )
         if rid:
             return rid
         rid = _to_resource_id(issue.get("container_id") or issue.get("containerId"))
@@ -321,7 +359,9 @@ def _extract_resource_path_and_id(
             )
             if name:
                 name_stripped = _strip_tag_from_container_name(str(name)) or str(name)
-                return container_name_to_id.get(name_stripped) or container_name_to_id.get(str(name))
+                return container_name_to_id.get(
+                    name_stripped
+                ) or container_name_to_id.get(str(name))
         return None
 
     # Prefer resource matching attack_surface
@@ -341,7 +381,9 @@ def _extract_resource_path_and_id(
         return ("clouds", rid)
     if rid := _to_resource_id(issue.get("domain_id") or issue.get("domainId")):
         return ("domains", rid)
-    if rid := _to_resource_id(issue.get("virtual_machine_id") or issue.get("virtualMachineId")):
+    if rid := _to_resource_id(
+        issue.get("virtual_machine_id") or issue.get("virtualMachineId")
+    ):
         return ("virtual-machines", rid)
 
     # Nested
@@ -352,7 +394,13 @@ def _extract_resource_path_and_id(
     for repo_key in ("container_repository", "containerRepository"):
         repo = issue.get(repo_key)
         if isinstance(repo, dict):
-            rid = _to_resource_id(repo.get("id") or repo.get("container_repo_id") or repo.get("containerRepoId") or repo.get("container_id") or repo.get("containerId"))
+            rid = _to_resource_id(
+                repo.get("id")
+                or repo.get("container_repo_id")
+                or repo.get("containerRepoId")
+                or repo.get("container_id")
+                or repo.get("containerId")
+            )
             if rid:
                 return ("containers", rid)
 
@@ -362,19 +410,20 @@ def _extract_resource_path_and_id(
         if isinstance(arr, list) and arr:
             for loc in arr:
                 if isinstance(loc, dict):
-                    if rid := _to_resource_id(loc.get("code_repo_id") or loc.get("codeRepoId") or loc.get("repository_id")):
+                    if rid := _to_resource_id(
+                        loc.get("code_repo_id")
+                        or loc.get("codeRepoId")
+                        or loc.get("repository_id")
+                    ):
                         return ("repositories", rid)
-                    if rid := _to_resource_id(loc.get("container_repo_id") or loc.get("containerRepoId") or loc.get("container_id") or loc.get("containerId")):
+                    if rid := _to_resource_id(
+                        loc.get("container_repo_id")
+                        or loc.get("containerRepoId")
+                        or loc.get("container_id")
+                        or loc.get("containerId")
+                    ):
                         return ("containers", rid)
 
-    # Path-based fallback for containers: when we have container_repo_name but no ID,
-    # use URL-encoded path so link goes to /containers/{path}?sidebarIssue=...
-    if attack_surface == "docker_container" or issue.get("container_repo_name") or issue.get("containerRepoName"):
-        name = issue.get("container_repo_name") or issue.get("containerRepoName") or _extract_asset_name(issue)
-        if name:
-            path_safe = quote(str(name).strip(), safe="/")
-            if path_safe:
-                return ("containers", path_safe)
     return None
 
 
@@ -383,6 +432,7 @@ def _extract_source_file_url(issue: dict) -> str | None:
     Extract direct URL to file at line from Aikido payload.
     Aikido provides clickable links; try common field names.
     """
+
     def _valid_url(v) -> str | None:
         if not v or not isinstance(v, str):
             return None
@@ -393,8 +443,17 @@ def _extract_source_file_url(issue: dict) -> str | None:
 
     # Top-level
     for key in (
-        "url", "link", "file_url", "affected_file_url", "source_url", "location_url",
-        "issue_url", "web_url", "html_url", "code_url", "blob_url",
+        "url",
+        "link",
+        "file_url",
+        "affected_file_url",
+        "source_url",
+        "location_url",
+        "issue_url",
+        "web_url",
+        "html_url",
+        "code_url",
+        "blob_url",
     ):
         v = issue.get(key)
         if u := _valid_url(v):
@@ -409,7 +468,9 @@ def _extract_source_file_url(issue: dict) -> str | None:
                 return u
 
     # locations[0] — first location often has file URL
-    locations = issue.get("locations") or issue.get("instances") or issue.get("locations_list")
+    locations = (
+        issue.get("locations") or issue.get("instances") or issue.get("locations_list")
+    )
     if isinstance(locations, list) and locations and isinstance(locations[0], dict):
         loc = locations[0]
         for key in ("url", "link", "file_url", "html_url", "web_url", "blob_url"):
@@ -426,13 +487,20 @@ def _extract_asset_name(issue: dict) -> str | None:
     Aikido uses code_repo_name (code), container_repo_name (containers), locations, etc.
     For multi-branch: code_repo_name may be "repo (branch)" — we normalize to base name.
     """
+
     def _s(v) -> str | None:
-        if v is None or not isinstance(v, str): return None
+        if v is None or not isinstance(v, str):
+            return None
         t = v.strip()
         return t if t else None
 
     # Aikido primary fields — prefer container_repo_name for container issues
-    for key in ("container_repo_name", "containerRepoName", "code_repo_name", "codeRepoName"):
+    for key in (
+        "container_repo_name",
+        "containerRepoName",
+        "code_repo_name",
+        "codeRepoName",
+    ):
         v = issue.get(key)
         if v and (r := _s(str(v))):
             return r
@@ -442,18 +510,31 @@ def _extract_asset_name(issue: dict) -> str | None:
         if r := _s(str(code_repo["name"])):
             return r
     # locations array: [{ type: "code_repository"|"container_repository", name: "..." }]
-    locations = issue.get("locations") or issue.get("instances") or issue.get("locations_list")
+    locations = (
+        issue.get("locations") or issue.get("instances") or issue.get("locations_list")
+    )
     if isinstance(locations, list) and locations:
         for loc in locations:
             if isinstance(loc, dict) and loc.get("name"):
                 loc_type = str(loc.get("type", "")).lower()
                 name = str(loc["name"]).strip()
-                if name and ("container" in loc_type or "code" in loc_type or "repo" in loc_type):
+                if name and (
+                    "container" in loc_type or "code" in loc_type or "repo" in loc_type
+                ):
                     return name
                 if name:
                     return name
     # Fallbacks (support snake_case and camelCase)
-    for key in ("repository", "repo", "repo_name", "repoName", "image", "target", "registry_name", "registryName"):
+    for key in (
+        "repository",
+        "repo",
+        "repo_name",
+        "repoName",
+        "image",
+        "target",
+        "registry_name",
+        "registryName",
+    ):
         val = issue.get(key)
         if val and (r := _s(str(val))):
             return r
@@ -516,6 +597,7 @@ class AikidoAdapter:
 
     def __init__(self, credentials: Optional[dict[str, Any]] = None):
         self._credentials = credentials
+        self._container_name_to_id_cache: Optional[dict[str, str]] = None
 
     @classmethod
     def get_settings_schema(cls) -> IntegrationSettingsSchema:
@@ -588,7 +670,53 @@ class AikidoAdapter:
             container_repo_id is missing to resolve Aikido dashboard links for container findings.
         """
         # Aikido may wrap in { event, payload: { issue: {...} } } or { issue: {...} }
-        issue = payload.get("issue") or payload.get("payload", {}).get("issue") or payload
+        issue = (
+            payload.get("issue") or payload.get("payload", {}).get("issue") or payload
+        )
+
+        # Resolve container name -> id map on demand (webhook path may lack container_repo_id).
+        # We only do this when credentials are available and caller did not provide a map.
+        if container_name_to_id is None and self._credentials:
+            is_container_hint = bool(
+                issue.get("container_repo_name")
+                or issue.get("containerRepoName")
+                or str(
+                    issue.get("attack_surface") or issue.get("attackSurface") or ""
+                ).lower()
+                == "docker_container"
+            )
+            if is_container_hint:
+                if self._container_name_to_id_cache is None:
+                    try:
+                        containers = await fetch_aikido_containers(
+                            credentials=self._credentials
+                        )
+                        container_map: dict[str, str] = {}
+                        for c in containers or []:
+                            if not isinstance(c, dict) or c.get("id") is None:
+                                continue
+                            sid = str(c["id"])
+                            name = (
+                                c.get("name")
+                                or c.get("image")
+                                or c.get("repository_name")
+                                or c.get("repositoryName")
+                                or ""
+                            )
+                            if not name:
+                                continue
+                            name_str = str(name).strip()
+                            if not name_str:
+                                continue
+                            name_no_tag = (
+                                _strip_tag_from_container_name(name_str) or name_str
+                            )
+                            container_map[name_str] = sid
+                            container_map[name_no_tag] = sid
+                        self._container_name_to_id_cache = container_map
+                    except Exception:
+                        self._container_name_to_id_cache = {}
+                container_name_to_id = self._container_name_to_id_cache
 
         raw_type = (
             _get_nested(issue, "type")
@@ -629,7 +757,9 @@ class AikidoAdapter:
         if isinstance(comp, dict):
             comp = comp.get("name") or comp.get("version") or ""
         comp = str(comp)
-        version = _get_nested(issue, "version") or _get_nested(issue, "installed_version")
+        version = _get_nested(issue, "version") or _get_nested(
+            issue, "installed_version"
+        )
         if comp and version:
             comp = f"{comp} {version}"
 
@@ -645,11 +775,18 @@ class AikidoAdapter:
 
         # Asset for grouping: repo/container name so findings from same asset group together
         raw_asset = _extract_asset_name(issue)
-        is_container = bool(issue.get("container_repo_name") or issue.get("containerRepoName"))
+        is_container = bool(
+            issue.get("container_repo_name") or issue.get("containerRepoName")
+        )
         # Container paths (containers/images/etcd, kamiwaza/images/vllm): use full path as-is.
         # Aikido never has bare containers/images; always containers/images/<name>.
         # Strip :tag from asset name — tag is stored separately for the dropdown.
-        if raw_asset and is_container and "/images/" in raw_asset and raw_asset.count("/") >= 2:
+        if (
+            raw_asset
+            and is_container
+            and "/images/" in raw_asset
+            and raw_asset.count("/") >= 2
+        ):
             asset_name = _strip_tag_from_container_name(raw_asset)
             branch_from_name = None
         elif raw_asset:
@@ -662,7 +799,9 @@ class AikidoAdapter:
         branch = _extract_branch(issue, repo_map) or branch_from_name
         tag = _extract_tag(issue, asset_name)
         # Defaults when Aikido doesn't provide: main for repos, latest for containers
-        is_container = bool(issue.get("container_repo_name") or issue.get("containerRepoName"))
+        is_container = bool(
+            issue.get("container_repo_name") or issue.get("containerRepoName")
+        )
         if not is_container:
             locs = issue.get("locations") or issue.get("instances") or []
             if isinstance(locs, list) and locs and isinstance(locs[0], dict):
@@ -672,7 +811,13 @@ class AikidoAdapter:
         if not tag and is_container:
             tag = "latest"
         if not asset_name:
-            fallback = _get_nested(issue, "image") or _get_nested(issue, "target") or _get_nested(issue, "repository") or _get_nested(issue, "code_repo_name") or _get_nested(issue, "codeRepoName")
+            fallback = (
+                _get_nested(issue, "image")
+                or _get_nested(issue, "target")
+                or _get_nested(issue, "repository")
+                or _get_nested(issue, "code_repo_name")
+                or _get_nested(issue, "codeRepoName")
+            )
             if fallback:
                 fallback_str = str(fallback).strip()
                 # Parse "repo (branch)" so image=base_name matches VAT filter (image=kamiwaza, branch=develop)
@@ -686,9 +831,13 @@ class AikidoAdapter:
         # Do NOT use component (package) for code repos — kamiwaza is a repo, not a package.
         repo_id = issue.get("code_repo_id") or issue.get("codeRepoId")
         if not asset_name and repo_id is not None and repo_id_to_name:
-            repo_name = repo_id_to_name.get(repo_id) or repo_id_to_name.get(str(repo_id))
+            repo_name = repo_id_to_name.get(repo_id) or repo_id_to_name.get(
+                str(repo_id)
+            )
             if repo_name:
-                parsed_base, parsed_branch = _parse_repo_name_with_branch(str(repo_name))
+                parsed_base, parsed_branch = _parse_repo_name_with_branch(
+                    str(repo_name)
+                )
                 asset_name = parsed_base if parsed_base else str(repo_name).strip()
                 if parsed_branch and not branch:
                     branch = parsed_branch
@@ -722,7 +871,9 @@ class AikidoAdapter:
             if cve_id_numeric:
                 # Secrets: "Leaked secret in {asset}" or "Secret ({type})"
                 if finding_type == VatFindingType.SECRET:
-                    af = _get_nested(issue, "affected_file") or _get_nested(issue, "affectedFile")
+                    af = _get_nested(issue, "affected_file") or _get_nested(
+                        issue, "affectedFile"
+                    )
                     if af:
                         title = f"Leaked secret in {af}"
                     elif asset_name:
@@ -731,7 +882,9 @@ class AikidoAdapter:
                         title = f"Secret ({raw_type or 'leaked_secret'})"
                 # IaC/SAST: use type + location
                 elif finding_type in (VatFindingType.IAC, VatFindingType.SAST):
-                    af = _get_nested(issue, "affected_file") or _get_nested(issue, "affectedFile")
+                    af = _get_nested(issue, "affected_file") or _get_nested(
+                        issue, "affectedFile"
+                    )
                     if af and raw_type:
                         title = f"{raw_type.replace('_', ' ').title()} in {af}"
                     elif asset_name and raw_type:
@@ -752,9 +905,16 @@ class AikidoAdapter:
         if not desc:
             parts = []
             if file_path:
-                parts.append(f"File: {file_path}" + (f" (line {line})" if line is not None else ""))
-            elif af := _get_nested(issue, "affected_file") or _get_nested(issue, "affectedFile"):
-                parts.append(f"File: {af}" + (f" (line {line})" if line is not None else ""))
+                parts.append(
+                    f"File: {file_path}"
+                    + (f" (line {line})" if line is not None else "")
+                )
+            elif af := _get_nested(issue, "affected_file") or _get_nested(
+                issue, "affectedFile"
+            ):
+                parts.append(
+                    f"File: {af}" + (f" (line {line})" if line is not None else "")
+                )
             if cwe := _get_nested(issue, "cwe_classes"):
                 if isinstance(cwe, list) and cwe:
                     parts.append(f"CWE: {', '.join(str(x) for x in cwe[:5])}")
@@ -778,7 +938,9 @@ class AikidoAdapter:
             source_issue_id = str(raw_id)
 
         source_issue_group_id = None
-        raw_group_id = _get_nested(issue, "group_id") or _get_nested(issue, "issue_group_id")
+        raw_group_id = _get_nested(issue, "group_id") or _get_nested(
+            issue, "issue_group_id"
+        )
         if raw_group_id is not None:
             source_issue_group_id = str(raw_group_id)
 
@@ -790,10 +952,14 @@ class AikidoAdapter:
             if sidebar_id:
                 region = (self._credentials or {}).get("region") or "eu"
                 base = _get_base_url(region)
-                resource = _extract_resource_path_and_id(issue, container_name_to_id=container_name_to_id)
+                resource = _extract_resource_path_and_id(
+                    issue, container_name_to_id=container_name_to_id
+                )
                 if resource:
                     path_seg, res_id = resource
-                    source_issue_url = f"{base}/{path_seg}/{res_id}?sidebarIssue={sidebar_id}"
+                    source_issue_url = (
+                        f"{base}/{path_seg}/{res_id}?sidebarIssue={sidebar_id}"
+                    )
                 else:
                     source_issue_url = f"{base}/queue?sidebarIssue={sidebar_id}"
 
@@ -822,13 +988,17 @@ class AikidoAdapter:
                 ts = float(first_detected_raw)
                 if ts > 1e12:  # milliseconds
                     ts = ts / 1000
-                first_detected_at = datetime.fromtimestamp(ts, tz=timezone.utc).isoformat()
+                first_detected_at = datetime.fromtimestamp(
+                    ts, tz=timezone.utc
+                ).isoformat()
 
         # Map Aikido status (open, ignored, closed) to VAT status
         # Check ignored FIRST: Aikido may set closed_at when ignoring; ignored = Suppressed, not Resolved
         aikido_status = str(_get_nested(issue, "status") or "").lower()
         ignored_at = _get_nested(issue, "ignored_at") or _get_nested(issue, "ignoredAt")
-        closed_at_raw = _get_nested(issue, "closed_at") or _get_nested(issue, "closedAt")
+        closed_at_raw = _get_nested(issue, "closed_at") or _get_nested(
+            issue, "closedAt"
+        )
         if ignored_at or aikido_status in ("ignored", "suppressed", "auto_ignored"):
             status = "Suppressed"
         elif closed_at_raw or aikido_status in ("closed", "resolved"):
@@ -880,7 +1050,9 @@ class AikidoAdapter:
             team=_get_nested(issue, "team") or _get_nested(issue, "project"),
             owner=_get_nested(issue, "owner") or _get_nested(issue, "assignee"),
             cvss=str(cvss_raw) if cvss_raw is not None else None,
-            epss=str(_get_nested(issue, "epss")) if _get_nested(issue, "epss") is not None else None,
+            epss=str(_get_nested(issue, "epss"))
+            if _get_nested(issue, "epss") is not None
+            else None,
             source_file_url=source_file_url,
             file_path=file_path,
             line=line,
@@ -938,7 +1110,9 @@ async def _get_oauth_token(client_id: str, client_secret: str, region: str) -> s
     return token
 
 
-async def fetch_aikido_issues(credentials: Optional[dict[str, Any]] = None) -> list[dict[str, Any]]:
+async def fetch_aikido_issues(
+    credentials: Optional[dict[str, Any]] = None,
+) -> list[dict[str, Any]]:
     """
     Bootstrap: fetch all issues from Aikido GET /issues/export.
     API: https://apidocs.aikido.dev/reference/exportissues
@@ -948,7 +1122,11 @@ async def fetch_aikido_issues(credentials: Optional[dict[str, Any]] = None) -> l
     s = get_settings()
     creds = credentials or {}
     client_id = creds.get("client_id") or creds.get("clientId") or s.aikido_client_id
-    client_secret = creds.get("client_secret") or creds.get("clientSecret") or s.aikido_client_secret
+    client_secret = (
+        creds.get("client_secret")
+        or creds.get("clientSecret")
+        or s.aikido_client_secret
+    )
     region = (creds.get("region") or s.aikido_region or "eu").lower()
 
     if not (client_id and client_secret):
@@ -992,7 +1170,11 @@ async def _aikido_api_get(
     s = get_settings()
     creds = credentials or {}
     client_id = creds.get("client_id") or creds.get("clientId") or s.aikido_client_id
-    client_secret = creds.get("client_secret") or creds.get("clientSecret") or s.aikido_client_secret
+    client_secret = (
+        creds.get("client_secret")
+        or creds.get("clientSecret")
+        or s.aikido_client_secret
+    )
     region = (creds.get("region") or s.aikido_region or "eu").lower()
     if not (client_id and client_secret):
         raise ValueError("Aikido credentials not configured")
@@ -1037,7 +1219,11 @@ async def _aikido_api_put(
     s = get_settings()
     creds = credentials or {}
     client_id = creds.get("client_id") or creds.get("clientId") or s.aikido_client_id
-    client_secret = creds.get("client_secret") or creds.get("clientSecret") or s.aikido_client_secret
+    client_secret = (
+        creds.get("client_secret")
+        or creds.get("clientSecret")
+        or s.aikido_client_secret
+    )
     region = (creds.get("region") or s.aikido_region or "eu").lower()
     if not (client_id and client_secret):
         raise ValueError("Aikido credentials not configured")
@@ -1064,14 +1250,18 @@ async def _aikido_api_put(
             return
 
 
-async def ignore_issue_aikido(issue_id: str, scope: str, credentials: Optional[dict] = None) -> None:
+async def ignore_issue_aikido(
+    issue_id: str, scope: str, credentials: Optional[dict] = None
+) -> None:
     """Call Aikido ignore API. scope: global (FP) | contextual (Suppressed)."""
     path = f"/issues/{issue_id}/ignore"
     # Aikido API: PUT /issues/{id}/ignore. Body optional; omit if API doesn't support it.
     await _aikido_api_put(path, credentials, json_body=None)
 
 
-async def unignore_issue_aikido(issue_id: str, credentials: Optional[dict] = None) -> None:
+async def unignore_issue_aikido(
+    issue_id: str, credentials: Optional[dict] = None
+) -> None:
     """Call Aikido unignore API."""
     path = f"/issues/{issue_id}/unignore"
     await _aikido_api_put(path, credentials)
@@ -1159,7 +1349,10 @@ async def fetch_aikido_virtual_machines(
     return (
         data
         if isinstance(data, list)
-        else data.get("virtual_machines", data.get("vms", data.get("machines", data.get("data", []))))
+        else data.get(
+            "virtual_machines",
+            data.get("vms", data.get("machines", data.get("data", []))),
+        )
     )
 
 
@@ -1192,7 +1385,14 @@ async def fetch_aikido_activity_log(
     items = (
         data
         if isinstance(data, list)
-        else (data.get("items") or data.get("activities") or data.get("data") or data.get("activity_log") or data.get("results") or [])
+        else (
+            data.get("items")
+            or data.get("activities")
+            or data.get("data")
+            or data.get("activity_log")
+            or data.get("results")
+            or []
+        )
     )
     if not isinstance(items, list):
         return []
@@ -1210,7 +1410,14 @@ async def fetch_aikido_ci_scans(
     items = (
         data
         if isinstance(data, list)
-        else (data.get("items") or data.get("scans") or data.get("data") or data.get("ci_scans") or data.get("results") or [])
+        else (
+            data.get("items")
+            or data.get("scans")
+            or data.get("data")
+            or data.get("ci_scans")
+            or data.get("results")
+            or []
+        )
     )
     if not isinstance(items, list):
         return []
@@ -1240,7 +1447,12 @@ async def fetch_aikido_issue_reachability(
     data = await _aikido_api_get_safe(f"/issues/{issue_id}/reachability", credentials)
     if not data or not isinstance(data, dict):
         return None
-    return {"issue_id": issue_id, "reachable": data.get("reachable", False), "exploitable": data.get("exploitable", False), **data}
+    return {
+        "issue_id": issue_id,
+        "reachable": data.get("reachable", False),
+        "exploitable": data.get("exploitable", False),
+        **data,
+    }
 
 
 async def fetch_aikido_reachability_for_issues(
@@ -1269,7 +1481,13 @@ async def fetch_aikido_issue_group_tasks(
         items = (
             data
             if isinstance(data, list)
-            else (data.get("tasks") or data.get("items") or data.get("data") or data.get("linked_tasks") or [])
+            else (
+                data.get("tasks")
+                or data.get("items")
+                or data.get("data")
+                or data.get("linked_tasks")
+                or []
+            )
         )
         if isinstance(items, list):
             return items

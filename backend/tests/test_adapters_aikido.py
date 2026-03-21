@@ -78,9 +78,20 @@ async def test_aikido_adapter_component_base_strips_version():
 
 def test_strip_tag_from_container_name():
     """Container asset names have :tag stripped; tag is stored separately."""
-    assert _strip_tag_from_container_name("containers/images/cert-manager-acmesolver-fips:latest") == "containers/images/cert-manager-acmesolver-fips"
-    assert _strip_tag_from_container_name("containers/images/etcd") == "containers/images/etcd"
-    assert _strip_tag_from_container_name("registry.io:5000/image:v1.2") == "registry.io:5000/image"
+    assert (
+        _strip_tag_from_container_name(
+            "containers/images/cert-manager-acmesolver-fips:latest"
+        )
+        == "containers/images/cert-manager-acmesolver-fips"
+    )
+    assert (
+        _strip_tag_from_container_name("containers/images/etcd")
+        == "containers/images/etcd"
+    )
+    assert (
+        _strip_tag_from_container_name("registry.io:5000/image:v1.2")
+        == "registry.io:5000/image"
+    )
     assert _strip_tag_from_container_name(None) is None
     assert _strip_tag_from_container_name("") == ""
 
@@ -138,12 +149,17 @@ async def test_aikido_adapter_container_link_with_container_name_to_id():
         "containers/images/etcd": "42",
         "containers/images/cert-manager-acmesolver-fips": "99",
     }
-    result = await adapter.to_vat_finding(payload, container_name_to_id=container_name_to_id)
-    assert result.source_issue_url == "https://app.aikido.dev/containers/42?sidebarIssue=grp-123"
+    result = await adapter.to_vat_finding(
+        payload, container_name_to_id=container_name_to_id
+    )
+    assert (
+        result.source_issue_url
+        == "https://app.aikido.dev/containers/42?sidebarIssue=grp-123"
+    )
 
 
-async def test_aikido_adapter_container_link_path_fallback():
-    """Container findings with container_repo_name but no ID and no container_name_to_id use path-based URL."""
+async def test_aikido_adapter_container_link_without_id_falls_back_to_queue():
+    """Container findings without container ID fall back to queue URL (no invalid path-based container URL)."""
     adapter = AikidoAdapter()
     payload = {
         "issue": {
@@ -157,4 +173,6 @@ async def test_aikido_adapter_container_link_path_fallback():
         },
     }
     result = await adapter.to_vat_finding(payload)
-    assert result.source_issue_url == "https://app.aikido.dev/containers/containers/images/etcd?sidebarIssue=grp-456"
+    assert (
+        result.source_issue_url == "https://app.aikido.dev/queue?sidebarIssue=grp-456"
+    )

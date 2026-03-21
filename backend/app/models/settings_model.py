@@ -1,7 +1,6 @@
 """Settings model — key-value store for sources, tracker, labels. PRD §5.9.1."""
 
 from datetime import datetime
-from typing import Any
 
 from sqlalchemy import DateTime, String
 from sqlalchemy.dialects.postgresql import JSONB

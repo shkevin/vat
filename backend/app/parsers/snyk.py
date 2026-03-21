@@ -2,7 +2,11 @@
 
 import logging
 
-from app.schemas.ingest import CanonicalFindingPayload, CanonicalFindingType, CanonicalSeverity
+from app.schemas.ingest import (
+    CanonicalFindingPayload,
+    CanonicalFindingType,
+    CanonicalSeverity,
+)
 from app.parsers.base import IngestParser
 
 logger = logging.getLogger(__name__)
@@ -28,7 +32,19 @@ def _snyk_package_manager_to_ecosystem(pm: str | None) -> str | None:
     if not pm:
         return None
     pm = str(pm).lower()
-    mapping = {"npm": "npm", "yarn": "npm", "pnpm": "npm", "pip": "pypi", "poetry": "pypi", "maven": "maven", "gradle": "maven", "nuget": "nuget", "gomod": "go", "composer": "composer", "rubygems": "rubygems"}
+    mapping = {
+        "npm": "npm",
+        "yarn": "npm",
+        "pnpm": "npm",
+        "pip": "pypi",
+        "poetry": "pypi",
+        "maven": "maven",
+        "gradle": "maven",
+        "nuget": "nuget",
+        "gomod": "go",
+        "composer": "composer",
+        "rubygems": "rubygems",
+    }
     return mapping.get(pm) or pm
 
 
@@ -62,16 +78,22 @@ class SnykParser(IngestParser):
             raise ValueError("Snyk input must be a JSON object or array")
         vulns = _collect_vulnerabilities(raw)
         if not vulns and not (raw.get("vulnerabilities") or raw.get("Vulnerabilities")):
-            vulns = _collect_vulnerabilities(raw.get("runs", raw.get("projects", [raw])))
+            vulns = _collect_vulnerabilities(
+                raw.get("runs", raw.get("projects", [raw]))
+            )
 
         # Ecosystem from packageManager (top-level or from package)
-        ecosystem = _snyk_package_manager_to_ecosystem(raw.get("packageManager") or raw.get("package_manager"))
+        ecosystem = _snyk_package_manager_to_ecosystem(
+            raw.get("packageManager") or raw.get("package_manager")
+        )
 
         # Asset context: Snyk provides targetFile, projectName, or displayTargetFile
         asset = (
             (raw.get("targetFile") or raw.get("target_file") or "").strip()
             or (raw.get("projectName") or raw.get("project_name") or "").strip()
-            or (raw.get("displayTargetFile") or raw.get("display_target_file") or "").strip()
+            or (
+                raw.get("displayTargetFile") or raw.get("display_target_file") or ""
+            ).strip()
         )
         if not asset:
             return []  # No asset context — ingest validation would fail; skip entire parse
@@ -109,7 +131,10 @@ class SnykParser(IngestParser):
                             "title": title,
                             "finding_type": CanonicalFindingType.SCA,
                             "cvss": cvss_str,
-                            "ecosystem": ecosystem or _snyk_package_manager_to_ecosystem(v.get("packageManager") or v.get("package_manager")),
+                            "ecosystem": ecosystem
+                            or _snyk_package_manager_to_ecosystem(
+                                v.get("packageManager") or v.get("package_manager")
+                            ),
                         },
                         asset=asset,
                     )

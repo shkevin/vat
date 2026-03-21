@@ -1,7 +1,5 @@
 """Tests for ingest asset-type transform."""
 
-import pytest
-
 from app.api.ingest import _apply_asset_type_transform
 from app.schemas.vat import VatFindingSchema
 

@@ -25,7 +25,9 @@ def upgrade() -> None:
     )
     op.add_column(
         "tenants",
-        sa.Column("auth_config", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
+        sa.Column(
+            "auth_config", postgresql.JSONB(astext_type=sa.Text()), nullable=True
+        ),
     )
 
 

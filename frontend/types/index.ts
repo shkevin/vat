@@ -26,7 +26,7 @@ export interface Finding {
   /** Unified links to external issues (sources and trackers). */
   externalLinks?: Array<{
     adapterKey: string;
-    kind: 'tracker' | 'source';
+    kind: "tracker" | "source";
     issueId: string;
     url?: string | null;
     createdAt?: string;
@@ -79,7 +79,12 @@ export interface Finding {
   resource?: string | null;
   /** Source-provided group severity — use for grouped display when present (matches source dashboard) */
   sourceGroupSeverity?: string | null;
-  audit: Array<{ ts: string; user: string; action: string; note: string | null }>;
+  audit: Array<{
+    ts: string;
+    user: string;
+    action: string;
+    note: string | null;
+  }>;
   slaDue?: string;
   created?: string;
   /** Sync state: pending_sync when enqueued to tracker. */
@@ -118,7 +123,13 @@ export interface Tracker {
   /** groups: one ticket per CVE/title (deduplicate). instances: one ticket per finding. */
   pushMode?: "groups" | "instances";
   /** Minimum severity to push: critical, high, medium, low, informational, or all. E.g. high = Critical and High only. */
-  pushMinSeverity?: "all" | "critical" | "high" | "medium" | "low" | "informational";
+  pushMinSeverity?:
+    | "all"
+    | "critical"
+    | "high"
+    | "medium"
+    | "low"
+    | "informational";
   /** When true, use Aikido's own Linear integration for tracking. VAT pulls linked tasks from Aikido and displays them; VAT does not create Linear issues. */
   useAikidoTracking?: boolean;
   /** Aikido source id when useAikidoTracking — one tracker per Aikido workspace. */

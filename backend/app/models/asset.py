@@ -17,9 +17,15 @@ class Asset(Base):
 
     __tablename__ = "assets"
 
-    id: Mapped[str] = mapped_column(String(512), primary_key=True)  # asset_key for grouping
+    id: Mapped[str] = mapped_column(
+        String(512), primary_key=True
+    )  # asset_key for grouping
     name: Mapped[str] = mapped_column(String(256), nullable=False)
     type: Mapped[str] = mapped_column(String(32), nullable=False)  # repo | container
     source: Mapped[str] = mapped_column(String(64), nullable=False)  # integration name
-    branch: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)  # for repos
-    tag: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)  # for containers
+    branch: Mapped[Optional[str]] = mapped_column(
+        String(128), nullable=True
+    )  # for repos
+    tag: Mapped[Optional[str]] = mapped_column(
+        String(128), nullable=True
+    )  # for containers

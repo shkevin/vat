@@ -25,14 +25,10 @@ logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from sqlalchemy import select, and_
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.adapters.aikido import (
     AikidoAdapter,
     fetch_aikido_code_repositories,
-    _extract_asset_name,
-    _extract_branch,
-    _parse_repo_name_with_branch,
 )
 from app.core.database import async_session
 from app.models.finding import Finding
@@ -72,7 +68,11 @@ def load_excel_raw_and_normalized(path: Path) -> tuple[list[dict], list[dict]]:
     raw_issues = []
     if "RawIssues" in pd.ExcelFile(path).sheet_names:
         df_raw = pd.read_excel(path, sheet_name="RawIssues")
-        df_raw = df_raw.rename(columns=lambda c: c.strip().lower().replace(" ", "_") if isinstance(c, str) else c)
+        df_raw = df_raw.rename(
+            columns=lambda c: c.strip().lower().replace(" ", "_")
+            if isinstance(c, str)
+            else c
+        )
         for _, row in df_raw.iterrows():
             d = {}
             for k, v in row.items():
@@ -89,7 +89,11 @@ def load_excel_raw_and_normalized(path: Path) -> tuple[list[dict], list[dict]]:
 
     issues = []
     df = pd.read_excel(path, sheet_name="Issues")
-    df = df.rename(columns=lambda c: c.strip().lower().replace(" ", "_") if isinstance(c, str) else c)
+    df = df.rename(
+        columns=lambda c: c.strip().lower().replace(" ", "_")
+        if isinstance(c, str)
+        else c
+    )
     for _, row in df.iterrows():
         issues.append(dict(row))
 
@@ -107,7 +111,9 @@ async def _run_all_assets_async(path: Path, raw_issues: list, issues: list) -> N
 
     # 1. Collect all assets from Excel (Issues sheet); use normalized keys
     excel_by_asset: dict[tuple[str, str], list[dict]] = defaultdict(list)
-    excel_display: dict[tuple[str, str], tuple[str, str]] = {}  # key -> (asset, branch) for display
+    excel_display: dict[
+        tuple[str, str], tuple[str, str]
+    ] = {}  # key -> (asset, branch) for display
     for i in issues:
         parsed = _parse_repo(i.get("repository", ""))
         if parsed:
@@ -145,7 +151,9 @@ async def _run_all_assets_async(path: Path, raw_issues: list, issues: list) -> N
     print("VAT vs Excel — ALL ASSETS DIAGNOSIS")
     print("=" * 90)
     print(f"Excel: {path}\n")
-    print(f"{'Asset':<25} {'Branch':<12} {'Excel':>8} {'VAT':>8} {'Gap':>8} {'Status':<20}")
+    print(
+        f"{'Asset':<25} {'Branch':<12} {'Excel':>8} {'VAT':>8} {'Gap':>8} {'Status':<20}"
+    )
     print("-" * 90)
 
     mismatches: list[tuple[tuple[str, str], int, int, int, str]] = []
@@ -153,7 +161,11 @@ async def _run_all_assets_async(path: Path, raw_issues: list, issues: list) -> N
         asset, branch = excel_display.get(key) or vat_display.get(key) or key
         excel_list = excel_by_asset.get(key, [])
         vat_list = vat_by_asset.get(key, [])
-        excel_ids = {str(i.get("issue_id", "")) for i in excel_list if i.get("issue_id") not in (None, 0, "")}
+        excel_ids = {
+            str(i.get("issue_id", ""))
+            for i in excel_list
+            if i.get("issue_id") not in (None, 0, "")
+        }
         vat_ids = set()
         for f in vat_list:
             aid = get_source_issue_id(f, "Aikido")
@@ -179,7 +191,12 @@ async def _run_all_assets_async(path: Path, raw_issues: list, issues: list) -> N
         else:
             status = "Match"
 
-        if "BUG" in status or "Excel only" in status or "VAT only" in status or "Different" in status:
+        if (
+            "BUG" in status
+            or "Excel only" in status
+            or "VAT only" in status
+            or "Different" in status
+        ):
             mismatches.append(((asset, branch), excel_n, vat_n, gap, status))
 
         print(f"{asset:<25} {branch:<12} {excel_n:>8} {vat_n:>8} {gap:>8} {status:<20}")
@@ -234,7 +251,9 @@ async def _print_severity_comparison(
         if not raw:
             continue
         try:
-            t = await adapter.to_vat_finding(raw, repo_map=repo_map, repo_id_to_name=repo_id_to_name)
+            t = await adapter.to_vat_finding(
+                raw, repo_map=repo_map, repo_id_to_name=repo_id_to_name
+            )
         except Exception:
             continue
         fp = make_fingerprint(
@@ -274,7 +293,7 @@ async def _print_severity_comparison(
             print(f"  fp={fp}... cve={cve} comp={comp}")
             print(f"    Excel/Aikido: {dict(items)} | max={max_excel}")
             print(f"    VAT:          {vat_sev}")
-            print(f"    -> BUG: merge kept first severity; should use max")
+            print("    -> BUG: merge kept first severity; should use max")
     else:
         print("No severity mismatches (Excel vs VAT aligned).")
 
@@ -289,8 +308,14 @@ async def _run_single_asset_async(
     """Single-asset diagnosis: compare Excel vs VAT for one asset (branch)."""
     from app.services.external_links_service import get_source_issue_id
 
-    excel_filtered = [i for i in issues if _repo_matches(i.get("repository", ""), asset, branch)]
-    excel_issue_ids = {str(i.get("issue_id", "")) for i in excel_filtered if i.get("issue_id") not in (None, 0, "")}
+    excel_filtered = [
+        i for i in issues if _repo_matches(i.get("repository", ""), asset, branch)
+    ]
+    excel_issue_ids = {
+        str(i.get("issue_id", ""))
+        for i in excel_filtered
+        if i.get("issue_id") not in (None, 0, "")
+    }
 
     async with async_session() as session:
         result = await session.execute(
@@ -324,20 +349,31 @@ async def _run_single_asset_async(
     print(f"In VAT but NOT in Excel: {len(in_vat_not_excel)}")
 
     if in_excel_not_vat and not in_vat_not_excel:
-        print(f"\n--- ROOT CAUSE: Deduplication ---")
-        print(f"Excel: {len(excel_filtered)} issues (Aikido shows 1 row per issue instance)")
-        print(f"VAT:   {len(vat_findings)} findings (1 row per unique CVE+component+image+branch)")
-        print(f"Gap:   {len(in_excel_not_vat)} Aikido issues were merged into VAT findings (same fingerprint)")
+        print("\n--- ROOT CAUSE: Deduplication ---")
+        print(
+            f"Excel: {len(excel_filtered)} issues (Aikido shows 1 row per issue instance)"
+        )
+        print(
+            f"VAT:   {len(vat_findings)} findings (1 row per unique CVE+component+image+branch)"
+        )
+        print(
+            f"Gap:   {len(in_excel_not_vat)} Aikido issues were merged into VAT findings (same fingerprint)"
+        )
 
     if raw_issues:
         repo_map = {}
         try:
             from app.core.config import get_settings
+
             s = get_settings()
             if s.aikido_client_id and s.aikido_client_secret:
                 repos = await fetch_aikido_code_repositories()
                 for r in repos or []:
-                    if isinstance(r, dict) and r.get("id") is not None and r.get("branch"):
+                    if (
+                        isinstance(r, dict)
+                        and r.get("id") is not None
+                        and r.get("branch")
+                    ):
                         rid = r["id"]
                         repo_map[rid] = str(r["branch"]).strip()
                         repo_map[str(rid)] = str(r["branch"]).strip()
@@ -367,11 +403,20 @@ async def _run_single_asset_async(
                 target_raw.append(raw)
 
             if not sid:
-                no_source_id.append({"raw_id": rid, "image": img, "branch": br, "cve": transformed.cve_id})
+                no_source_id.append(
+                    {
+                        "raw_id": rid,
+                        "image": img,
+                        "branch": br,
+                        "cve": transformed.cve_id,
+                    }
+                )
 
             tg = getattr(transformed, "tag", None) or ""
             if sid:
-                fp = make_fingerprint_for_source_issue("Aikido", str(sid), image=img, branch=br, tag=tg)
+                fp = make_fingerprint_for_source_issue(
+                    "Aikido", str(sid), image=img, branch=br, tag=tg
+                )
             else:
                 fp = make_fingerprint(
                     transformed.cve_id,
@@ -383,7 +428,7 @@ async def _run_single_asset_async(
             fp_to_raw_ids[fp].append(rid)
 
         collisions = {fp: ids for fp, ids in fp_to_raw_ids.items() if len(ids) > 1}
-        print(f"\n--- Simulated ingest (from RawIssues) ---")
+        print("\n--- Simulated ingest (from RawIssues) ---")
         print(f"Raw issues mapping to {asset} ({branch}): {len(target_raw)}")
         print(f"Fingerprint collisions (same fp, multiple raw ids): {len(collisions)}")
 
@@ -391,7 +436,11 @@ async def _run_single_asset_async(
             total_collapsed = sum(len(ids) - 1 for ids in collisions.values())
             print(f"  Total 'lost' to merge: {total_collapsed}")
 
-        raw_by_id = {str(r.get("id") or r.get("issue_id", "")): r for r in raw_issues if r.get("id") or r.get("issue_id")}
+        raw_by_id = {
+            str(r.get("id") or r.get("issue_id", "")): r
+            for r in raw_issues
+            if r.get("id") or r.get("issue_id")
+        }
         repo_id_to_name = {}
         try:
             repos = await fetch_aikido_code_repositories()
@@ -402,17 +451,26 @@ async def _run_single_asset_async(
                     repo_id_to_name[str(rid)] = str(r["name"]).strip()
         except Exception:
             pass
-        print(f"\n--- Severity comparison (Excel/Aikido vs VAT) ---")
+        print("\n--- Severity comparison (Excel/Aikido vs VAT) ---")
         await _print_severity_comparison(
-            excel_filtered, vat_findings, raw_by_id, adapter, repo_map, repo_id_to_name, asset, branch
+            excel_filtered,
+            vat_findings,
+            raw_by_id,
+            adapter,
+            repo_map,
+            repo_id_to_name,
+            asset,
+            branch,
         )
-        print(f"\n--- Missing from VAT (sample) ---")
+        print("\n--- Missing from VAT (sample) ---")
         for oid in list(in_excel_not_vat)[:10]:
             r = raw_by_id.get(oid)
             if r:
                 try:
                     t = await adapter.to_vat_finding(r, repo_map=repo_map)
-                    print(f"  issue_id={oid}: image={t.image}, branch={getattr(t,'branch','')}")
+                    print(
+                        f"  issue_id={oid}: image={t.image}, branch={getattr(t,'branch','')}"
+                    )
                 except Exception as e:
                     print(f"  issue_id={oid}: adapter error {e}")
             else:
@@ -423,10 +481,20 @@ async def _run_single_asset_async(
 
 async def main():
     parser = argparse.ArgumentParser(description="Diagnose VAT vs Excel gap")
-    parser.add_argument("path", nargs="?", help="Path to aikido_sync_*.xlsx (default: latest in data/exports)")
-    parser.add_argument("--all", action="store_true", help="Compare ALL assets in Excel vs VAT")
-    parser.add_argument("--asset", default="kamiwaza-docs", help="Asset name (single-asset mode)")
-    parser.add_argument("--branch", default="develop", help="Branch (single-asset mode)")
+    parser.add_argument(
+        "path",
+        nargs="?",
+        help="Path to aikido_sync_*.xlsx (default: latest in data/exports)",
+    )
+    parser.add_argument(
+        "--all", action="store_true", help="Compare ALL assets in Excel vs VAT"
+    )
+    parser.add_argument(
+        "--asset", default="kamiwaza-docs", help="Asset name (single-asset mode)"
+    )
+    parser.add_argument(
+        "--branch", default="develop", help="Branch (single-asset mode)"
+    )
     args = parser.parse_args()
 
     backend = Path(__file__).resolve().parent.parent
@@ -436,7 +504,9 @@ async def main():
 
     path = Path(args.path) if args.path and Path(args.path).exists() else None
     if not path:
-        files = sorted(exports.glob("*.xlsx"), key=lambda p: p.stat().st_mtime, reverse=True)
+        files = sorted(
+            exports.glob("*.xlsx"), key=lambda p: p.stat().st_mtime, reverse=True
+        )
         path = files[0] if files else None
 
     if not path or not path.exists():

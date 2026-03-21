@@ -6,7 +6,9 @@
 import type { Finding } from "@/types";
 
 /** Extract file path and optional line from finding. */
-export function parseFileLocation(finding: Finding): { filePath: string; line?: number } | null {
+export function parseFileLocation(
+  finding: Finding,
+): { filePath: string; line?: number } | null {
   // 0. Prefer explicit filePath/line from backend (local scans, SARIF, etc.)
   const fp = finding.filePath?.trim();
   if (fp) {
@@ -16,7 +18,9 @@ export function parseFileLocation(finding: Finding): { filePath: string; line?: 
 
   // 1. Parse "File: path" or "File: path (line N)" from description (Aikido format)
   const desc = finding.description ?? "";
-  const fileMatch = desc.match(/File:\s*(.+?)(?:\s*\(line\s+(\d+)\))?(?:\s|$)/i);
+  const fileMatch = desc.match(
+    /File:\s*(.+?)(?:\s*\(line\s+(\d+)\))?(?:\s|$)/i,
+  );
   if (fileMatch) {
     let filePath = fileMatch[1].trim();
     let line: number | undefined;
@@ -28,7 +32,8 @@ export function parseFileLocation(finding: Finding): { filePath: string; line?: 
         desc.match(/[#:]L?(\d+)/) ||
         filePath.match(/:(\d+)$/);
       line = lineMatch ? parseInt(lineMatch[1], 10) : undefined;
-      if (lineMatch && filePath.match(/:(\d+)$/)) filePath = filePath.replace(/:(\d+)$/, "");
+      if (lineMatch && filePath.match(/:(\d+)$/))
+        filePath = filePath.replace(/:(\d+)$/, "");
     }
     if (filePath) return { filePath, line };
   }
@@ -49,23 +54,27 @@ export function buildRepoFileUrl(
   branch: string,
   filePath: string,
   line?: number,
-  urlType: "github" | "gitlab" = "github"
+  urlType: "github" | "gitlab" = "github",
 ): string {
   const base = repoBaseUrl.replace(/\/$/, "");
   const repoPart = repo.replace(/^\//, "").replace(/\/$/, "");
   const pathPart = filePath.replace(/^\//, "");
 
   if (urlType === "gitlab") {
-    return `${base}/${repoPart}/-/blob/${branch}/${pathPart}${line ? `#L${line}` : ""}`;
+    return `${base}/${repoPart}/-/blob/${branch}/${pathPart}${
+      line ? `#L${line}` : ""
+    }`;
   }
-  return `${base}/${repoPart}/blob/${branch}/${pathPart}${line ? `#L${line}` : ""}`;
+  return `${base}/${repoPart}/blob/${branch}/${pathPart}${
+    line ? `#L${line}` : ""
+  }`;
 }
 
 /** Get clickable repo file URL for a finding. Prefers sourceFileUrl from Aikido when present. */
 export function getRepoFileUrl(
   finding: Finding,
   repoBaseUrl?: string,
-  repoUrlType: "github" | "gitlab" = "github"
+  repoUrlType: "github" | "gitlab" = "github",
 ): string | null {
   // Prefer direct URL from source (Aikido provides this)
   if (finding.sourceFileUrl?.trim()) {
@@ -79,11 +88,19 @@ export function getRepoFileUrl(
   if (!loc) return null;
 
   // Repo: image (container/repo) or tag/component (asset for local scans)
-  const repo = finding.image?.trim() || finding.tag?.trim() || finding.component?.trim();
+  const repo =
+    finding.image?.trim() || finding.tag?.trim() || finding.component?.trim();
   if (!repo) return null;
 
   const branch = finding.branch?.trim() || "main";
-  return buildRepoFileUrl(repoBaseUrl, repo, branch, loc.filePath, loc.line, repoUrlType);
+  return buildRepoFileUrl(
+    repoBaseUrl,
+    repo,
+    branch,
+    loc.filePath,
+    loc.line,
+    repoUrlType,
+  );
 }
 
 /** Human-readable location string (path:line) for display. */

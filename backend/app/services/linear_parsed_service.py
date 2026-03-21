@@ -29,7 +29,9 @@ async def apply_vat_parsed_update(
     """
     data = data or {}
     cve_id = parsed["cve_id"]
-    finding = await find_finding_by_linear_issue_id_or_uuid(db, issue_id or "", issue_uuid or None)
+    finding = await find_finding_by_linear_issue_id_or_uuid(
+        db, issue_id or "", issue_uuid or None
+    )
     if not finding:
         r = await db.execute(select(Finding).where(Finding.cve_id == cve_id).limit(1))
         finding = r.scalar_one_or_none()
@@ -40,7 +42,10 @@ async def apply_vat_parsed_update(
     if not finding:
         logger.warning(
             "Linear→VAT: no finding found for %s (issue_id=%s, issue_uuid=%s, cve_id=%s)",
-            event_name, issue_id, issue_uuid, cve_id,
+            event_name,
+            issue_id,
+            issue_uuid,
+            cve_id,
         )
         await record_webhook_processed(db, idempotency_key, "linear", event_name, data)
         return {"received": True, "event": event_name, "parsed": True, "finding": None}
@@ -51,15 +56,31 @@ async def apply_vat_parsed_update(
     adapter_cls = TRACKER_ADAPTER_REGISTRY.get("linear")
     if not adapter_cls or not adapter_cls().get_capabilities().supports_inbound_sync:
         await record_webhook_processed(db, idempotency_key, "linear", event_name, data)
-        return {"received": True, "event": event_name, "parsed": True, "skipped": "adapter does not support inbound sync"}
+        return {
+            "received": True,
+            "event": event_name,
+            "parsed": True,
+            "skipped": "adapter does not support inbound sync",
+        }
 
-    await update_finding(db, finding.id, {
-        "status": parsed["status"],
-        "justification": parsed["justification"],
-        "compensating_controls": parsed.get("compensating_controls") or "",
-    })
-    await record_webhook_processed(db, idempotency_key, "linear", event_name, data, {"finding_id": finding.id})
-    return {"received": True, "event": event_name, "parsed": True, "finding_id": finding.id}
+    await update_finding(
+        db,
+        finding.id,
+        {
+            "status": parsed["status"],
+            "justification": parsed["justification"],
+            "compensating_controls": parsed.get("compensating_controls") or "",
+        },
+    )
+    await record_webhook_processed(
+        db, idempotency_key, "linear", event_name, data, {"finding_id": finding.id}
+    )
+    return {
+        "received": True,
+        "event": event_name,
+        "parsed": True,
+        "finding_id": finding.id,
+    }
 
 
 async def post_canonical_if_enabled(
@@ -80,6 +101,8 @@ async def post_canonical_if_enabled(
         body = f"**VAT parsed your response.** Canonical format:\n\n{block}"
         from app.schemas.vat import VatTrackerPostDecisionRequest
 
-        await adapter.post_comment(VatTrackerPostDecisionRequest(tracker_issue_id=issue_id, body=body))
+        await adapter.post_comment(
+            VatTrackerPostDecisionRequest(tracker_issue_id=issue_id, body=body)
+        )
     except Exception:
         pass  # Non-fatal

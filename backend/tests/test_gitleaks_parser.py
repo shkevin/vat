@@ -43,9 +43,11 @@ def test_gitleaks_parser_findings():
 
 def test_gitleaks_parser_array():
     parser = GitleaksParser()
-    payloads = parser.parse([
-        {"RuleID": "test", "Description": "Test", "File": "x"},
-    ])
+    payloads = parser.parse(
+        [
+            {"RuleID": "test", "Description": "Test", "File": "x"},
+        ]
+    )
     assert len(payloads) == 1
     assert payloads[0].cve_id == "test"
 

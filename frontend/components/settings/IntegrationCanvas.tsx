@@ -3,13 +3,22 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { mono, sans } from "@/lib/styles";
 import { FlowCanvas } from "./FlowCanvas";
-import { fetchIntegrationSchemas, fetchParsers, type IntegrationSchemas } from "@/lib/api";
+import {
+  fetchIntegrationSchemas,
+  fetchParsers,
+  type IntegrationSchemas,
+} from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 import { AikidoSettingsPage } from "./AikidoSettingsPage";
 import { LinearSettingsPage } from "./LinearSettingsPage";
 import { PushSourcesSettings } from "./PushSourcesSettings";
 import { VATBackendSettingsPage } from "./VATBackendSettingsPage";
-import { DEFAULT_ISSUE_TEMPLATE, PARSER_COLORS, SOURCE_TYPES, TRACKER_TYPES } from "@/lib/constants";
+import {
+  DEFAULT_ISSUE_TEMPLATE,
+  PARSER_COLORS,
+  SOURCE_TYPES,
+  TRACKER_TYPES,
+} from "@/lib/constants";
 import { displaySourceName } from "@/lib/utils";
 import { AVAILABLE_SOURCE_TYPES } from "./nodes";
 import type { Source } from "@/types";
@@ -34,13 +43,24 @@ interface IntegrationCanvasProps {
 }
 
 /** n8n-style integration canvas: overview is source of truth, settings pane on node click */
-export function IntegrationCanvas({ sources, tracker, labels, onSourcesChange, onTrackerChange, onLabelsChange }: IntegrationCanvasProps) {
+export function IntegrationCanvas({
+  sources,
+  tracker,
+  labels,
+  onSourcesChange,
+  onTrackerChange,
+  onLabelsChange,
+}: IntegrationCanvasProps) {
   const [selected, setSelected] = useState<SelectedNode>(null);
   const { token, user } = useAuth();
-  const [integrationSchemas, setIntegrationSchemas] = useState<IntegrationSchemas | null>(null);
+  const [integrationSchemas, setIntegrationSchemas] =
+    useState<IntegrationSchemas | null>(null);
 
   useEffect(() => {
-    const auth = { token: token ?? undefined, userEmail: user?.email ?? undefined };
+    const auth = {
+      token: token ?? undefined,
+      userEmail: user?.email ?? undefined,
+    };
     fetchIntegrationSchemas(auth)
       .then(setIntegrationSchemas)
       .catch(() => setIntegrationSchemas(null));
@@ -72,13 +92,21 @@ export function IntegrationCanvas({ sources, tracker, labels, onSourcesChange, o
           sources={sources}
           tracker={tracker}
           integrationSchemas={integrationSchemas}
-          onSourceClick={(source) => source && setSelected({ type: "source", source })}
-          onTrackerClick={() => tracker?.name && setSelected({ type: "tracker" })}
+          onSourceClick={(source) =>
+            source && setSelected({ type: "source", source })
+          }
+          onTrackerClick={() =>
+            tracker?.name && setSelected({ type: "tracker" })
+          }
           onAddSourceClick={() => setSelected({ type: "add-source" })}
           onAddTrackerClick={() => setSelected({ type: "add-tracker" })}
           onVatClick={() => setSelected({ type: "vat" })}
           onPaneClick={() => setSelected(null)}
-          selectedSourceId={selected?.type === "source" ? (selected as { source: Source }).source.id : null}
+          selectedSourceId={
+            selected?.type === "source"
+              ? (selected as { source: Source }).source.id
+              : null
+          }
           selectedTracker={selected?.type === "tracker"}
           selectedAddSource={selected?.type === "add-source"}
           selectedAddTracker={selected?.type === "add-tracker"}
@@ -111,8 +139,12 @@ export function IntegrationCanvas({ sources, tracker, labels, onSourcesChange, o
             sourceTypes={sourceTypes}
             trackerTypes={trackerTypes}
             onClose={() => setSelected(null)}
-            onSelectSourceType={(type) => setSelected({ type: "add-source", picker: type })}
-            onSelectTrackerType={(type) => setSelected({ type: "add-tracker", picker: type })}
+            onSelectSourceType={(type) =>
+              setSelected({ type: "add-source", picker: type })
+            }
+            onSelectTrackerType={(type) =>
+              setSelected({ type: "add-tracker", picker: type })
+            }
             onSourceAdded={(source) => setSelected({ type: "source", source })}
             onSourceRemoved={() => setSelected(null)}
             onTrackerAdded={() => setSelected({ type: "tracker" })}
@@ -165,7 +197,9 @@ function SettingsPane({
   const width = 400;
   const title =
     selected?.type === "source"
-      ? (displaySourceName((selected as { source: Source }).source.name) || displaySourceName((selected as { source: Source }).source.id) || "Source")
+      ? displaySourceName((selected as { source: Source }).source.name) ||
+        displaySourceName((selected as { source: Source }).source.id) ||
+        "Source"
       : selected?.type === "add-source"
         ? "Add Source"
         : selected?.type === "vat"
@@ -188,7 +222,8 @@ function SettingsPane({
         overflow: "hidden",
         display: "flex",
         flexDirection: "column",
-        boxShadow: "0 4px 24px rgba(0,0,0,0.25), 0 0 0 1px var(--app-border-subtle)",
+        boxShadow:
+          "0 4px 24px rgba(0,0,0,0.25), 0 0 0 1px var(--app-border-subtle)",
       }}
     >
       {/* n8n-style header: node name + close */}
@@ -314,15 +349,22 @@ function SettingsPane({
   );
 }
 
-const SOURCE_TYPE_OPTS = ["scanner", "compliance", "pentest", "manual"] as const;
+const SOURCE_TYPE_OPTS = [
+  "scanner",
+  "compliance",
+  "pentest",
+  "manual",
+] as const;
 
 function slugify(s: string): string {
-  return s
-    .toLowerCase()
-    .replace(/\s+/g, "-")
-    .replace(/[^a-z0-9-]/g, "")
-    .replace(/-+/g, "-")
-    .replace(/^-|-$/g, "") || "manual";
+  return (
+    s
+      .toLowerCase()
+      .replace(/\s+/g, "-")
+      .replace(/[^a-z0-9-]/g, "")
+      .replace(/-+/g, "-")
+      .replace(/^-|-$/g, "") || "manual"
+  );
 }
 
 function AddSourceForm({
@@ -370,19 +412,57 @@ function AddSourceForm({
         marginBottom: 20,
       }}
     >
-      <div style={{ ...mono, fontSize: 9, fontWeight: 700, letterSpacing: "0.1em", color: "var(--app-muted)", textTransform: "uppercase", marginBottom: 12 }}>
+      <div
+        style={{
+          ...mono,
+          fontSize: 9,
+          fontWeight: 700,
+          letterSpacing: "0.1em",
+          color: "var(--app-muted)",
+          textTransform: "uppercase",
+          marginBottom: 12,
+        }}
+      >
         Add source
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 80px", gap: 12 }}>
-          <Field label="Name" value={edit.name} onChange={(v) => setEdit((p) => ({ ...p, name: v }))} />
+        <div
+          style={{ display: "grid", gridTemplateColumns: "1fr 80px", gap: 12 }}
+        >
+          <Field
+            label="Name"
+            value={edit.name}
+            onChange={(v) => setEdit((p) => ({ ...p, name: v }))}
+          />
           <div>
-            <label style={{ ...mono, fontSize: 9, fontWeight: 600, color: "var(--app-muted)", textTransform: "uppercase", display: "block", marginBottom: 6 }}>Color</label>
+            <label
+              style={{
+                ...mono,
+                fontSize: 9,
+                fontWeight: 600,
+                color: "var(--app-muted)",
+                textTransform: "uppercase",
+                display: "block",
+                marginBottom: 6,
+              }}
+            >
+              Color
+            </label>
             <input
               type="color"
               value={edit.color}
-              onChange={(e) => setEdit((p) => ({ ...p, color: e.target.value }))}
-              style={{ width: "100%", height: 36, background: "var(--app-bg)", border: "1px solid var(--app-border)", borderRadius: 6, cursor: "pointer", padding: 2 }}
+              onChange={(e) =>
+                setEdit((p) => ({ ...p, color: e.target.value }))
+              }
+              style={{
+                width: "100%",
+                height: 36,
+                background: "var(--app-bg)",
+                border: "1px solid var(--app-border)",
+                borderRadius: 6,
+                cursor: "pointer",
+                padding: 2,
+              }}
             />
           </div>
         </div>
@@ -391,21 +471,57 @@ function AddSourceForm({
             <ParserSelect
               value={edit.parser}
               onChange={(v) =>
-                setEdit((p) => ({ ...p, parser: v, color: PARSER_COLORS[v] ?? p.color }))
+                setEdit((p) => ({
+                  ...p,
+                  parser: v,
+                  color: PARSER_COLORS[v] ?? p.color,
+                }))
               }
             />
             <Field
               label="Source ID (for API key)"
               value={edit.id}
-              onChange={(v) => setEdit((p) => ({ ...p, id: v || slugify(p.name) }))}
+              onChange={(v) =>
+                setEdit((p) => ({ ...p, id: v || slugify(p.name) }))
+              }
               placeholder={slugify(edit.name) || "e.g. trivy-ci"}
             />
             <div>
-              <label style={{ ...mono, fontSize: 9, fontWeight: 600, color: "var(--app-muted)", textTransform: "uppercase", display: "block", marginBottom: 6 }}>Asset type</label>
+              <label
+                style={{
+                  ...mono,
+                  fontSize: 9,
+                  fontWeight: 600,
+                  color: "var(--app-muted)",
+                  textTransform: "uppercase",
+                  display: "block",
+                  marginBottom: 6,
+                }}
+              >
+                Asset type
+              </label>
               <select
                 value={edit.assetType ?? "auto"}
-                onChange={(e) => setEdit((p) => ({ ...p, assetType: e.target.value as "auto" | "package" | "container" | "repo" }))}
-                style={{ ...mono, width: "100%", background: "var(--app-bg)", border: "1px solid var(--app-border)", borderRadius: 6, padding: "8px 12px", color: "var(--app-fg)", fontSize: 12 }}
+                onChange={(e) =>
+                  setEdit((p) => ({
+                    ...p,
+                    assetType: e.target.value as
+                      | "auto"
+                      | "package"
+                      | "container"
+                      | "repo",
+                  }))
+                }
+                style={{
+                  ...mono,
+                  width: "100%",
+                  background: "var(--app-bg)",
+                  border: "1px solid var(--app-border)",
+                  borderRadius: 6,
+                  padding: "8px 12px",
+                  color: "var(--app-fg)",
+                  fontSize: 12,
+                }}
               >
                 <option value="auto">Auto (infer from findings)</option>
                 <option value="package">Package (folder, bundle)</option>
@@ -415,30 +531,67 @@ function AddSourceForm({
             </div>
           </>
         )}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+        <div
+          style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}
+        >
           <div>
-            <label style={{ ...mono, fontSize: 9, fontWeight: 600, color: "var(--app-muted)", textTransform: "uppercase", display: "block", marginBottom: 6 }}>Type</label>
+            <label
+              style={{
+                ...mono,
+                fontSize: 9,
+                fontWeight: 600,
+                color: "var(--app-muted)",
+                textTransform: "uppercase",
+                display: "block",
+                marginBottom: 6,
+              }}
+            >
+              Type
+            </label>
             <select
               value={edit.type}
               onChange={(e) => setEdit((p) => ({ ...p, type: e.target.value }))}
-              style={{ ...mono, width: "100%", background: "var(--app-bg)", border: "1px solid var(--app-border)", borderRadius: 6, padding: "8px 12px", color: "var(--app-fg)", fontSize: 12 }}
+              style={{
+                ...mono,
+                width: "100%",
+                background: "var(--app-bg)",
+                border: "1px solid var(--app-border)",
+                borderRadius: 6,
+                padding: "8px 12px",
+                color: "var(--app-fg)",
+                fontSize: 12,
+              }}
             >
               {SOURCE_TYPE_OPTS.map((t) => (
-                <option key={t} value={t}>{t}</option>
+                <option key={t} value={t}>
+                  {t}
+                </option>
               ))}
             </select>
           </div>
           <ReadOnlyField label="Adapter" value={edit.adapter} />
         </div>
-        <Field label="Description" value={edit.description} onChange={(v) => setEdit((p) => ({ ...p, description: v }))} placeholder="Optional" />
-        {saveError && <div style={{ ...sans, fontSize: 12, color: "var(--app-danger)" }}>{saveError}</div>}
+        <Field
+          label="Description"
+          value={edit.description}
+          onChange={(v) => setEdit((p) => ({ ...p, description: v }))}
+          placeholder="Optional"
+        />
+        {saveError && (
+          <div style={{ ...sans, fontSize: 12, color: "var(--app-danger)" }}>
+            {saveError}
+          </div>
+        )}
         <button
           onClick={handleAdd}
           disabled={!edit.name?.trim() || saving}
           style={{
             ...mono,
             padding: "8px 16px",
-            background: edit.name?.trim() && !saving ? "var(--app-accent)" : "var(--app-border)",
+            background:
+              edit.name?.trim() && !saving
+                ? "var(--app-accent)"
+                : "var(--app-border)",
             border: "none",
             borderRadius: 6,
             color: "var(--app-fg)",
@@ -481,7 +634,9 @@ function SourceConfigForm({
     setSaving(true);
     setSaveError(null);
     try {
-      const next = sources.map((s) => (s.id === source.id ? { ...s, ...edit } : s));
+      const next = sources.map((s) =>
+        s.id === source.id ? { ...s, ...edit } : s,
+      );
       await onSourcesChange(next);
     } catch (e) {
       setSaveError(e instanceof Error ? e.message : "Failed to save");
@@ -491,7 +646,17 @@ function SourceConfigForm({
   }, [edit, source.id, sources, onSourcesChange]);
 
   const handleRemove = useCallback(async () => {
-    if (!onSourcesChange || !confirm(`Remove "${displaySourceName(source.name) || displaySourceName(source.id) || "source"}" from sources?`)) return;
+    if (
+      !onSourcesChange ||
+      !confirm(
+        `Remove "${
+          displaySourceName(source.name) ||
+          displaySourceName(source.id) ||
+          "source"
+        }" from sources?`,
+      )
+    )
+      return;
     setSaving(true);
     setSaveError(null);
     try {
@@ -517,8 +682,24 @@ function SourceConfigForm({
         marginBottom: 20,
       }}
     >
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-        <div style={{ ...mono, fontSize: 9, fontWeight: 700, letterSpacing: "0.1em", color: "var(--app-muted)", textTransform: "uppercase" }}>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          marginBottom: 12,
+        }}
+      >
+        <div
+          style={{
+            ...mono,
+            fontSize: 9,
+            fontWeight: 700,
+            letterSpacing: "0.1em",
+            color: "var(--app-muted)",
+            textTransform: "uppercase",
+          }}
+        >
           Source config
         </div>
         <button
@@ -539,15 +720,43 @@ function SourceConfigForm({
         </button>
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 80px", gap: 12 }}>
-          <Field label="Name" value={edit.name} onChange={(v) => setEdit((p) => ({ ...p, name: v }))} />
+        <div
+          style={{ display: "grid", gridTemplateColumns: "1fr 80px", gap: 12 }}
+        >
+          <Field
+            label="Name"
+            value={edit.name}
+            onChange={(v) => setEdit((p) => ({ ...p, name: v }))}
+          />
           <div>
-            <label style={{ ...mono, fontSize: 9, fontWeight: 600, color: "var(--app-muted)", textTransform: "uppercase", display: "block", marginBottom: 6 }}>Color</label>
+            <label
+              style={{
+                ...mono,
+                fontSize: 9,
+                fontWeight: 600,
+                color: "var(--app-muted)",
+                textTransform: "uppercase",
+                display: "block",
+                marginBottom: 6,
+              }}
+            >
+              Color
+            </label>
             <input
               type="color"
               value={edit.color}
-              onChange={(e) => setEdit((p) => ({ ...p, color: e.target.value }))}
-              style={{ width: "100%", height: 36, background: "var(--app-bg)", border: "1px solid var(--app-border)", borderRadius: 6, cursor: "pointer", padding: 2 }}
+              onChange={(e) =>
+                setEdit((p) => ({ ...p, color: e.target.value }))
+              }
+              style={{
+                width: "100%",
+                height: 36,
+                background: "var(--app-bg)",
+                border: "1px solid var(--app-border)",
+                borderRadius: 6,
+                cursor: "pointer",
+                padding: 2,
+              }}
             />
           </div>
         </div>
@@ -556,21 +765,57 @@ function SourceConfigForm({
             <ParserSelect
               value={edit.parser}
               onChange={(v) =>
-                setEdit((p) => ({ ...p, parser: v, color: PARSER_COLORS[v] ?? p.color }))
+                setEdit((p) => ({
+                  ...p,
+                  parser: v,
+                  color: PARSER_COLORS[v] ?? p.color,
+                }))
               }
             />
             <Field
               label="Source ID (for API key)"
               value={edit.id}
-              onChange={(v) => setEdit((p) => ({ ...p, id: v || slugify(p.name) }))}
+              onChange={(v) =>
+                setEdit((p) => ({ ...p, id: v || slugify(p.name) }))
+              }
               placeholder={slugify(edit.name) || "e.g. trivy-ci"}
             />
             <div>
-              <label style={{ ...mono, fontSize: 9, fontWeight: 600, color: "var(--app-muted)", textTransform: "uppercase", display: "block", marginBottom: 6 }}>Asset type</label>
+              <label
+                style={{
+                  ...mono,
+                  fontSize: 9,
+                  fontWeight: 600,
+                  color: "var(--app-muted)",
+                  textTransform: "uppercase",
+                  display: "block",
+                  marginBottom: 6,
+                }}
+              >
+                Asset type
+              </label>
               <select
                 value={edit.assetType ?? "auto"}
-                onChange={(e) => setEdit((p) => ({ ...p, assetType: e.target.value as "auto" | "package" | "container" | "repo" }))}
-                style={{ ...mono, width: "100%", background: "var(--app-bg)", border: "1px solid var(--app-border)", borderRadius: 6, padding: "8px 12px", color: "var(--app-fg)", fontSize: 12 }}
+                onChange={(e) =>
+                  setEdit((p) => ({
+                    ...p,
+                    assetType: e.target.value as
+                      | "auto"
+                      | "package"
+                      | "container"
+                      | "repo",
+                  }))
+                }
+                style={{
+                  ...mono,
+                  width: "100%",
+                  background: "var(--app-bg)",
+                  border: "1px solid var(--app-border)",
+                  borderRadius: 6,
+                  padding: "8px 12px",
+                  color: "var(--app-fg)",
+                  fontSize: 12,
+                }}
               >
                 <option value="auto">Auto (infer from findings)</option>
                 <option value="package">Package (folder, bundle)</option>
@@ -580,30 +825,67 @@ function SourceConfigForm({
             </div>
           </>
         )}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+        <div
+          style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}
+        >
           <div>
-            <label style={{ ...mono, fontSize: 9, fontWeight: 600, color: "var(--app-muted)", textTransform: "uppercase", display: "block", marginBottom: 6 }}>Type</label>
+            <label
+              style={{
+                ...mono,
+                fontSize: 9,
+                fontWeight: 600,
+                color: "var(--app-muted)",
+                textTransform: "uppercase",
+                display: "block",
+                marginBottom: 6,
+              }}
+            >
+              Type
+            </label>
             <select
               value={edit.type}
               onChange={(e) => setEdit((p) => ({ ...p, type: e.target.value }))}
-              style={{ ...mono, width: "100%", background: "var(--app-bg)", border: "1px solid var(--app-border)", borderRadius: 6, padding: "8px 12px", color: "var(--app-fg)", fontSize: 12 }}
+              style={{
+                ...mono,
+                width: "100%",
+                background: "var(--app-bg)",
+                border: "1px solid var(--app-border)",
+                borderRadius: 6,
+                padding: "8px 12px",
+                color: "var(--app-fg)",
+                fontSize: 12,
+              }}
             >
               {SOURCE_TYPE_OPTS.map((t) => (
-                <option key={t} value={t}>{t}</option>
+                <option key={t} value={t}>
+                  {t}
+                </option>
               ))}
             </select>
           </div>
           <ReadOnlyField label="Adapter" value={edit.adapter} />
         </div>
-        <Field label="Description" value={edit.description} onChange={(v) => setEdit((p) => ({ ...p, description: v }))} placeholder="Optional" />
-        {saveError && <div style={{ ...sans, fontSize: 12, color: "var(--app-danger)" }}>{saveError}</div>}
+        <Field
+          label="Description"
+          value={edit.description}
+          onChange={(v) => setEdit((p) => ({ ...p, description: v }))}
+          placeholder="Optional"
+        />
+        {saveError && (
+          <div style={{ ...sans, fontSize: 12, color: "var(--app-danger)" }}>
+            {saveError}
+          </div>
+        )}
         <button
           onClick={handleSave}
           disabled={!edit.name?.trim() || saving}
           style={{
             ...mono,
             padding: "8px 16px",
-            background: edit.name?.trim() && !saving ? "var(--app-accent)" : "var(--app-border)",
+            background:
+              edit.name?.trim() && !saving
+                ? "var(--app-accent)"
+                : "var(--app-border)",
             border: "none",
             borderRadius: 6,
             color: "var(--app-fg)",
@@ -632,13 +914,34 @@ function Field({
 }) {
   return (
     <div>
-      <label style={{ ...mono, fontSize: 9, fontWeight: 600, color: "var(--app-muted)", textTransform: "uppercase", display: "block", marginBottom: 6 }}>{label}</label>
+      <label
+        style={{
+          ...mono,
+          fontSize: 9,
+          fontWeight: 600,
+          color: "var(--app-muted)",
+          textTransform: "uppercase",
+          display: "block",
+          marginBottom: 6,
+        }}
+      >
+        {label}
+      </label>
       <input
         type="text"
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
-        style={{ ...mono, width: "100%", background: "var(--app-bg)", border: "1px solid var(--app-border)", borderRadius: 6, padding: "8px 12px", color: "var(--app-fg)", fontSize: 12 }}
+        style={{
+          ...mono,
+          width: "100%",
+          background: "var(--app-bg)",
+          border: "1px solid var(--app-border)",
+          borderRadius: 6,
+          padding: "8px 12px",
+          color: "var(--app-fg)",
+          fontSize: 12,
+        }}
       />
     </div>
   );
@@ -658,15 +961,51 @@ const PARSER_DESCRIPTIONS: Record<string, string> = {
 };
 
 const DEFAULT_PARSERS = [
-  { id: "trivy", name: "trivy", label: "Trivy", description: PARSER_DESCRIPTIONS.trivy },
-  { id: "snyk", name: "snyk", label: "Snyk", description: PARSER_DESCRIPTIONS.snyk },
-  { id: "semgrep", name: "semgrep", label: "Semgrep", description: PARSER_DESCRIPTIONS.semgrep },
-  { id: "gitleaks", name: "gitleaks", label: "Gitleaks", description: PARSER_DESCRIPTIONS.gitleaks },
-  { id: "sarif", name: "sarif", label: "SARIF", description: PARSER_DESCRIPTIONS.sarif },
-  { id: "canonical", name: "canonical", label: "Canonical", description: PARSER_DESCRIPTIONS.canonical },
+  {
+    id: "trivy",
+    name: "trivy",
+    label: "Trivy",
+    description: PARSER_DESCRIPTIONS.trivy,
+  },
+  {
+    id: "snyk",
+    name: "snyk",
+    label: "Snyk",
+    description: PARSER_DESCRIPTIONS.snyk,
+  },
+  {
+    id: "semgrep",
+    name: "semgrep",
+    label: "Semgrep",
+    description: PARSER_DESCRIPTIONS.semgrep,
+  },
+  {
+    id: "gitleaks",
+    name: "gitleaks",
+    label: "Gitleaks",
+    description: PARSER_DESCRIPTIONS.gitleaks,
+  },
+  {
+    id: "sarif",
+    name: "sarif",
+    label: "SARIF",
+    description: PARSER_DESCRIPTIONS.sarif,
+  },
+  {
+    id: "canonical",
+    name: "canonical",
+    label: "Canonical",
+    description: PARSER_DESCRIPTIONS.canonical,
+  },
 ];
 
-function ParserSelect({ value, onChange }: { value?: string; onChange: (v: string) => void }) {
+function ParserSelect({
+  value,
+  onChange,
+}: {
+  value?: string;
+  onChange: (v: string) => void;
+}) {
   const { token } = useAuth();
   const containerRef = useRef<HTMLDivElement>(null);
   const [parsers, setParsers] = useState<
@@ -691,19 +1030,23 @@ function ParserSelect({ value, onChange }: { value?: string; onChange: (v: strin
     ? optsWithDesc.filter(
         (p) =>
           p.label.toLowerCase().includes(query.toLowerCase()) ||
-          p.id.toLowerCase().includes(query.toLowerCase())
+          p.id.toLowerCase().includes(query.toLowerCase()),
       )
     : opts;
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+      if (
+        containerRef.current &&
+        !containerRef.current.contains(e.target as Node)
+      ) {
         setIsOpen(false);
       }
     }
     if (isOpen) {
       document.addEventListener("mousedown", handleClickOutside);
-      return () => document.removeEventListener("mousedown", handleClickOutside);
+      return () =>
+        document.removeEventListener("mousedown", handleClickOutside);
     }
   }, [isOpen]);
 
@@ -715,19 +1058,32 @@ function ParserSelect({ value, onChange }: { value?: string; onChange: (v: strin
 
   return (
     <div ref={containerRef}>
-      <label style={{ ...mono, fontSize: 9, fontWeight: 700, color: "var(--app-fg)", textTransform: "uppercase", display: "block", marginBottom: 6 }}>
+      <label
+        style={{
+          ...mono,
+          fontSize: 9,
+          fontWeight: 700,
+          color: "var(--app-fg)",
+          textTransform: "uppercase",
+          display: "block",
+          marginBottom: 6,
+        }}
+      >
         Parser (output format)
       </label>
       <div style={{ position: "relative" }}>
         <input
           type="text"
-          value={isOpen ? query : (selected?.label ?? "SARIF")}
-          title={!isOpen && selected?.description ? selected.description : undefined}
+          value={isOpen ? query : selected?.label ?? "SARIF"}
+          title={
+            !isOpen && selected?.description ? selected.description : undefined
+          }
           onChange={(e) => setQuery(e.target.value)}
           onFocus={() => setIsOpen(true)}
           onKeyDown={(e) => {
             if (e.key === "Escape") setIsOpen(false);
-            if (e.key === "Enter" && filtered.length > 0 && !isOpen) setIsOpen(true);
+            if (e.key === "Enter" && filtered.length > 0 && !isOpen)
+              setIsOpen(true);
           }}
           placeholder="Search parsers…"
           style={{
@@ -760,7 +1116,14 @@ function ParserSelect({ value, onChange }: { value?: string; onChange: (v: strin
             }}
           >
             {filtered.length === 0 ? (
-              <div style={{ ...sans, fontSize: 12, color: "var(--app-muted)", padding: 12 }}>
+              <div
+                style={{
+                  ...sans,
+                  fontSize: 12,
+                  color: "var(--app-muted)",
+                  padding: 12,
+                }}
+              >
                 No parsers match &quot;{query}&quot;
               </div>
             ) : (
@@ -778,7 +1141,10 @@ function ParserSelect({ value, onChange }: { value?: string; onChange: (v: strin
                     display: "block",
                     width: "100%",
                     padding: "8px 12px",
-                    background: p.id === (value || "sarif") ? "var(--app-input-bg)" : "transparent",
+                    background:
+                      p.id === (value || "sarif")
+                        ? "var(--app-input-bg)"
+                        : "transparent",
                     border: "none",
                     color: "var(--app-fg)",
                     fontSize: 12,
@@ -790,7 +1156,9 @@ function ParserSelect({ value, onChange }: { value?: string; onChange: (v: strin
                   }}
                   onMouseLeave={(e) => {
                     e.currentTarget.style.background =
-                      p.id === (value || "sarif") ? "var(--app-input-bg)" : "transparent";
+                      p.id === (value || "sarif")
+                        ? "var(--app-input-bg)"
+                        : "transparent";
                   }}
                 >
                   {p.label}
@@ -800,8 +1168,16 @@ function ParserSelect({ value, onChange }: { value?: string; onChange: (v: strin
           </div>
         )}
       </div>
-      <div style={{ ...sans, fontSize: 10, color: "var(--app-muted)", marginTop: 4 }}>
-        Search or select the format your scanner outputs (Trivy, Snyk, SARIF, etc.)
+      <div
+        style={{
+          ...sans,
+          fontSize: 10,
+          color: "var(--app-muted)",
+          marginTop: 4,
+        }}
+      >
+        Search or select the format your scanner outputs (Trivy, Snyk, SARIF,
+        etc.)
       </div>
     </div>
   );
@@ -810,7 +1186,19 @@ function ParserSelect({ value, onChange }: { value?: string; onChange: (v: strin
 function ReadOnlyField({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <label style={{ ...mono, fontSize: 9, fontWeight: 600, color: "var(--app-muted)", textTransform: "uppercase", display: "block", marginBottom: 6 }}>{label}</label>
+      <label
+        style={{
+          ...mono,
+          fontSize: 9,
+          fontWeight: 600,
+          color: "var(--app-muted)",
+          textTransform: "uppercase",
+          display: "block",
+          marginBottom: 6,
+        }}
+      >
+        {label}
+      </label>
       <div
         style={{
           ...mono,
@@ -846,7 +1234,9 @@ function SourceSettingsContent({
   onSourcesChange?: (sources: Source[]) => void;
   onSourceRemoved?: () => void;
 }) {
-  const typeKey = sourceTypes.find(([, v]) => v.adapter === source.adapter || v.label === source.name)?.[0];
+  const typeKey = sourceTypes.find(
+    ([, v]) => v.adapter === source.adapter || v.label === source.name,
+  )?.[0];
 
   return (
     <>
@@ -897,7 +1287,8 @@ function AddSourceContent({
     };
     const descDefault: Record<string, string> = {
       aikido: "Container, SCA, SAST, IaC, secrets scanner. Webhooks + REST.",
-      manual: "Push findings from Trivy, Snyk, Semgrep, Gitleaks, SARIF, or canonical format. Select parser below.",
+      manual:
+        "Push findings from Trivy, Snyk, Semgrep, Gitleaks, SARIF, or canonical format. Select parser below.",
     };
     const label = info?.label ?? picker;
     const defaultId = info?.adapter === "manual" ? slugify(label) : "";
@@ -911,7 +1302,11 @@ function AddSourceContent({
       parser: info?.parser ?? (picker === "manual" ? "sarif" : undefined),
     };
     const handleClearAll = () => {
-      if (confirm("Clear all sources? The flow canvas will show only sources you add.")) {
+      if (
+        confirm(
+          "Clear all sources? The flow canvas will show only sources you add.",
+        )
+      ) {
         onSourcesChange!([]);
       }
     };
@@ -925,15 +1320,31 @@ function AddSourceContent({
         />
         {picker === "aikido" && (
           <div style={{ marginTop: 24 }}>
-            <p style={{ ...sans, fontSize: 12, color: "var(--app-muted)", marginBottom: 8 }}>
-              After adding the source, click it on the canvas to configure Aikido credentials.
+            <p
+              style={{
+                ...sans,
+                fontSize: 12,
+                color: "var(--app-muted)",
+                marginBottom: 8,
+              }}
+            >
+              After adding the source, click it on the canvas to configure
+              Aikido credentials.
             </p>
           </div>
         )}
         {picker === "manual" && (
           <div style={{ marginTop: 24 }}>
-            <p style={{ ...sans, fontSize: 12, color: "var(--app-muted)", marginBottom: 8 }}>
-              After adding the source, click it to create an API key or OAuth client for ingest.
+            <p
+              style={{
+                ...sans,
+                fontSize: 12,
+                color: "var(--app-muted)",
+                marginBottom: 8,
+              }}
+            >
+              After adding the source, click it to create an API key or OAuth
+              client for ingest.
             </p>
           </div>
         )}
@@ -976,16 +1387,26 @@ function AddSourceContent({
     );
   }
 
-  const availableTypes = sourceTypes.filter(([key]) => AVAILABLE_SOURCE_TYPES.includes(key as "aikido"));
+  const availableTypes = sourceTypes.filter(([key]) =>
+    AVAILABLE_SOURCE_TYPES.includes(key as "aikido"),
+  );
 
   const handleClearAll = useCallback(() => {
-    if (!onSourcesChange || !confirm("Clear all sources? The flow canvas will show only sources you add.")) return;
+    if (
+      !onSourcesChange ||
+      !confirm(
+        "Clear all sources? The flow canvas will show only sources you add.",
+      )
+    )
+      return;
     onSourcesChange([]);
   }, [onSourcesChange]);
 
   return (
     <div>
-      <div style={{ ...sans, fontSize: 12, color: "#94a3b8", marginBottom: 14 }}>
+      <div
+        style={{ ...sans, fontSize: 12, color: "#94a3b8", marginBottom: 14 }}
+      >
         Choose a source type to add:
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -1023,7 +1444,14 @@ function AddSourceContent({
                 flexShrink: 0,
               }}
             />
-            <span style={{ ...sans, fontSize: 13, fontWeight: 600, color: "var(--app-fg)" }}>
+            <span
+              style={{
+                ...sans,
+                fontSize: 13,
+                fontWeight: 600,
+                color: "var(--app-fg)",
+              }}
+            >
               {info.label}
             </span>
           </button>
@@ -1103,12 +1531,28 @@ function AddTrackerForm({
         marginBottom: 20,
       }}
     >
-      <div style={{ ...mono, fontSize: 9, fontWeight: 700, letterSpacing: "0.1em", color: "var(--app-muted)", textTransform: "uppercase", marginBottom: 12 }}>
+      <div
+        style={{
+          ...mono,
+          fontSize: 9,
+          fontWeight: 700,
+          letterSpacing: "0.1em",
+          color: "var(--app-muted)",
+          textTransform: "uppercase",
+          marginBottom: 12,
+        }}
+      >
         Add tracker
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-          <Field label="Display name" value={edit.name} onChange={(v) => setEdit((p) => ({ ...p, name: v }))} />
+        <div
+          style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}
+        >
+          <Field
+            label="Display name"
+            value={edit.name}
+            onChange={(v) => setEdit((p) => ({ ...p, name: v }))}
+          />
           <ReadOnlyField label="Type" value={edit.type} />
         </div>
         <Field
@@ -1133,21 +1577,39 @@ function AddTrackerForm({
               type="checkbox"
               id="useAikidoTracking"
               checked={!!edit.useAikidoTracking}
-              onChange={(e) => setEdit((p) => ({ ...p, useAikidoTracking: e.target.checked }))}
+              onChange={(e) =>
+                setEdit((p) => ({ ...p, useAikidoTracking: e.target.checked }))
+              }
             />
-            <label htmlFor="useAikidoTracking" style={{ ...sans, fontSize: 12, color: "var(--app-fg)", cursor: "pointer" }}>
-              Use Aikido&apos;s Linear integration for tracking (canvas shows Aikido Tracker node)
+            <label
+              htmlFor="useAikidoTracking"
+              style={{
+                ...sans,
+                fontSize: 12,
+                color: "var(--app-fg)",
+                cursor: "pointer",
+              }}
+            >
+              Use Aikido&apos;s Linear integration for tracking (canvas shows
+              Aikido Tracker node)
             </label>
           </div>
         )}
-        {saveError && <div style={{ ...sans, fontSize: 12, color: "var(--app-danger)" }}>{saveError}</div>}
+        {saveError && (
+          <div style={{ ...sans, fontSize: 12, color: "var(--app-danger)" }}>
+            {saveError}
+          </div>
+        )}
         <button
           onClick={handleAdd}
           disabled={!edit.name?.trim() || saving}
           style={{
             ...mono,
             padding: "8px 16px",
-            background: edit.name?.trim() && !saving ? "var(--app-accent)" : "var(--app-border)",
+            background:
+              edit.name?.trim() && !saving
+                ? "var(--app-accent)"
+                : "var(--app-border)",
             border: "none",
             borderRadius: 6,
             color: "var(--app-fg)",
@@ -1201,8 +1663,16 @@ function AddTrackerContent({
           onTrackerChange={onTrackerChange}
           onAdded={onTrackerAdded}
         />
-        <p style={{ ...sans, fontSize: 12, color: "var(--app-muted)", marginTop: 24 }}>
-          After adding the tracker, click it on the canvas to configure Linear credentials.
+        <p
+          style={{
+            ...sans,
+            fontSize: 12,
+            color: "var(--app-muted)",
+            marginTop: 24,
+          }}
+        >
+          After adding the tracker, click it on the canvas to configure Linear
+          credentials.
         </p>
       </>
     );
@@ -1210,7 +1680,9 @@ function AddTrackerContent({
 
   return (
     <div>
-      <div style={{ ...sans, fontSize: 12, color: "#94a3b8", marginBottom: 14 }}>
+      <div
+        style={{ ...sans, fontSize: 12, color: "#94a3b8", marginBottom: 14 }}
+      >
         Choose a task tracker to add:
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -1239,8 +1711,17 @@ function AddTrackerContent({
               e.currentTarget.style.borderColor = "var(--app-border)";
             }}
           >
-            <span style={{ ...mono, fontSize: 16, flexShrink: 0 }}>{info.icon}</span>
-            <span style={{ ...sans, fontSize: 13, fontWeight: 600, color: "var(--app-fg)" }}>
+            <span style={{ ...mono, fontSize: 16, flexShrink: 0 }}>
+              {info.icon}
+            </span>
+            <span
+              style={{
+                ...sans,
+                fontSize: 13,
+                fontWeight: 600,
+                color: "var(--app-fg)",
+              }}
+            >
               {info.label}
             </span>
           </button>
@@ -1250,13 +1731,34 @@ function AddTrackerContent({
   );
 }
 
-function PlaceholderSettings({ name, message }: { name: string; message: string }) {
+function PlaceholderSettings({
+  name,
+  message,
+}: {
+  name: string;
+  message: string;
+}) {
   return (
     <div>
-      <div style={{ ...mono, fontSize: 12, fontWeight: 700, color: "#94a3b8", marginBottom: 8 }}>
+      <div
+        style={{
+          ...mono,
+          fontSize: 12,
+          fontWeight: 700,
+          color: "#94a3b8",
+          marginBottom: 8,
+        }}
+      >
         {name}
       </div>
-      <div style={{ ...sans, fontSize: 12, color: "var(--app-muted)", lineHeight: 1.5 }}>
+      <div
+        style={{
+          ...sans,
+          fontSize: 12,
+          color: "var(--app-muted)",
+          lineHeight: 1.5,
+        }}
+      >
         {message}
       </div>
     </div>

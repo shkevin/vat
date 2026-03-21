@@ -8,7 +8,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.finding import Finding, FindingType, Severity, Status
 from app.schemas.vat import VatFindingSchema, VatFindingType, VatSeverity
 from app.services.findings_service import _status_to_enum
-from app.services.dedup import component_base, make_fingerprint, make_fingerprint_for_source_issue
+from app.services.dedup import (
+    component_base,
+    make_fingerprint,
+    make_fingerprint_for_source_issue,
+)
 from app.services.sla import SLA_DAYS
 
 
@@ -39,7 +43,13 @@ def _vat_severity_to_model(sev: VatSeverity) -> Severity:
     return Severity(sev.value)
 
 
-_SEVERITY_ORDER = (Severity.Critical, Severity.High, Severity.Medium, Severity.Low, Severity.Informational)
+_SEVERITY_ORDER = (
+    Severity.Critical,
+    Severity.High,
+    Severity.Medium,
+    Severity.Low,
+    Severity.Informational,
+)
 
 
 def _max_severity(a: Severity, b: Severity) -> Severity:
@@ -62,7 +72,9 @@ def _vat_type_to_model(ft: VatFindingType) -> FindingType:
 
 def _compute_sla_due(finding_type: FindingType, severity: Severity) -> str:
     """Compute SLA due date from type and severity."""
-    days = SLA_DAYS.get((finding_type.value, severity.value), SLA_DAYS.get(("SCA", "Medium"), 30))
+    days = SLA_DAYS.get(
+        (finding_type.value, severity.value), SLA_DAYS.get(("SCA", "Medium"), 30)
+    )
     now = datetime.now(timezone.utc)
     due = now + timedelta(days=days)
     return due.strftime("%Y-%m-%d")
@@ -84,7 +96,9 @@ async def ingest_finding(
     """
     cve_id = payload.cve_id
     component = payload.component or payload.component_base or ""
-    comp_base = payload.component_base or (component_base(component) if component else None)
+    comp_base = payload.component_base or (
+        component_base(component) if component else None
+    )
     image = payload.image or ""
     branch = getattr(payload, "branch", None) or ""
     tag = getattr(payload, "tag", None) or ""
@@ -92,12 +106,19 @@ async def ingest_finding(
     # Otherwise use CVE+component+image+branch+tag for cross-source dedup.
     sid = getattr(payload, "source_issue_id", None)
     if sid and str(sid).strip():
-        fp = make_fingerprint_for_source_issue(source_name, str(sid).strip(), image=image, branch=branch, tag=tag)
+        fp = make_fingerprint_for_source_issue(
+            source_name, str(sid).strip(), image=image, branch=branch, tag=tag
+        )
     else:
         # Include source_name so findings from different parsers (e.g. vat-local-gitleaks vs
         # vat-local-trivy) remain separate — enables "Group findings" toggle to show instances.
         fp = make_fingerprint(
-            cve_id, component, image=image, branch=branch, tag=tag, source_name=source_name
+            cve_id,
+            component,
+            image=image,
+            branch=branch,
+            tag=tag,
+            source_name=source_name,
         )
 
     finding_type = _vat_type_to_model(payload.finding_type)
@@ -106,7 +127,12 @@ async def ingest_finding(
     description = payload.description or ""
 
     source_entry = {"name": source_name, "importedAt": _now()}
-    audit_entry = {"ts": _now(), "user": "system", "action": f"Imported from {source_name} scan", "note": None}
+    audit_entry = {
+        "ts": _now(),
+        "user": "system",
+        "action": f"Imported from {source_name} scan",
+        "note": None,
+    }
 
     # Check for existing by fingerprint (dedup is global)
     result = await db.execute(select(Finding).where(Finding.fingerprint_id == fp))
@@ -121,13 +147,22 @@ async def ingest_finding(
         if existing and existing.fingerprint_id != fp:
             existing.fingerprint_id = fp
             audit = list(existing.audit or [])
-            audit.append({"ts": _now(), "user": "system", "action": "Fingerprint migrated", "note": "1:1 source mapping"})
+            audit.append(
+                {
+                    "ts": _now(),
+                    "user": "system",
+                    "action": "Fingerprint migrated",
+                    "note": "1:1 source mapping",
+                }
+            )
             existing.audit = audit
 
     if existing:
         # Merge: append source (avoid duplicate), add audit
         sources = list(existing.sources or [])
-        if not any(s.get("name") == source_name for s in sources if isinstance(s, dict)):
+        if not any(
+            s.get("name") == source_name for s in sources if isinstance(s, dict)
+        ):
             sources.append(source_entry)
             existing.sources = sources
         if getattr(payload, "source_issue_id", None):
@@ -135,15 +170,29 @@ async def ingest_finding(
 
             source_url = getattr(payload, "source_issue_url", None)
             add_source_link(
-                existing, source_name, str(payload.source_issue_id),
-                url=source_url if source_url and isinstance(source_url, str) and source_url.strip() else None,
+                existing,
+                source_name,
+                str(payload.source_issue_id),
+                url=source_url
+                if source_url and isinstance(source_url, str) and source_url.strip()
+                else None,
             )
-        if getattr(payload, "source_issue_group_id", None) and not existing.source_issue_group_id:
+        if (
+            getattr(payload, "source_issue_group_id", None)
+            and not existing.source_issue_group_id
+        ):
             existing.source_issue_group_id = payload.source_issue_group_id
         if aikido_source_id and not existing.aikido_source_id:
             existing.aikido_source_id = aikido_source_id
         audit = list(existing.audit or [])
-        audit.append({"ts": _now(), "user": "system", "action": "Deduplication merge", "note": f"Re-import from {source_name}"})
+        audit.append(
+            {
+                "ts": _now(),
+                "user": "system",
+                "action": "Deduplication merge",
+                "note": f"Re-import from {source_name}",
+            }
+        )
         existing.audit = audit
         if tenant_id and not existing.tenant_id:
             existing.tenant_id = tenant_id
@@ -192,11 +241,23 @@ async def ingest_finding(
         if payload_status and payload_status not in ("Open", "Reopened"):
             try:
                 source_status = _status_to_enum(payload_status)
-                if source_status in (Status.Resolved, Status.Suppressed, Status.FalsePositive, Status.NotApplicable):
+                if source_status in (
+                    Status.Resolved,
+                    Status.Suppressed,
+                    Status.FalsePositive,
+                    Status.NotApplicable,
+                ):
                     existing.status = source_status
                     if cd:
                         existing.closed_at = cd
-                    audit.append({"ts": _now(), "user": "system", "action": "Status synced from source", "note": payload_status})
+                    audit.append(
+                        {
+                            "ts": _now(),
+                            "user": "system",
+                            "action": "Status synced from source",
+                            "note": payload_status,
+                        }
+                    )
             except (ValueError, KeyError):
                 pass
         # If previously Resolved, treat as regression per PRD §5.6 (only when source says open)
@@ -207,7 +268,14 @@ async def ingest_finding(
             regression_of.append(existing.id)
             existing.regression_of = regression_of
             existing.regression_count = (existing.regression_count or 0) + 1
-            audit.append({"ts": _now(), "user": "system", "action": "Regression detected", "note": "Scanner re-detected previously resolved finding"})
+            audit.append(
+                {
+                    "ts": _now(),
+                    "user": "system",
+                    "action": "Regression detected",
+                    "note": "Scanner re-detected previously resolved finding",
+                }
+            )
         await db.commit()
         await db.refresh(existing)
         return existing, False
@@ -223,13 +291,17 @@ async def ingest_finding(
         from datetime import datetime, timezone
 
         source_url = getattr(payload, "source_issue_url", None)
-        external_links = [{
-            "adapter_key": source_name,
-            "kind": "source",
-            "issue_id": str(payload.source_issue_id),
-            "url": source_url if source_url and isinstance(source_url, str) and source_url.strip() else None,
-            "created_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-        }]
+        external_links = [
+            {
+                "adapter_key": source_name,
+                "kind": "source",
+                "issue_id": str(payload.source_issue_id),
+                "url": source_url
+                if source_url and isinstance(source_url, str) and source_url.strip()
+                else None,
+                "created_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            }
+        ]
 
     # Use source status when provided (e.g. Aikido ignored/closed)
     initial_status = Status.Open

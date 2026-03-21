@@ -41,7 +41,9 @@ describe("getFindingGroupKey fixture parity", () => {
   });
 
   it("fixture covers all finding types (CI guard)", () => {
-    const fixtureTypes = new Set(fixture.fixtures.map((f) => f.findingType.toUpperCase()));
+    const fixtureTypes = new Set(
+      fixture.fixtures.map((f) => f.findingType.toUpperCase()),
+    );
     for (const ft of Object.keys(FINDING_TYPES)) {
       expect(fixtureTypes.has(ft.toUpperCase())).toBe(true);
     }

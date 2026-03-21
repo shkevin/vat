@@ -50,12 +50,15 @@ export function getAppConfig(): AppConfig {
   const effectiveLogo = logo === "▣" ? defaultAppConfig.banner.logo : logo;
   return {
     banner: {
-      companyName: process.env.APP_COMPANY_NAME ?? defaultAppConfig.banner.companyName,
+      companyName:
+        process.env.APP_COMPANY_NAME ?? defaultAppConfig.banner.companyName,
       logo: effectiveLogo,
       appName: process.env.APP_NAME ?? defaultAppConfig.banner.appName,
-      classification: process.env.CLASSIFICATION ?? defaultAppConfig.banner.classification,
+      classification:
+        process.env.CLASSIFICATION ?? defaultAppConfig.banner.classification,
       searchPlaceholder:
-        process.env.SEARCH_PLACEHOLDER ?? defaultAppConfig.banner.searchPlaceholder,
+        process.env.SEARCH_PLACEHOLDER ??
+        defaultAppConfig.banner.searchPlaceholder,
       showThemeToggle:
         process.env.SHOW_THEME_TOGGLE !== undefined
           ? process.env.SHOW_THEME_TOGGLE === "true"
@@ -64,11 +67,18 @@ export function getAppConfig(): AppConfig {
     },
     footer: {
       classification:
-        process.env.FOOTER_CLASSIFICATION ?? process.env.CLASSIFICATION ?? defaultAppConfig.footer.classification,
+        process.env.FOOTER_CLASSIFICATION ??
+        process.env.CLASSIFICATION ??
+        defaultAppConfig.footer.classification,
       suffix: process.env.FOOTER_SUFFIX ?? defaultAppConfig.footer.suffix,
     },
     isAdmin: process.env.VAT_IS_ADMIN === "true",
-    repoBaseUrl: process.env.REPO_BASE_URL || process.env.NEXT_PUBLIC_REPO_BASE_URL || undefined,
-    repoUrlType: (process.env.REPO_URL_TYPE || process.env.NEXT_PUBLIC_REPO_URL_TYPE || "github") as "github" | "gitlab",
+    repoBaseUrl:
+      process.env.REPO_BASE_URL ||
+      process.env.NEXT_PUBLIC_REPO_BASE_URL ||
+      undefined,
+    repoUrlType: (process.env.REPO_URL_TYPE ||
+      process.env.NEXT_PUBLIC_REPO_URL_TYPE ||
+      "github") as "github" | "gitlab",
   };
 }

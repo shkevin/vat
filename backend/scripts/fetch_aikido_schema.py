@@ -40,7 +40,10 @@ async def get_creds():
 async def run():
     creds = await get_creds()
     if not creds or not creds.get("client_id") or not creds.get("client_secret"):
-        print("Error: Aikido credentials not found. Set VAT_AIKIDO_CLIENT_ID and VAT_AIKIDO_CLIENT_SECRET in env, or configure in VAT Settings.", file=sys.stderr)
+        print(
+            "Error: Aikido credentials not found. Set VAT_AIKIDO_CLIENT_ID and VAT_AIKIDO_CLIENT_SECRET in env, or configure in VAT Settings.",
+            file=sys.stderr,
+        )
         sys.exit(1)
 
     issues = await fetch_aikido_issues(credentials=creds)
@@ -64,7 +67,12 @@ async def run():
             schema[k] = "number"
         elif isinstance(v, str):
             schema[k] = "string"
-            if "detect" in k.lower() or "created" in k.lower() or "date" in k.lower() or "at" in k.lower():
+            if (
+                "detect" in k.lower()
+                or "created" in k.lower()
+                or "date" in k.lower()
+                or "at" in k.lower()
+            ):
                 schema[f"{k} (sample)"] = v[:80] if len(v) > 80 else v
         elif isinstance(v, list):
             schema[k] = f"array[{len(v)}]"
@@ -77,7 +85,14 @@ async def run():
     print("=== Aikido issues/export schema (first issue) ===")
     print(json.dumps(schema, indent=2))
     # Date-related fields explicitly
-    date_keys = [k for k in first.keys() if any(d in k.lower() for d in ("detect", "created", "seen", "date", "at", "timestamp"))]
+    date_keys = [
+        k
+        for k in first.keys()
+        if any(
+            d in k.lower()
+            for d in ("detect", "created", "seen", "date", "at", "timestamp")
+        )
+    ]
     print("\n=== Date-related fields ===")
     for k in date_keys:
         print(f"  {k}: {repr(first[k])[:100]}")

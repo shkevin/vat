@@ -33,7 +33,13 @@ async def seed_all(
     Load seed data: findings, SBOM, tenants, users.
     Admin only. For development and demo use.
     """
-    result = {"findings": 0, "sbom_created": 0, "sbom_updated": 0, "tenants": 0, "users": 0}
+    result = {
+        "findings": 0,
+        "sbom_created": 0,
+        "sbom_updated": 0,
+        "tenants": 0,
+        "users": 0,
+    }
 
     try:
         if body.findings:
@@ -44,7 +50,9 @@ async def seed_all(
             bom = item.get("bom", item)
             component = item.get("component")
             source = item.get("source", "manual")
-            created, updated = await import_sbom(db, bom, source=source, component=component)
+            created, updated = await import_sbom(
+                db, bom, source=source, component=component
+            )
             result["sbom_created"] += created
             result["sbom_updated"] += updated
 
@@ -69,7 +77,13 @@ async def seed_all(
             email = u.get("email", "")
             role = u.get("role", "reviewer")
             password = u.get("password")
-            password_hash = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8") if password else None
+            password_hash = (
+                bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode(
+                    "utf-8"
+                )
+                if password
+                else None
+            )
             if uid:
                 await db.execute(
                     text(
@@ -78,7 +92,13 @@ async def seed_all(
                         "ON CONFLICT (id) DO UPDATE SET tenant_id = EXCLUDED.tenant_id, email = EXCLUDED.email, "
                         "role = EXCLUDED.role, password_hash = COALESCE(EXCLUDED.password_hash, users.password_hash)"
                     ),
-                    {"id": uid, "tenant_id": tenant_id, "email": email, "role": role, "password_hash": password_hash},
+                    {
+                        "id": uid,
+                        "tenant_id": tenant_id,
+                        "email": email,
+                        "role": role,
+                        "password_hash": password_hash,
+                    },
                 )
                 result["users"] += 1
         if body.users:

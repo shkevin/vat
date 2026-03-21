@@ -17,12 +17,15 @@ Run from backend/: uv run python scripts/simulate_excel_to_vat.py [path/to/excel
 import asyncio
 import json
 import sys
-from collections import defaultdict
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app.adapters.aikido import AikidoAdapter, _extract_asset_name, _extract_branch, _parse_repo_name_with_branch
+from app.adapters.aikido import (
+    AikidoAdapter,
+    _extract_asset_name,
+    _parse_repo_name_with_branch,
+)
 from app.services.dedup import make_fingerprint, make_fingerprint_for_source_issue
 
 ASSET = "kamiwaza"
@@ -65,7 +68,11 @@ def load_excel(path: Path) -> tuple[list[dict], list[dict]]:
     raw_issues = []
     if "RawIssues" in pd.ExcelFile(path).sheet_names:
         df = pd.read_excel(path, sheet_name="RawIssues")
-        df = df.rename(columns=lambda c: c.strip().lower().replace(" ", "_") if isinstance(c, str) else c)
+        df = df.rename(
+            columns=lambda c: c.strip().lower().replace(" ", "_")
+            if isinstance(c, str)
+            else c
+        )
         for _, row in df.iterrows():
             d = {}
             for k, v in row.items():
@@ -82,7 +89,11 @@ def load_excel(path: Path) -> tuple[list[dict], list[dict]]:
 
     issues = []
     df = pd.read_excel(path, sheet_name="Issues")
-    df = df.rename(columns=lambda c: c.strip().lower().replace(" ", "_") if isinstance(c, str) else c)
+    df = df.rename(
+        columns=lambda c: c.strip().lower().replace(" ", "_")
+        if isinstance(c, str)
+        else c
+    )
     for _, row in df.iterrows():
         issues.append(dict(row))
 
@@ -122,6 +133,7 @@ async def fetch_repo_map() -> dict:
     try:
         from app.adapters.aikido import fetch_aikido_code_repositories
         from app.core.config import get_settings
+
         s = get_settings()
         if s.aikido_client_id and s.aikido_client_secret:
             repos = await fetch_aikido_code_repositories()
@@ -163,14 +175,16 @@ async def simulate_ingest(
     merged = 0
     kamiwaza_raw_count = 0
     kamiwaza_unique_count = 0
-    merge_events: list[dict] = []  # {raw_id, fp, image, branch, merged_into_image_branch}
+    merge_events: list[
+        dict
+    ] = []  # {raw_id, fp, image, branch, merged_into_image_branch}
 
     for raw in raw_issues:
         if not isinstance(raw, dict):
             continue
         try:
             transformed = await adapter.to_vat_finding(raw, repo_map=repo_map)
-        except Exception as e:
+        except Exception:
             continue
 
         img = transformed.image or ""
@@ -191,7 +205,9 @@ async def simulate_ingest(
         tg = getattr(transformed, "tag", None) or ""
 
         if sid:
-            fp = make_fingerprint_for_source_issue("Aikido", str(sid), image=img, branch=br, tag=tg)
+            fp = make_fingerprint_for_source_issue(
+                "Aikido", str(sid), image=img, branch=br, tag=tg
+            )
         else:
             fp = make_fingerprint(
                 transformed.cve_id,
@@ -211,14 +227,16 @@ async def simulate_ingest(
             merged += 1
             first_img, first_br = fp_to_first_image_branch.get(fp, ("?", "?"))
             if is_kamiwaza and (first_img != ASSET or first_br != BRANCH):
-                merge_events.append({
-                    "raw_id": raw_id,
-                    "fp_preview": fp[:16] + "...",
-                    "image": img,
-                    "branch": br,
-                    "merged_into": f"{first_img} ({first_br})",
-                    "source_issue_id": sid,
-                })
+                merge_events.append(
+                    {
+                        "raw_id": raw_id,
+                        "fp_preview": fp[:16] + "...",
+                        "image": img,
+                        "branch": br,
+                        "merged_into": f"{first_img} ({first_br})",
+                        "source_issue_id": sid,
+                    }
+                )
             if is_kamiwaza:
                 pass  # merged, so no new unique kamiwaza finding
         else:
@@ -248,7 +266,9 @@ async def main():
     if path and Path(path).exists():
         path = Path(path)
     else:
-        files = sorted(exports.glob("*.xlsx"), key=lambda p: p.stat().st_mtime, reverse=True)
+        files = sorted(
+            exports.glob("*.xlsx"), key=lambda p: p.stat().st_mtime, reverse=True
+        )
         path = files[0] if files else None
 
     if not path or not path.exists():
@@ -296,7 +316,9 @@ async def main():
             adapter = AikidoAdapter()
             try:
                 t = await adapter.to_vat_finding(sample_raw, repo_map=repo_map)
-                print(f"\n--- DEBUG: Excel issue_id={sample_id} → adapter image={t.image!r} branch={getattr(t,'branch','')!r} ---")
+                print(
+                    f"\n--- DEBUG: Excel issue_id={sample_id} → adapter image={t.image!r} branch={getattr(t,'branch','')!r} ---"
+                )
                 print(f"  Raw keys (sample): {list(sample_raw.keys())[:20]}...")
                 an = _extract_asset_name(sample_raw)
                 print(f"  _extract_asset_name(raw)={an!r}")
@@ -309,25 +331,35 @@ async def main():
     print(f"Total created: {stats['created']}")
     print(f"Total merged:  {stats['merged']}")
     print(f"Total unique findings: {stats['total_unique']}")
-    print(f"\nKamiwaza (develop):")
+    print("\nKamiwaza (develop):")
     print(f"  Raw issues mapping to kamiwaza (develop): {stats['kamiwaza_raw_count']}")
     print(f"  Unique findings after ingest: {stats['kamiwaza_unique_count']}")
-    print(f"  Lost to merge: {stats['kamiwaza_raw_count'] - stats['kamiwaza_unique_count']}")
+    print(
+        f"  Lost to merge: {stats['kamiwaza_raw_count'] - stats['kamiwaza_unique_count']}"
+    )
 
     if stats["merge_events"]:
-        print(f"\n--- CROSS-REPO MERGE EVENTS ({len(stats['merge_events'])} kamiwaza issues merged into other repos) ---")
+        print(
+            f"\n--- CROSS-REPO MERGE EVENTS ({len(stats['merge_events'])} kamiwaza issues merged into other repos) ---"
+        )
         for e in stats["merge_events"][:15]:
-            print(f"  raw_id={e['raw_id']} image={e['image']} branch={e['branch']} → merged into {e['merged_into']} (fp={e['fp_preview']})")
+            print(
+                f"  raw_id={e['raw_id']} image={e['image']} branch={e['branch']} → merged into {e['merged_into']} (fp={e['fp_preview']})"
+            )
         if len(stats["merge_events"]) > 15:
             print(f"  ... and {len(stats['merge_events']) - 15} more")
 
     print("\n--- COMPARISON ---")
     print(f"  Excel kamiwaza count:  {len(excel_kamiwaza)}")
     print(f"  Simulated VAT count:   {stats['kamiwaza_unique_count']}")
-    print(f"  Gap:                   {len(excel_kamiwaza) - stats['kamiwaza_unique_count']}")
+    print(
+        f"  Gap:                   {len(excel_kamiwaza) - stats['kamiwaza_unique_count']}"
+    )
 
     if stats["kamiwaza_raw_count"] != len(excel_kamiwaza):
-        print(f"\n  NOTE: RawIssues→kamiwaza ({stats['kamiwaza_raw_count']}) != Issues kamiwaza ({len(excel_kamiwaza)})")
+        print(
+            f"\n  NOTE: RawIssues→kamiwaza ({stats['kamiwaza_raw_count']}) != Issues kamiwaza ({len(excel_kamiwaza)})"
+        )
         print("  Possible cause: Excel column/type differences when loading RawIssues.")
 
     print("\n" + "=" * 80)

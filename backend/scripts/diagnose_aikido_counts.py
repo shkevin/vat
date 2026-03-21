@@ -10,16 +10,14 @@ then compares with Aikido's /issues/counts if available.
 
 import asyncio
 import json
-import os
 import sys
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 
 # Add app to path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.adapters.aikido import (
     fetch_aikido_issues,
@@ -66,12 +64,15 @@ def compute_trend_metrics(issues: list[dict]) -> dict:
     day = now.weekday()  # 0=Mon, 6=Sun
     diff = (day + 6) % 7  # days since Monday
     this_week_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-    from datetime import timedelta
 
     this_week_start = this_week_start - timedelta(days=diff)
-    this_week_end = this_week_start + timedelta(days=6, hours=23, minutes=59, seconds=59, microseconds=999999)
+    this_week_end = this_week_start + timedelta(
+        days=6, hours=23, minutes=59, seconds=59, microseconds=999999
+    )
     last_week_start = this_week_start - timedelta(days=7)
-    last_week_end = last_week_start + timedelta(days=6, hours=23, minutes=59, seconds=59, microseconds=999999)
+    last_week_end = last_week_start + timedelta(
+        days=6, hours=23, minutes=59, seconds=59, microseconds=999999
+    )
 
     this_start_ts = this_week_start.timestamp() * 1000
     this_end_ts = this_week_end.timestamp() * 1000
@@ -171,7 +172,8 @@ async def get_creds_from_db() -> dict | None:
         if row and isinstance(row.value, dict):
             return {
                 "client_id": row.value.get("client_id") or row.value.get("clientId"),
-                "client_secret": row.value.get("client_secret") or row.value.get("clientSecret"),
+                "client_secret": row.value.get("client_secret")
+                or row.value.get("clientSecret"),
                 "region": row.value.get("region") or "eu",
             }
     return None
@@ -190,7 +192,9 @@ async def main():
             "region": s.aikido_region or "eu",
         }
     if not creds.get("client_id") or not creds.get("client_secret"):
-        print("ERROR: No Aikido credentials. Configure in VAT Settings or set VAT_AIKIDO_CLIENT_ID/SECRET.")
+        print(
+            "ERROR: No Aikido credentials. Configure in VAT Settings or set VAT_AIKIDO_CLIENT_ID/SECRET."
+        )
         sys.exit(1)
     print(f"Using credentials from: {'DB' if await get_creds_from_db() else 'env'}")
 
@@ -203,7 +207,11 @@ async def main():
     print("\n2. Fetching GET /issues/counts...")
     try:
         counts_data = await _aikido_api_get("/issues/counts", creds)
-        aikido_counts = counts_data.get("counts", counts_data) if isinstance(counts_data, dict) else {}
+        aikido_counts = (
+            counts_data.get("counts", counts_data)
+            if isinstance(counts_data, dict)
+            else {}
+        )
         print(f"   Aikido counts: {json.dumps(aikido_counts, indent=2)}")
     except Exception as e:
         aikido_counts = {}
@@ -241,20 +249,23 @@ async def main():
         if (i.get("status") or "").lower() in ("resolved", "closed")
         and (i.get("closed_at") or i.get("closedAt"))
     )
-    print(f"\n5. closed_at analysis:")
+    print("\n5. closed_at analysis:")
     print(f"   Issues with closed_at:           {with_closed}")
     print(f"   Status resolved/closed:          {resolved_status}")
     print(f"   Resolved/closed WITH closed_at:  {resolved_with_closed}")
-    print(f"   Resolved/closed WITHOUT closed_at: {resolved_status - resolved_with_closed}")
+    print(
+        f"   Resolved/closed WITHOUT closed_at: {resolved_status - resolved_with_closed}"
+    )
 
     # 6. first_detected_at in this week (for new count)
     print("\n6. Sample of issues with first_detected_at in 'this week':")
     now = datetime.now(timezone.utc)
     day = now.weekday()
     diff = (day + 6) % 7
-    from datetime import timedelta
 
-    this_week_start = (now.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=diff)).timestamp() * 1000
+    this_week_start = (
+        now.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=diff)
+    ).timestamp() * 1000
     this_week_end = this_week_start + 7 * 86400 * 1000 - 1
 
     def to_ts(ts_val):
@@ -270,7 +281,8 @@ async def main():
     new_in_week = [
         i
         for i in raw_issues
-        if (i.get("status") or "").lower() not in ("ignored", "auto_ignored", "suppressed")
+        if (i.get("status") or "").lower()
+        not in ("ignored", "auto_ignored", "suppressed")
         and (fd := to_ts(i.get("first_detected_at") or i.get("firstDetectedAt")))
         and this_week_start <= fd <= this_week_end
     ]
@@ -279,11 +291,17 @@ async def main():
         sample = new_in_week[:3]
         for i in sample:
             fd = i.get("first_detected_at") or i.get("firstDetectedAt")
-            print(f"   - id={i.get('id')} status={i.get('status')} first_detected_at={fd}")
+            print(
+                f"   - id={i.get('id')} status={i.get('status')} first_detected_at={fd}"
+            )
 
     # 7. Aikido /issues/counts structure (may nest under "issues" or "issue_groups")
     issues_counts = aikido_counts.get("issues") or aikido_counts
-    aikido_open = issues_counts.get("all") or issues_counts.get("open") or aikido_counts.get("open")
+    aikido_open = (
+        issues_counts.get("all")
+        or issues_counts.get("open")
+        or aikido_counts.get("open")
+    )
 
     # 8. Try "resolved" = resolved+ignored (Aikido "Resolved this week" may = mitigated = closed+ignored)
     def _to_ts(v):
@@ -299,7 +317,10 @@ async def main():
     now_utc = datetime.now(timezone.utc)
     day = now_utc.weekday()
     diff = (day + 6) % 7
-    tw_start = (now_utc.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=diff)).timestamp() * 1000
+    tw_start = (
+        now_utc.replace(hour=0, minute=0, second=0, microsecond=0)
+        - timedelta(days=diff)
+    ).timestamp() * 1000
     tw_end = tw_start + 7 * 86400 * 1000 - 1
     last_start = tw_start - 7 * 86400 * 1000
     last_end = tw_end - 7 * 86400 * 1000
@@ -309,7 +330,12 @@ async def main():
     for i in raw_issues:
         if (i.get("status") or "").lower() != "ignored":
             continue
-        ts_val = i.get("ignored_at") or i.get("ignoredAt") or i.get("closed_at") or i.get("closedAt")
+        ts_val = (
+            i.get("ignored_at")
+            or i.get("ignoredAt")
+            or i.get("closed_at")
+            or i.get("closedAt")
+        )
         ts = _to_ts(ts_val)
         if not ts:
             continue
@@ -320,13 +346,13 @@ async def main():
 
     closed_this_week = computed["resolvedThisWeek"]
     closed_last_week = computed["resolvedLastWeek"]
-    print(f"\n7. Resolved vs Resolved+Ignored (Aikido 'mitigated' may include both):")
+    print("\n7. Resolved vs Resolved+Ignored (Aikido 'mitigated' may include both):")
     print(f"   Closed this week:        {closed_this_week}")
     print(f"   Ignored this week:       {ignored_this_week}")
     print(f"   Closed+Ignored this wk:  {closed_this_week + ignored_this_week}")
     print(f"   Closed last week:        {closed_last_week}")
     print(f"   Ignored last week:       {ignored_last_week}")
-    print(f"   (Aikido dashboard '226 resolved' may = closed+ignored)")
+    print("   (Aikido dashboard '226 resolved' may = closed+ignored)")
 
     # 8b. New: VAT excludes ignored. Aikido may count ALL first_detected this week.
     new_all_this_week = sum(
@@ -342,11 +368,11 @@ async def main():
         and (fd := _to_ts(i.get("first_detected_at") or i.get("firstDetectedAt")))
         and tw_start <= fd <= tw_end
     )
-    print(f"\n7b. New this week (Aikido may count all, VAT excludes ignored):")
+    print("\n7b. New this week (Aikido may count all, VAT excludes ignored):")
     print(f"   New (excl ignored): {computed['newThisWeek']}")
     print(f"   New ignored only:   {new_ignored_this_week}")
     print(f"   New ALL (incl ign): {new_all_this_week}")
-    print(f"   (Aikido '630 new' may = all first_detected this week)")
+    print("   (Aikido '630 new' may = all first_detected this week)")
 
     # 7c. Rolling 7-day window (Aikido may use "last 7 days" not calendar week)
     now_ms = datetime.now(timezone.utc).timestamp() * 1000
@@ -362,7 +388,14 @@ async def main():
         1
         for i in raw_issues
         if (i.get("status") or "").lower() == "ignored"
-        and (ts := _to_ts(i.get("ignored_at") or i.get("ignoredAt") or i.get("closed_at") or i.get("closedAt")))
+        and (
+            ts := _to_ts(
+                i.get("ignored_at")
+                or i.get("ignoredAt")
+                or i.get("closed_at")
+                or i.get("closedAt")
+            )
+        )
         and roll_start <= ts <= now_ms
     )
     new_roll7 = sum(
@@ -370,7 +403,8 @@ async def main():
         for i in raw_issues
         if (fd := _to_ts(i.get("first_detected_at") or i.get("firstDetectedAt")))
         and roll_start <= fd <= now_ms
-        and (i.get("status") or "").lower() not in ("ignored", "auto_ignored", "suppressed")
+        and (i.get("status") or "").lower()
+        not in ("ignored", "auto_ignored", "suppressed")
     )
     new_all_roll7 = sum(
         1
@@ -378,7 +412,7 @@ async def main():
         if (fd := _to_ts(i.get("first_detected_at") or i.get("firstDetectedAt")))
         and roll_start <= fd <= now_ms
     )
-    print(f"\n7c. Rolling 7-day window (vs calendar Mon-Sun):")
+    print("\n7c. Rolling 7-day window (vs calendar Mon-Sun):")
     print(f"   Resolved (closed only) last 7d:  {resolved_roll7}")
     print(f"   Resolved+Ignored last 7d:       {resolved_ignored_roll7}")
     print(f"   New (excl ignored) last 7d:      {new_roll7}")
@@ -387,7 +421,7 @@ async def main():
     # 9. Week boundary (UTC)
     tw_start_dt = datetime.fromtimestamp(tw_start / 1000, tz=timezone.utc)
     tw_end_dt = datetime.fromtimestamp(tw_end / 1000, tz=timezone.utc)
-    print(f"\n8. Week boundaries (UTC):")
+    print("\n8. Week boundaries (UTC):")
     print(f"   This week: {tw_start_dt.isoformat()} to {tw_end_dt.isoformat()}")
     print(f"   Now (UTC): {now_utc.isoformat()}")
 
@@ -398,10 +432,14 @@ async def main():
         print(f"VAT computed current open: {computed['currentOpen']}")
         print(f"Diff: {computed['currentOpen'] - aikido_open}")
     print("\n--- Key finding ---")
-    print("Rolling 7-day window (resolved=216, new=669) is MUCH closer to Aikido (226, 630)")
+    print(
+        "Rolling 7-day window (resolved=216, new=669) is MUCH closer to Aikido (226, 630)"
+    )
     print("than calendar Mon-Sun week (resolved=115, new=326).")
     print("RECOMMENDATION: Aikido likely uses rolling 7-day for 'this week' metrics.")
-    print("Consider changing VAT getCalendarWeekBounds to rolling 7-day to match Aikido.")
+    print(
+        "Consider changing VAT getCalendarWeekBounds to rolling 7-day to match Aikido."
+    )
 
 
 if __name__ == "__main__":

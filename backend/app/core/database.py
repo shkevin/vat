@@ -8,7 +8,9 @@ from app.models.base import Base
 settings = get_settings()
 engine = create_async_engine(
     settings.database_url,
-    echo="debug" if settings.database_url.startswith("postgresql+asyncpg://vat:vat@localhost") else False,
+    echo="debug"
+    if settings.database_url.startswith("postgresql+asyncpg://vat:vat@localhost")
+    else False,
 )
 async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 

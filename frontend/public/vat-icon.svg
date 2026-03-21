@@ -16,17 +16,17 @@
       <path d="M48,150 L48,85 Q48,78 54,75 L122,44 Q128,42 134,44 L202,75 Q208,78 208,85 L208,150 Q208,200 128,228 Q48,200 48,150 Z"/>
     </clipPath>
   </defs>
-  
+
   <!-- Transparent background -->
-  
+
   <!-- Shield shape -->
   <!-- Shield body -->
-  <path d="M48,150 L48,85 Q48,78 54,75 L122,44 Q128,42 134,44 L202,75 Q208,78 208,85 L208,150 Q208,200 128,228 Q48,200 48,150 Z" 
+  <path d="M48,150 L48,85 Q48,78 54,75 L122,44 Q128,42 134,44 L202,75 Q208,78 208,85 L208,150 Q208,200 128,228 Q48,200 48,150 Z"
         fill="url(#pri)"/>
-  
-  <path d="M62,145 L62,92 Q62,87 67,85 L124,58 Q128,56 132,58 L189,85 Q194,87 194,92 L194,145 Q194,188 128,212 Q62,188 62,145 Z" 
+
+  <path d="M62,145 L62,92 Q62,87 67,85 L124,58 Q128,56 132,58 L189,85 Q194,87 194,92 L194,145 Q194,188 128,212 Q62,188 62,145 Z"
         fill="none" stroke="url(#acc)" stroke-width="2" opacity="0.35"/>
-  
+
   <!-- Scan lines -->
   <g clip-path="url(#sc)" filter="url(#glo)">
     <line x1="85" y1="100" x2="140" y2="100" stroke="url(#acc)" stroke-width="5" stroke-linecap="round" opacity="0.6"/>
@@ -34,10 +34,10 @@
     <line x1="85" y1="144" x2="150" y2="144" stroke="url(#acc)" stroke-width="5" stroke-linecap="round" opacity="1"/>
     <line x1="85" y1="166" x2="125" y2="166" stroke="url(#acc)" stroke-width="5" stroke-linecap="round" opacity="0.5"/>
   </g>
-  
+
   <!-- Checkmark -->
-  <polyline points="152,140 162,154 180,124" 
-            fill="none" stroke="#06D6A0" stroke-width="5" 
+  <polyline points="152,140 162,154 180,124"
+            fill="none" stroke="#06D6A0" stroke-width="5"
             stroke-linecap="round" stroke-linejoin="round"
             filter="url(#glo)"/>
 </svg>

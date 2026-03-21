@@ -72,10 +72,14 @@ async def _get_credentials(db: AsyncSession, key: str) -> dict:
 
 def _aikido_creds_key(source_id: str | None) -> str:
     """Settings key for Aikido credentials. Per-source when source_id given."""
-    return f"{AIKIDO_CREDENTIALS_PREFIX}{source_id}" if source_id else AIKIDO_CREDENTIALS
+    return (
+        f"{AIKIDO_CREDENTIALS_PREFIX}{source_id}" if source_id else AIKIDO_CREDENTIALS
+    )
 
 
-async def get_aikido_credentials(db: AsyncSession, source_id: str | None = None) -> dict:
+async def get_aikido_credentials(
+    db: AsyncSession, source_id: str | None = None
+) -> dict:
     """Return Aikido credentials from DB or env: client_id, client_secret, region, webhook_secret.
     When source_id is provided, uses per-source credentials. Falls back to legacy global key if per-source empty."""
     s = get_config()
@@ -87,10 +91,16 @@ async def get_aikido_credentials(db: AsyncSession, source_id: str | None = None)
     else:
         creds = await _get_credentials(db, AIKIDO_CREDENTIALS)
     return {
-        "client_id": creds.get("client_id") or creds.get("clientId") or s.aikido_client_id,
-        "client_secret": creds.get("client_secret") or creds.get("clientSecret") or s.aikido_client_secret,
+        "client_id": creds.get("client_id")
+        or creds.get("clientId")
+        or s.aikido_client_id,
+        "client_secret": creds.get("client_secret")
+        or creds.get("clientSecret")
+        or s.aikido_client_secret,
         "region": creds.get("region") or s.aikido_region or "eu",
-        "webhook_secret": creds.get("webhook_secret") or creds.get("webhookSecret") or s.aikido_webhook_secret,
+        "webhook_secret": creds.get("webhook_secret")
+        or creds.get("webhookSecret")
+        or s.aikido_webhook_secret,
         "sync_back_enabled": creds.get("sync_back_enabled", True),
     }
 
@@ -110,9 +120,9 @@ Post the block below as a **comment** to update this finding in VAT.
 **Copy-paste and fill in:**
 ```
 [VAT] {finding_id}
-status: 
-justification: 
-compensating-controls: 
+status:
+justification:
+compensating-controls:
 ```
 """
 
@@ -177,7 +187,9 @@ async def get_tracker_key(db: AsyncSession) -> str:
     return "linear"
 
 
-async def get_tracker_key_for_source(db: AsyncSession, aikido_source_id: str) -> str | None:
+async def get_tracker_key_for_source(
+    db: AsyncSession, aikido_source_id: str
+) -> str | None:
     """Return tracker key for Aikido source when useAikidoTracking. Used for external_links adapter_key. None if no match."""
     trackers = await _get_trackers(db)
     for t in trackers:
@@ -206,7 +218,11 @@ def is_tracker_configured_for_creds(tracker_key: str, creds: dict) -> bool:
 async def get_use_aikido_tracking(db: AsyncSession) -> bool:
     """True when any tracker has useAikidoTracking. VAT skips create_issue for Aikido findings."""
     trackers = await _get_trackers(db)
-    return any(t.get("useAikidoTracking") or t.get("use_aikido_tracking") for t in trackers if isinstance(t, dict))
+    return any(
+        t.get("useAikidoTracking") or t.get("use_aikido_tracking")
+        for t in trackers
+        if isinstance(t, dict)
+    )
 
 
 async def get_tracker_push_mode(db: AsyncSession) -> str:
@@ -242,7 +258,15 @@ async def get_tracker_push_min_severity(db: AsyncSession) -> str | None:
     trackers = await _get_trackers(db)
     tracker = trackers[0] if trackers else {}
     if isinstance(tracker, dict):
-        val = (tracker.get("pushMinSeverity") or tracker.get("push_min_severity") or "all").lower().strip()
+        val = (
+            (
+                tracker.get("pushMinSeverity")
+                or tracker.get("push_min_severity")
+                or "all"
+            )
+            .lower()
+            .strip()
+        )
         if not val or val == "all":
             return None
         if val in _SEVERITY_ORDER:
@@ -274,11 +298,15 @@ async def get_source_config(db: AsyncSession, source_name: str) -> dict | None:
     sources = await _get_json(db, DEFAULT_SOURCES, [])
     if isinstance(sources, list):
         for s in sources:
-            if isinstance(s, dict) and (s.get("id") == source_name or s.get("name") == source_name):
+            if isinstance(s, dict) and (
+                s.get("id") == source_name or s.get("name") == source_name
+            ):
                 out = dict(s)
                 if (out.get("adapter") or "").lower() == "aikido":
                     creds = await get_aikido_credentials(db, out.get("id"))
-                    out["supportsOutboundSync"] = bool(creds.get("sync_back_enabled", True))
+                    out["supportsOutboundSync"] = bool(
+                        creds.get("sync_back_enabled", True)
+                    )
                 return out
     if source_name and source_name.lower() == "aikido":
         creds = await get_aikido_credentials(db, None)
@@ -289,6 +317,7 @@ async def get_source_config(db: AsyncSession, source_name: str) -> dict | None:
 
 _PLACEHOLDER_PATTERNS = ("placeholder", "demo-", "changeme", "xxx", "your-", "example")
 
+
 def _is_placeholder(val: str | None) -> bool:
     """Treat demo/placeholder values as not configured."""
     if not val or not isinstance(val, str):
@@ -297,7 +326,9 @@ def _is_placeholder(val: str | None) -> bool:
     return any(p in v for p in _PLACEHOLDER_PATTERNS)
 
 
-async def get_linear_credentials(db: AsyncSession) -> tuple[str | None, str | None, str | None]:
+async def get_linear_credentials(
+    db: AsyncSession,
+) -> tuple[str | None, str | None, str | None]:
     """Return (api_key, team_id, webhook_secret) from DB or env.
     DB takes precedence; env fallback when DB row is empty (e.g. .env or docker-compose).
     Placeholder values (demo-, placeholder, etc.) are treated as not configured."""
@@ -312,7 +343,9 @@ async def get_linear_credentials(db: AsyncSession) -> tuple[str | None, str | No
     if _is_placeholder(api_key) or _is_placeholder(team_id):
         return (None, None, None)
     webhook_secret = (
-        creds.get("webhook_secret") or creds.get("webhookSecret") or s.linear_webhook_secret
+        creds.get("webhook_secret")
+        or creds.get("webhookSecret")
+        or s.linear_webhook_secret
     )
     return (api_key, team_id, webhook_secret)
 
@@ -371,7 +404,12 @@ async def _get_linear_issue_base_url(db: AsyncSession) -> str | None:
     return None
 
 
-DEFAULT_LABEL_SECURITY_BUG = {"id": "default-security-bug", "name": "security-bug", "color": "#E53935", "description": ""}
+DEFAULT_LABEL_SECURITY_BUG = {
+    "id": "default-security-bug",
+    "name": "security-bug",
+    "color": "#E53935",
+    "description": "",
+}
 
 
 @router.get("", response_model=SettingsResponse)
@@ -392,7 +430,11 @@ async def get_settings(
                 continue
             item = dict(l)
             if not item.get("color"):
-                item["color"] = "#E53935" if (item.get("name") or "").lower() == "security-bug" else "#E53935"
+                item["color"] = (
+                    "#E53935"
+                    if (item.get("name") or "").lower() == "security-bug"
+                    else "#E53935"
+                )
             if not item.get("id"):
                 item["id"] = "l-" + (item.get("name") or "").lower().replace(" ", "-")
             out.append(item)
@@ -402,7 +444,9 @@ async def get_settings(
     enriched: list[dict] = []
     for t in trackers:
         t = dict(t)
-        if (t.get("type") or t.get("adapter") or "linear").lower() == "linear" and base_url:
+        if (
+            t.get("type") or t.get("adapter") or "linear"
+        ).lower() == "linear" and base_url:
             t["baseUrl"] = base_url
         if not t.get("type") and not t.get("adapter"):
             t["type"] = "linear"
@@ -417,7 +461,9 @@ async def get_settings(
     if not primary and enriched:
         primary = enriched[0]
 
-    return SettingsResponse(sources=sources, tracker=primary, trackers=enriched, labels=labels)
+    return SettingsResponse(
+        sources=sources, tracker=primary, trackers=enriched, labels=labels
+    )
 
 
 class ManualSourceEnsureRequest(BaseModel):
@@ -444,21 +490,34 @@ async def post_sources_manual_ensure(
     Admin only.
     """
     parser = (body.parser or "trivy").strip().lower()
-    raw_prefix = body.source_id_prefix if body.source_id_prefix is not None else "folder-scan"
+    raw_prefix = (
+        body.source_id_prefix if body.source_id_prefix is not None else "folder-scan"
+    )
     prefix = str(raw_prefix).strip()
     source_id = parser if not prefix else f"{prefix}-{parser}"
     name = f"Folder Scan ({parser})"
     asset_type = (body.asset_type or "package").strip().lower()
 
     from app.parsers import PARSER_REGISTRY
+
     if parser not in PARSER_REGISTRY:
-        raise HTTPException(status_code=400, detail=f"Unknown parser: {parser}. Available: {list(PARSER_REGISTRY.keys())}")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown parser: {parser}. Available: {list(PARSER_REGISTRY.keys())}",
+        )
 
     sources = await _get_json(db, DEFAULT_SOURCES, [])
     if not isinstance(sources, list):
         sources = []
 
-    existing = next((s for s in sources if isinstance(s, dict) and (s.get("id") or s.get("name")) == source_id), None)
+    existing = next(
+        (
+            s
+            for s in sources
+            if isinstance(s, dict) and (s.get("id") or s.get("name")) == source_id
+        ),
+        None,
+    )
     created = False
     key = None
 
@@ -477,13 +536,19 @@ async def post_sources_manual_ensure(
             "color": "#94a3b8",
         }
         sources.append(new_source)
-        r = await db.execute(select(SettingsKV).where(SettingsKV.key == DEFAULT_SOURCES))
+        r = await db.execute(
+            select(SettingsKV).where(SettingsKV.key == DEFAULT_SOURCES)
+        )
         row = r.scalar_one_or_none()
         if row:
             row.value = sources
             row.updated_at = _utc_now_naive()
         else:
-            db.add(SettingsKV(key=DEFAULT_SOURCES, value=sources, updated_at=_utc_now_naive()))
+            db.add(
+                SettingsKV(
+                    key=DEFAULT_SOURCES, value=sources, updated_at=_utc_now_naive()
+                )
+            )
         await db.commit()
         created = True
         if body.create_key:
@@ -519,7 +584,12 @@ def _ensure_template_parseable(template: str) -> str:
     """Ensure template has required [VAT] block structure. Appends minimal block if missing."""
     if not template or not isinstance(template, str):
         return DEFAULT_ISSUE_TEMPLATE
-    if "status:" in template and "justification:" in template and "[VAT]" in template and "{cve_id}" in template:
+    if (
+        "status:" in template
+        and "justification:" in template
+        and "[VAT]" in template
+        and "{cve_id}" in template
+    ):
         return template
     minimal = "[VAT] {cve_id}\nstatus: false-positive | not-applicable | risk-accepted | mitigated | duplicate\njustification: <required>\ncompensating-controls: <optional>"
     return template.rstrip() + "\n\n" + minimal
@@ -536,18 +606,27 @@ async def put_tracker(
         for t in body:
             if isinstance(t, dict) and isinstance(t.get("issueTemplate"), str):
                 t["issueTemplate"] = _ensure_template_parseable(t["issueTemplate"])
-        r = await db.execute(select(SettingsKV).where(SettingsKV.key == DEFAULT_TRACKERS))
+        r = await db.execute(
+            select(SettingsKV).where(SettingsKV.key == DEFAULT_TRACKERS)
+        )
         row = r.scalar_one_or_none()
         if row:
             row.value = body
             row.updated_at = _utc_now_naive()
         else:
-            db.add(SettingsKV(key=DEFAULT_TRACKERS, value=body, updated_at=_utc_now_naive()))
+            db.add(
+                SettingsKV(
+                    key=DEFAULT_TRACKERS, value=body, updated_at=_utc_now_naive()
+                )
+            )
         await db.commit()
         return {"ok": True}
     # Single dict: update first tracker or create trackers with single element
     if isinstance(body.get("issueTemplate"), str):
-        body = {**body, "issueTemplate": _ensure_template_parseable(body["issueTemplate"])}
+        body = {
+            **body,
+            "issueTemplate": _ensure_template_parseable(body["issueTemplate"]),
+        }
     trackers = await _get_trackers(db)
     if trackers:
         updated = [dict(body) if i == 0 else dict(t) for i, t in enumerate(trackers)]
@@ -561,7 +640,9 @@ async def put_tracker(
         row.value = updated
         row.updated_at = _utc_now_naive()
     else:
-        db.add(SettingsKV(key=DEFAULT_TRACKERS, value=updated, updated_at=_utc_now_naive()))
+        db.add(
+            SettingsKV(key=DEFAULT_TRACKERS, value=updated, updated_at=_utc_now_naive())
+        )
     await db.commit()
     return {"ok": True}
 
@@ -577,7 +658,11 @@ async def get_aikido_status(
     base = s.public_url.rstrip("/")
     creds = await get_aikido_credentials(db, source_id)
     client_id = creds.get("client_id") or creds.get("clientId") or s.aikido_client_id
-    client_secret = creds.get("client_secret") or creds.get("clientSecret") or s.aikido_client_secret
+    client_secret = (
+        creds.get("client_secret")
+        or creds.get("clientSecret")
+        or s.aikido_client_secret
+    )
     region = creds.get("region") or s.aikido_region or "eu"
     webhook_secret = creds.get("webhook_secret") or s.aikido_webhook_secret
     return {
@@ -586,7 +671,9 @@ async def get_aikido_status(
         "region": region,
         "oauthConfigured": bool(client_id and client_secret),
         "webhookSecretConfigured": bool(webhook_secret),
-        "webhookUrl": f"{base}/webhook/aikido/{source_id}" if source_id else f"{base}/webhook/aikido",
+        "webhookUrl": f"{base}/webhook/aikido/{source_id}"
+        if source_id
+        else f"{base}/webhook/aikido",
         "syncBackEnabled": bool(creds.get("sync_back_enabled", True)),
     }
 
@@ -600,7 +687,9 @@ async def put_aikido_credentials(
     """Update Aikido credentials (stored in DB, overrides env). Admin only. sourceId in body scopes to per-source."""
     source_id = (body.get("sourceId") or body.get("source_id") or "").strip() or None
     if not source_id:
-        raise HTTPException(status_code=400, detail="sourceId is required for Aikido credentials")
+        raise HTTPException(
+            status_code=400, detail="sourceId is required for Aikido credentials"
+        )
     creds = await _get_credentials(db, _aikido_creds_key(source_id))
     # Normalize to snake_case for storage
     if "clientId" in body:
@@ -667,18 +756,26 @@ async def _ensure_linear_labels(db: AsyncSession) -> dict:
     label_names = [l.get("name") for l in labels_cfg if l.get("name")]
     if not label_names:
         label_names = ["security-bug"]
-    name_to_color = {l.get("name", "").strip().lower(): l.get("color") or "#E53935" for l in labels_cfg if isinstance(l, dict) and l.get("name")}
+    name_to_color = {
+        l.get("name", "").strip().lower(): l.get("color") or "#E53935"
+        for l in labels_cfg
+        if isinstance(l, dict) and l.get("name")
+    }
     if not name_to_color and label_names:
         name_to_color = {n.strip().lower(): "#E53935" for n in label_names}
     try:
         from app.adapters.linear import LinearAdapter
 
         adapter = LinearAdapter(api_key=api_key, team_id=team_id)
-        existing = await adapter._resolve_label_ids(label_names, name_to_color=name_to_color)
+        existing = await adapter._resolve_label_ids(
+            label_names, name_to_color=name_to_color
+        )
         # _resolve_label_ids creates missing labels; we can't easily count created vs existing
         # Log success; frontend gets ok
         if existing:
-            logging.getLogger(__name__).info("Linear labels ensured: %d resolved for team", len(existing))
+            logging.getLogger(__name__).info(
+                "Linear labels ensured: %d resolved for team", len(existing)
+            )
         return {"created": len(existing), "errors": []}
     except Exception as e:
         logging.getLogger(__name__).warning("Failed to ensure Linear labels: %s", e)
@@ -707,17 +804,23 @@ async def put_linear_credentials(
         row.value = creds
         row.updated_at = _utc_now_naive()
     else:
-        db.add(SettingsKV(key=LINEAR_CREDENTIALS, value=creds, updated_at=_utc_now_naive()))
+        db.add(
+            SettingsKV(key=LINEAR_CREDENTIALS, value=creds, updated_at=_utc_now_naive())
+        )
     if creds.get("api_key") and creds.get("team_id"):
         from app.services.sync_service import reset_failed_tracker_events
+
         reset_count = await reset_failed_tracker_events(db, "linear")
         if reset_count:
-            logging.getLogger(__name__).info("Reset %d failed Linear sync events for retry", reset_count)
+            logging.getLogger(__name__).info(
+                "Reset %d failed Linear sync events for retry", reset_count
+            )
     await db.commit()
     labels_result = {"created": 0, "errors": []}
     if creds.get("api_key") and creds.get("team_id"):
         labels_result = await _ensure_linear_labels(db)
         from app.tasks.sync_tasks import trigger_sync_worker
+
         trigger_sync_worker(countdown=2)
     return {"ok": True, "labels": labels_result}
 
@@ -918,12 +1021,16 @@ async def get_trivy_status(
     s = get_config()
     base = s.public_url.rstrip("/")
     keys = await list_keys(db)
-    trivy_keys = [k for k in keys if k.source_id.startswith("trivy") or k.source_id == "trivy-ci"]
+    trivy_keys = [
+        k for k in keys if k.source_id.startswith("trivy") or k.source_id == "trivy-ci"
+    ]
     return {
         "ingestUrl": f"{base}/api/ingest",
         "ingestUrlJson": f"{base}/api/ingest",
         "apiKeyConfigured": bool(trivy_keys) or bool(s.ingest_api_key),
-        "keys": [{"sourceId": k.source_id, "keyPrefix": k.key_prefix} for k in trivy_keys],
+        "keys": [
+            {"sourceId": k.source_id, "keyPrefix": k.key_prefix} for k in trivy_keys
+        ],
     }
 
 
@@ -934,7 +1041,9 @@ async def get_vat_status(_ctx: UserContext = Depends(require_admin)):
     base = s.public_url.rstrip("/")
     return {
         "databaseConfigured": bool(s.database_url),
-        "secretKeyConfigured": bool(s.secret_key and s.secret_key != "change-me-in-production"),
+        "secretKeyConfigured": bool(
+            s.secret_key and s.secret_key != "change-me-in-production"
+        ),
         "publicUrl": base,
         "aikidoWebhookUrl": f"{base}/webhook/aikido",
         "linearWebhookUrl": f"{base}/webhook/linear",

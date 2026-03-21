@@ -25,21 +25,38 @@ export function PushSourcesSettings({ source }: PushSourcesSettingsProps) {
   const auth = { token };
   const [ingestUrl, setIngestUrl] = useState<string>("");
   const [keys, setKeys] = useState<
-    Array<{ sourceId: string; keyPrefix: string; configured: boolean; authType?: string; createdAt?: string; rotatedAt?: string }>
+    Array<{
+      sourceId: string;
+      keyPrefix: string;
+      configured: boolean;
+      authType?: string;
+      createdAt?: string;
+      rotatedAt?: string;
+    }>
   >([]);
   const [oauthClients, setOauthClients] = useState<
-    Array<{ sourceId: string; clientId: string; createdAt?: string; rotatedAt?: string }>
+    Array<{
+      sourceId: string;
+      clientId: string;
+      createdAt?: string;
+      rotatedAt?: string;
+    }>
   >([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
-  const [newKeyFor, setNewKeyFor] = useState<{ sourceId: string; key: string } | null>(null);
+  const [newKeyFor, setNewKeyFor] = useState<{
+    sourceId: string;
+    key: string;
+  } | null>(null);
   const [newOAuthFor, setNewOAuthFor] = useState<{
     sourceId: string;
     clientId: string;
     clientSecret: string;
   } | null>(null);
-  const [actionLoading, setActionLoading] = useState<"key" | "oauth" | "revoke" | null>(null);
+  const [actionLoading, setActionLoading] = useState<
+    "key" | "oauth" | "revoke" | null
+  >(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
   const sourceId = source.id;
@@ -97,7 +114,8 @@ export function PushSourcesSettings({ source }: PushSourcesSettingsProps) {
   }, [sourceId, load, token]);
 
   const handleRegenerate = useCallback(async () => {
-    if (!confirm("Regenerating will invalidate the current key. Continue?")) return;
+    if (!confirm("Regenerating will invalidate the current key. Continue?"))
+      return;
     setActionLoading("key");
     setActionError(null);
     setNewKeyFor(null);
@@ -106,7 +124,9 @@ export function PushSourcesSettings({ source }: PushSourcesSettingsProps) {
       setNewKeyFor({ sourceId, key: res.key });
       await load();
     } catch (e) {
-      setActionError(e instanceof Error ? e.message : "Failed to regenerate key");
+      setActionError(
+        e instanceof Error ? e.message : "Failed to regenerate key",
+      );
     } finally {
       setActionLoading(null);
     }
@@ -115,7 +135,7 @@ export function PushSourcesSettings({ source }: PushSourcesSettingsProps) {
   const handleRevoke = useCallback(async () => {
     if (
       !confirm(
-        "Revoking will invalidate the key. CI pipelines will fail until a new key is generated. Continue?"
+        "Revoking will invalidate the key. CI pipelines will fail until a new key is generated. Continue?",
       )
     )
       return;
@@ -139,23 +159,36 @@ export function PushSourcesSettings({ source }: PushSourcesSettingsProps) {
     setNewOAuthFor(null);
     try {
       const res = await createOAuthClient(sourceId, auth);
-      setNewOAuthFor({ sourceId, clientId: res.clientId, clientSecret: res.clientSecret });
+      setNewOAuthFor({
+        sourceId,
+        clientId: res.clientId,
+        clientSecret: res.clientSecret,
+      });
       await load();
     } catch (e) {
-      setActionError(e instanceof Error ? e.message : "Failed to create OAuth client");
+      setActionError(
+        e instanceof Error ? e.message : "Failed to create OAuth client",
+      );
     } finally {
       setActionLoading(null);
     }
   }, [sourceId, load, token]);
 
   const handleRotateOAuth = useCallback(async () => {
-    if (!confirm("Rotating will invalidate the current client secret. Continue?")) return;
+    if (
+      !confirm("Rotating will invalidate the current client secret. Continue?")
+    )
+      return;
     setActionLoading("oauth");
     setActionError(null);
     setNewOAuthFor(null);
     try {
       const res = await rotateOAuthClient(sourceId, auth);
-      setNewOAuthFor({ sourceId, clientId: res.clientId, clientSecret: res.clientSecret });
+      setNewOAuthFor({
+        sourceId,
+        clientId: res.clientId,
+        clientSecret: res.clientSecret,
+      });
       await load();
     } catch (e) {
       setActionError(e instanceof Error ? e.message : "Failed to rotate OAuth");
@@ -167,7 +200,7 @@ export function PushSourcesSettings({ source }: PushSourcesSettingsProps) {
   const handleRevokeOAuth = useCallback(async () => {
     if (
       !confirm(
-        "Revoking will invalidate the OAuth client. CI pipelines will fail until a new client is created. Continue?"
+        "Revoking will invalidate the OAuth client. CI pipelines will fail until a new client is created. Continue?",
       )
     )
       return;
@@ -178,7 +211,9 @@ export function PushSourcesSettings({ source }: PushSourcesSettingsProps) {
       await revokeOAuthClient(sourceId, auth);
       await load();
     } catch (e) {
-      setActionError(e instanceof Error ? e.message : "Failed to revoke OAuth client");
+      setActionError(
+        e instanceof Error ? e.message : "Failed to revoke OAuth client",
+      );
     } finally {
       setActionLoading(null);
     }
@@ -188,7 +223,10 @@ export function PushSourcesSettings({ source }: PushSourcesSettingsProps) {
     if (!ingestUrl) return "";
     if (oauthForThisSource) {
       return `# 1. Get token
-TOKEN=$(curl -s -X POST "${ingestUrl.replace("/api/ingest", "/api/oauth/token")}" \\
+TOKEN=$(curl -s -X POST "${ingestUrl.replace(
+        "/api/ingest",
+        "/api/oauth/token",
+      )}" \\
   -d "grant_type=client_credentials" \\
   -d "client_id=YOUR_CLIENT_ID" \\
   -d "client_secret=YOUR_CLIENT_SECRET" | jq -r '.access_token')
@@ -205,7 +243,14 @@ curl -X POST "${ingestUrl}" \\
 
   if (loading) {
     return (
-      <div style={{ ...sans, fontSize: 12, color: "var(--app-muted)", padding: 20 }}>
+      <div
+        style={{
+          ...sans,
+          fontSize: 12,
+          color: "var(--app-muted)",
+          padding: 20,
+        }}
+      >
         Loading credentials…
       </div>
     );
@@ -222,7 +267,9 @@ curl -X POST "${ingestUrl}" \\
           marginBottom: 20,
         }}
       >
-        <div style={{ ...sans, fontSize: 12, color: "var(--app-danger)" }}>{error}</div>
+        <div style={{ ...sans, fontSize: 12, color: "var(--app-danger)" }}>
+          {error}
+        </div>
         <button
           onClick={load}
           style={{
@@ -256,7 +303,10 @@ curl -X POST "${ingestUrl}" \\
           marginBottom: 16,
         }}
       >
-        Credentials for {displaySourceName(source.name) || displaySourceName(source.id) || "source"}
+        Credentials for{" "}
+        {displaySourceName(source.name) ||
+          displaySourceName(source.id) ||
+          "source"}
       </div>
 
       {!canCreateCredentials && (
@@ -269,9 +319,18 @@ curl -X POST "${ingestUrl}" \\
             marginBottom: 20,
           }}
         >
-          <div style={{ ...sans, fontSize: 12, color: "var(--app-muted)", lineHeight: 1.5 }}>
-            Set a <strong>Source ID</strong> in the form above (e.g. <code style={{ ...mono, fontSize: 11 }}>trivy-ci</code>) and click <strong>Save</strong> before creating credentials.
-            The Source ID ties the API key to this integration.
+          <div
+            style={{
+              ...sans,
+              fontSize: 12,
+              color: "var(--app-muted)",
+              lineHeight: 1.5,
+            }}
+          >
+            Set a <strong>Source ID</strong> in the form above (e.g.{" "}
+            <code style={{ ...mono, fontSize: 11 }}>trivy-ci</code>) and click{" "}
+            <strong>Save</strong> before creating credentials. The Source ID
+            ties the API key to this integration.
           </div>
         </div>
       )}
@@ -293,8 +352,9 @@ curl -X POST "${ingestUrl}" \\
             lineHeight: 1.5,
           }}
         >
-          Push findings from CI. Parser: <strong>{source.parser || "sarif"}</strong>. Create an API key
-          or OAuth client and store credentials in your pipeline secrets.
+          Push findings from CI. Parser:{" "}
+          <strong>{source.parser || "sarif"}</strong>. Create an API key or
+          OAuth client and store credentials in your pipeline secrets.
         </div>
 
         <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
@@ -319,8 +379,24 @@ curl -X POST "${ingestUrl}" \\
                 New OAuth client — copy now, secret won&apos;t be shown again
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                  <span style={{ ...mono, fontSize: 9, color: "var(--app-muted)", minWidth: 70 }}>client_id</span>
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <span
+                    style={{
+                      ...mono,
+                      fontSize: 9,
+                      color: "var(--app-muted)",
+                      minWidth: 70,
+                    }}
+                  >
+                    client_id
+                  </span>
                   <code
                     style={{
                       ...mono,
@@ -337,24 +413,52 @@ curl -X POST "${ingestUrl}" \\
                     {newOAuthFor.clientId}
                   </code>
                   <button
-                    onClick={() => copyToClipboard(newOAuthFor.clientId, `oauth-id-${newOAuthFor.sourceId}`)}
+                    onClick={() =>
+                      copyToClipboard(
+                        newOAuthFor.clientId,
+                        `oauth-id-${newOAuthFor.sourceId}`,
+                      )
+                    }
                     style={{
                       ...mono,
                       padding: "6px 12px",
                       background:
-                        copied === `oauth-id-${newOAuthFor.sourceId}` ? "var(--app-success)" : "var(--app-border)",
+                        copied === `oauth-id-${newOAuthFor.sourceId}`
+                          ? "var(--app-success)"
+                          : "var(--app-border)",
                       border: "1px solid var(--app-border)",
                       borderRadius: 4,
-                      color: copied === `oauth-id-${newOAuthFor.sourceId}` ? "var(--app-bg)" : "var(--app-muted)",
+                      color:
+                        copied === `oauth-id-${newOAuthFor.sourceId}`
+                          ? "var(--app-bg)"
+                          : "var(--app-muted)",
                       cursor: "pointer",
                       fontSize: 10,
                     }}
                   >
-                    {copied === `oauth-id-${newOAuthFor.sourceId}` ? "Copied" : "Copy"}
+                    {copied === `oauth-id-${newOAuthFor.sourceId}`
+                      ? "Copied"
+                      : "Copy"}
                   </button>
                 </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                  <span style={{ ...mono, fontSize: 9, color: "var(--app-muted)", minWidth: 70 }}>client_secret</span>
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <span
+                    style={{
+                      ...mono,
+                      fontSize: 9,
+                      color: "var(--app-muted)",
+                      minWidth: 70,
+                    }}
+                  >
+                    client_secret
+                  </span>
                   <code
                     style={{
                       ...mono,
@@ -371,20 +475,32 @@ curl -X POST "${ingestUrl}" \\
                     {newOAuthFor.clientSecret}
                   </code>
                   <button
-                    onClick={() => copyToClipboard(newOAuthFor.clientSecret, `oauth-secret-${newOAuthFor.sourceId}`)}
+                    onClick={() =>
+                      copyToClipboard(
+                        newOAuthFor.clientSecret,
+                        `oauth-secret-${newOAuthFor.sourceId}`,
+                      )
+                    }
                     style={{
                       ...mono,
                       padding: "6px 12px",
                       background:
-                        copied === `oauth-secret-${newOAuthFor.sourceId}` ? "var(--app-success)" : "var(--app-border)",
+                        copied === `oauth-secret-${newOAuthFor.sourceId}`
+                          ? "var(--app-success)"
+                          : "var(--app-border)",
                       border: "1px solid var(--app-border)",
                       borderRadius: 4,
-                      color: copied === `oauth-secret-${newOAuthFor.sourceId}` ? "var(--app-bg)" : "var(--app-muted)",
+                      color:
+                        copied === `oauth-secret-${newOAuthFor.sourceId}`
+                          ? "var(--app-bg)"
+                          : "var(--app-muted)",
                       cursor: "pointer",
                       fontSize: 10,
                     }}
                   >
-                    {copied === `oauth-secret-${newOAuthFor.sourceId}` ? "Copied" : "Copy"}
+                    {copied === `oauth-secret-${newOAuthFor.sourceId}`
+                      ? "Copied"
+                      : "Copy"}
                   </button>
                 </div>
               </div>
@@ -442,11 +558,15 @@ curl -X POST "${ingestUrl}" \\
                     ...mono,
                     padding: "6px 12px",
                     background:
-                      copied === `key-${newKeyFor.sourceId}` ? "var(--app-success)" : "var(--app-border)",
+                      copied === `key-${newKeyFor.sourceId}`
+                        ? "var(--app-success)"
+                        : "var(--app-border)",
                     border: "1px solid var(--app-border)",
                     borderRadius: 4,
                     color:
-                      copied === `key-${newKeyFor.sourceId}` ? "var(--app-bg)" : "var(--app-muted)",
+                      copied === `key-${newKeyFor.sourceId}`
+                        ? "var(--app-bg)"
+                        : "var(--app-muted)",
                     cursor: "pointer",
                     fontSize: 10,
                   }}
@@ -477,9 +597,22 @@ curl -X POST "${ingestUrl}" \\
                 border: "1px solid var(--app-border)",
               }}
             >
-              <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                <code style={{ ...mono, fontSize: 11, color: "var(--app-accent)" }}>{displaySourceName(sourceId) || sourceId}</code>
-                <span style={{ ...mono, fontSize: 10, color: "var(--app-muted)" }}>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  flexWrap: "wrap",
+                }}
+              >
+                <code
+                  style={{ ...mono, fontSize: 11, color: "var(--app-accent)" }}
+                >
+                  {displaySourceName(sourceId) || sourceId}
+                </code>
+                <span
+                  style={{ ...mono, fontSize: 10, color: "var(--app-muted)" }}
+                >
                   ({keyForThisSource.keyPrefix}…)
                 </span>
                 <span
@@ -495,8 +628,14 @@ curl -X POST "${ingestUrl}" \\
                   API key
                 </span>
                 {(keyForThisSource.rotatedAt || keyForThisSource.createdAt) && (
-                  <span style={{ ...mono, fontSize: 9, color: "var(--app-muted)" }}>
-                    {keyForThisSource.rotatedAt ? `Rotated ${keyForThisSource.rotatedAt.slice(0, 10)}` : `Created ${keyForThisSource.createdAt?.slice(0, 10) ?? ""}`}
+                  <span
+                    style={{ ...mono, fontSize: 9, color: "var(--app-muted)" }}
+                  >
+                    {keyForThisSource.rotatedAt
+                      ? `Rotated ${keyForThisSource.rotatedAt.slice(0, 10)}`
+                      : `Created ${
+                          keyForThisSource.createdAt?.slice(0, 10) ?? ""
+                        }`}
                   </span>
                 )}
               </div>
@@ -527,7 +666,8 @@ curl -X POST "${ingestUrl}" \\
                     border: "1px solid var(--app-danger)",
                     borderRadius: 4,
                     color: "var(--app-danger)",
-                    cursor: actionLoading === "revoke" ? "not-allowed" : "pointer",
+                    cursor:
+                      actionLoading === "revoke" ? "not-allowed" : "pointer",
                     fontSize: 10,
                   }}
                 >
@@ -549,9 +689,22 @@ curl -X POST "${ingestUrl}" \\
                 border: "1px solid var(--app-border)",
               }}
             >
-              <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                <code style={{ ...mono, fontSize: 11, color: "var(--app-accent)" }}>{displaySourceName(sourceId) || sourceId}</code>
-                <span style={{ ...mono, fontSize: 10, color: "var(--app-muted)" }}>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  flexWrap: "wrap",
+                }}
+              >
+                <code
+                  style={{ ...mono, fontSize: 11, color: "var(--app-accent)" }}
+                >
+                  {displaySourceName(sourceId) || sourceId}
+                </code>
+                <span
+                  style={{ ...mono, fontSize: 10, color: "var(--app-muted)" }}
+                >
                   ({oauthForThisSource.clientId.slice(0, 20)}…)
                 </span>
                 <span
@@ -566,9 +719,16 @@ curl -X POST "${ingestUrl}" \\
                 >
                   OAuth
                 </span>
-                {(oauthForThisSource.rotatedAt || oauthForThisSource.createdAt) && (
-                  <span style={{ ...mono, fontSize: 9, color: "var(--app-muted)" }}>
-                    {oauthForThisSource.rotatedAt ? `Rotated ${oauthForThisSource.rotatedAt.slice(0, 10)}` : `Created ${oauthForThisSource.createdAt?.slice(0, 10) ?? ""}`}
+                {(oauthForThisSource.rotatedAt ||
+                  oauthForThisSource.createdAt) && (
+                  <span
+                    style={{ ...mono, fontSize: 9, color: "var(--app-muted)" }}
+                  >
+                    {oauthForThisSource.rotatedAt
+                      ? `Rotated ${oauthForThisSource.rotatedAt.slice(0, 10)}`
+                      : `Created ${
+                          oauthForThisSource.createdAt?.slice(0, 10) ?? ""
+                        }`}
                   </span>
                 )}
               </div>
@@ -583,7 +743,8 @@ curl -X POST "${ingestUrl}" \\
                     border: "1px solid var(--app-border)",
                     borderRadius: 4,
                     color: "var(--app-muted)",
-                    cursor: actionLoading === "oauth" ? "not-allowed" : "pointer",
+                    cursor:
+                      actionLoading === "oauth" ? "not-allowed" : "pointer",
                     fontSize: 10,
                   }}
                 >
@@ -599,7 +760,8 @@ curl -X POST "${ingestUrl}" \\
                     border: "1px solid var(--app-danger)",
                     borderRadius: 4,
                     color: "var(--app-danger)",
-                    cursor: actionLoading === "revoke" ? "not-allowed" : "pointer",
+                    cursor:
+                      actionLoading === "revoke" ? "not-allowed" : "pointer",
                     fontSize: 10,
                   }}
                 >
@@ -616,11 +778,16 @@ curl -X POST "${ingestUrl}" \\
                   ...mono,
                   padding: "8px 16px",
                   background:
-                    canCreateCredentials && !actionLoading ? "var(--app-accent)" : "var(--app-border)",
+                    canCreateCredentials && !actionLoading
+                      ? "var(--app-accent)"
+                      : "var(--app-border)",
                   border: "none",
                   borderRadius: 6,
                   color: "var(--app-fg)",
-                  cursor: canCreateCredentials && !actionLoading ? "pointer" : "not-allowed",
+                  cursor:
+                    canCreateCredentials && !actionLoading
+                      ? "pointer"
+                      : "not-allowed",
                   fontSize: 11,
                   fontWeight: 600,
                 }}
@@ -634,16 +801,23 @@ curl -X POST "${ingestUrl}" \\
                   ...mono,
                   padding: "8px 16px",
                   background:
-                    canCreateCredentials && !actionLoading ? "var(--app-border)" : "var(--app-border)",
+                    canCreateCredentials && !actionLoading
+                      ? "var(--app-border)"
+                      : "var(--app-border)",
                   border: "1px solid var(--app-border)",
                   borderRadius: 6,
                   color: "var(--app-fg)",
-                  cursor: canCreateCredentials && !actionLoading ? "pointer" : "not-allowed",
+                  cursor:
+                    canCreateCredentials && !actionLoading
+                      ? "pointer"
+                      : "not-allowed",
                   fontSize: 11,
                   fontWeight: 600,
                 }}
               >
-                {actionLoading === "oauth" ? "Creating…" : "Create OAuth client"}
+                {actionLoading === "oauth"
+                  ? "Creating…"
+                  : "Create OAuth client"}
               </button>
             </div>
           )}
@@ -690,10 +864,14 @@ curl -X POST "${ingestUrl}" \\
                 style={{
                   ...mono,
                   padding: "6px 12px",
-                  background: copied === "url" ? "var(--app-success)" : "var(--app-border)",
+                  background:
+                    copied === "url"
+                      ? "var(--app-success)"
+                      : "var(--app-border)",
                   border: "1px solid var(--app-border)",
                   borderRadius: 4,
-                  color: copied === "url" ? "var(--app-bg)" : "var(--app-muted)",
+                  color:
+                    copied === "url" ? "var(--app-bg)" : "var(--app-muted)",
                   cursor: "pointer",
                   fontSize: 10,
                 }}
@@ -741,10 +919,14 @@ curl -X POST "${ingestUrl}" \\
                   ...mono,
                   marginTop: 8,
                   padding: "6px 12px",
-                  background: copied === "curl" ? "var(--app-success)" : "var(--app-border)",
+                  background:
+                    copied === "curl"
+                      ? "var(--app-success)"
+                      : "var(--app-border)",
                   border: "1px solid var(--app-border)",
                   borderRadius: 4,
-                  color: copied === "curl" ? "var(--app-bg)" : "var(--app-muted)",
+                  color:
+                    copied === "curl" ? "var(--app-bg)" : "var(--app-muted)",
                   cursor: "pointer",
                   fontSize: 10,
                 }}

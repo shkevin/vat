@@ -25,11 +25,17 @@ interface VATLayoutProps {
   search: string;
   onSearchChange: (v: string) => void;
   filterFindingStatuses: Set<string>;
-  onFilterFindingStatusesChange: (v: Set<string> | ((prev: Set<string>) => Set<string>)) => void;
+  onFilterFindingStatusesChange: (
+    v: Set<string> | ((prev: Set<string>) => Set<string>),
+  ) => void;
   filterAssetTypes: Set<string>;
-  onFilterAssetTypesChange: (v: Set<string> | ((prev: Set<string>) => Set<string>)) => void;
+  onFilterAssetTypesChange: (
+    v: Set<string> | ((prev: Set<string>) => Set<string>),
+  ) => void;
   filterABC: Set<string>;
-  onFilterABCChange: (v: Set<string> | ((prev: Set<string>) => Set<string>)) => void;
+  onFilterABCChange: (
+    v: Set<string> | ((prev: Set<string>) => Set<string>),
+  ) => void;
   filterVerifiedRange: [number, number];
   onFilterVerifiedRangeChange: (v: [number, number]) => void;
   filterORARange: [number, number];
@@ -78,7 +84,8 @@ export function VATLayout({
 }: VATLayoutProps) {
   const isSidebarCollapsed = useMediaQuery("(max-width: 1024px)");
   const { embedded } = useShellContext();
-  const { open: sidebarOpen, onOpenChange: setSidebarOpen } = useFilterSidebar();
+  const { open: sidebarOpen, onOpenChange: setSidebarOpen } =
+    useFilterSidebar();
 
   useEffect(() => {
     if (!isSidebarCollapsed || !sidebarOpen) return;
@@ -106,7 +113,9 @@ export function VATLayout({
       {shell && (
         <>
           {config.banner.classification && (
-            <ClassificationBanner classification={config.banner.classification} />
+            <ClassificationBanner
+              classification={config.banner.classification}
+            />
           )}
           <AppBanner
             config={config.banner}
@@ -148,7 +157,11 @@ export function VATLayout({
         <div
           className={isSidebarCollapsed ? "filter-sidebar-overlay" : undefined}
           style={{
-            display: isSidebarCollapsed ? (sidebarOpen ? "block" : "none") : "flex",
+            display: isSidebarCollapsed
+              ? sidebarOpen
+                ? "block"
+                : "none"
+              : "flex",
             flexDirection: "column",
             position: isSidebarCollapsed ? "fixed" : "relative",
             top: isSidebarCollapsed ? 0 : undefined,
@@ -156,7 +169,9 @@ export function VATLayout({
             bottom: isSidebarCollapsed ? 0 : undefined,
             zIndex: isSidebarCollapsed ? 50 : undefined,
             width: isSidebarCollapsed ? 280 : undefined,
-            boxShadow: isSidebarCollapsed ? "4px 0 24px rgba(0,0,0,0.3)" : undefined,
+            boxShadow: isSidebarCollapsed
+              ? "4px 0 24px rgba(0,0,0,0.3)"
+              : undefined,
             height: isSidebarCollapsed ? "100vh" : "100%",
             minHeight: 0,
             overflowY: isSidebarCollapsed ? "auto" : "hidden",
@@ -181,7 +196,9 @@ export function VATLayout({
             onNeedsJustificationToggle={onNeedsJustificationToggle}
             onApply={onApply}
             applyLabel={applyLabel}
-            onClose={isSidebarCollapsed ? () => setSidebarOpen(false) : undefined}
+            onClose={
+              isSidebarCollapsed ? () => setSidebarOpen(false) : undefined
+            }
           />
         </div>
         <main

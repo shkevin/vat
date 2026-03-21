@@ -61,13 +61,18 @@ export function snapColToLayout(col: number, columns: CanvasColumns): number {
   return Math.min(CANVAS_GRID_COLS - units, Math.max(0, snapped));
 }
 
-export function snapWidthToLayout(width: number, columns: CanvasColumns): number {
+export function snapWidthToLayout(
+  width: number,
+  columns: CanvasColumns,
+): number {
   const units = gridUnitsPerColumn(columns);
   const span = Math.max(1, Math.round(width / units));
   return Math.min(columns, span) * units;
 }
 
-export function inferColumnsFromWidgets(widgets: WidgetDefinition[]): CanvasColumns {
+export function inferColumnsFromWidgets(
+  widgets: WidgetDefinition[],
+): CanvasColumns {
   if (widgets.length === 0) return 1;
   const rowCounts = new Map<number, number>();
   for (const w of widgets) {
@@ -90,7 +95,9 @@ export function widgetLayoutFullWidth(rowIndex: number): WidgetLayout {
   return { row: rowIndex, col: 0, width: CANVAS_GRID_COLS, height: 1 };
 }
 
-export function normalizeCanvasRowLayouts(widgets: WidgetDefinition[]): WidgetDefinition[] {
+export function normalizeCanvasRowLayouts(
+  widgets: WidgetDefinition[],
+): WidgetDefinition[] {
   if (widgets.length === 0) return [];
   const rows = new Map<number, WidgetDefinition[]>();
   for (const w of widgets) {
@@ -103,7 +110,9 @@ export function normalizeCanvasRowLayouts(widgets: WidgetDefinition[]): WidgetDe
   for (const [, rowWidgets] of rows) {
     const count = rowWidgets.length;
     const unitsPerWidget = CANVAS_GRID_COLS / count;
-    const sorted = [...rowWidgets].sort((a, b) => (a.layout?.col ?? 0) - (b.layout?.col ?? 0));
+    const sorted = [...rowWidgets].sort(
+      (a, b) => (a.layout?.col ?? 0) - (b.layout?.col ?? 0),
+    );
     sorted.forEach((w, i) => {
       const prev = w.layout ?? widgetLayoutFullWidth(0);
       updates.set(w.id, {
@@ -134,10 +143,16 @@ export function nextLayoutRow(widgets: WidgetDefinition[]): number {
 
 export const DEFAULT_DATE_RANGE_PRESET: DateRangePreset = null;
 
-export function normalizeReportDefinitionLayout(definition: ReportDefinition): ReportDefinition {
+export function normalizeReportDefinitionLayout(
+  definition: ReportDefinition,
+): ReportDefinition {
   const filters = definition.filters;
   const branchFilter = filters.branchFilter ?? null;
-  const repoFilter = Array.isArray(filters.repoFilter) ? filters.repoFilter : filters.repoFilter ? [filters.repoFilter] : [];
+  const repoFilter = Array.isArray(filters.repoFilter)
+    ? filters.repoFilter
+    : filters.repoFilter
+      ? [filters.repoFilter]
+      : [];
   const dateRangePreset =
     filters.dateRangePreset !== undefined
       ? filters.dateRangePreset
@@ -222,15 +237,52 @@ export interface ReportContext {
   forEmail?: boolean;
   vmNames?: string[];
   packageNames?: string[];
-  activityLog?: Array<{ id?: string; action?: string; timestamp?: string; user?: string; target_type?: string; target_name?: string; details?: string }>;
+  activityLog?: Array<{
+    id?: string;
+    action?: string;
+    timestamp?: string;
+    user?: string;
+    target_type?: string;
+    target_name?: string;
+    details?: string;
+  }>;
   tasksByGroupId?: Record<number, Array<{ title?: string; url?: string }>>;
   repoIdByName?: Record<string, number>;
   aikidoBaseUrl?: string;
-  soc2Compliance?: { score?: number; percentage?: number; status?: string; controls_total?: number; controls_passed?: number };
-  nis2Compliance?: { score?: number; percentage?: number; status?: string; controls_total?: number; controls_passed?: number };
-  iso27001Compliance?: { score?: number; percentage?: number; status?: string; controls_total?: number; controls_passed?: number };
-  reachabilityMatrix?: Array<{ severity: string; exploitable: number; notExploitable: number; unknown: number }>;
-  ciScans?: Array<{ id?: string | number; created_at?: string; timestamp?: string; success?: boolean; repo?: string }>;
+  soc2Compliance?: {
+    score?: number;
+    percentage?: number;
+    status?: string;
+    controls_total?: number;
+    controls_passed?: number;
+  };
+  nis2Compliance?: {
+    score?: number;
+    percentage?: number;
+    status?: string;
+    controls_total?: number;
+    controls_passed?: number;
+  };
+  iso27001Compliance?: {
+    score?: number;
+    percentage?: number;
+    status?: string;
+    controls_total?: number;
+    controls_passed?: number;
+  };
+  reachabilityMatrix?: Array<{
+    severity: string;
+    exploitable: number;
+    notExploitable: number;
+    unknown: number;
+  }>;
+  ciScans?: Array<{
+    id?: string | number;
+    created_at?: string;
+    timestamp?: string;
+    success?: boolean;
+    repo?: string;
+  }>;
   taskProjects?: Array<{ id?: string | number; name?: string; type?: string }>;
   periodChange?: {
     openIssues: PeriodChange;
@@ -278,7 +330,10 @@ export type WidgetType =
   | "abcCompliance"
   | "cvssHeatmap";
 
-export const WIDGET_DEFAULT_CONFIG: Record<WidgetType, Record<string, unknown>> = {
+export const WIDGET_DEFAULT_CONFIG: Record<
+  WidgetType,
+  Record<string, unknown>
+> = {
   summary: { variant: "default" },
   severityDonut: { size: 100 },
   severityBar: {},
@@ -312,7 +367,12 @@ export const WIDGET_DEFAULT_CONFIG: Record<WidgetType, Record<string, unknown>> 
   ciScanFrequency: { periodDays: 30 },
   taskProjectsTable: {},
   text: { content: "" },
-  slaCompliance: { criticalDays: 15, highDays: 35, mediumDays: 180, lowDays: 360 },
+  slaCompliance: {
+    criticalDays: 15,
+    highDays: 35,
+    mediumDays: 180,
+    lowDays: 360,
+  },
   abcCompliance: {},
   cvssHeatmap: { periodDays: 90, width: 560, height: 200 },
 };
@@ -363,7 +423,7 @@ export interface ReportValidationResult {
 
 export function validateReportDefinition(
   definition: ReportDefinition,
-  options?: { requireWidgetsPerCanvas?: boolean }
+  options?: { requireWidgetsPerCanvas?: boolean },
 ): ReportValidationResult {
   const errors: string[] = [];
   if (!definition.canvases.length) {

@@ -23,7 +23,9 @@ if config.config_file_name is not None:
 target_metadata = Base.metadata
 settings = get_settings()
 # Use sync URL for migrations (psycopg2)
-db_url = settings.database_url.replace("+asyncpg", "").replace("postgresql+asyncpg", "postgresql")
+db_url = settings.database_url.replace("+asyncpg", "").replace(
+    "postgresql+asyncpg", "postgresql"
+)
 config.set_main_option("sqlalchemy.url", db_url)
 
 

@@ -33,7 +33,9 @@ async def get_user_by_email(db: AsyncSession, email: str) -> User | None:
     return result.scalar_one_or_none()
 
 
-async def get_user_by_email_in_google_tenant(db: AsyncSession, email: str) -> User | None:
+async def get_user_by_email_in_google_tenant(
+    db: AsyncSession, email: str
+) -> User | None:
     """Look up user by email where tenant has auth_method=google. For Google OAuth callback."""
     if not email or not email.strip():
         return None
@@ -52,5 +54,7 @@ async def get_google_tenant(db: AsyncSession):
     """Get first tenant with auth_method=google. Returns Tenant or None."""
     from app.models.user import Tenant
 
-    result = await db.execute(select(Tenant).where(Tenant.auth_method == AUTH_METHOD_GOOGLE).limit(1))
+    result = await db.execute(
+        select(Tenant).where(Tenant.auth_method == AUTH_METHOD_GOOGLE).limit(1)
+    )
     return result.scalar_one_or_none()

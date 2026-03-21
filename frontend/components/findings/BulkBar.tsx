@@ -11,9 +11,19 @@ interface BulkBarProps {
   onError?: (message: string) => void;
 }
 
-const BULK_STATUSES = ["False Positive", "Suppressed", "Duplicate", "Resolved"] as const;
+const BULK_STATUSES = [
+  "False Positive",
+  "Suppressed",
+  "Duplicate",
+  "Resolved",
+] as const;
 
-export function BulkBar({ count, onAction, onDeselect, onError }: BulkBarProps) {
+export function BulkBar({
+  count,
+  onAction,
+  onDeselect,
+  onError,
+}: BulkBarProps) {
   const [justification, setJustification] = useState("");
   const [status, setStatus] = useState<string>("False Positive");
   const [open, setOpen] = useState(false);
@@ -85,7 +95,14 @@ export function BulkBar({ count, onAction, onDeselect, onError }: BulkBarProps) 
         </Btn>
       </div>
       {open && (
-        <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 8 }}>
+        <div
+          style={{
+            marginTop: 12,
+            display: "flex",
+            flexDirection: "column",
+            gap: 8,
+          }}
+        >
           {error && (
             <div style={{ color: "var(--app-warning)", fontSize: 12 }}>
               {error}
@@ -94,12 +111,18 @@ export function BulkBar({ count, onAction, onDeselect, onError }: BulkBarProps) 
           <Field
             label={`Shared justification for ${count} findings → "${status}"`}
             value={justification}
-            onChange={(v) => { setJustification(v); setError(null); }}
+            onChange={(v) => {
+              setJustification(v);
+              setError(null);
+            }}
             rows={3}
             placeholder="e.g. All flagged assets share the same runtime condition."
           />
           <div style={{ display: "flex", gap: 7 }}>
-            <Btn onClick={handleApply} disabled={!justification.trim() || applying}>
+            <Btn
+              onClick={handleApply}
+              disabled={!justification.trim() || applying}
+            >
               {applying ? "Applying…" : `Apply to ${count}`}
             </Btn>
             <Btn variant="ghost" onClick={() => setOpen(false)}>

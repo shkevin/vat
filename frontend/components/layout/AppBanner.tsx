@@ -114,7 +114,12 @@ export function AppBanner({
           <img
             src={config.logo}
             alt="VAT"
-            style={{ height: 52, width: "auto", display: "block", marginLeft: 2 }}
+            style={{
+              height: 52,
+              width: "auto",
+              display: "block",
+              marginLeft: 2,
+            }}
           />
         ) : (
           <span
@@ -141,7 +146,9 @@ export function AppBanner({
                 ...mono,
                 background: "none",
                 border: "none",
-                color: active ? "var(--app-accent-emerald)" : "var(--app-muted)",
+                color: active
+                  ? "var(--app-accent-emerald)"
+                  : "var(--app-muted)",
                 padding: "8px 14px",
                 borderRadius: 4,
                 cursor: "pointer",
@@ -156,7 +163,9 @@ export function AppBanner({
               {badge > 0 && (
                 <span
                   style={{
-                    background: warn ? "var(--app-danger)" : "var(--app-accent-emerald)",
+                    background: warn
+                      ? "var(--app-danger)"
+                      : "var(--app-accent-emerald)",
                     color: "#fff",
                     fontSize: 10,
                     fontWeight: 700,
@@ -172,7 +181,14 @@ export function AppBanner({
         })}
       </nav>
 
-      <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 12 }}>
+      <div
+        style={{
+          marginLeft: "auto",
+          display: "flex",
+          alignItems: "center",
+          gap: 12,
+        }}
+      >
         {showFilterButton && (
           <button
             type="button"
@@ -215,17 +231,18 @@ export function AppBanner({
             title="Waivers expiring within 30 days"
             style={{
               ...mono,
-            background: "var(--app-warning)",
-            border: "none",
-            borderRadius: 4,
-            padding: "4px 10px",
-            color: "var(--app-fg)",
+              background: "var(--app-warning)",
+              border: "none",
+              borderRadius: 4,
+              padding: "4px 10px",
+              color: "var(--app-fg)",
               fontSize: 11,
               fontWeight: 700,
               cursor: "pointer",
             }}
           >
-            ⏳ {waiverExpiringCount} waiver{waiverExpiringCount !== 1 ? "s" : ""} expiring
+            ⏳ {waiverExpiringCount} waiver
+            {waiverExpiringCount !== 1 ? "s" : ""} expiring
           </button>
         )}
         {alertCount > 0 && (
@@ -233,11 +250,11 @@ export function AppBanner({
             onClick={() => onViewChange("dash")}
             style={{
               ...mono,
-            background: "var(--app-danger)",
-            border: "none",
-            borderRadius: 4,
-            padding: "4px 10px",
-            color: "var(--app-fg)",
+              background: "var(--app-danger)",
+              border: "none",
+              borderRadius: 4,
+              padding: "4px 10px",
+              color: "var(--app-fg)",
               fontSize: 11,
               fontWeight: 700,
               cursor: "pointer",
@@ -272,7 +289,10 @@ export function AppBanner({
           </button>
         )}
         {exportError && (
-          <span style={{ fontSize: 11, color: "var(--app-danger)" }} title={exportError}>
+          <span
+            style={{ fontSize: 11, color: "var(--app-danger)" }}
+            title={exportError}
+          >
             Export failed
           </span>
         )}

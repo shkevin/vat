@@ -40,7 +40,11 @@ def generate_admin_key() -> tuple[str, str, str]:
 
 def _next_id(store: dict) -> str:
     """Generate next id: ak_1, ak_2, ..."""
-    used = {int(k.split("_")[1]) for k in store if isinstance(k, str) and k.startswith("ak_") and k[3:].isdigit()}
+    used = {
+        int(k.split("_")[1])
+        for k in store
+        if isinstance(k, str) and k.startswith("ak_") and k[3:].isdigit()
+    }
     n = 1
     while n in used:
         n += 1
@@ -91,7 +95,12 @@ async def create_admin_key(db: AsyncSession) -> tuple[str, str, str, str]:
         "createdAt": _now(),
     }
     await _save_store(db, store)
-    return key_id, full_key, key_prefix, "Store this key securely. It will not be shown again."
+    return (
+        key_id,
+        full_key,
+        key_prefix,
+        "Store this key securely. It will not be shown again.",
+    )
 
 
 async def revoke_admin_key(db: AsyncSession, key_id: str) -> bool:

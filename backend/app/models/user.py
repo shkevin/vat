@@ -5,7 +5,7 @@ from typing import Any, Optional
 
 from sqlalchemy import DateTime, ForeignKey, String
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
 
@@ -23,7 +23,9 @@ class Tenant(Base):
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     name: Mapped[str] = mapped_column(String(128), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-    auth_method: Mapped[str] = mapped_column(String(32), nullable=False, default=AUTH_METHOD_LOCAL)
+    auth_method: Mapped[str] = mapped_column(
+        String(32), nullable=False, default=AUTH_METHOD_LOCAL
+    )
     auth_config: Mapped[Optional[dict[str, Any]]] = mapped_column(JSONB, nullable=True)
 
 
@@ -33,10 +35,16 @@ class User(Base):
     __tablename__ = "users"
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
-    tenant_id: Mapped[Optional[str]] = mapped_column(String(64), ForeignKey("tenants.id"), nullable=True, index=True)
+    tenant_id: Mapped[Optional[str]] = mapped_column(
+        String(64), ForeignKey("tenants.id"), nullable=True, index=True
+    )
     email: Mapped[str] = mapped_column(String(256), nullable=False)
-    role: Mapped[str] = mapped_column(String(32), nullable=False)  # admin | reviewer | read_only
-    password_hash: Mapped[Optional[str]] = mapped_column(String(256), nullable=True)  # for local login
+    role: Mapped[str] = mapped_column(
+        String(32), nullable=False
+    )  # admin | reviewer | read_only
+    password_hash: Mapped[Optional[str]] = mapped_column(
+        String(256), nullable=True
+    )  # for local login
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 

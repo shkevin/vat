@@ -47,12 +47,20 @@ export function useAssetFilters(assetId: string | null) {
     hasRestoredFromStorage.current = true;
     setHasRestored(true);
     setState({
-      status: stored.status.length ? stored.status : DEFAULT_FILTER_STATE.status,
+      status: stored.status.length
+        ? stored.status
+        : DEFAULT_FILTER_STATE.status,
       severity: stored.severity?.length ? stored.severity : undefined,
       source: stored.source?.length ? stored.source : undefined,
       type: stored.type?.length ? stored.type : undefined,
-      sort: (stored.sort as "severity" | "status" | "cve" | "title" | "source" | "sla") ??
-        DEFAULT_FILTER_STATE.sort,
+      sort:
+        (stored.sort as
+          | "severity"
+          | "status"
+          | "cve"
+          | "title"
+          | "source"
+          | "sla") ?? DEFAULT_FILTER_STATE.sort,
       branch: stored.branch ?? undefined,
       tag: stored.tag ?? undefined,
     });
@@ -76,24 +84,39 @@ export function useAssetFilters(assetId: string | null) {
 
   const setStatusFilter = useCallback(
     (v: Set<string>) => setState({ status: [...v] }),
-    [setState]
+    [setState],
   );
   const setSeverityFilter = useCallback(
     (v: Set<string>) => setState({ severity: [...v] }),
-    [setState]
+    [setState],
   );
   const setSourceFilter = useCallback(
     (v: Set<string>) => setState({ source: [...v] }),
-    [setState]
+    [setState],
   );
   const setFindingTypeFilter = useCallback(
     (v: Set<string>) => setState({ type: [...v] }),
-    [setState]
+    [setState],
   );
-  const setFindingsSearch = useCallback((v: string) => setFindingsSearchState(v), []);
-  const setSortBy = useCallback((v: string) => setState({ sort: v as "severity" | "status" | "cve" | "title" | "source" | "sla" }), [setState]);
-  const setBranchFilter = useCallback((v: string) => setState({ branch: v }), [setState]);
-  const setTagFilter = useCallback((v: string) => setState({ tag: v }), [setState]);
+  const setFindingsSearch = useCallback(
+    (v: string) => setFindingsSearchState(v),
+    [],
+  );
+  const setSortBy = useCallback(
+    (v: string) =>
+      setState({
+        sort: v as "severity" | "status" | "cve" | "title" | "source" | "sla",
+      }),
+    [setState],
+  );
+  const setBranchFilter = useCallback(
+    (v: string) => setState({ branch: v }),
+    [setState],
+  );
+  const setTagFilter = useCallback(
+    (v: string) => setState({ tag: v }),
+    [setState],
+  );
   const resetFilters = useCallback(() => {
     setState({
       status: DEFAULT_FILTER_STATE.status,

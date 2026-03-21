@@ -11,22 +11,50 @@ import { ReviewQueue } from "@/components/review/ReviewQueue";
 import { DetailPanel } from "@/components/detail/DetailPanel";
 
 // Lazy-load heavy tabs: SettingsTab pulls in @xyflow/react (~200KB+), ReportTab pulls in report engine + regression + many icons
-const ReportTab = dynamic(() => import("@/components/report/ReportTab").then((m) => ({ default: m.ReportTab })), {
-  ssr: false,
-  loading: () => (
-    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: 200, color: "var(--app-muted)" }}>
-      Loading report…
-    </div>
-  ),
-});
-const SettingsTab = dynamic(() => import("@/components/settings/SettingsTab").then((m) => ({ default: m.SettingsTab })), {
-  ssr: false,
-  loading: () => (
-    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: 200, color: "var(--app-muted)" }}>
-      Loading settings…
-    </div>
-  ),
-});
+const ReportTab = dynamic(
+  () =>
+    import("@/components/report/ReportTab").then((m) => ({
+      default: m.ReportTab,
+    })),
+  {
+    ssr: false,
+    loading: () => (
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          minHeight: 200,
+          color: "var(--app-muted)",
+        }}
+      >
+        Loading report…
+      </div>
+    ),
+  },
+);
+const SettingsTab = dynamic(
+  () =>
+    import("@/components/settings/SettingsTab").then((m) => ({
+      default: m.SettingsTab,
+    })),
+  {
+    ssr: false,
+    loading: () => (
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          minHeight: 200,
+          color: "var(--app-muted)",
+        }}
+      >
+        Loading settings…
+      </div>
+    ),
+  },
+);
 import { useAuth } from "@/contexts/AuthContext";
 import { useUserPreferences } from "@/contexts/UserPreferencesContext";
 import { useDashboardFilters } from "@/hooks/useDashboardFilters";
@@ -40,7 +68,13 @@ interface VATProps {
   config: AppConfig;
 }
 
-const VALID_TABS = ["findings", "review", "report", "dash", "settings"] as const;
+const VALID_TABS = [
+  "findings",
+  "review",
+  "report",
+  "dash",
+  "settings",
+] as const;
 
 export default function VAT({ config }: VATProps) {
   const searchParams = useSearchParams();
@@ -109,21 +143,40 @@ export default function VAT({ config }: VATProps) {
   } = data;
 
   // Counts that respect groupFindings — same logic as Findings tab and report.
-  const { total: displayTotal, open: displayOpen, inRev: displayInRev, overdue: displayOverdue, waiverExpiring: displayWaiverExpiring } = useMemo(() => {
+  const {
+    total: displayTotal,
+    open: displayOpen,
+    inRev: displayInRev,
+    overdue: displayOverdue,
+    waiverExpiring: displayWaiverExpiring,
+  } = useMemo(() => {
     if (!groupFindings) {
       return { total, open, inRev, overdue, waiverExpiring };
     }
     const groups = getGroupedFindings(active, SEV_ORDER);
-    const hasOpen = (fs: { status?: string }[]) => fs.some((f) => f.status === "Open");
-    const hasInRev = (fs: { status?: string }[]) => fs.some((f) => f.status === "In Review");
+    const hasOpen = (fs: { status?: string }[]) =>
+      fs.some((f) => f.status === "Open");
+    const hasInRev = (fs: { status?: string }[]) =>
+      fs.some((f) => f.status === "In Review");
     const hasOverdue = (fs: { status?: string; slaDue?: string }[]) =>
       fs.some((f) => {
-        if (["Resolved", "False Positive", "Duplicate", "Not Applicable", "Approved", "Suppressed"].includes(f.status ?? ""))
+        if (
+          [
+            "Resolved",
+            "False Positive",
+            "Duplicate",
+            "Not Applicable",
+            "Approved",
+            "Suppressed",
+          ].includes(f.status ?? "")
+        )
           return false;
         const d = daysLeft(f.slaDue);
         return d !== null && d < 0;
       });
-    const hasWaiverExpiring = (fs: { attestation?: { expiresAt?: string } }[]) =>
+    const hasWaiverExpiring = (
+      fs: { attestation?: { expiresAt?: string } }[],
+    ) =>
       fs.some((f) => {
         const d = daysLeft(f.attestation?.expiresAt);
         return !!f.attestation && d !== null && d >= 0 && d <= 30;
@@ -133,7 +186,8 @@ export default function VAT({ config }: VATProps) {
       open: groups.filter((g) => hasOpen(g.findings)).length,
       inRev: groups.filter((g) => hasInRev(g.findings)).length,
       overdue: groups.filter((g) => hasOverdue(g.findings)).length,
-      waiverExpiring: groups.filter((g) => hasWaiverExpiring(g.findings)).length,
+      waiverExpiring: groups.filter((g) => hasWaiverExpiring(g.findings))
+        .length,
     };
   }, [groupFindings, active, total, open, inRev, overdue, waiverExpiring]);
 
@@ -143,29 +197,30 @@ export default function VAT({ config }: VATProps) {
       const next = typeof v === "function" ? v(filterFindingStatuses) : v;
       setDashboardState({ status: [...next] });
     },
-    [filterFindingStatuses, setDashboardState]
+    [filterFindingStatuses, setDashboardState],
   );
   const handleFilterAssetTypesChange = useCallback(
     (v: Set<string> | ((prev: Set<string>) => Set<string>)) => {
       const next = typeof v === "function" ? v(filterAssetTypes) : v;
       setDashboardState({ assetTypes: [...next] });
     },
-    [filterAssetTypes, setDashboardState]
+    [filterAssetTypes, setDashboardState],
   );
   const handleFilterABCChange = useCallback(
     (v: Set<string> | ((prev: Set<string>) => Set<string>)) => {
       const next = typeof v === "function" ? v(filterABC) : v;
       setDashboardState({ abc: [...next] });
     },
-    [filterABC, setDashboardState]
+    [filterABC, setDashboardState],
   );
   const handleFilterVerifiedRangeChange = useCallback(
-    (v: [number, number]) => setDashboardState({ verifiedMin: v[0], verifiedMax: v[1] }),
-    [setDashboardState]
+    (v: [number, number]) =>
+      setDashboardState({ verifiedMin: v[0], verifiedMax: v[1] }),
+    [setDashboardState],
   );
   const handleFilterORARangeChange = useCallback(
     (v: [number, number]) => setDashboardState({ oraMin: v[0], oraMax: v[1] }),
-    [setDashboardState]
+    [setDashboardState],
   );
 
   const handleViewChange = useCallback(
@@ -175,7 +230,7 @@ export default function VAT({ config }: VATProps) {
       params.set("tab", tabId);
       router.replace(`${pathname}?${params.toString()}`, { scroll: false });
     },
-    [data.setView, searchParams, router, pathname]
+    [data.setView, searchParams, router, pathname],
   );
 
   useEffect(() => {
@@ -348,12 +403,18 @@ export default function VAT({ config }: VATProps) {
         filterORARange={filterORARange}
         onFilterORARangeChange={handleFilterORARangeChange}
         showArchived={showArchived}
-        onShowArchivedToggle={() => setDashboardState({ archived: !dashboardState.archived })}
+        onShowArchivedToggle={() =>
+          setDashboardState({ archived: !dashboardState.archived })
+        }
         onlyFavorites={onlyFavorites}
-        onOnlyFavoritesToggle={() => setDashboardState({ favorites: !dashboardState.favorites })}
+        onOnlyFavoritesToggle={() =>
+          setDashboardState({ favorites: !dashboardState.favorites })
+        }
         needsJustification={needsJustification}
         onNeedsJustificationToggle={() =>
-          setDashboardState({ needsJustification: !dashboardState.needsJustification })
+          setDashboardState({
+            needsJustification: !dashboardState.needsJustification,
+          })
         }
         alertCount={alerts.length}
         onApply={refetch}

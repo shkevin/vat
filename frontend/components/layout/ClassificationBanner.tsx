@@ -6,7 +6,9 @@ interface ClassificationBannerProps {
   classification: string;
 }
 
-export function ClassificationBanner({ classification }: ClassificationBannerProps) {
+export function ClassificationBanner({
+  classification,
+}: ClassificationBannerProps) {
   return (
     <div
       style={{

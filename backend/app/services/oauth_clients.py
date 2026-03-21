@@ -29,7 +29,9 @@ def _constant_time_compare(a: str, b: str) -> bool:
 
 
 async def _get_clients_store(db: AsyncSession) -> dict:
-    r = await db.execute(select(SettingsKV).where(SettingsKV.key == INGEST_OAUTH_CLIENTS_KEY))
+    r = await db.execute(
+        select(SettingsKV).where(SettingsKV.key == INGEST_OAUTH_CLIENTS_KEY)
+    )
     row = r.scalar_one_or_none()
     if row and isinstance(row.value, dict):
         return dict(row.value)
@@ -41,13 +43,19 @@ def _utc_now_naive():
 
 
 async def _save_clients_store(db: AsyncSession, store: dict) -> None:
-    r = await db.execute(select(SettingsKV).where(SettingsKV.key == INGEST_OAUTH_CLIENTS_KEY))
+    r = await db.execute(
+        select(SettingsKV).where(SettingsKV.key == INGEST_OAUTH_CLIENTS_KEY)
+    )
     row = r.scalar_one_or_none()
     if row:
         row.value = store
         row.updated_at = _utc_now_naive()
     else:
-        db.add(SettingsKV(key=INGEST_OAUTH_CLIENTS_KEY, value=store, updated_at=_utc_now_naive()))
+        db.add(
+            SettingsKV(
+                key=INGEST_OAUTH_CLIENTS_KEY, value=store, updated_at=_utc_now_naive()
+            )
+        )
     await db.commit()
 
 
@@ -67,9 +75,7 @@ class OAuthClientInfo:
     rotated_at: Optional[str]
 
 
-async def create_oauth_client(
-    db: AsyncSession, source_id: str
-) -> tuple[str, str, str]:
+async def create_oauth_client(db: AsyncSession, source_id: str) -> tuple[str, str, str]:
     """
     Create OAuth client for source_id.
     Returns (client_id, client_secret, message).
@@ -89,7 +95,11 @@ async def create_oauth_client(
         "sourceId": source_id,
     }
     await _save_clients_store(db, store)
-    return client_id, client_secret, "Store client_secret securely. It will not be shown again."
+    return (
+        client_id,
+        client_secret,
+        "Store client_secret securely. It will not be shown again.",
+    )
 
 
 async def validate_oauth_client(
@@ -118,7 +128,9 @@ async def validate_oauth_client(
     return None
 
 
-async def get_client_by_source(db: AsyncSession, source_id: str) -> Optional[OAuthClientInfo]:
+async def get_client_by_source(
+    db: AsyncSession, source_id: str
+) -> Optional[OAuthClientInfo]:
     """Get OAuth client info for source (no secrets)."""
     store = await _get_clients_store(db)
     info = store.get(source_id)
@@ -132,9 +144,7 @@ async def get_client_by_source(db: AsyncSession, source_id: str) -> Optional[OAu
     )
 
 
-async def rotate_oauth_client(
-    db: AsyncSession, source_id: str
-) -> tuple[str, str, str]:
+async def rotate_oauth_client(db: AsyncSession, source_id: str) -> tuple[str, str, str]:
     """Regenerate client_secret for source_id. Invalidates old secret. Keeps same client_id."""
     source_id = (source_id or "").strip()
     if not source_id:

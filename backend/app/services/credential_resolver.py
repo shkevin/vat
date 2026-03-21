@@ -8,8 +8,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 class CredentialResolver(Protocol):
     """Resolve credentials for an adapter. Implemented by settings layer."""
 
-    async def get_source_credentials(self, db: AsyncSession, adapter_key: str) -> dict: ...
-    async def get_tracker_credentials(self, db: AsyncSession, adapter_key: str) -> dict: ...
+    async def get_source_credentials(
+        self, db: AsyncSession, adapter_key: str
+    ) -> dict: ...
+    async def get_tracker_credentials(
+        self, db: AsyncSession, adapter_key: str
+    ) -> dict: ...
 
 
 # Registry: adapter_key -> async (db) -> credentials dict

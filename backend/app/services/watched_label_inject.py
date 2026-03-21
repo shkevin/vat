@@ -2,12 +2,15 @@
 Template re-injection: when issue description no longer has parseable [VAT] block, re-append template as comment."""
 
 import logging
-from typing import Optional
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.adapters.linear import LinearAdapter
-from app.api.settings import get_labels, get_linear_credentials, get_tracker_issue_template
+from app.api.settings import (
+    get_labels,
+    get_linear_credentials,
+    get_tracker_issue_template,
+)
 from app.core.config import get_settings
 
 logger = logging.getLogger(__name__)
@@ -52,7 +55,9 @@ async def handle_issue_label_update(
         return None
 
     labels_cfg = await get_labels(db)
-    watched_names = [str(l.get("name", "")).strip() for l in labels_cfg if l.get("name")]
+    watched_names = [
+        str(l.get("name", "")).strip() for l in labels_cfg if l.get("name")
+    ]
     if not watched_names:
         return None
 
@@ -74,7 +79,9 @@ async def handle_issue_label_update(
         return None
 
     issue_obj = data.get("issue") or data
-    issue_id = issue_obj.get("identifier") or issue_obj.get("id") or data.get("issueId") or ""
+    issue_id = (
+        issue_obj.get("identifier") or issue_obj.get("id") or data.get("issueId") or ""
+    )
     if not issue_id:
         return None
 
@@ -93,7 +100,11 @@ async def handle_issue_label_update(
     template = await get_tracker_issue_template(db)
     try:
         await adapter.inject_vat_template_on_issue(str(issue_id), cve_id, template)
-        logger.info("Watched label inject: injected [VAT] template on issue %s (cve=%s)", issue_id, cve_id)
+        logger.info(
+            "Watched label inject: injected [VAT] template on issue %s (cve=%s)",
+            issue_id,
+            cve_id,
+        )
         return {"injected": True, "issue_id": issue_id, "cve_id": cve_id}
     except Exception as e:
         logger.exception("Watched label inject failed for issue %s: %s", issue_id, e)
@@ -120,8 +131,13 @@ async def handle_template_reinject(
     if parsed:
         return None  # Template present and parseable
     # Check for minimal structure (status: and justification: or alternatives)
-    has_status = any(k in new_description.lower() for k in ["status:", "verdict:", "disposition:"])
-    has_justification = any(k in new_description.lower() for k in ["justification:", "reason:", "rationale:"])
+    has_status = any(
+        k in new_description.lower() for k in ["status:", "verdict:", "disposition:"]
+    )
+    has_justification = any(
+        k in new_description.lower()
+        for k in ["justification:", "reason:", "rationale:"]
+    )
     if has_status and has_justification:
         return None  # Has structure, parsing may have failed for other reasons
     cves = LinearAdapter.extract_cve_ids(new_description)
@@ -129,9 +145,16 @@ async def handle_template_reinject(
     template = await get_tracker_issue_template(db)
     try:
         await adapter.inject_vat_template_on_issue(
-            str(issue_id), cve_id, template, reason="template was removed or altered — please use the format below"
+            str(issue_id),
+            cve_id,
+            template,
+            reason="template was removed or altered — please use the format below",
         )
-        logger.info("Template re-inject: injected [VAT] template on issue %s (cve=%s)", issue_id, cve_id)
+        logger.info(
+            "Template re-inject: injected [VAT] template on issue %s (cve=%s)",
+            issue_id,
+            cve_id,
+        )
         return {"reinjected": True, "issue_id": issue_id, "cve_id": cve_id}
     except Exception as e:
         logger.exception("Template re-inject failed for issue %s: %s", issue_id, e)

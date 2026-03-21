@@ -12,8 +12,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.core.database import get_db
-from app.core.jwt import create_oauth_exchange_code, create_token, decode_oauth_exchange_code, decode_token
-from app.models.user import AUTH_METHOD_GOOGLE, AUTH_METHOD_LOCAL, Tenant
+from app.core.jwt import (
+    create_oauth_exchange_code,
+    create_token,
+    decode_oauth_exchange_code,
+    decode_token,
+)
+from app.models.user import AUTH_METHOD_LOCAL, Tenant
 from app.services.user_service import (
     get_google_tenant,
     get_user_by_email_in_google_tenant,
@@ -77,6 +82,8 @@ async def auth_config(db: AsyncSession = Depends(get_db)):
     has_creds = bool(settings.google_client_id and settings.google_client_secret)
     tenant = await get_google_tenant(db) if has_creds else None
     return AuthConfigResponse(google_enabled=bool(tenant))
+
+
 GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v2/userinfo"
 
@@ -182,13 +189,17 @@ async def google_callback(
 ):
     """Handle Google OAuth callback. Exchange code for tokens, lookup user, issue JWT, redirect to frontend."""
     settings = get_settings()
-    frontend_url = settings.frontend_url or settings.public_url.replace(":8000", ":3000").rstrip("/")
+    frontend_url = settings.frontend_url or settings.public_url.replace(
+        ":8000", ":3000"
+    ).rstrip("/")
 
     if error:
         logger.warning("Google OAuth error: %s", error)
         return RedirectResponse(url=f"{frontend_url}/login?error=oauth_denied")
     if not code:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing code")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Missing code"
+        )
     redirect_uri = f"{settings.public_url.rstrip('/')}/api/auth/google/callback"
     async with httpx.AsyncClient() as client:
         token_res = await client.post(

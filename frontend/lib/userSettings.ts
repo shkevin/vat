@@ -45,7 +45,11 @@ function parseFavoriteEntries(raw: string | null): FavoriteEntry[] {
     for (const x of parsed) {
       if (typeof x === "string") {
         migrated.push({ assetId: x });
-      } else if (x && typeof x === "object" && typeof (x as { assetId?: unknown }).assetId === "string") {
+      } else if (
+        x &&
+        typeof x === "object" &&
+        typeof (x as { assetId?: unknown }).assetId === "string"
+      ) {
         const e = x as { assetId: string; branch?: string; tag?: string };
         migrated.push({
           assetId: e.assetId,
@@ -61,7 +65,9 @@ function parseFavoriteEntries(raw: string | null): FavoriteEntry[] {
 }
 
 export function loadFavoriteEntries(): FavoriteEntry[] {
-  return parseFavoriteEntries(typeof window !== "undefined" ? localStorage.getItem(FAVORITES_KEY) : null);
+  return parseFavoriteEntries(
+    typeof window !== "undefined" ? localStorage.getItem(FAVORITES_KEY) : null,
+  );
 }
 
 export function saveFavoriteEntries(entries: FavoriteEntry[]): void {
@@ -89,7 +95,11 @@ export function loadReportPresetMetas(): SavedPresetMeta[] {
     return parsed
       .filter(
         (p): p is { id: string; name: string; savedAt: string } =>
-          p && typeof p === "object" && typeof (p as { id: unknown }).id === "string" && typeof (p as { name: unknown }).name === "string" && typeof (p as { savedAt: unknown }).savedAt === "string"
+          p &&
+          typeof p === "object" &&
+          typeof (p as { id: unknown }).id === "string" &&
+          typeof (p as { name: unknown }).name === "string" &&
+          typeof (p as { savedAt: unknown }).savedAt === "string",
       )
       .map((p) => ({ id: p.id, name: p.name, savedAt: p.savedAt }));
   } catch {

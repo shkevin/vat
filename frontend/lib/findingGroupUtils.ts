@@ -27,17 +27,23 @@ function normalizeEcosystemForGrouping(eco: string | null | undefined): string {
 }
 
 /** Extract package from component when componentBase is missing. Handles "name version" format. */
-function extractComponentBaseForGrouping(component: string | null | undefined): string {
+function extractComponentBaseForGrouping(
+  component: string | null | undefined,
+): string {
   if (!component || typeof component !== "string") return "";
   const base = componentBase(component);
   if (!base) return "";
   const parts = base.split(/\s+/, 2);
-  if (parts.length >= 2 && parts[1] && /^\d/.test(parts[1])) return parts[0].trim();
+  if (parts.length >= 2 && parts[1] && /^\d/.test(parts[1]))
+    return parts[0].trim();
   return base;
 }
 
 /** Normalize package name per ecosystem. Must match backend (PEP 503 for PyPI). */
-function normalizePackageName(ecosystem: string | null | undefined, name: string | null | undefined): string {
+function normalizePackageName(
+  ecosystem: string | null | undefined,
+  name: string | null | undefined,
+): string {
   if (!name || typeof name !== "string") return "";
   const n = name.trim();
   if (!n) return "";
@@ -54,7 +60,9 @@ function normalizePackageName(ecosystem: string | null | undefined, name: string
 
 /** Normalize path for grouping: lowercase, forward slashes, no leading slash. */
 function normalizePath(path: string): string {
-  return path.replace(/\\/g, "/").replace(/^\/+/, "").toLowerCase().trim() || "";
+  return (
+    path.replace(/\\/g, "/").replace(/^\/+/, "").toLowerCase().trim() || ""
+  );
 }
 
 /**
@@ -68,7 +76,9 @@ export function getLocationKey(f: Finding): string | null {
   const explicitLine = f.line;
   if (explicitPath?.trim()) {
     const path = normalizePath(explicitPath);
-    return explicitLine != null && explicitLine > 0 ? `${path}@${explicitLine}` : path;
+    return explicitLine != null && explicitLine > 0
+      ? `${path}@${explicitLine}`
+      : path;
   }
 
   // Fallback: parse from description or component (Aikido, SARIF, etc.)
@@ -84,16 +94,25 @@ export function getLocationKey(f: Finding): string | null {
  * Patterns: " in file.py", ", file and N others", " at line N in file".
  * @param stripLocations - when false (Secret), keep location so each file = separate group
  */
-function normalizeRuleTitleForGrouping(title: string, stripLocations = true): string {
+function normalizeRuleTitleForGrouping(
+  title: string,
+  stripLocations = true,
+): string {
   if (!title || typeof title !== "string") return title;
   let t = title.trim();
   if (!stripLocations) return t.toLowerCase();
   // ", path and N others" or ", path, path and N others"
   t = t.replace(/, [^,]+(, [^,]+)? and \d+ others?$/i, "");
   // " in <path>" when path has extension (py, ts, etc.)
-  t = t.replace(/\s+in\s+[\w./-]+\.(py|ts|tsx|js|jsx|json|yml|yaml|md|txt|xml|html|css|sh|go|rs|java|kt|env|tf|hcl|toml|lock)(\s*,\s*[\w./-]+)?$/i, "");
+  t = t.replace(
+    /\s+in\s+[\w./-]+\.(py|ts|tsx|js|jsx|json|yml|yaml|md|txt|xml|html|css|sh|go|rs|java|kt|env|tf|hcl|toml|lock)(\s*,\s*[\w./-]+)?$/i,
+    "",
+  );
   // " in <path>" when path is extensionless (Dockerfile, Makefile, .dockerignore, .gitignore)
-  t = t.replace(/\s+in\s+[\w./-]*(Dockerfile|Makefile|\.dockerignore|\.gitignore)(\s*,\s*[\w./-]+)?$/i, "");
+  t = t.replace(
+    /\s+in\s+[\w./-]*(Dockerfile|Makefile|\.dockerignore|\.gitignore)(\s*,\s*[\w./-]+)?$/i,
+    "",
+  );
   // " at line N in <path>" or " at line N-N in <path>"
   t = t.replace(/\s+at\s+line\s+\d+(-\d+)?\s+in\s+[\w./-]+$/i, "");
   return t.trim().toLowerCase();
@@ -117,7 +136,8 @@ export function getFindingGroupKey(f: Finding): string {
   const t = (f.findingType ?? "").toLowerCase();
   const rawTitle = (f.title ?? f.cveId ?? "").trim();
   const title = normalizeRuleTitleForGrouping(rawTitle, true);
-  const rawPkg = f.componentBase ?? extractComponentBaseForGrouping(f.component);
+  const rawPkg =
+    f.componentBase ?? extractComponentBaseForGrouping(f.component);
   const eco = normalizeEcosystemForGrouping(f.ecosystem);
   const pkg = rawPkg ? normalizePackageName(eco || null, rawPkg) : "";
   const rid = (f.ruleId ?? "").toLowerCase().trim();
@@ -151,7 +171,7 @@ export function getFindingGroupKey(f: Finding): string {
     // Collapse spaces/dashes/underscores for simple rule ids only; skip path patterns
     const key =
       !rawKey.includes(" in ") && rawKey.length < 80
-        ? (rawKey.replace(/[-_\s]+/g, "-").replace(/^-|-$/g, "") || rawKey)
+        ? rawKey.replace(/[-_\s]+/g, "-").replace(/^-|-$/g, "") || rawKey
         : rawKey;
     return `secret:${key}#${asset}`;
   }
@@ -168,7 +188,9 @@ export function getFindingGroupKey(f: Finding): string {
 /**
  * Groups findings by key. Returns Map<groupKey, Finding[]>.
  */
-export function groupFindingsByKey(findings: Finding[]): Map<string, Finding[]> {
+export function groupFindingsByKey(
+  findings: Finding[],
+): Map<string, Finding[]> {
   const map = new Map<string, Finding[]>();
   for (const f of findings) {
     const key = getFindingGroupKey(f);
@@ -179,7 +201,10 @@ export function groupFindingsByKey(findings: Finding[]): Map<string, Finding[]> 
   return map;
 }
 
-function worstSeverityIndex(finding: Finding, sevOrder: readonly string[]): number {
+function worstSeverityIndex(
+  finding: Finding,
+  sevOrder: readonly string[],
+): number {
   const i = sevOrder.indexOf(finding.severity);
   return i >= 0 ? i : 999;
 }
@@ -189,18 +214,25 @@ function worstSeverityIndex(finding: Finding, sevOrder: readonly string[]): numb
  */
 export function getGroupedFindings(
   findings: Finding[],
-  sevOrder: readonly string[]
+  sevOrder: readonly string[],
 ): Array<{ key: string; findings: Finding[] }> {
   const map = groupFindingsByKey(findings);
   return Array.from(map.entries())
     .map(([key, list]) => ({ key, findings: list }))
     .sort((a, b) => {
       const worstA = a.findings.reduce((w, f) =>
-        worstSeverityIndex(f, sevOrder) < worstSeverityIndex(w, sevOrder) ? f : w
+        worstSeverityIndex(f, sevOrder) < worstSeverityIndex(w, sevOrder)
+          ? f
+          : w,
       );
       const worstB = b.findings.reduce((w, f) =>
-        worstSeverityIndex(f, sevOrder) < worstSeverityIndex(w, sevOrder) ? f : w
+        worstSeverityIndex(f, sevOrder) < worstSeverityIndex(w, sevOrder)
+          ? f
+          : w,
       );
-      return worstSeverityIndex(worstA, sevOrder) - worstSeverityIndex(worstB, sevOrder);
+      return (
+        worstSeverityIndex(worstA, sevOrder) -
+        worstSeverityIndex(worstB, sevOrder)
+      );
     });
 }

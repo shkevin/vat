@@ -38,7 +38,9 @@ def get_parser(parser_id: str) -> IngestParser:
         raise ValueError("Parser id is required")
     cls = PARSER_REGISTRY.get(parser_id)
     if not cls:
-        raise ValueError(f"Unknown parser: {parser_id}. Available: {list(PARSER_REGISTRY.keys())}")
+        raise ValueError(
+            f"Unknown parser: {parser_id}. Available: {list(PARSER_REGISTRY.keys())}"
+        )
     return cls()
 
 

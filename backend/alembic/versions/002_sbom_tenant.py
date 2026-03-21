@@ -36,8 +36,15 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime(), nullable=True),
         sa.Column("updated_at", sa.DateTime(), nullable=True),
     )
-    op.create_index("ix_sbom_packages_tenant_id", "sbom_packages", ["tenant_id"], unique=False)
-    op.create_index("ix_sbom_packages_name_version", "sbom_packages", ["name", "version"], unique=False)
+    op.create_index(
+        "ix_sbom_packages_tenant_id", "sbom_packages", ["tenant_id"], unique=False
+    )
+    op.create_index(
+        "ix_sbom_packages_name_version",
+        "sbom_packages",
+        ["name", "version"],
+        unique=False,
+    )
 
     op.create_table(
         "tenants",
@@ -49,7 +56,9 @@ def upgrade() -> None:
     op.create_table(
         "users",
         sa.Column("id", sa.String(64), primary_key=True),
-        sa.Column("tenant_id", sa.String(64), sa.ForeignKey("tenants.id"), nullable=True),
+        sa.Column(
+            "tenant_id", sa.String(64), sa.ForeignKey("tenants.id"), nullable=True
+        ),
         sa.Column("email", sa.String(256), nullable=False),
         sa.Column("role", sa.String(32), nullable=False),  # admin, reviewer, read_only
         sa.Column("created_at", sa.DateTime(), nullable=True),

@@ -29,7 +29,9 @@ class TestExtractCveIds:
         ]
 
     def test_vat_finding_prefix(self):
-        assert LinearAdapter.extract_cve_ids("VAT Finding: CVE-2024-21626") == ["CVE-2024-21626"]
+        assert LinearAdapter.extract_cve_ids("VAT Finding: CVE-2024-21626") == [
+            "CVE-2024-21626"
+        ]
 
     def test_no_cve(self):
         assert LinearAdapter.extract_cve_ids("no cve here") == []
@@ -37,7 +39,9 @@ class TestExtractCveIds:
         assert LinearAdapter.extract_cve_ids(None) == []
 
     def test_cve_with_many_digits(self):
-        assert LinearAdapter.extract_cve_ids("CVE-2024-12345678") == ["CVE-2024-12345678"]
+        assert LinearAdapter.extract_cve_ids("CVE-2024-12345678") == [
+            "CVE-2024-12345678"
+        ]
 
     def test_case_insensitive_returns_uppercase(self):
         assert LinearAdapter.extract_cve_ids("cve-2024-1234") == ["CVE-2024-1234"]
@@ -166,7 +170,9 @@ class TestParseVatBlockContextAware:
 
     def test_status_justification_only_with_hint(self):
         text = "Status: risk-accepted\nJustification: Accepted by security team"
-        result = LinearAdapter.parse_vat_block_from_text(text, cve_id_hint="CVE-2024-1234")
+        result = LinearAdapter.parse_vat_block_from_text(
+            text, cve_id_hint="CVE-2024-1234"
+        )
         assert result is not None
         assert result["cve_id"] == "CVE-2024-1234"
         assert result["status"] == "Risk Accepted"
@@ -285,10 +291,17 @@ class TestParseVatBlockInvalid:
         assert LinearAdapter.parse_vat_block_from_text("status: fp") is None
 
     def test_status_only_no_justification(self):
-        assert LinearAdapter.parse_vat_block_from_text("CVE-2024-1234\nstatus: fp") is None
+        assert (
+            LinearAdapter.parse_vat_block_from_text("CVE-2024-1234\nstatus: fp") is None
+        )
 
     def test_justification_only_no_status(self):
-        assert LinearAdapter.parse_vat_block_from_text("CVE-2024-1234\njustification: test") is None
+        assert (
+            LinearAdapter.parse_vat_block_from_text(
+                "CVE-2024-1234\njustification: test"
+            )
+            is None
+        )
 
     def test_invalid_status_unrecognized(self):
         text = "[VAT] CVE-2024-1234\nstatus: xyzzy\njustification: test"
@@ -401,7 +414,9 @@ class TestToVatCommentUpdate:
 
     def test_unparseable_returns_none(self):
         adapter = LinearAdapter()
-        payload = {"data": {"body": "Random comment", "issue": {"identifier": "ENG-123"}}}
+        payload = {
+            "data": {"body": "Random comment", "issue": {"identifier": "ENG-123"}}
+        }
         result = adapter.to_vat_comment_update(payload)
         assert result is None
 
@@ -447,7 +462,11 @@ async def test_linear_create_issue(linear_respx):
     """Create issue returns (identifier, uuid) from mocked GraphQL response."""
     adapter = LinearAdapter(api_key="test-key", team_id="test-team-id")
     req = VatTrackerCreateIssueRequest(
-        finding={"cveId": "CVE-2024-21626", "title": "Test finding", "severity": "high"},
+        finding={
+            "cveId": "CVE-2024-21626",
+            "title": "Test finding",
+            "severity": "high",
+        },
         template="[VAT] {cve_id}\nstatus: ...\njustification: ...",
     )
     result = await adapter.create_issue(req)
@@ -460,7 +479,9 @@ async def test_linear_create_issue(linear_respx):
 async def test_linear_post_comment(linear_respx):
     """Post comment succeeds with mocked commentCreate response."""
     adapter = LinearAdapter(api_key="test-key")
-    req = VatTrackerPostDecisionRequest(tracker_issue_id="VAT-1", body="Reviewer decision: Risk Accepted")
+    req = VatTrackerPostDecisionRequest(
+        tracker_issue_id="VAT-1", body="Reviewer decision: Risk Accepted"
+    )
     await adapter.post_comment(req)
     # No exception = success; respx intercepts the identifier lookup and comment create
 
@@ -470,7 +491,11 @@ async def test_linear_update_issue(linear_respx):
     adapter = LinearAdapter(api_key="test-key")
     req = VatTrackerUpdateIssueRequest(
         issue_id="VAT-1",
-        finding={"cveId": "CVE-2024-21626", "title": "Updated title", "severity": "critical"},
+        finding={
+            "cveId": "CVE-2024-21626",
+            "title": "Updated title",
+            "severity": "critical",
+        },
         changed_fields=["title", "severity"],
         label_names=["security-bug"],
     )
@@ -551,7 +576,9 @@ async def test_linear_find_existing_issue_for_title(linear_respx):
     """find_existing_issue_for_title returns identifier when Linear has an issue with that title."""
     adapter = LinearAdapter(api_key="test-key", team_id="test-team-id")
     # Mock returns AUT-51 with title "Kafka client auth bypass CVE-2024-1234"
-    result = await adapter.find_existing_issue_for_title("Kafka client auth bypass CVE-2024-1234")
+    result = await adapter.find_existing_issue_for_title(
+        "Kafka client auth bypass CVE-2024-1234"
+    )
     assert result == "AUT-51"
 
 
@@ -589,6 +616,7 @@ def test_spacy_token_extraction():
     """spaCy handles unusual whitespace and fragmented tokens when model is available."""
     try:
         import spacy
+
         spacy.load("en_core_web_sm")
     except (OSError, ImportError):
         pytest.skip("spaCy or en_core_web_sm not available")

@@ -1,6 +1,13 @@
 "use client";
 
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import React, {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import {
   loadUserPreferences,
   saveUserPreferences,
@@ -19,9 +26,13 @@ const UserPreferencesContext = createContext<{
   setPreferences: (updates: Partial<UserPreferences>) => void;
 } | null>(null);
 
-export function UserPreferencesProvider({ children }: { children: React.ReactNode }) {
+export function UserPreferencesProvider({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   const [preferences, setPreferencesState] = useState<UserPreferences>(() =>
-    typeof window !== "undefined" ? loadUserPreferences() : DEFAULT_PREFERENCES
+    typeof window !== "undefined" ? loadUserPreferences() : DEFAULT_PREFERENCES,
   );
 
   useEffect(() => {
@@ -38,7 +49,7 @@ export function UserPreferencesProvider({ children }: { children: React.ReactNod
 
   const value = useMemo(
     () => ({ preferences, setPreferences }),
-    [preferences, setPreferences]
+    [preferences, setPreferences],
   );
 
   return (
@@ -50,6 +61,9 @@ export function UserPreferencesProvider({ children }: { children: React.ReactNod
 
 export function useUserPreferences() {
   const ctx = useContext(UserPreferencesContext);
-  if (!ctx) throw new Error("useUserPreferences must be used within UserPreferencesProvider");
+  if (!ctx)
+    throw new Error(
+      "useUserPreferences must be used within UserPreferencesProvider",
+    );
   return ctx;
 }

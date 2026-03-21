@@ -45,7 +45,14 @@ export function VATBackendSettingsPage() {
 
   if (loading) {
     return (
-      <div style={{ ...sans, fontSize: 12, color: "var(--app-muted)", padding: 20 }}>
+      <div
+        style={{
+          ...sans,
+          fontSize: 12,
+          color: "var(--app-muted)",
+          padding: 20,
+        }}
+      >
         Loading VAT backend status…
       </div>
     );
@@ -62,7 +69,9 @@ export function VATBackendSettingsPage() {
           marginBottom: 20,
         }}
       >
-        <div style={{ ...sans, fontSize: 12, color: "var(--app-danger)" }}>{error}</div>
+        <div style={{ ...sans, fontSize: 12, color: "var(--app-danger)" }}>
+          {error}
+        </div>
         <button
           onClick={load}
           style={{
@@ -94,7 +103,9 @@ export function VATBackendSettingsPage() {
         letterSpacing: "0.08em",
         padding: "3px 8px",
         borderRadius: 4,
-        background: configured ? "rgba(80,200,120,0.15)" : "rgba(248,112,96,0.15)",
+        background: configured
+          ? "rgba(80,200,120,0.15)"
+          : "rgba(248,112,96,0.15)",
         color: configured ? "var(--app-success)" : "var(--app-danger)",
       }}
     >
@@ -108,7 +119,8 @@ export function VATBackendSettingsPage() {
       style={{
         ...mono,
         padding: "6px 12px",
-        background: copied === label ? "var(--app-success)" : "var(--app-border)",
+        background:
+          copied === label ? "var(--app-success)" : "var(--app-border)",
         border: "1px solid var(--app-muted)",
         borderRadius: 4,
         color: copied === label ? "var(--app-bg)" : "var(--app-muted)",
@@ -144,25 +156,62 @@ export function VATBackendSettingsPage() {
           padding: 20,
         }}
       >
-        <div style={{ ...sans, fontSize: 12, color: "var(--app-muted)", marginBottom: 16, lineHeight: 1.5 }}>
-          VAT ingests findings from sources, deduplicates, and syncs to your task tracker. Configure via environment variables.
+        <div
+          style={{
+            ...sans,
+            fontSize: 12,
+            color: "var(--app-muted)",
+            marginBottom: 16,
+            lineHeight: 1.5,
+          }}
+        >
+          VAT ingests findings from sources, deduplicates, and syncs to your
+          task tracker. Configure via environment variables.
         </div>
 
         <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <span style={{ ...mono, fontSize: 10, color: "var(--app-muted)", minWidth: 140 }}>
+            <span
+              style={{
+                ...mono,
+                fontSize: 10,
+                color: "var(--app-muted)",
+                minWidth: 140,
+              }}
+            >
               Database
             </span>
             <StatusBadge configured={status.databaseConfigured} />
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <span style={{ ...mono, fontSize: 10, color: "var(--app-muted)", minWidth: 140 }}>
+            <span
+              style={{
+                ...mono,
+                fontSize: 10,
+                color: "var(--app-muted)",
+                minWidth: 140,
+              }}
+            >
               Secret key
             </span>
             <StatusBadge configured={status.secretKeyConfigured} />
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-            <span style={{ ...mono, fontSize: 10, color: "var(--app-muted)", minWidth: 140 }}>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 12,
+              flexWrap: "wrap",
+            }}
+          >
+            <span
+              style={{
+                ...mono,
+                fontSize: 10,
+                color: "var(--app-muted)",
+                minWidth: 140,
+              }}
+            >
               Public URL
             </span>
             <code
@@ -193,7 +242,20 @@ export function VATBackendSettingsPage() {
             borderTop: "1px solid var(--app-border)",
           }}
         >
-          Set <code style={{ ...mono, color: "var(--app-muted)" }}>VAT_PUBLIC_URL</code>, <code style={{ ...mono, color: "var(--app-muted)" }}>VAT_DATABASE_URL</code>, and <code style={{ ...mono, color: "var(--app-muted)" }}>VAT_SECRET_KEY</code> in your environment or <code style={{ ...mono, color: "var(--app-muted)" }}>.env</code>.
+          Set{" "}
+          <code style={{ ...mono, color: "var(--app-muted)" }}>
+            VAT_PUBLIC_URL
+          </code>
+          ,{" "}
+          <code style={{ ...mono, color: "var(--app-muted)" }}>
+            VAT_DATABASE_URL
+          </code>
+          , and{" "}
+          <code style={{ ...mono, color: "var(--app-muted)" }}>
+            VAT_SECRET_KEY
+          </code>{" "}
+          in your environment or{" "}
+          <code style={{ ...mono, color: "var(--app-muted)" }}>.env</code>.
         </div>
       </div>
     </div>

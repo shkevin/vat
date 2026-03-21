@@ -19,7 +19,9 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    op.add_column("findings", sa.Column("previous_status", sa.String(32), nullable=True))
+    op.add_column(
+        "findings", sa.Column("previous_status", sa.String(32), nullable=True)
+    )
 
     op.create_table(
         "settings",

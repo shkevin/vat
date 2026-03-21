@@ -1,7 +1,5 @@
 """Tests for SBOM extraction from Trivy/Grype reports."""
 
-import pytest
-
 from app.services.sbom_extract import (
     extract_sbom_from_grype,
     extract_sbom_from_report,
@@ -79,7 +77,10 @@ def test_extract_sbom_from_trivy_packages():
 def test_extract_sbom_from_trivy_empty():
     """Empty Trivy returns None."""
     assert extract_sbom_from_trivy({"Results": []}, "x") is None
-    assert extract_sbom_from_trivy({"Results": [{"Target": "x", "Secrets": []}]}, "x") is None
+    assert (
+        extract_sbom_from_trivy({"Results": [{"Target": "x", "Secrets": []}]}, "x")
+        is None
+    )
 
 
 def test_extract_sbom_from_grype():
@@ -123,7 +124,14 @@ def test_extract_sbom_from_grype_filesystem():
 
 def test_extract_sbom_from_report_trivy():
     """extract_sbom_from_report routes Trivy."""
-    trivy = {"Results": [{"Target": "x", "Vulnerabilities": [{"PkgName": "a", "InstalledVersion": "1"}]}]}
+    trivy = {
+        "Results": [
+            {
+                "Target": "x",
+                "Vulnerabilities": [{"PkgName": "a", "InstalledVersion": "1"}],
+            }
+        ]
+    }
     out = extract_sbom_from_report("trivy", trivy, "src")
     assert out is not None
     assert len(out["components"]) == 1

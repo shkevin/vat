@@ -8,7 +8,9 @@ from typing import Optional
 from fastapi import Request
 
 
-def verify_hmac(secret: Optional[str], payload: bytes, signature: Optional[str]) -> bool:
+def verify_hmac(
+    secret: Optional[str], payload: bytes, signature: Optional[str]
+) -> bool:
     """Verify HMAC-SHA256 signature. If secret not configured, skip (operator choice).
     Linear sends raw hex digest; Stripe/GitHub use 'sha256=' prefix. Supports both."""
     if not secret:
@@ -17,7 +19,9 @@ def verify_hmac(secret: Optional[str], payload: bytes, signature: Optional[str])
         return False
     sig = (signature or "").strip()
     expected = hmac.new(secret.encode(), payload, hashlib.sha256).hexdigest()
-    return hmac.compare_digest(sig, expected) or hmac.compare_digest(sig, f"sha256={expected}")
+    return hmac.compare_digest(sig, expected) or hmac.compare_digest(
+        sig, f"sha256={expected}"
+    )
 
 
 def verify_replay_timestamp(
@@ -32,7 +36,12 @@ def verify_replay_timestamp(
     Returns True if valid or no timestamp present (allow for backward compat).
     """
     default_headers = ["X-Webhook-Timestamp", "X-Aikido-Webhook-Timestamp"]
-    default_payload_keys = ["dispatched_at", "created_at", "timestamp", "webhookTimestamp"]
+    default_payload_keys = [
+        "dispatched_at",
+        "created_at",
+        "timestamp",
+        "webhookTimestamp",
+    ]
 
     headers = header_names or default_headers
     keys = payload_keys or default_payload_keys

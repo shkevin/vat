@@ -29,23 +29,38 @@ export function loadDashboardFiltersFromStorage(): Partial<DashboardFilterState>
     if (!stored || typeof stored !== "object") return null;
     return {
       tab: typeof stored.tab === "string" ? stored.tab : undefined,
-      status: Array.isArray(stored.status) ? stored.status.filter((s): s is string => typeof s === "string") : undefined,
-      abc: Array.isArray(stored.abc) ? stored.abc.filter((s): s is string => typeof s === "string") : undefined,
-      verifiedMin: typeof stored.verifiedMin === "number" ? stored.verifiedMin : undefined,
-      verifiedMax: typeof stored.verifiedMax === "number" ? stored.verifiedMax : undefined,
+      status: Array.isArray(stored.status)
+        ? stored.status.filter((s): s is string => typeof s === "string")
+        : undefined,
+      abc: Array.isArray(stored.abc)
+        ? stored.abc.filter((s): s is string => typeof s === "string")
+        : undefined,
+      verifiedMin:
+        typeof stored.verifiedMin === "number" ? stored.verifiedMin : undefined,
+      verifiedMax:
+        typeof stored.verifiedMax === "number" ? stored.verifiedMax : undefined,
       oraMin: typeof stored.oraMin === "number" ? stored.oraMin : undefined,
       oraMax: typeof stored.oraMax === "number" ? stored.oraMax : undefined,
-      assetTypes: Array.isArray(stored.assetTypes) ? stored.assetTypes.filter((s): s is string => typeof s === "string") : undefined,
-      archived: typeof stored.archived === "boolean" ? stored.archived : undefined,
-      favorites: typeof stored.favorites === "boolean" ? stored.favorites : undefined,
-      needsJustification: typeof stored.needsJustification === "boolean" ? stored.needsJustification : undefined,
+      assetTypes: Array.isArray(stored.assetTypes)
+        ? stored.assetTypes.filter((s): s is string => typeof s === "string")
+        : undefined,
+      archived:
+        typeof stored.archived === "boolean" ? stored.archived : undefined,
+      favorites:
+        typeof stored.favorites === "boolean" ? stored.favorites : undefined,
+      needsJustification:
+        typeof stored.needsJustification === "boolean"
+          ? stored.needsJustification
+          : undefined,
     };
   } catch {
     return null;
   }
 }
 
-export function saveDashboardFiltersToStorage(state: Partial<DashboardFilterState>): void {
+export function saveDashboardFiltersToStorage(
+  state: Partial<DashboardFilterState>,
+): void {
   if (typeof window === "undefined") return;
   try {
     const toStore: Record<string, unknown> = {};
@@ -60,7 +75,8 @@ export function saveDashboardFiltersToStorage(state: Partial<DashboardFilterStat
     if (state.assetTypes != null) toStore.assetTypes = state.assetTypes;
     if (state.archived != null) toStore.archived = state.archived;
     if (state.favorites != null) toStore.favorites = state.favorites;
-    if (state.needsJustification != null) toStore.needsJustification = state.needsJustification;
+    if (state.needsJustification != null)
+      toStore.needsJustification = state.needsJustification;
     localStorage.setItem(STORAGE_KEY, JSON.stringify(toStore));
   } catch {
     /* ignore */

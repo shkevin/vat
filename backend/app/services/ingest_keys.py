@@ -65,7 +65,9 @@ async def _save_keys_store(db: AsyncSession, store: dict) -> None:
         row.value = store
         row.updated_at = _utc_now_naive()
     else:
-        db.add(SettingsKV(key=INGEST_KEYS_KEY, value=store, updated_at=_utc_now_naive()))
+        db.add(
+            SettingsKV(key=INGEST_KEYS_KEY, value=store, updated_at=_utc_now_naive())
+        )
     await db.commit()
 
 
@@ -106,14 +108,16 @@ async def regenerate_key(db: AsyncSession, source_id: str) -> tuple[str, str, st
     full_key, key_hash, key_prefix = generate_key()
     store = await _get_keys_store(db)
     if source_id in store and isinstance(store[source_id], dict):
-        store[source_id].update({
-            "authType": "api_token",
-            "keyHash": key_hash,
-            "keyPrefix": key_prefix,
-            "createdAt": store[source_id].get("createdAt", _now()),
-            "rotatedAt": _now(),
-            "sourceId": source_id,
-        })
+        store[source_id].update(
+            {
+                "authType": "api_token",
+                "keyHash": key_hash,
+                "keyPrefix": key_prefix,
+                "createdAt": store[source_id].get("createdAt", _now()),
+                "rotatedAt": _now(),
+                "sourceId": source_id,
+            }
+        )
     else:
         store[source_id] = {
             "authType": "api_token",

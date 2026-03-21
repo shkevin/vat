@@ -19,7 +19,11 @@ interface NodeVisualizationProps {
 /** Registry: adapter key → node component. Graph looks up by source.adapter */
 export const SOURCE_NODE_REGISTRY: Record<
   string,
-  { color: string; label: string; Component: ComponentType<NodeVisualizationProps> }
+  {
+    color: string;
+    label: string;
+    Component: ComponentType<NodeVisualizationProps>;
+  }
 > = {
   aikido: {
     color: AIKIDO_NODE.color,
@@ -31,7 +35,11 @@ export const SOURCE_NODE_REGISTRY: Record<
 /** Registry: tracker type → node component. Graph looks up by tracker.type */
 export const TRACKER_NODE_REGISTRY: Record<
   string,
-  { color: string; label: string; Component: ComponentType<NodeVisualizationProps & { isAdd?: boolean }> }
+  {
+    color: string;
+    label: string;
+    Component: ComponentType<NodeVisualizationProps & { isAdd?: boolean }>;
+  }
 > = {
   linear: {
     color: LINEAR_NODE.color,

@@ -27,7 +27,9 @@ export const DEFAULT_FILTER_STATE: AssetFilterState = {
   tag: "",
 };
 
-export function loadFiltersFromStorage(assetId: string): AssetFilterState | null {
+export function loadFiltersFromStorage(
+  assetId: string,
+): AssetFilterState | null {
   if (typeof window === "undefined") return null;
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -49,13 +51,22 @@ export function loadFiltersFromStorage(assetId: string): AssetFilterState | null
   }
 }
 
-export function saveFiltersToStorage(assetId: string, state: Partial<AssetFilterState>): void {
+export function saveFiltersToStorage(
+  assetId: string,
+  state: Partial<AssetFilterState>,
+): void {
   if (typeof window === "undefined") return;
   try {
     const { search: _search, ...stateWithoutSearch } = state;
     const raw = localStorage.getItem(STORAGE_KEY);
-    const all: Record<string, AssetFilterState> = raw ? (JSON.parse(raw) as Record<string, AssetFilterState>) : {};
-    all[assetId] = { ...DEFAULT_FILTER_STATE, ...all[assetId], ...stateWithoutSearch };
+    const all: Record<string, AssetFilterState> = raw
+      ? (JSON.parse(raw) as Record<string, AssetFilterState>)
+      : {};
+    all[assetId] = {
+      ...DEFAULT_FILTER_STATE,
+      ...all[assetId],
+      ...stateWithoutSearch,
+    };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(all));
   } catch {
     /* ignore */

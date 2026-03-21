@@ -65,7 +65,8 @@ export function SettingsTab({
               subTab === "integrations"
                 ? "2px solid var(--app-accent)"
                 : "2px solid transparent",
-            color: subTab === "integrations" ? "var(--app-fg)" : "var(--app-muted)",
+            color:
+              subTab === "integrations" ? "var(--app-fg)" : "var(--app-muted)",
             cursor: "pointer",
             marginBottom: -1,
             transition: "color 0.15s, border-color 0.15s",

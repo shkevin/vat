@@ -48,7 +48,9 @@ class Settings(BaseSettings):
     aikido_rate_limit_per_min: int = 15
     aikido_request_gap_ms: int = 2500  # Min ms between requests
     # Export sync data to Excel for validation (data science / leadership reporting)
-    aikido_export_excel_dir: Optional[str] = None  # e.g. ./data/exports — when set, each sync writes aikido_sync_YYYY-MM-DD_HHMMSS.xlsx
+    aikido_export_excel_dir: Optional[str] = (
+        None  # e.g. ./data/exports — when set, each sync writes aikido_sync_YYYY-MM-DD_HHMMSS.xlsx
+    )
 
     # Tracker (Linear)
     linear_api_key: Optional[str] = None
@@ -66,19 +68,25 @@ class Settings(BaseSettings):
     @model_validator(mode="after")
     def default_poll_when_no_webhook(self) -> "Settings":
         # When webhook not configured: poll is the only way to get [VAT] updates — default True
-        if not self.linear_webhook_secret and "VAT_LINEAR_POLL_ENABLED" not in os.environ:
+        if (
+            not self.linear_webhook_secret
+            and "VAT_LINEAR_POLL_ENABLED" not in os.environ
+        ):
             self.linear_poll_enabled = True
         # When webhook configured: webhooks are preferred; default False unless explicitly set
         elif self.linear_webhook_secret and "VAT_LINEAR_POLL_ENABLED" not in os.environ:
             self.linear_poll_enabled = False
         return self
+
     linear_poll_interval_min: int = 5
     linear_poll_max_issues: int = 100
     # Reconciliation: fetch [VAT] updates via API to catch missed webhooks. Runs regardless of webhook config.
     linear_reconcile_interval_hours: int = 6
     # Link fallback: when True, match unlinked findings to existing Linear issues by title (risky: can cause false matches).
     # Default False — only group_key and CVE are used for deduplication.
-    linear_link_title_fallback: bool = False  # VAT_LINEAR_LINK_TITLE_FALLBACK=true to enable
+    linear_link_title_fallback: bool = (
+        False  # VAT_LINEAR_LINK_TITLE_FALLBACK=true to enable
+    )
     # Sync queue: process/backfill limits per beat run. Increase for faster drain when backlog is large.
     linear_sync_process_limit: int = 200
     linear_sync_backfill_limit: int = 200
@@ -96,7 +104,9 @@ class Settings(BaseSettings):
 
     # Celery (sync worker) — Valkey/Redis-compatible broker
     celery_broker_url: str = "redis://localhost:6379/0"
-    celery_result_backend: Optional[str] = None  # None = no result store; use redis://... for results
+    celery_result_backend: Optional[str] = (
+        None  # None = no result store; use redis://... for results
+    )
     # Worker concurrency: number of parallel tasks per worker (default 4 for sync throughput)
     celery_worker_concurrency: int = 4
 
@@ -116,6 +126,6 @@ def get_settings() -> Settings:
     if s.env == "production" and s.secret_key == DEFAULT_SECRET:
         raise ValueError(
             "VAT_SECRET_KEY must be set to a secure value in production. "
-            "Generate with: python -c \"import secrets; print(secrets.token_hex(32))\""
+            'Generate with: python -c "import secrets; print(secrets.token_hex(32))"'
         )
     return s

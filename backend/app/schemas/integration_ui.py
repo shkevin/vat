@@ -17,7 +17,9 @@ class IntegrationFieldSchema(BaseModel):
     type: Literal["text", "password", "select", "boolean"] = "text"
     required: bool = False
     placeholder: Optional[str] = Field(default=None, max_length=128)
-    options: Optional[list[dict]] = Field(default=None, description="For select: [{value, label}]")
+    options: Optional[list[dict]] = Field(
+        default=None, description="For select: [{value, label}]"
+    )
     help_text: Optional[str] = Field(default=None, max_length=256)
     default: Optional[str | bool] = None
 
@@ -68,5 +70,7 @@ class FlowTypeSchema(BaseModel):
 FLOW_TYPES: dict[str, FlowTypeSchema] = {
     "ingest": FlowTypeSchema(color="#10B981", style="dashed", label="Ingest"),
     "sync_to_tracker": FlowTypeSchema(color="#5E6AD2", style="dashed", label="Sync"),
-    "tracker_feedback": FlowTypeSchema(color="#8B5CF6", style="dashed", label="Comment"),
+    "tracker_feedback": FlowTypeSchema(
+        color="#8B5CF6", style="dashed", label="Comment"
+    ),
 }

@@ -52,7 +52,8 @@ export function FindingRow({
       onMouseLeave={() => setHov(false)}
       style={{
         display: "grid",
-        gridTemplateColumns: "26px 4px 32px 130px 1fr 160px 60px 100px 90px 80px",
+        gridTemplateColumns:
+          "26px 4px 32px 130px 1fr 160px 60px 100px 90px 80px",
         gap: 8,
         padding: ROW_PADDING[density],
         cursor: "pointer",
@@ -129,7 +130,9 @@ export function FindingRow({
                 borderRadius: 2,
                 flexShrink: 0,
               }}
-              title={`Grouped: same finding in ${groupCount ?? 0} place${(groupCount ?? 0) > 1 ? "s" : ""}`}
+              title={`Grouped: same finding in ${groupCount ?? 0} place${
+                (groupCount ?? 0) > 1 ? "s" : ""
+              }`}
             >
               ×{groupCount ?? 0}
             </span>
@@ -155,7 +158,8 @@ export function FindingRow({
                 ...mono,
                 fontSize: 8,
                 color: "var(--app-warning)",
-                background: "color-mix(in srgb, var(--app-warning) 15%, transparent)",
+                background:
+                  "color-mix(in srgb, var(--app-warning) 15%, transparent)",
                 padding: "1px 4px",
                 borderRadius: 2,
                 flexShrink: 0,
@@ -165,18 +169,36 @@ export function FindingRow({
             </span>
           )}
         </div>
-        <div style={{ ...mono, fontSize: 9, color: "var(--app-muted)", marginTop: 1 }}>
+        <div
+          style={{
+            ...mono,
+            fontSize: 9,
+            color: "var(--app-muted)",
+            marginTop: 1,
+          }}
+        >
           {(() => {
             // For Secret/IaC/SAST, prefer filePath (location) when available — more useful than generic component
             const ft = (finding.findingType ?? "").toLowerCase();
-            const isLocationType = ft === "secret" || ft === "iac" || ft === "sast";
+            const isLocationType =
+              ft === "secret" || ft === "iac" || ft === "sast";
             const showPath = isLocationType && finding.filePath?.trim();
-            const subtitle = showPath ? finding.filePath!.trim() : (finding.component ?? "—");
-            return <>{subtitle} · {finding.team ?? "—"}</>;
+            const subtitle = showPath
+              ? finding.filePath!.trim()
+              : finding.component ?? "—";
+            return (
+              <>
+                {subtitle} · {finding.team ?? "—"}
+              </>
+            );
           })()}
         </div>
       </div>
-      <StTag status={finding.status === "Synced to Tracker" ? "Open" : finding.status} />
+      <StTag
+        status={
+          finding.status === "Synced to Tracker" ? "Open" : finding.status
+        }
+      />
       <span
         style={{
           ...mono,
@@ -188,7 +210,10 @@ export function FindingRow({
         {finding.trackerId ? "✓" : "—"}
       </span>
       <SevTag sev={finding.severity} />
-      <SrcTag source={instanceSource ?? finding.source ?? ""} sources={sources} />
+      <SrcTag
+        source={instanceSource ?? finding.source ?? ""}
+        sources={sources}
+      />
       <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
         <Dot color={slaC} />
         <span style={{ ...mono, fontSize: 10, color: slaC }}>

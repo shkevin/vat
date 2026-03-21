@@ -5,7 +5,6 @@ import logging
 from fastapi import APIRouter, Depends
 
 from app.core.auth import require_admin
-from app.core.config import get_settings
 from app.core.database import get_db
 from app.schemas.auth import UserContext
 from app.services.linear_poll_service import poll_linear_for_updates
@@ -114,7 +113,9 @@ async def process_sync_queue_api(
     """
     if use_celery:
         try:
-            process_sync_queue.apply_async(kwargs={"limit": limit, "backfill_limit": backfill_limit})
+            process_sync_queue.apply_async(
+                kwargs={"limit": limit, "backfill_limit": backfill_limit}
+            )
             return {"dispatched": True, "message": "Sync worker task queued"}
         except Exception as e:
             logger.warning("Celery unavailable, running inline: %s", e)
@@ -195,4 +196,7 @@ async def retry_failed_linear(
     await db.commit()
     if reset_count > 0:
         trigger_sync_worker(countdown=2)
-    return {"reset": reset_count, "message": f"Reset {reset_count} failed events for retry"}
+    return {
+        "reset": reset_count,
+        "message": f"Reset {reset_count} failed events for retry",
+    }

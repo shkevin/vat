@@ -63,7 +63,7 @@ export function UserPreferencesPane({
       onPreferencesChange?.(next);
       setSummary((s) => (s ? { ...s, preferences: next } : null));
     },
-    [prefs, setPreferences, onPreferencesChange]
+    [prefs, setPreferences, onPreferencesChange],
   );
 
   useEffect(() => {
@@ -129,7 +129,16 @@ export function UserPreferencesPane({
             borderBottom: "1px solid var(--app-border)",
           }}
         >
-          <h2 id="preferences-title" style={{ ...mono, fontSize: 16, fontWeight: 600, color: "var(--app-fg)", margin: 0 }}>
+          <h2
+            id="preferences-title"
+            style={{
+              ...mono,
+              fontSize: 16,
+              fontWeight: 600,
+              color: "var(--app-fg)",
+              margin: 0,
+            }}
+          >
             Preferences
           </h2>
           <button
@@ -154,14 +163,38 @@ export function UserPreferencesPane({
           {/* User info */}
           {user && (
             <section style={{ marginBottom: 24 }}>
-              <span style={{ ...sans, fontSize: 11, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+              <span
+                style={{
+                  ...sans,
+                  fontSize: 11,
+                  color: "#64748b",
+                  textTransform: "uppercase",
+                  letterSpacing: "0.05em",
+                }}
+              >
                 Signed in as
               </span>
-              <div style={{ ...mono, fontSize: 14, color: "var(--app-fg)", marginTop: 4, wordBreak: "break-all" }}>
+              <div
+                style={{
+                  ...mono,
+                  fontSize: 14,
+                  color: "var(--app-fg)",
+                  marginTop: 4,
+                  wordBreak: "break-all",
+                }}
+              >
                 {user.email}
               </div>
               {user.role && (
-                <span style={{ ...mono, fontSize: 12, color: "var(--app-muted)", marginTop: 2, display: "block" }}>
+                <span
+                  style={{
+                    ...mono,
+                    fontSize: 12,
+                    color: "var(--app-muted)",
+                    marginTop: 2,
+                    display: "block",
+                  }}
+                >
                   {user.role}
                 </span>
               )}
@@ -170,10 +203,25 @@ export function UserPreferencesPane({
 
           {/* Display preferences */}
           <section style={{ marginBottom: 24 }}>
-            <span style={{ ...sans, fontSize: 11, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+            <span
+              style={{
+                ...sans,
+                fontSize: 11,
+                color: "#64748b",
+                textTransform: "uppercase",
+                letterSpacing: "0.05em",
+              }}
+            >
               Display
             </span>
-            <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 12 }}>
+            <div
+              style={{
+                marginTop: 12,
+                display: "flex",
+                flexDirection: "column",
+                gap: 12,
+              }}
+            >
               <label
                 style={{
                   display: "flex",
@@ -189,7 +237,8 @@ export function UserPreferencesPane({
                 <select
                   value={themeId}
                   onChange={(e) => {
-                    const id = (e.target.value || REPORT_THEMES[0].id) as UserPreferences["themeId"];
+                    const id = (e.target.value ||
+                      REPORT_THEMES[0].id) as UserPreferences["themeId"];
                     setThemeId(id as NonNullable<UserPreferences["themeId"]>);
                     updatePref({ themeId: id });
                   }}
@@ -226,7 +275,12 @@ export function UserPreferencesPane({
                 <span>Table density</span>
                 <select
                   value={prefs?.tableDensity ?? "default"}
-                  onChange={(e) => updatePref({ tableDensity: e.target.value as UserPreferences["tableDensity"] })}
+                  onChange={(e) =>
+                    updatePref({
+                      tableDensity: e.target
+                        .value as UserPreferences["tableDensity"],
+                    })
+                  }
                   style={{
                     ...mono,
                     background: "var(--app-bg)",
@@ -248,14 +302,32 @@ export function UserPreferencesPane({
 
           {/* Saved data summary */}
           <section style={{ marginBottom: 24 }}>
-            <span style={{ ...sans, fontSize: 11, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+            <span
+              style={{
+                ...sans,
+                fontSize: 11,
+                color: "#64748b",
+                textTransform: "uppercase",
+                letterSpacing: "0.05em",
+              }}
+            >
               Your saved data
             </span>
-            <p style={{ ...sans, fontSize: 12, color: "var(--app-muted)", marginTop: 4, marginBottom: 12 }}>
+            <p
+              style={{
+                ...sans,
+                fontSize: 12,
+                color: "var(--app-muted)",
+                marginTop: 4,
+                marginBottom: 12,
+              }}
+            >
               Stored in this browser. Manage from the respective views.
             </p>
             {loading ? (
-              <div style={{ ...mono, fontSize: 12, color: "var(--app-muted)" }}>Loading…</div>
+              <div style={{ ...mono, fontSize: 12, color: "var(--app-muted)" }}>
+                Loading…
+              </div>
             ) : summary ? (
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                 <div
@@ -270,14 +342,30 @@ export function UserPreferencesPane({
                     border: "1px solid var(--app-border)",
                   }}
                 >
-                  <span style={{ ...sans, fontSize: 13, color: "var(--app-fg)" }}>Favorites</span>
-                  <span style={{ ...mono, fontSize: 12, color: "var(--app-muted)", flex: 1, textAlign: "right" }}>
-                    {favoriteAssetIds.size} asset{favoriteAssetIds.size !== 1 ? "s" : ""}
+                  <span
+                    style={{ ...sans, fontSize: 13, color: "var(--app-fg)" }}
+                  >
+                    Favorites
+                  </span>
+                  <span
+                    style={{
+                      ...mono,
+                      fontSize: 12,
+                      color: "var(--app-muted)",
+                      flex: 1,
+                      textAlign: "right",
+                    }}
+                  >
+                    {favoriteAssetIds.size} asset
+                    {favoriteAssetIds.size !== 1 ? "s" : ""}
                   </span>
                   {onNavigateToFindings && (
                     <button
                       type="button"
-                      onClick={() => { onClose(); onNavigateToFindings(); }}
+                      onClick={() => {
+                        onClose();
+                        onNavigateToFindings();
+                      }}
                       style={{
                         ...mono,
                         fontSize: 11,
@@ -305,14 +393,30 @@ export function UserPreferencesPane({
                     border: "1px solid var(--app-border)",
                   }}
                 >
-                  <span style={{ ...sans, fontSize: 13, color: "var(--app-fg)" }}>Loadouts</span>
-                  <span style={{ ...mono, fontSize: 12, color: "var(--app-muted)", flex: 1, textAlign: "right" }}>
-                    {summary.loadoutCount} loadout{summary.loadoutCount !== 1 ? "s" : ""}
+                  <span
+                    style={{ ...sans, fontSize: 13, color: "var(--app-fg)" }}
+                  >
+                    Loadouts
+                  </span>
+                  <span
+                    style={{
+                      ...mono,
+                      fontSize: 12,
+                      color: "var(--app-muted)",
+                      flex: 1,
+                      textAlign: "right",
+                    }}
+                  >
+                    {summary.loadoutCount} loadout
+                    {summary.loadoutCount !== 1 ? "s" : ""}
                   </span>
                   {onNavigateToFindings && (
                     <button
                       type="button"
-                      onClick={() => { onClose(); onNavigateToFindings(); }}
+                      onClick={() => {
+                        onClose();
+                        onNavigateToFindings();
+                      }}
                       style={{
                         ...mono,
                         fontSize: 11,
@@ -340,14 +444,30 @@ export function UserPreferencesPane({
                     border: "1px solid var(--app-border)",
                   }}
                 >
-                  <span style={{ ...sans, fontSize: 13, color: "var(--app-fg)" }}>Report templates</span>
-                  <span style={{ ...mono, fontSize: 12, color: "var(--app-muted)", flex: 1, textAlign: "right" }}>
-                    {summary.reportPresetCount} preset{summary.reportPresetCount !== 1 ? "s" : ""}
+                  <span
+                    style={{ ...sans, fontSize: 13, color: "var(--app-fg)" }}
+                  >
+                    Report templates
+                  </span>
+                  <span
+                    style={{
+                      ...mono,
+                      fontSize: 12,
+                      color: "var(--app-muted)",
+                      flex: 1,
+                      textAlign: "right",
+                    }}
+                  >
+                    {summary.reportPresetCount} preset
+                    {summary.reportPresetCount !== 1 ? "s" : ""}
                   </span>
                   {onNavigateToReport && (
                     <button
                       type="button"
-                      onClick={() => { onClose(); onNavigateToReport(); }}
+                      onClick={() => {
+                        onClose();
+                        onNavigateToReport();
+                      }}
                       style={{
                         ...mono,
                         fontSize: 11,
@@ -375,14 +495,30 @@ export function UserPreferencesPane({
                     border: "1px solid var(--app-border)",
                   }}
                 >
-                  <span style={{ ...sans, fontSize: 13, color: "var(--app-fg)" }}>Saved reports</span>
-                  <span style={{ ...mono, fontSize: 12, color: "var(--app-muted)", flex: 1, textAlign: "right" }}>
-                    {summary.savedReportCount} report{summary.savedReportCount !== 1 ? "s" : ""}
+                  <span
+                    style={{ ...sans, fontSize: 13, color: "var(--app-fg)" }}
+                  >
+                    Saved reports
+                  </span>
+                  <span
+                    style={{
+                      ...mono,
+                      fontSize: 12,
+                      color: "var(--app-muted)",
+                      flex: 1,
+                      textAlign: "right",
+                    }}
+                  >
+                    {summary.savedReportCount} report
+                    {summary.savedReportCount !== 1 ? "s" : ""}
                   </span>
                   {onNavigateToReport && (
                     <button
                       type="button"
-                      onClick={() => { onClose(); onNavigateToReport(); }}
+                      onClick={() => {
+                        onClose();
+                        onNavigateToReport();
+                      }}
                       style={{
                         ...mono,
                         fontSize: 11,
@@ -441,5 +577,7 @@ export function UserPreferencesPane({
     </div>
   );
 
-  return typeof document !== "undefined" ? createPortal(content, document.body) : null;
+  return typeof document !== "undefined"
+    ? createPortal(content, document.body)
+    : null;
 }

@@ -7,13 +7,22 @@ import { ChevronDown, ChevronUp } from "lucide-react";
 import { BulkBar } from "@/components/findings/BulkBar";
 import { useUserPreferences } from "@/contexts/UserPreferencesContext";
 import { useVATData } from "@/contexts/VATDataContext";
-import { ABC_TOOLTIP, ORA_TOOLTIP, ASSET_TYPE_LABELS, SEV_ORDER, SEV } from "@/lib/constants";
+import {
+  ABC_TOOLTIP,
+  ORA_TOOLTIP,
+  ASSET_TYPE_LABELS,
+  SEV_ORDER,
+  SEV,
+} from "@/lib/constants";
 import { getAssetTypeFromAsset } from "@/lib/assetUtils";
 import { getFindingGroupKey } from "@/lib/findingGroupUtils";
 import { ThemedTooltip } from "@/components/ui/ThemedTooltip";
 import { mono, sans } from "@/lib/styles";
 
-function buildAssetUrl(assetId: string, getFavoriteContext: (id: string) => { branch?: string; tag?: string } | null): string {
+function buildAssetUrl(
+  assetId: string,
+  getFavoriteContext: (id: string) => { branch?: string; tag?: string } | null,
+): string {
   const base = `/assets/${encodeURIComponent(assetId)}`;
   const ctx = getFavoriteContext(assetId);
   if (!ctx?.branch && !ctx?.tag) return base;
@@ -49,7 +58,9 @@ interface AssetsTableProps {
   archivedCount: number;
   total: number;
   filterAssetTypes: Set<string>;
-  onFilterAssetTypesChange: (v: Set<string> | ((prev: Set<string>) => Set<string>)) => void;
+  onFilterAssetTypesChange: (
+    v: Set<string> | ((prev: Set<string>) => Set<string>),
+  ) => void;
   favoriteAssetIds: Set<string>;
   onToggleFavorite: (assetId: string) => void;
   search: string;
@@ -91,7 +102,6 @@ function formatStatusSummary(breakdown: Record<string, number>): string {
   return parts.slice(0, 4).join(" · ") || "—";
 }
 
-
 function getABC(asset: Asset): string {
   if (asset.verifiedPct === 100) return "Compliant";
   if (asset.verifiedPct > 0) return "Compliant With Warnings";
@@ -107,13 +117,23 @@ function normalizeSeverity(s: string): string {
   if (lower === "high") return "High";
   if (lower === "medium" || lower === "moderate") return "Medium";
   if (lower === "low") return "Low";
-  return s ? s.charAt(0).toUpperCase() + s.slice(1).toLowerCase() : "Informational";
+  return s
+    ? s.charAt(0).toUpperCase() + s.slice(1).toLowerCase()
+    : "Informational";
 }
 
 /** Statuses treated as closed — align with report engine isOpen so Findings and Report totals match. */
 const CLOSED_STATUSES = new Set([
-  "closed", "resolved", "ignored", "auto_ignored", "false positive", "suppressed",
-  "approved", "duplicate", "not applicable", "rejected",
+  "closed",
+  "resolved",
+  "ignored",
+  "auto_ignored",
+  "false positive",
+  "suppressed",
+  "approved",
+  "duplicate",
+  "not applicable",
+  "rejected",
 ]);
 function isOpenFinding(f: Finding): boolean {
   const st = (f.status ?? "").toLowerCase().trim();
@@ -158,12 +178,13 @@ export function AssetsTable({
   const { getFavoriteContextForAsset } = useVATData();
   const density = preferences.tableDensity ?? "default";
   /** Use context directly so severity counts update immediately when toggle changes (prop can lag) */
-  const effectiveGroupFindings = preferences.groupFindings ?? groupFindings ?? true;
+  const effectiveGroupFindings =
+    preferences.groupFindings ?? groupFindings ?? true;
   const [sortBy, setSortBy] = useState("name");
 
   const getAssetHref = useCallback(
     (assetId: string) => buildAssetUrl(assetId, getFavoriteContextForAsset),
-    [getFavoriteContextForAsset]
+    [getFavoriteContextForAsset],
   );
 
   const sortedAssets = useMemo(() => {
@@ -171,17 +192,32 @@ export function AssetsTable({
       const d = sortBy.endsWith("-desc");
       return [d ? sortBy.slice(0, -5) : sortBy, d] as const;
     })();
-    const validKeys = new Set(["name", "type", "tag", "verified", "abc", "ora", "statuses"]);
+    const validKeys = new Set([
+      "name",
+      "type",
+      "tag",
+      "verified",
+      "abc",
+      "ora",
+      "statuses",
+    ]);
     const key = validKeys.has(sortKey) ? sortKey : "name";
     return [...displayedAssets].sort((a, b) => {
       let cmp = 0;
       if (key === "name") cmp = (a.name ?? "").localeCompare(b.name ?? "");
-      else if (key === "type") cmp = ASSET_TYPE_LABELS[getAssetTypeFromAsset(a)].localeCompare(ASSET_TYPE_LABELS[getAssetTypeFromAsset(b)]);
+      else if (key === "type")
+        cmp = ASSET_TYPE_LABELS[getAssetTypeFromAsset(a)].localeCompare(
+          ASSET_TYPE_LABELS[getAssetTypeFromAsset(b)],
+        );
       else if (key === "tag") cmp = (a.tag ?? "—").localeCompare(b.tag ?? "—");
       else if (key === "verified") cmp = a.verifiedPct - b.verifiedPct;
-      else if (key === "abc") cmp = ABC_ORDER.indexOf(getABC(a)) - ABC_ORDER.indexOf(getABC(b));
+      else if (key === "abc")
+        cmp = ABC_ORDER.indexOf(getABC(a)) - ABC_ORDER.indexOf(getABC(b));
       else if (key === "ora") cmp = a.oraPct - b.oraPct;
-      else if (key === "statuses") cmp = formatStatusSummary(a.statusBreakdown).localeCompare(formatStatusSummary(b.statusBreakdown));
+      else if (key === "statuses")
+        cmp = formatStatusSummary(a.statusBreakdown).localeCompare(
+          formatStatusSummary(b.statusBreakdown),
+        );
       return desc ? -cmp : cmp;
     });
   }, [displayedAssets, sortBy]);
@@ -200,8 +236,12 @@ export function AssetsTable({
           const dedupeKey = `${asset.id}:${gk}`;
           if (seenGroups.has(dedupeKey)) continue;
           seenGroups.add(dedupeKey);
-          const s = normalizeSeverity((f.sourceGroupSeverity ?? f.severity) ?? "Informational");
-          const key = (SEV_ORDER as readonly string[]).includes(s) ? s : "Informational";
+          const s = normalizeSeverity(
+            f.sourceGroupSeverity ?? f.severity ?? "Informational",
+          );
+          const key = (SEV_ORDER as readonly string[]).includes(s)
+            ? s
+            : "Informational";
           counts[key] = (counts[key] ?? 0) + 1;
         }
       }
@@ -212,7 +252,9 @@ export function AssetsTable({
         for (const f of asset.findings) {
           if (!isOpenFinding(f)) continue;
           const s = normalizeSeverity(f.severity ?? "Informational");
-          const key = (SEV_ORDER as readonly string[]).includes(s) ? s : "Informational";
+          const key = (SEV_ORDER as readonly string[]).includes(s)
+            ? s
+            : "Informational";
           counts[key] = (counts[key] ?? 0) + 1;
         }
       }
@@ -252,7 +294,9 @@ export function AssetsTable({
               ? `${displayedAssets.length} of ${total} assets`
               : `${total} asset${total === 1 ? "" : "s"}`}
           </span>
-          <span style={{ color: "var(--app-border-subtle)", fontSize: 10 }}>|</span>
+          <span style={{ color: "var(--app-border-subtle)", fontSize: 10 }}>
+            |
+          </span>
           {severityCounts
             .filter(({ count }) => count > 0)
             .map(({ severity, count }) => {
@@ -295,11 +339,11 @@ export function AssetsTable({
         />
 
         {checked.size > 0 && (
-        <BulkBar
-          count={checked.size}
-          onAction={onBulkAction}
-          onDeselect={onDeselectAll}
-        />
+          <BulkBar
+            count={checked.size}
+            onAction={onBulkAction}
+            onDeselect={onDeselectAll}
+          />
         )}
       </div>
 
@@ -312,242 +356,271 @@ export function AssetsTable({
           overflow: "hidden",
         }}
       >
-      <div
-        style={{
-          flexShrink: 0,
-          display: "grid",
-          gridTemplateColumns: "28px 1fr 90px 80px 100px 90px 90px 1fr",
-          gap: 8,
-          padding: HEADER_PADDING[density],
-          background: "var(--app-header-bg)",
-          borderRadius: "4px 4px 0 0",
-          border: "1px solid var(--app-border-subtle)",
-          borderBottom: "none",
-        }}
-      >
-        {ASSET_COLUMNS.map((col, i) => {
-          const isSortable = !!col.sortKey;
-          const isActive = sortBy === col.sortKey || sortBy === `${col.sortKey}-desc`;
-          const isDesc = sortBy.endsWith("-desc");
-          const handleClick = () => {
-            if (!isSortable) return;
-            if (isActive) {
-              setSortBy(isDesc ? col.sortKey : `${col.sortKey}-desc`);
-            } else {
-              setSortBy(col.sortKey);
+        <div
+          style={{
+            flexShrink: 0,
+            display: "grid",
+            gridTemplateColumns: "28px 1fr 90px 80px 100px 90px 90px 1fr",
+            gap: 8,
+            padding: HEADER_PADDING[density],
+            background: "var(--app-header-bg)",
+            borderRadius: "4px 4px 0 0",
+            border: "1px solid var(--app-border-subtle)",
+            borderBottom: "none",
+          }}
+        >
+          {ASSET_COLUMNS.map((col, i) => {
+            const isSortable = !!col.sortKey;
+            const isActive =
+              sortBy === col.sortKey || sortBy === `${col.sortKey}-desc`;
+            const isDesc = sortBy.endsWith("-desc");
+            const handleClick = () => {
+              if (!isSortable) return;
+              if (isActive) {
+                setSortBy(isDesc ? col.sortKey : `${col.sortKey}-desc`);
+              } else {
+                setSortBy(col.sortKey);
+              }
+            };
+            const spanStyle = {
+              ...mono,
+              fontSize: 9,
+              fontWeight: 700,
+              letterSpacing: "0.1em",
+              color: isActive ? "var(--app-fg)" : "var(--app-muted)",
+              textTransform: "uppercase" as const,
+              display: "flex" as const,
+              alignItems: "center" as const,
+              gap: 4,
+              cursor: isSortable ? "pointer" : undefined,
+              userSelect: "none" as const,
+            };
+            const content = (
+              <>
+                {col.label}
+                {isSortable &&
+                  isActive &&
+                  (isDesc ? (
+                    <ChevronDown size={10} />
+                  ) : (
+                    <ChevronUp size={10} />
+                  ))}
+              </>
+            );
+            if (col.label === "ABC") {
+              return (
+                <ThemedTooltip key={i} content={ABC_TOOLTIP} placement="top">
+                  <span
+                    onClick={handleClick}
+                    role={isSortable ? "button" : undefined}
+                    tabIndex={isSortable ? 0 : undefined}
+                    onKeyDown={
+                      isSortable
+                        ? (e) => e.key === "Enter" && handleClick()
+                        : undefined
+                    }
+                    style={spanStyle}
+                  >
+                    {content}
+                  </span>
+                </ThemedTooltip>
+              );
             }
-          };
-          const spanStyle = {
-            ...mono,
-            fontSize: 9,
-            fontWeight: 700,
-            letterSpacing: "0.1em",
-            color: isActive ? "var(--app-fg)" : "var(--app-muted)",
-            textTransform: "uppercase" as const,
-            display: "flex" as const,
-            alignItems: "center" as const,
-            gap: 4,
-            cursor: isSortable ? "pointer" : undefined,
-            userSelect: "none" as const,
-          };
-          const content = (
-            <>
-              {col.label}
-              {isSortable && isActive && (isDesc ? <ChevronDown size={10} /> : <ChevronUp size={10} />)}
-            </>
-          );
-          if (col.label === "ABC") {
+            if (col.label === "ORA") {
+              return (
+                <ThemedTooltip key={i} content={ORA_TOOLTIP} placement="top">
+                  <span
+                    onClick={handleClick}
+                    role={isSortable ? "button" : undefined}
+                    tabIndex={isSortable ? 0 : undefined}
+                    onKeyDown={
+                      isSortable
+                        ? (e) => e.key === "Enter" && handleClick()
+                        : undefined
+                    }
+                    style={spanStyle}
+                  >
+                    {content}
+                  </span>
+                </ThemedTooltip>
+              );
+            }
             return (
-              <ThemedTooltip key={i} content={ABC_TOOLTIP} placement="top">
-                <span
-                  onClick={handleClick}
-                  role={isSortable ? "button" : undefined}
-                  tabIndex={isSortable ? 0 : undefined}
-                  onKeyDown={isSortable ? (e) => e.key === "Enter" && handleClick() : undefined}
-                  style={spanStyle}
-                >
-                  {content}
-                </span>
-              </ThemedTooltip>
-            );
-          }
-          if (col.label === "ORA") {
-            return (
-              <ThemedTooltip key={i} content={ORA_TOOLTIP} placement="top">
-                <span
-                  onClick={handleClick}
-                  role={isSortable ? "button" : undefined}
-                  tabIndex={isSortable ? 0 : undefined}
-                  onKeyDown={isSortable ? (e) => e.key === "Enter" && handleClick() : undefined}
-                  style={spanStyle}
-                >
-                  {content}
-                </span>
-              </ThemedTooltip>
-            );
-          }
-          return (
-            <span
-              key={i}
-              onClick={handleClick}
-              role={isSortable ? "button" : undefined}
-              tabIndex={isSortable ? 0 : undefined}
-              onKeyDown={isSortable ? (e) => e.key === "Enter" && handleClick() : undefined}
-              style={spanStyle}
-            >
-              {content}
-            </span>
-          );
-        })}
-      </div>
-      <div
-        style={{
-          flex: 1,
-          minHeight: 0,
-          border: "1px solid var(--app-border-subtle)",
-          borderRadius: "0 0 4px 4px",
-          overflow: "auto",
-        }}
-      >
-        {sortedAssets.length === 0 ? (
-          <div
-            style={{
-              ...sans,
-              fontSize: 12,
-              color: "#94a3b8",
-              padding: 40,
-              textAlign: "center",
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "center",
-              gap: 8,
-            }}
-          >
-            <span>No assets match current filters.</span>
-            {total > 0 && filterAssetTypes.size > 0 && (
-              <span style={{ fontSize: 11, color: "var(--app-muted)" }}>
-                Try clearing the Asset Type filter to include Package and Path assets (e.g. from push sources).
+              <span
+                key={i}
+                onClick={handleClick}
+                role={isSortable ? "button" : undefined}
+                tabIndex={isSortable ? 0 : undefined}
+                onKeyDown={
+                  isSortable
+                    ? (e) => e.key === "Enter" && handleClick()
+                    : undefined
+                }
+                style={spanStyle}
+              >
+                {content}
               </span>
-            )}
-          </div>
-        ) : (
-          sortedAssets.map((asset) => (
+            );
+          })}
+        </div>
+        <div
+          style={{
+            flex: 1,
+            minHeight: 0,
+            border: "1px solid var(--app-border-subtle)",
+            borderRadius: "0 0 4px 4px",
+            overflow: "auto",
+          }}
+        >
+          {sortedAssets.length === 0 ? (
+            <div
+              style={{
+                ...sans,
+                fontSize: 12,
+                color: "#94a3b8",
+                padding: 40,
+                textAlign: "center",
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                gap: 8,
+              }}
+            >
+              <span>No assets match current filters.</span>
+              {total > 0 && filterAssetTypes.size > 0 && (
+                <span style={{ fontSize: 11, color: "var(--app-muted)" }}>
+                  Try clearing the Asset Type filter to include Package and Path
+                  assets (e.g. from push sources).
+                </span>
+              )}
+            </div>
+          ) : (
+            sortedAssets.map((asset) => (
               <div
                 key={asset.id}
                 onClick={() => router.push(getAssetHref(asset.id))}
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "28px 1fr 90px 80px 100px 90px 90px 1fr",
-                    gap: 8,
-                    padding: ROW_PADDING[density],
-                    cursor: "pointer",
-                    alignItems: "center",
-                    background: selected && asset.findings.some((f) => f.id === selected.id)
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "28px 1fr 90px 80px 100px 90px 90px 1fr",
+                  gap: 8,
+                  padding: ROW_PADDING[density],
+                  cursor: "pointer",
+                  alignItems: "center",
+                  background:
+                    selected && asset.findings.some((f) => f.id === selected.id)
                       ? "var(--app-input-bg)"
                       : "transparent",
-                    borderBottom: "1px solid var(--app-border-subtle)",
-                    transition: "background 0.1s",
+                  borderBottom: "1px solid var(--app-border-subtle)",
+                  transition: "background 0.1s",
+                }}
+              >
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onToggleFavorite(asset.id);
+                  }}
+                  aria-label={
+                    favoriteAssetIds.has(asset.id) ? "Unfavorite" : "Favorite"
+                  }
+                  style={{
+                    background: "none",
+                    border: "none",
+                    padding: 0,
+                    cursor: "pointer",
+                    fontSize: 18,
+                    color: favoriteAssetIds.has(asset.id)
+                      ? "var(--app-danger)"
+                      : "var(--app-muted)",
                   }}
                 >
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onToggleFavorite(asset.id);
-                    }}
-                    aria-label={favoriteAssetIds.has(asset.id) ? "Unfavorite" : "Favorite"}
-                    style={{
-                      background: "none",
-                      border: "none",
-                      padding: 0,
-                      cursor: "pointer",
-                      fontSize: 18,
-                      color: favoriteAssetIds.has(asset.id) ? "var(--app-danger)" : "var(--app-muted)",
-                    }}
-                  >
-                    {favoriteAssetIds.has(asset.id) ? "♥" : "♡"}
-                  </button>
-                  <Link
-                    href={getAssetHref(asset.id)}
-                    onClick={(e) => e.stopPropagation()}
-                    style={{
-                      ...mono,
-                      fontSize: 12,
-                      fontWeight: 600,
-                      color: "var(--app-accent)",
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      whiteSpace: "nowrap",
-                      minWidth: 0,
-                      textDecoration: "none",
-                    }}
-                  >
-                    {asset.name}
-                  </Link>
+                  {favoriteAssetIds.has(asset.id) ? "♥" : "♡"}
+                </button>
+                <Link
+                  href={getAssetHref(asset.id)}
+                  onClick={(e) => e.stopPropagation()}
+                  style={{
+                    ...mono,
+                    fontSize: 12,
+                    fontWeight: 600,
+                    color: "var(--app-accent)",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                    minWidth: 0,
+                    textDecoration: "none",
+                  }}
+                >
+                  {asset.name}
+                </Link>
+                <span
+                  style={{
+                    ...mono,
+                    fontSize: 10,
+                    color: "var(--app-muted)",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {ASSET_TYPE_LABELS[getAssetTypeFromAsset(asset)]}
+                </span>
+                <span
+                  style={{
+                    ...mono,
+                    fontSize: 11,
+                    color: "var(--app-fg)",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {asset.tag ?? "—"}
+                </span>
+                <span
+                  style={{ ...mono, fontSize: 11, color: "var(--app-success)" }}
+                >
+                  {asset.verifiedPct}%
+                </span>
+                <ThemedTooltip content={ABC_TOOLTIP} placement="top">
                   <span
                     style={{
                       ...mono,
                       fontSize: 10,
-                      color: "var(--app-muted)",
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      whiteSpace: "nowrap",
+                      color:
+                        getABC(asset) === "Compliant"
+                          ? "var(--app-success)"
+                          : getABC(asset) === "Compliant With Warnings"
+                            ? "var(--app-warning)"
+                            : "var(--app-danger)",
                     }}
                   >
-                    {ASSET_TYPE_LABELS[getAssetTypeFromAsset(asset)]}
+                    {getABC(asset)}
                   </span>
+                </ThemedTooltip>
+                <ThemedTooltip content={ORA_TOOLTIP} placement="top">
                   <span
-                    style={{
-                      ...mono,
-                      fontSize: 11,
-                      color: "var(--app-fg)",
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      whiteSpace: "nowrap",
-                    }}
+                    style={{ ...mono, fontSize: 11, color: "var(--app-fg)" }}
                   >
-                    {asset.tag ?? "—"}
+                    {asset.oraPct}%
                   </span>
-                  <span style={{ ...mono, fontSize: 11, color: "var(--app-success)" }}>
-                    {asset.verifiedPct}%
-                  </span>
-                  <ThemedTooltip content={ABC_TOOLTIP} placement="top">
-                    <span
-                      style={{
-                        ...mono,
-                        fontSize: 10,
-                        color:
-                          getABC(asset) === "Compliant"
-                            ? "var(--app-success)"
-                            : getABC(asset) === "Compliant With Warnings"
-                              ? "var(--app-warning)"
-                              : "var(--app-danger)",
-                      }}
-                    >
-                      {getABC(asset)}
-                    </span>
-                  </ThemedTooltip>
-                  <ThemedTooltip content={ORA_TOOLTIP} placement="top">
-                    <span style={{ ...mono, fontSize: 11, color: "var(--app-fg)" }}>
-                      {asset.oraPct}%
-                    </span>
-                  </ThemedTooltip>
-                  <div
-                    style={{
-                      ...sans,
-                      fontSize: 10,
-                      color: "var(--app-fg)",
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      whiteSpace: "nowrap",
-                    }}
-                  >
-                    {formatStatusSummary(asset.statusBreakdown)}
-                  </div>
+                </ThemedTooltip>
+                <div
+                  style={{
+                    ...sans,
+                    fontSize: 10,
+                    color: "var(--app-fg)",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {formatStatusSummary(asset.statusBreakdown)}
                 </div>
+              </div>
             ))
-        )}
-      </div>
+          )}
+        </div>
       </div>
     </div>
   );

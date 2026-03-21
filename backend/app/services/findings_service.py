@@ -18,25 +18,28 @@ from app.services.sync_service import (
     enqueue_tracker_post_decision,
 )
 from app.tasks.sync_tasks import trigger_sync_worker
-from app.schemas.finding import FindingCreate, FindingRead, STATUS_DISPLAY
+from app.schemas.finding import FindingCreate, STATUS_DISPLAY
 
 # Reverse: display format -> enum value. Aikido "ignored" maps to Suppressed (same semantics).
-STATUS_FROM_DISPLAY = {v: k for k, v in STATUS_DISPLAY.items()} | {
-    "Open": "Open",
-    "Approved": "Approved",
-    "Rejected": "Rejected",
-    "Suppressed": "Suppressed",
-    "Ignored": "Suppressed",  # Aikido ignored = VAT Suppressed; display as Suppressed, same counts
-    "Mitigated": "Mitigated",
-    "Duplicate": "Duplicate",
-    "Resolved": "Resolved",
-    "Reopened": "Reopened",
-    "Synced to Tracker": "SyncedToTracker",
-    "In Review": "InReview",
-    "Risk Accepted": "RiskAccepted",
-    "False Positive": "FalsePositive",
-    "Not Applicable": "NotApplicable",
-}
+STATUS_FROM_DISPLAY = (
+    {v: k for k, v in STATUS_DISPLAY.items()}
+    | {
+        "Open": "Open",
+        "Approved": "Approved",
+        "Rejected": "Rejected",
+        "Suppressed": "Suppressed",
+        "Ignored": "Suppressed",  # Aikido ignored = VAT Suppressed; display as Suppressed, same counts
+        "Mitigated": "Mitigated",
+        "Duplicate": "Duplicate",
+        "Resolved": "Resolved",
+        "Reopened": "Reopened",
+        "Synced to Tracker": "SyncedToTracker",
+        "In Review": "InReview",
+        "Risk Accepted": "RiskAccepted",
+        "False Positive": "FalsePositive",
+        "Not Applicable": "NotApplicable",
+    }
+)
 
 
 def _status_to_enum(s: str) -> Status:
@@ -165,11 +168,14 @@ async def list_findings(
                 q = q.where(Finding.finding_type.in_(types))
     if asset:
         q = q.where(
-            (Finding.component.ilike(f"%{asset}%")) | (Finding.image.ilike(f"%{asset}%"))
+            (Finding.component.ilike(f"%{asset}%"))
+            | (Finding.image.ilike(f"%{asset}%"))
         )
     if search:
         term = f"%{search}%"
-        fields = [p.strip().lower() for p in (search_fields or "").split(",") if p.strip()]
+        fields = [
+            p.strip().lower() for p in (search_fields or "").split(",") if p.strip()
+        ]
         if not fields:
             fields = ["cve_id", "title", "component", "image", "team", "owner"]
         clauses = []
@@ -245,22 +251,35 @@ async def _enqueue_tracker_update_issue_if_supported(
         if "labels" not in syncable and label_names:
             syncable = set(syncable) | {"labels"}
         await enqueue_tracker_update_issue(
-            db, finding, tracker_key, finding_dict, list(syncable), label_names=label_names, label_configs=label_configs
+            db,
+            finding,
+            tracker_key,
+            finding_dict,
+            list(syncable),
+            label_names=label_names,
+            label_configs=label_configs,
         )
         break
     trigger_sync_worker(countdown=2)
 
 
-async def _enqueue_sync_on_status_change(db: AsyncSession, finding: Finding, new_status: Status, user: str) -> None:
+async def _enqueue_sync_on_status_change(
+    db: AsyncSession, finding: Finding, new_status: Status, user: str
+) -> None:
     """Enqueue tracker/source sync when status changes. Universal for all adapters."""
     from app.api.settings import get_source_config, get_tracker_key
-    from app.services.external_links_service import get_source_issue_id, has_tracker_link
+    from app.services.external_links_service import (
+        get_source_issue_id,
+        has_tracker_link,
+    )
 
     enqueued = False
 
     # Tracker: post decision for terminal statuses
     tracker_key = await get_tracker_key(db)
-    if new_status in TRACKER_DECISION_STATUSES and has_tracker_link(finding, tracker_key):
+    if new_status in TRACKER_DECISION_STATUSES and has_tracker_link(
+        finding, tracker_key
+    ):
         evt = await enqueue_tracker_post_decision(db, finding, tracker_key, user)
         if evt:
             enqueued = True
@@ -274,9 +293,18 @@ async def _enqueue_sync_on_status_change(db: AsyncSession, finding: Finding, new
             if source_name and get_source_issue_id(finding, source_name):
                 cfg = await get_source_config(db, source_name)
                 if cfg and _supports_outbound_sync(cfg):
-                    adapter_key = (cfg.get("adapter") or cfg.get("type") or source_name.lower()).lower()
-                    scope = "global" if finding.suppression_scope and finding.suppression_scope.value == "global" else "contextual"
-                    evt = await enqueue_source_ignore(db, finding, adapter_key, scope, source_name=source_name)
+                    adapter_key = (
+                        cfg.get("adapter") or cfg.get("type") or source_name.lower()
+                    ).lower()
+                    scope = (
+                        "global"
+                        if finding.suppression_scope
+                        and finding.suppression_scope.value == "global"
+                        else "contextual"
+                    )
+                    evt = await enqueue_source_ignore(
+                        db, finding, adapter_key, scope, source_name=source_name
+                    )
                     if evt:
                         enqueued = True
 
@@ -289,8 +317,12 @@ async def _enqueue_sync_on_status_change(db: AsyncSession, finding: Finding, new
             if source_name and get_source_issue_id(finding, source_name):
                 cfg = await get_source_config(db, source_name)
                 if cfg and _supports_outbound_sync(cfg):
-                    adapter_key = (cfg.get("adapter") or cfg.get("type") or source_name.lower()).lower()
-                    evt = await enqueue_source_unignore(db, finding, adapter_key, source_name=source_name)
+                    adapter_key = (
+                        cfg.get("adapter") or cfg.get("type") or source_name.lower()
+                    ).lower()
+                    evt = await enqueue_source_unignore(
+                        db, finding, adapter_key, source_name=source_name
+                    )
                     if evt:
                         enqueued = True
 
@@ -298,7 +330,9 @@ async def _enqueue_sync_on_status_change(db: AsyncSession, finding: Finding, new
         trigger_sync_worker(countdown=2)
 
 
-async def update_finding(db: AsyncSession, finding_id: str, data: dict, *, user: str = "security@co.com") -> Finding | None:
+async def update_finding(
+    db: AsyncSession, finding_id: str, data: dict, *, user: str = "security@co.com"
+) -> Finding | None:
     """Update a finding. Returns updated finding or None if not found."""
     finding = await get_finding(db, finding_id)
     if not finding:
@@ -320,7 +354,14 @@ async def update_finding(db: AsyncSession, finding_id: str, data: dict, *, user:
     if "attestation" in data:
         finding.attestation = data["attestation"]
     audit = list(finding.audit or [])
-    audit.append({"ts": _now(), "user": user, "action": "Finding updated", "note": data.get("justification", "")[:80] or None})
+    audit.append(
+        {
+            "ts": _now(),
+            "user": user,
+            "action": "Finding updated",
+            "note": data.get("justification", "")[:80] or None,
+        }
+    )
     finding.audit = audit
     await db.flush()
 
@@ -338,7 +379,9 @@ async def update_finding(db: AsyncSession, finding_id: str, data: dict, *, user:
     return finding
 
 
-async def revert_finding(db: AsyncSession, finding_id: str, reason: str, *, user: str = "security@co.com") -> Finding | None:
+async def revert_finding(
+    db: AsyncSession, finding_id: str, reason: str, *, user: str = "security@co.com"
+) -> Finding | None:
     """Revert finding to previous status. PRD §5.4.3. Returns updated finding or None."""
     finding = await get_finding(db, finding_id)
     if not finding or not finding.previous_status:
@@ -352,12 +395,14 @@ async def revert_finding(db: AsyncSession, finding_id: str, reason: str, *, user
     finding.status = prev_enum
     finding.previous_status = current.value
     audit = list(finding.audit or [])
-    audit.append({
-        "ts": _now(),
-        "user": user,
-        "action": f'Reverted "{current.value}" → "{target}"',
-        "note": reason[:200] if reason else None,
-    })
+    audit.append(
+        {
+            "ts": _now(),
+            "user": user,
+            "action": f'Reverted "{current.value}" → "{target}"',
+            "note": reason[:200] if reason else None,
+        }
+    )
     finding.audit = audit
     await db.flush()
     await _enqueue_sync_on_status_change(db, finding, prev_enum, user)
@@ -366,7 +411,9 @@ async def revert_finding(db: AsyncSession, finding_id: str, reason: str, *, user
     return finding
 
 
-async def archive_finding(db: AsyncSession, finding_id: str, reason: str, *, user: str = "security@co.com") -> Finding | None:
+async def archive_finding(
+    db: AsyncSession, finding_id: str, reason: str, *, user: str = "security@co.com"
+) -> Finding | None:
     """Archive a finding. Returns updated finding or None if not found."""
     finding = await get_finding(db, finding_id)
     if not finding:
@@ -375,14 +422,18 @@ async def archive_finding(db: AsyncSession, finding_id: str, reason: str, *, use
     finding.archived_at = datetime.utcnow()
     finding.archived_reason = reason
     audit = list(finding.audit or [])
-    audit.append({"ts": _now(), "user": user, "action": "Finding archived", "note": reason})
+    audit.append(
+        {"ts": _now(), "user": user, "action": "Finding archived", "note": reason}
+    )
     finding.audit = audit
     await db.commit()
     await db.refresh(finding)
     return finding
 
 
-async def unarchive_finding(db: AsyncSession, finding_id: str, *, user: str = "security@co.com") -> Finding | None:
+async def unarchive_finding(
+    db: AsyncSession, finding_id: str, *, user: str = "security@co.com"
+) -> Finding | None:
     """Unarchive a finding."""
     finding = await get_finding(db, finding_id)
     if not finding:
@@ -391,7 +442,9 @@ async def unarchive_finding(db: AsyncSession, finding_id: str, *, user: str = "s
     finding.archived_at = None
     finding.archived_reason = None
     audit = list(finding.audit or [])
-    audit.append({"ts": _now(), "user": user, "action": "Finding unarchived", "note": None})
+    audit.append(
+        {"ts": _now(), "user": user, "action": "Finding unarchived", "note": None}
+    )
     finding.audit = audit
     await db.commit()
     await db.refresh(finding)
@@ -409,12 +462,14 @@ async def override_fingerprint(
     new_fp = f"{old_fp}_override_{uuid.uuid4().hex[:12]}"
     finding.fingerprint_id = new_fp
     audit = list(finding.audit or [])
-    audit.append({
-        "ts": _now(),
-        "user": user,
-        "action": "Fingerprint override",
-        "note": f"Manual override: was incorrectly merged. New fingerprint prevents future merges.",
-    })
+    audit.append(
+        {
+            "ts": _now(),
+            "user": user,
+            "action": "Fingerprint override",
+            "note": "Manual override: was incorrectly merged. New fingerprint prevents future merges.",
+        }
+    )
     finding.audit = audit
     await db.commit()
     await db.refresh(finding)
@@ -444,7 +499,14 @@ async def bulk_update_findings(
         f.status = new_status
         f.justification = justification or f.justification
         audit = list(f.audit or [])
-        audit.append({"ts": _now(), "user": user, "action": f"Bulk: {status}", "note": action_note})
+        audit.append(
+            {
+                "ts": _now(),
+                "user": user,
+                "action": f"Bulk: {status}",
+                "note": action_note,
+            }
+        )
         f.audit = audit
     await db.flush()
     for f in findings:
@@ -497,7 +559,9 @@ def _suppression_scope(s: str | None) -> SuppressionScope | None:
     return SuppressionScope.global_ if s == "global" else SuppressionScope.contextual
 
 
-async def create_findings_bulk(db: AsyncSession, items: list[dict], *, replace: bool = True) -> int:
+async def create_findings_bulk(
+    db: AsyncSession, items: list[dict], *, replace: bool = True
+) -> int:
     """Create multiple findings from seed data. Returns count created.
     When replace=True (default), truncates existing findings first for idempotent dev/demo seeding."""
     if replace:

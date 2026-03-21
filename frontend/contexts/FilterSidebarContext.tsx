@@ -8,7 +8,7 @@ interface FilterSidebarContextValue {
 }
 
 const FilterSidebarContext = createContext<FilterSidebarContextValue | null>(
-  null
+  null,
 );
 
 export function FilterSidebarProvider({

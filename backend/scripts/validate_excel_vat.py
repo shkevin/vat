@@ -21,13 +21,24 @@ def main() -> None:
         print("pandas required: uv add pandas openpyxl")
         sys.exit(1)
 
-    path = sys.argv[1] if len(sys.argv) > 1 else "data/exports/aikido_sync_2026-02-27_122751.xlsx"
+    path = (
+        sys.argv[1]
+        if len(sys.argv) > 1
+        else "data/exports/aikido_sync_2026-02-27_122751.xlsx"
+    )
     if not Path(path).exists():
-        path = Path(__file__).resolve().parent.parent.parent / "data" / "exports" / Path(path).name
+        path = (
+            Path(__file__).resolve().parent.parent.parent
+            / "data"
+            / "exports"
+            / Path(path).name
+        )
     if not Path(path).exists():
         exports = Path(__file__).resolve().parent.parent.parent / "data" / "exports"
         if exports.exists():
-            files = sorted(exports.glob("*.xlsx"), key=lambda p: p.stat().st_mtime, reverse=True)
+            files = sorted(
+                exports.glob("*.xlsx"), key=lambda p: p.stat().st_mtime, reverse=True
+            )
             if files:
                 path = files[0]
                 print(f"Using latest export: {path.name}\n")
@@ -42,7 +53,11 @@ def main() -> None:
         sys.exit(1)
 
     # Use column names as-is from Excel
-    df = df.rename(columns=lambda c: c.strip().lower().replace(" ", "_") if isinstance(c, str) else c)
+    df = df.rename(
+        columns=lambda c: c.strip().lower().replace(" ", "_")
+        if isinstance(c, str)
+        else c
+    )
 
     # Identify asset column — whatever the export uses for repository/container
     repo_col = None
@@ -51,7 +66,11 @@ def main() -> None:
             repo_col = cand
             break
     if repo_col is None:
-        repo_col = [c for c in df.columns if "repo" in c.lower()][0] if any("repo" in str(c).lower() for c in df.columns) else None
+        repo_col = (
+            [c for c in df.columns if "repo" in c.lower()][0]
+            if any("repo" in str(c).lower() for c in df.columns)
+            else None
+        )
     if repo_col is None and "affected_package" in df.columns:
         repo_col = "affected_package"  # fallback
     if repo_col is None:
@@ -103,7 +122,11 @@ def main() -> None:
         if any(r.get("vat_status") for r in rows):
             for r in rows:
                 vat_status_counts[r.get("vat_status", "")] += 1
-        vat_open = sum(1 for r in rows if (r.get("vat_status") or "").lower() == "open") if vat_status_counts else None
+        vat_open = (
+            sum(1 for r in rows if (r.get("vat_status") or "").lower() == "open")
+            if vat_status_counts
+            else None
+        )
 
         # Raw severity counts (exactly as in Excel)
         sev_counts: dict[str, int] = defaultdict(int)
@@ -121,7 +144,9 @@ def main() -> None:
         print(f"  Status = 'open':     {open_count}")
         print(f"  Status != 'open':    {closed_count}")
         if vat_open is not None:
-            print(f"  VAT Open (vat_status): {vat_open}  (ignored -> Suppressed, not closed)")
+            print(
+                f"  VAT Open (vat_status): {vat_open}  (ignored -> Suppressed, not closed)"
+            )
         print()
         print("  Status breakdown (as in Excel):")
         for s, n in sorted(status_counts.items(), key=lambda x: -x[1]):

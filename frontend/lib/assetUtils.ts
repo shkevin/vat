@@ -9,8 +9,11 @@ import type { AssetType } from "./constants";
 import type { Asset, Finding } from "@/types";
 
 /** Prefer sourceGroupSeverity when available for consistency with report engine. */
-function severityToKey(sev: string, sourceGroupSeverity?: string | null): "critical" | "high" | "medium" | "low" | "info" {
-    const s = ((sourceGroupSeverity?.trim() || sev) ?? "").toLowerCase();
+function severityToKey(
+  sev: string,
+  sourceGroupSeverity?: string | null,
+): "critical" | "high" | "medium" | "low" | "info" {
+  const s = ((sourceGroupSeverity?.trim() || sev) ?? "").toLowerCase();
   if (s === "critical") return "critical";
   if (s === "high") return "high";
   if (s === "medium" || s === "moderate") return "medium";
@@ -47,18 +50,34 @@ export function getFindingTag(f: Finding): string | undefined {
 /** Compute verifiedPct and oraPct from a list of findings. */
 export function computeMetricsFromFindings(
   findings: Finding[],
-  sevOrder: readonly string[]
+  sevOrder: readonly string[],
 ): { verifiedPct: number; oraPct: number } {
   if (findings.length === 0) return { verifiedPct: 100, oraPct: 100 };
   let verifiedCount = 0;
   for (const f of findings) {
-    if (["Resolved", "False Positive", "Approved", "Suppressed", "Not Applicable", "Duplicate"].includes(f.status ?? ""))
+    if (
+      [
+        "Resolved",
+        "False Positive",
+        "Approved",
+        "Suppressed",
+        "Not Applicable",
+        "Duplicate",
+      ].includes(f.status ?? "")
+    )
       verifiedCount++;
   }
   const verifiedPct = Math.round((verifiedCount / findings.length) * 1000) / 10;
   const openFindings = findings.filter(
     (f) =>
-      !["Resolved", "False Positive", "Duplicate", "Not Applicable", "Approved", "Suppressed"].includes(f.status ?? "")
+      ![
+        "Resolved",
+        "False Positive",
+        "Duplicate",
+        "Not Applicable",
+        "Approved",
+        "Suppressed",
+      ].includes(f.status ?? ""),
   );
   const counts = { critical: 0, high: 0, medium: 0, low: 0, info: 0 };
   for (const f of openFindings) {
@@ -81,10 +100,10 @@ export function getAssetTypeFromAsset(asset: Asset): AssetType {
   // since package identifiers (npm:pkg, maven:g:a, component:version) often contain ":" too
   const f = asset.findings?.[0];
   if (f) {
-    const hasImage = !!(f.image?.trim());
-    const hasBranch = !!(f.branch?.trim());
-    const hasComponent = !!(f.component?.trim());
-    const hasFilePath = !!(f.filePath?.trim());
+    const hasImage = !!f.image?.trim();
+    const hasBranch = !!f.branch?.trim();
+    const hasComponent = !!f.component?.trim();
+    const hasFilePath = !!f.filePath?.trim();
     const findingType = (f.findingType ?? "").toLowerCase();
     const isCodeFinding = CODE_FINDING_TYPES.has(findingType);
     // image + branch = code repo (e.g. Aikido SAST with branch)
@@ -107,7 +126,7 @@ export function getAssetTypeFromAsset(asset: Asset): AssetType {
 /** Derive assets from findings — group by image or component. Assets can be VMs, repos, containers, packages, IaC, etc. */
 export function deriveAssets(
   findings: Finding[],
-  sevOrder: readonly string[]
+  sevOrder: readonly string[],
 ): Asset[] {
   const byKey = new Map<string, Finding[]>();
   for (const f of findings) {
@@ -128,20 +147,46 @@ export function deriveAssets(
       if (f.status === "Open") openCount++;
       if (f.status === "In Review") inReviewCount++;
       if (
-        !["Resolved", "False Positive", "Duplicate", "Not Applicable", "Approved", "Suppressed"].includes(f.status)
+        ![
+          "Resolved",
+          "False Positive",
+          "Duplicate",
+          "Not Applicable",
+          "Approved",
+          "Suppressed",
+        ].includes(f.status)
       ) {
         const d = daysLeft(f.slaDue);
         if (d !== null && d < 0) overdueCount++;
       }
-      if (["Resolved", "False Positive", "Approved", "Suppressed", "Not Applicable", "Duplicate"].includes(f.status))
+      if (
+        [
+          "Resolved",
+          "False Positive",
+          "Approved",
+          "Suppressed",
+          "Not Applicable",
+          "Duplicate",
+        ].includes(f.status)
+      )
         verifiedCount++;
       const idx = sevOrder.indexOf(f.severity);
       if (idx >= 0 && (worstIdx < 0 || idx < worstIdx)) worstIdx = idx;
     }
-    const verifiedPct = list.length > 0 ? Math.round((verifiedCount / list.length) * 1000) / 10 : 100;
+    const verifiedPct =
+      list.length > 0
+        ? Math.round((verifiedCount / list.length) * 1000) / 10
+        : 100;
     const openFindings = list.filter(
       (f) =>
-        !["Resolved", "False Positive", "Duplicate", "Not Applicable", "Approved", "Suppressed"].includes(f.status)
+        ![
+          "Resolved",
+          "False Positive",
+          "Duplicate",
+          "Not Applicable",
+          "Approved",
+          "Suppressed",
+        ].includes(f.status),
     );
     const counts = { critical: 0, high: 0, medium: 0, low: 0, info: 0 };
     for (const f of openFindings) {
@@ -176,7 +221,7 @@ export function deriveAssets(
 export function getAssetById(
   findings: Finding[],
   assetId: string,
-  sevOrder: readonly string[]
+  sevOrder: readonly string[],
 ): Asset | null {
   const assets = deriveAssets(findings, sevOrder);
   return assets.find((a) => a.id === assetId) ?? null;

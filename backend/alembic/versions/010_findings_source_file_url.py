@@ -18,7 +18,9 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    op.add_column("findings", sa.Column("source_file_url", sa.String(2048), nullable=True))
+    op.add_column(
+        "findings", sa.Column("source_file_url", sa.String(2048), nullable=True)
+    )
 
 
 def downgrade() -> None:

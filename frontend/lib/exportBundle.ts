@@ -17,7 +17,13 @@ import type { Auth } from "@/lib/api";
 function languageToPurlType(lang: string): string {
   const l = (lang ?? "").toLowerCase();
   if (l.includes("java") || l === "java") return "maven";
-  if (l.includes("js") || l.includes("ts") || l === "javascript" || l === "typescript") return "npm";
+  if (
+    l.includes("js") ||
+    l.includes("ts") ||
+    l === "javascript" ||
+    l === "typescript"
+  )
+    return "npm";
   if (l.includes("py") || l === "python") return "pypi";
   if (l.includes("go")) return "golang";
   if (l.includes("rust")) return "cargo";
@@ -71,8 +77,12 @@ function toCycloneDX(packages: SBOMPackageForExport[]): object {
       const ver = p.version || "0.0.0";
       const purl =
         purlTypeVal === "generic"
-          ? `pkg:generic/${encodeURIComponent(p.name)}@${encodeURIComponent(ver)}`
-          : `pkg:${purlTypeVal}/${encodeURIComponent(p.name)}@${encodeURIComponent(ver)}`;
+          ? `pkg:generic/${encodeURIComponent(p.name)}@${encodeURIComponent(
+              ver,
+            )}`
+          : `pkg:${purlTypeVal}/${encodeURIComponent(
+              p.name,
+            )}@${encodeURIComponent(ver)}`;
       if (seenPurl.has(purl)) return null;
       seenPurl.add(purl);
 
@@ -81,7 +91,10 @@ function toCycloneDX(packages: SBOMPackageForExport[]): object {
         name: p.name,
         version: p.version || undefined,
         purl,
-        licenses: p.license && p.license !== "Unknown" ? [{ license: { id: p.license } }] : undefined,
+        licenses:
+          p.license && p.license !== "Unknown"
+            ? [{ license: { id: p.license } }]
+            : undefined,
         language: p.language || undefined,
       };
       const supplier = supplierFromPurlType(purlTypeVal);
@@ -117,10 +130,15 @@ function toFinding(raw: Record<string, unknown>): Finding {
     image: raw.image ? String(raw.image) : undefined,
     branch: raw.branch ? String(raw.branch) : undefined,
     tag: raw.tag ? String(raw.tag) : undefined,
-    sources: Array.isArray(raw.sources) ? (raw.sources as Finding["sources"]) : [],
+    sources: Array.isArray(raw.sources)
+      ? (raw.sources as Finding["sources"])
+      : [],
     audit: Array.isArray(raw.audit) ? (raw.audit as Finding["audit"]) : [],
-    regressionOf: Array.isArray(raw.regressionOf) ? (raw.regressionOf as string[]) : undefined,
-    regressionCount: typeof raw.regressionCount === "number" ? raw.regressionCount : 0,
+    regressionOf: Array.isArray(raw.regressionOf)
+      ? (raw.regressionOf as string[])
+      : undefined,
+    regressionCount:
+      typeof raw.regressionCount === "number" ? raw.regressionCount : 0,
     attestation: (raw.attestation as Finding["attestation"]) ?? null,
     archived: Boolean(raw.archived),
     slaDue: raw.slaDue ? String(raw.slaDue) : undefined,
@@ -129,8 +147,12 @@ function toFinding(raw: Record<string, unknown>): Finding {
     team: raw.team ? String(raw.team) : undefined,
     owner: raw.owner ? String(raw.owner) : undefined,
     justification: raw.justification ? String(raw.justification) : undefined,
-    sourceIssueGroupId: raw.sourceIssueGroupId ? String(raw.sourceIssueGroupId) : undefined,
-    sourceGroupSeverity: raw.sourceGroupSeverity ? String(raw.sourceGroupSeverity) : undefined,
+    sourceIssueGroupId: raw.sourceIssueGroupId
+      ? String(raw.sourceIssueGroupId)
+      : undefined,
+    sourceGroupSeverity: raw.sourceGroupSeverity
+      ? String(raw.sourceGroupSeverity)
+      : undefined,
     filePath: raw.filePath ? String(raw.filePath) : undefined,
     line: typeof raw.line === "number" ? raw.line : undefined,
     snippetMasked: raw.snippetMasked ? String(raw.snippetMasked) : undefined,
@@ -147,10 +169,14 @@ export async function buildAndDownloadExportBundle(auth?: Auth): Promise<void> {
     fetchSbomPackages({ limit: 10000 }, auth),
   ]);
 
-  const findings = vatRes.findings.map((r) => toFinding(r as unknown as Record<string, unknown>));
+  const findings = vatRes.findings.map((r) =>
+    toFinding(r as unknown as Record<string, unknown>),
+  );
   const assets: Asset[] = (vatRes.assets ?? []).map((a) => ({
     ...a,
-    findings: (a.findings ?? []).map((r) => toFinding(r as unknown as Record<string, unknown>)),
+    findings: (a.findings ?? []).map((r) =>
+      toFinding(r as unknown as Record<string, unknown>),
+    ),
   })) as Asset[];
 
   const packages: SBOMPackageForExport[] = Array.isArray(sbomRes)
@@ -166,14 +192,20 @@ export async function buildAndDownloadExportBundle(auth?: Auth): Promise<void> {
 
   const cyclonedx = toCycloneDX(packages);
 
-  const preset = REPORT_PRESETS.find((p) => p.id === "executive-detailed-yearly-instances");
+  const preset = REPORT_PRESETS.find(
+    (p) => p.id === "executive-detailed-yearly-instances",
+  );
   const definition = preset ? clonePresetDefinition(preset) : null;
 
   let reportHtml = "";
   if (definition) {
-    const data = toVATDashboardData(findings, assets, "VAT", { groupFindings: false });
+    const data = toVATDashboardData(findings, assets, "VAT", {
+      groupFindings: false,
+    });
     const context = computeReportContext(data, definition.filters);
-    reportHtml = buildReportHtmlFromDefinition(context, definition, { preview: false });
+    reportHtml = buildReportHtmlFromDefinition(context, definition, {
+      preview: false,
+    });
   }
 
   const dateStr = new Date().toISOString().slice(0, 10);
@@ -184,10 +216,17 @@ export async function buildAndDownloadExportBundle(auth?: Auth): Promise<void> {
 
   folder.file(
     "assets-findings.json",
-    JSON.stringify({ findings: vatRes.findings, assets: vatRes.assets }, null, 2)
+    JSON.stringify(
+      { findings: vatRes.findings, assets: vatRes.assets },
+      null,
+      2,
+    ),
   );
   folder.file("sbom-cyclonedx.json", JSON.stringify(cyclonedx, null, 2));
-  folder.file("executive-summary-yearly.html", reportHtml || "<html><body>Report not available</body></html>");
+  folder.file(
+    "executive-summary-yearly.html",
+    reportHtml || "<html><body>Report not available</body></html>",
+  );
 
   const blob = await zip.generateAsync({ type: "blob" });
   const url = URL.createObjectURL(blob);

@@ -70,7 +70,8 @@ export function FindingsTable({
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "26px 4px 32px 130px 1fr 160px 60px 100px 90px 80px",
+          gridTemplateColumns:
+            "26px 4px 32px 130px 1fr 160px 60px 100px 90px 80px",
           gap: 8,
           padding: HEADER_PADDING[density],
           background: "#060c18",
@@ -79,23 +80,32 @@ export function FindingsTable({
           borderBottom: "none",
         }}
       >
-        {["", "", "", "CVE / ID", "Title / Component", "Status", "Tracked", "Severity", "Source", "SLA"].map(
-          (h, i) => (
-            <span
-              key={i}
-              style={{
-                ...mono,
-                fontSize: 9,
-                fontWeight: 700,
-                letterSpacing: "0.1em",
-                color: "#1e3a5f",
-                textTransform: "uppercase",
-              }}
-            >
-              {h}
-            </span>
-          )
-        )}
+        {[
+          "",
+          "",
+          "",
+          "CVE / ID",
+          "Title / Component",
+          "Status",
+          "Tracked",
+          "Severity",
+          "Source",
+          "SLA",
+        ].map((h, i) => (
+          <span
+            key={i}
+            style={{
+              ...mono,
+              fontSize: 9,
+              fontWeight: 700,
+              letterSpacing: "0.1em",
+              color: "#1e3a5f",
+              textTransform: "uppercase",
+            }}
+          >
+            {h}
+          </span>
+        ))}
       </div>
       <div
         style={{

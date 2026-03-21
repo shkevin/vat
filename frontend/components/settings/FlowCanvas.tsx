@@ -53,12 +53,36 @@ function AikidoFlowNode({ data, selected }: NodeProps) {
         minWidth: 120,
       }}
     >
-      <Handle type="source" position={Position.Right} style={{ background: color }} />
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-        <span style={{ width: 8, height: 8, borderRadius: 4, background: color }} />
-        <span style={{ ...sans, fontSize: 13, fontWeight: 700, color: "var(--app-fg)" }}>{label}</span>
+      <Handle
+        type="source"
+        position={Position.Right}
+        style={{ background: color }}
+      />
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          marginBottom: 4,
+        }}
+      >
+        <span
+          style={{ width: 8, height: 8, borderRadius: 4, background: color }}
+        />
+        <span
+          style={{
+            ...sans,
+            fontSize: 13,
+            fontWeight: 700,
+            color: "var(--app-fg)",
+          }}
+        >
+          {label}
+        </span>
       </div>
-      <div style={{ ...mono, fontSize: 9, color: "var(--app-muted)" }}>Source</div>
+      <div style={{ ...mono, fontSize: 9, color: "var(--app-muted)" }}>
+        Source
+      </div>
     </div>
   );
 }
@@ -67,7 +91,10 @@ function AikidoFlowNode({ data, selected }: NodeProps) {
 function EmptySourceNode({ data, selected }: NodeProps) {
   const d = data as { source?: Source; brandColor?: string };
   const color = d?.brandColor ?? d?.source?.color ?? "var(--app-muted)";
-  const label = displaySourceName(d?.source?.name) || displaySourceName(d?.source?.id) || "—";
+  const label =
+    displaySourceName(d?.source?.name) ||
+    displaySourceName(d?.source?.id) ||
+    "—";
   const sublabel = d?.source ? "Source" : "No source";
   return (
     <div
@@ -80,12 +107,36 @@ function EmptySourceNode({ data, selected }: NodeProps) {
         minWidth: 120,
       }}
     >
-      <Handle type="source" position={Position.Right} style={{ background: color }} />
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-        <span style={{ width: 8, height: 8, borderRadius: 4, background: color }} />
-        <span style={{ ...sans, fontSize: 13, fontWeight: 700, color: "var(--app-fg)" }}>{label}</span>
+      <Handle
+        type="source"
+        position={Position.Right}
+        style={{ background: color }}
+      />
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          marginBottom: 4,
+        }}
+      >
+        <span
+          style={{ width: 8, height: 8, borderRadius: 4, background: color }}
+        />
+        <span
+          style={{
+            ...sans,
+            fontSize: 13,
+            fontWeight: 700,
+            color: "var(--app-fg)",
+          }}
+        >
+          {label}
+        </span>
       </div>
-      <div style={{ ...mono, fontSize: 9, color: "var(--app-muted)" }}>{sublabel}</div>
+      <div style={{ ...mono, fontSize: 9, color: "var(--app-muted)" }}>
+        {sublabel}
+      </div>
     </div>
   );
 }
@@ -97,20 +148,25 @@ function AddSourceFlowNode({ data, selected }: NodeProps) {
       className="vat-flow-node vat-flow-node-add"
       style={{
         background: "transparent",
-        border: `2px dashed ${selected ? "var(--app-accent)" : "var(--app-border)"}`,
+        border: `2px dashed ${
+          selected ? "var(--app-accent)" : "var(--app-border)"
+        }`,
         borderRadius: 8,
         padding: "14px 20px",
         minWidth: 120,
       }}
     >
-      <div style={{ ...mono, fontSize: 11, color: "var(--app-muted)" }}>+ Add Source</div>
+      <div style={{ ...mono, fontSize: 11, color: "var(--app-muted)" }}>
+        + Add Source
+      </div>
     </div>
   );
 }
 
 /** VAT backend node — central hub, uses theme accent when no schema override */
 function VATFlowNode({ data, selected }: NodeProps) {
-  const color = (data as { brandColor?: string })?.brandColor ?? "var(--app-accent)";
+  const color =
+    (data as { brandColor?: string })?.brandColor ?? "var(--app-accent)";
   return (
     <div
       className="vat-flow-node vat-flow-node-vat"
@@ -122,10 +178,30 @@ function VATFlowNode({ data, selected }: NodeProps) {
         minWidth: 180,
       }}
     >
-      <Handle type="target" position={Position.Left} style={{ background: color }} />
-      <Handle type="source" position={Position.Right} style={{ background: color }} />
-      <div style={{ ...mono, fontSize: 12, fontWeight: 700, color, marginBottom: 6 }}>VAT Backend</div>
-      <div style={{ ...sans, fontSize: 9, color: "var(--app-muted)" }}>Ingest → Dedup → DB</div>
+      <Handle
+        type="target"
+        position={Position.Left}
+        style={{ background: color }}
+      />
+      <Handle
+        type="source"
+        position={Position.Right}
+        style={{ background: color }}
+      />
+      <div
+        style={{
+          ...mono,
+          fontSize: 12,
+          fontWeight: 700,
+          color,
+          marginBottom: 6,
+        }}
+      >
+        VAT Backend
+      </div>
+      <div style={{ ...sans, fontSize: 9, color: "var(--app-muted)" }}>
+        Ingest → Dedup → DB
+      </div>
     </div>
   );
 }
@@ -142,19 +218,46 @@ function LinearFlowNode({ data, selected }: NodeProps) {
         background: isAdd ? "transparent" : "var(--app-node-bg)",
         borderWidth: 2,
         borderStyle: isAdd ? "dashed" : "solid",
-        borderColor: selected ? "var(--app-accent)" : isAdd ? "var(--app-border)" : color,
+        borderColor: selected
+          ? "var(--app-accent)"
+          : isAdd
+            ? "var(--app-border)"
+            : color,
         borderRadius: 8,
         padding: "14px 20px",
         minWidth: 120,
       }}
     >
-      <Handle type="target" position={Position.Left} style={{ background: color }} />
-      <Handle type="source" position={Position.Right} id="right" style={{ background: color }} />
-      <Handle type="source" position={Position.Bottom} id="bottom" style={{ background: color }} />
-      <div style={{ ...sans, fontSize: 13, fontWeight: 700, color: isAdd ? "var(--app-muted)" : "var(--app-fg)" }}>
+      <Handle
+        type="target"
+        position={Position.Left}
+        style={{ background: color }}
+      />
+      <Handle
+        type="source"
+        position={Position.Right}
+        id="right"
+        style={{ background: color }}
+      />
+      <Handle
+        type="source"
+        position={Position.Bottom}
+        id="bottom"
+        style={{ background: color }}
+      />
+      <div
+        style={{
+          ...sans,
+          fontSize: 13,
+          fontWeight: 700,
+          color: isAdd ? "var(--app-muted)" : "var(--app-fg)",
+        }}
+      >
         {isAdd ? "+ Add Tracker" : "Linear"}
       </div>
-      <div style={{ ...mono, fontSize: 9, color: "var(--app-muted)" }}>{isAdd ? "Click to add" : "Tracker"}</div>
+      <div style={{ ...mono, fontSize: 9, color: "var(--app-muted)" }}>
+        {isAdd ? "Click to add" : "Tracker"}
+      </div>
     </div>
   );
 }
@@ -174,16 +277,32 @@ function AikidoTrackerFlowNode({ data, selected }: NodeProps) {
         minWidth: 140,
       }}
     >
-      <Handle type="target" position={Position.Left} style={{ background: color }} />
-      <div style={{ ...sans, fontSize: 13, fontWeight: 700, color: "var(--app-fg)" }}>Aikido Tracker</div>
-      <div style={{ ...mono, fontSize: 9, color: "var(--app-muted)" }}>Linear (via Aikido)</div>
+      <Handle
+        type="target"
+        position={Position.Left}
+        style={{ background: color }}
+      />
+      <div
+        style={{
+          ...sans,
+          fontSize: 13,
+          fontWeight: 700,
+          color: "var(--app-fg)",
+        }}
+      >
+        Aikido Tracker
+      </div>
+      <div style={{ ...mono, fontSize: 9, color: "var(--app-muted)" }}>
+        Linear (via Aikido)
+      </div>
     </div>
   );
 }
 
 /** Engineer node — tracker feedback flow */
 function EngineerFlowNode({ data, selected }: NodeProps) {
-  const color = (data as { brandColor?: string })?.brandColor ?? "var(--app-success)";
+  const color =
+    (data as { brandColor?: string })?.brandColor ?? "var(--app-success)";
   return (
     <div
       className="vat-flow-node vat-flow-node-engineer"
@@ -195,9 +314,19 @@ function EngineerFlowNode({ data, selected }: NodeProps) {
         minWidth: 180,
       }}
     >
-      <Handle type="target" position={Position.Top} style={{ background: color }} />
-      <Handle type="source" position={Position.Left} style={{ background: color }} />
-      <div style={{ ...sans, fontSize: 9, fontWeight: 600, color }}>③ Engineer adds [VAT] comment in Linear</div>
+      <Handle
+        type="target"
+        position={Position.Top}
+        style={{ background: color }}
+      />
+      <Handle
+        type="source"
+        position={Position.Left}
+        style={{ background: color }}
+      />
+      <div style={{ ...sans, fontSize: 9, fontWeight: 600, color }}>
+        ③ Engineer adds [VAT] comment in Linear
+      </div>
     </div>
   );
 }
@@ -245,16 +374,29 @@ function FlowCanvasInner({
   selectedAddTracker,
   selectedVat,
 }: FlowCanvasProps) {
-  const rfInstanceRef = useRef<{ toObject: () => { nodes: Node[]; edges: Edge[]; viewport: { x: number; y: number; zoom: number } }; setViewport: (v: { x: number; y: number; zoom: number }) => void } | null>(null);
+  const rfInstanceRef = useRef<{
+    toObject: () => {
+      nodes: Node[];
+      edges: Edge[];
+      viewport: { x: number; y: number; zoom: number };
+    };
+    setViewport: (v: { x: number; y: number; zoom: number }) => void;
+  } | null>(null);
 
   const sourceBrandColor = (adapter: string) =>
-    integrationSchemas?.sources?.find((s) => s.adapter_key === adapter)?.brand_color;
+    integrationSchemas?.sources?.find((s) => s.adapter_key === adapter)
+      ?.brand_color;
   const trackerBrandColor = (adapter: string) =>
-    integrationSchemas?.trackers?.find((t) => t.adapter_key === adapter)?.brand_color;
-  const flowColor = (key: string) => integrationSchemas?.flow_types?.[key]?.color;
+    integrationSchemas?.trackers?.find((t) => t.adapter_key === adapter)
+      ?.brand_color;
+  const flowColor = (key: string) =>
+    integrationSchemas?.flow_types?.[key]?.color;
 
   const buildInitialNodes = useCallback((): Node[] => {
-    const stored = typeof window !== "undefined" ? localStorage.getItem(FLOW_STORAGE_KEY) : null;
+    const stored =
+      typeof window !== "undefined"
+        ? localStorage.getItem(FLOW_STORAGE_KEY)
+        : null;
     let positions: Record<string, { x: number; y: number }> = {};
     if (stored) {
       try {
@@ -264,7 +406,7 @@ function FlowCanvasInner({
             acc[n.id] = n.position;
             return acc;
           },
-          {}
+          {},
         );
       } catch {
         // ignore
@@ -290,7 +432,9 @@ function FlowCanvasInner({
 
     const addSourceY =
       sources.length > 0
-        ? 40 + sources.length * (SOURCE_NODE_HEIGHT + SOURCE_NODE_GAP) + ADD_SOURCE_OFFSET
+        ? 40 +
+          sources.length * (SOURCE_NODE_HEIGHT + SOURCE_NODE_GAP) +
+          ADD_SOURCE_OFFSET
         : 80;
     const addSourceNode: Node = {
       id: "addSource",
@@ -330,7 +474,9 @@ function FlowCanvasInner({
         type: "linear",
         position: pos("tracker-linear", DEFAULT_LAYOUT.trackerLinear),
         data: { isAdd: !tracker?.name, brandColor: linearColor },
-        selected: tracker?.name ? (selectedTracker ?? false) : (selectedAddTracker ?? false),
+        selected: tracker?.name
+          ? selectedTracker ?? false
+          : selectedAddTracker ?? false,
       });
     } else {
       nodes.push({
@@ -352,7 +498,16 @@ function FlowCanvasInner({
       });
     }
     return nodes;
-  }, [sources, tracker, selectedSourceId, selectedTracker, selectedAddSource, selectedAddTracker, selectedVat, integrationSchemas]);
+  }, [
+    sources,
+    tracker,
+    selectedSourceId,
+    selectedTracker,
+    selectedAddSource,
+    selectedAddTracker,
+    selectedVat,
+    integrationSchemas,
+  ]);
 
   const buildInitialEdges = useCallback((): Edge[] => {
     const ingestColor = flowColor("ingest");
@@ -363,7 +518,11 @@ function FlowCanvasInner({
     const edges: Edge[] = [];
     if (sources.length > 0) {
       sources.forEach((src) => {
-        const stroke = ingestColor ?? sourceBrandColor(src.adapter) ?? src.color ?? "var(--app-accent)";
+        const stroke =
+          ingestColor ??
+          sourceBrandColor(src.adapter) ??
+          src.color ??
+          "var(--app-accent)";
         edges.push({
           id: `e-source-${src.id}`,
           source: `source-${src.id}`,
@@ -380,7 +539,10 @@ function FlowCanvasInner({
         source: "vat",
         target: "tracker-aikido",
         animated: true,
-        style: { stroke: aikidoColor ?? "var(--app-accent)", strokeDasharray: "6 4" },
+        style: {
+          stroke: aikidoColor ?? "var(--app-accent)",
+          strokeDasharray: "6 4",
+        },
       });
       if (tracker?.name) {
         edges.push({
@@ -388,7 +550,10 @@ function FlowCanvasInner({
           source: "vat",
           target: "tracker-linear",
           animated: true,
-          style: { stroke: syncColor ?? "var(--app-accent)", strokeDasharray: "6 4" },
+          style: {
+            stroke: syncColor ?? "var(--app-accent)",
+            strokeDasharray: "6 4",
+          },
         });
         edges.push(
           {
@@ -397,15 +562,21 @@ function FlowCanvasInner({
             target: "engineer",
             sourceHandle: "bottom",
             animated: true,
-            style: { stroke: feedbackColor ?? "var(--app-success)", strokeDasharray: "6 4" },
+            style: {
+              stroke: feedbackColor ?? "var(--app-success)",
+              strokeDasharray: "6 4",
+            },
           },
           {
             id: "e4",
             source: "engineer",
             target: "vat",
             animated: true,
-            style: { stroke: feedbackColor ?? "var(--app-success)", strokeDasharray: "6 4" },
-          }
+            style: {
+              stroke: feedbackColor ?? "var(--app-success)",
+              strokeDasharray: "6 4",
+            },
+          },
         );
       }
     } else if (tracker?.name) {
@@ -414,7 +585,10 @@ function FlowCanvasInner({
         source: "vat",
         target: "tracker",
         animated: true,
-        style: { stroke: syncColor ?? "var(--app-accent)", strokeDasharray: "6 4" },
+        style: {
+          stroke: syncColor ?? "var(--app-accent)",
+          strokeDasharray: "6 4",
+        },
       });
       edges.push(
         {
@@ -423,15 +597,21 @@ function FlowCanvasInner({
           target: "engineer",
           sourceHandle: "bottom",
           animated: true,
-          style: { stroke: feedbackColor ?? "var(--app-success)", strokeDasharray: "6 4" },
+          style: {
+            stroke: feedbackColor ?? "var(--app-success)",
+            strokeDasharray: "6 4",
+          },
         },
         {
           id: "e4",
           source: "engineer",
           target: "vat",
           animated: true,
-          style: { stroke: feedbackColor ?? "var(--app-success)", strokeDasharray: "6 4" },
-        }
+          style: {
+            stroke: feedbackColor ?? "var(--app-success)",
+            strokeDasharray: "6 4",
+          },
+        },
       );
     }
     return edges;
@@ -450,7 +630,8 @@ function FlowCanvasInner({
     setNodes((prev) => {
       const next = buildInitialNodes();
       return next.map((n) => {
-        const isSourceOrAdd = n.id.startsWith("source-") || n.id === "addSource";
+        const isSourceOrAdd =
+          n.id.startsWith("source-") || n.id === "addSource";
         if (isSourceOrAdd) return n;
         const existing = prev.find((p) => p.id === n.id);
         return existing ? { ...n, position: existing.position } : n;
@@ -472,10 +653,16 @@ function FlowCanvasInner({
         localStorage.setItem(FLOW_STORAGE_KEY, JSON.stringify(obj));
       } catch {
         // fallback to nodes/edges only
-        localStorage.setItem(FLOW_STORAGE_KEY, JSON.stringify({ nodes, edges, viewport: { x: 0, y: 0, zoom: 1 } }));
+        localStorage.setItem(
+          FLOW_STORAGE_KEY,
+          JSON.stringify({ nodes, edges, viewport: { x: 0, y: 0, zoom: 1 } }),
+        );
       }
     } else {
-      localStorage.setItem(FLOW_STORAGE_KEY, JSON.stringify({ nodes, edges, viewport: { x: 0, y: 0, zoom: 1 } }));
+      localStorage.setItem(
+        FLOW_STORAGE_KEY,
+        JSON.stringify({ nodes, edges, viewport: { x: 0, y: 0, zoom: 1 } }),
+      );
     }
   }, [nodes, edges]);
 
@@ -483,12 +670,27 @@ function FlowCanvasInner({
     onSave();
   }, [nodes, onSave]);
 
-  const onInit = useCallback((instance: { toObject: () => { nodes: Node[]; edges: Edge[]; viewport: { x: number; y: number; zoom: number } }; setViewport: (v: { x: number; y: number; zoom: number }) => void; fitView?: (opts?: { padding?: number; duration?: number }) => void }) => {
-    rfInstanceRef.current = instance;
-    requestAnimationFrame(() => {
-      (instance as { fitView?: (opts?: { padding?: number; duration?: number }) => void }).fitView?.({ padding: 0.35, duration: 300 });
-    });
-  }, []);
+  const onInit = useCallback(
+    (instance: {
+      toObject: () => {
+        nodes: Node[];
+        edges: Edge[];
+        viewport: { x: number; y: number; zoom: number };
+      };
+      setViewport: (v: { x: number; y: number; zoom: number }) => void;
+      fitView?: (opts?: { padding?: number; duration?: number }) => void;
+    }) => {
+      rfInstanceRef.current = instance;
+      requestAnimationFrame(() => {
+        (
+          instance as {
+            fitView?: (opts?: { padding?: number; duration?: number }) => void;
+          }
+        ).fitView?.({ padding: 0.35, duration: 300 });
+      });
+    },
+    [],
+  );
 
   const onNodeClick = useCallback(
     (_: React.MouseEvent, node: Node) => {
@@ -509,7 +711,14 @@ function FlowCanvasInner({
         else onAddTrackerClick?.();
       }
     },
-    [onSourceClick, onTrackerClick, onAddSourceClick, onAddTrackerClick, onVatClick, tracker]
+    [
+      onSourceClick,
+      onTrackerClick,
+      onAddSourceClick,
+      onAddTrackerClick,
+      onVatClick,
+      tracker,
+    ],
   );
 
   /** Only clear selection when clicking the pane background, not when clicking a node (event bubbles). */
@@ -518,7 +727,7 @@ function FlowCanvasInner({
       if ((event.target as HTMLElement)?.closest?.(".react-flow__node")) return;
       onPaneClick?.();
     },
-    [onPaneClick]
+    [onPaneClick],
   );
 
   const onMoveEnd = useCallback(() => {

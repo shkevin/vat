@@ -4,7 +4,6 @@ import logging
 from typing import Any, Callable, Optional
 
 from sqlalchemy import select, update
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.adapters.aikido import (
     AikidoAdapter,
@@ -25,7 +24,12 @@ from app.services.aikido_dashboard_sync import sync_aikido_dashboard
 logger = logging.getLogger(__name__)
 
 
-def _progress(on_progress: Optional[Callable[[int, int, str], None]], step: int, total: int, label: str) -> None:
+def _progress(
+    on_progress: Optional[Callable[[int, int, str], None]],
+    step: int,
+    total: int,
+    label: str,
+) -> None:
     if on_progress:
         on_progress(step, total, label)
 
@@ -51,7 +55,9 @@ async def run_full_sync(
     step_num = 0
 
     # 1. Bootstrap: create assets first (repos, then containers), then ingest issues
-    _progress(on_progress, step_num := step_num + 1, total_steps, "Bootstrap: Repositories")
+    _progress(
+        on_progress, step_num := step_num + 1, total_steps, "Bootstrap: Repositories"
+    )
     repo_map: dict[int | str, str] = {}
     repo_id_to_name: dict[int | str, str] = {}
     repos: list = []
@@ -81,17 +87,32 @@ async def run_full_sync(
                 existing = await session.get(Asset, key)
                 branch_val = (branch or "").strip() or None
                 if not existing:
-                    session.add(Asset(id=key, name=name, type="repo", source="Aikido", branch=branch_val, tag=None))
+                    session.add(
+                        Asset(
+                            id=key,
+                            name=name,
+                            type="repo",
+                            source="Aikido",
+                            branch=branch_val,
+                            tag=None,
+                        )
+                    )
                     assets_created += 1
                 elif branch_val and existing.branch != branch_val:
-                    branches = {b.strip() for b in (existing.branch or "").split(",") if b.strip()}
+                    branches = {
+                        b.strip()
+                        for b in (existing.branch or "").split(",")
+                        if b.strip()
+                    }
                     branches.add(branch_val)
                     existing.branch = ",".join(sorted(branches))
             await session.commit()
     except Exception as e:
         logger.warning("Full sync: could not fetch/create repo assets: %s", e)
 
-    _progress(on_progress, step_num := step_num + 1, total_steps, "Bootstrap: Containers")
+    _progress(
+        on_progress, step_num := step_num + 1, total_steps, "Bootstrap: Containers"
+    )
     try:
         containers = await fetch_aikido_containers(credentials=creds) or []
         async with async_session() as session:
@@ -99,7 +120,10 @@ async def run_full_sync(
                 if not isinstance(c, dict):
                     continue
                 name = (
-                    c.get("name") or c.get("image") or c.get("repository_name") or c.get("repositoryName")
+                    c.get("name")
+                    or c.get("image")
+                    or c.get("repository_name")
+                    or c.get("repositoryName")
                     or c.get("id")
                 )
                 if name is None:
@@ -107,14 +131,24 @@ async def run_full_sync(
                 name_str = str(name).strip()
                 if not name_str:
                     continue
-                tag = str(c.get("tag") or c.get("image_tag") or "latest").strip() or "latest"
+                tag = (
+                    str(c.get("tag") or c.get("image_tag") or "latest").strip()
+                    or "latest"
+                )
                 # Strip :tag from asset name — tag is stored in Asset.tag for the dropdown
                 name_no_tag = _strip_tag_from_container_name(name_str) or name_str
                 asset_key = name_no_tag
                 existing = await session.get(Asset, asset_key)
                 if not existing:
                     session.add(
-                        Asset(id=asset_key, name=name_no_tag, type="container", source="Aikido", branch=None, tag=tag)
+                        Asset(
+                            id=asset_key,
+                            name=name_no_tag,
+                            type="container",
+                            source="Aikido",
+                            branch=None,
+                            tag=tag,
+                        )
                     )
                     assets_created += 1
             await session.commit()
@@ -136,7 +170,13 @@ async def run_full_sync(
         if not isinstance(c, dict) or c.get("id") is None:
             continue
         sid = str(c["id"])
-        name = c.get("name") or c.get("image") or c.get("repository_name") or c.get("repositoryName") or ""
+        name = (
+            c.get("name")
+            or c.get("image")
+            or c.get("repository_name")
+            or c.get("repositoryName")
+            or ""
+        )
         if name:
             name_str = str(name).strip()
             name_no_tag = _strip_tag_from_container_name(name_str) or name_str
@@ -150,10 +190,17 @@ async def run_full_sync(
         for raw in raw_issues:
             try:
                 transformed = await adapter.to_vat_finding(
-                    raw, repo_map=repo_map, repo_id_to_name=repo_id_to_name, container_name_to_id=container_name_to_id
+                    raw,
+                    repo_map=repo_map,
+                    repo_id_to_name=repo_id_to_name,
+                    container_name_to_id=container_name_to_id,
                 )
                 finding, is_new = await ingest_finding(
-                    session, transformed, source_name="Aikido", tenant_id=None, aikido_source_id=source_id
+                    session,
+                    transformed,
+                    source_name="Aikido",
+                    tenant_id=None,
+                    aikido_source_id=source_id,
                 )
                 if is_new:
                     created += 1
@@ -161,7 +208,11 @@ async def run_full_sync(
                     merged += 1
             except Exception as e:
                 await session.rollback()
-                logger.warning("Full sync bootstrap failed for issue %s: %s", raw.get("id", "?"), str(e).split("\n")[0][:200])
+                logger.warning(
+                    "Full sync bootstrap failed for issue %s: %s",
+                    raw.get("id", "?"),
+                    str(e).split("\n")[0][:200],
+                )
         # Backfill image=component for findings missing image
         await session.execute(
             update(Finding)
@@ -170,7 +221,12 @@ async def run_full_sync(
         )
         await session.commit()
 
-    result["pull"] = {"fetched": len(raw_issues), "created": created, "merged": merged, "assets_created": assets_created}
+    result["pull"] = {
+        "fetched": len(raw_issues),
+        "created": created,
+        "merged": merged,
+        "assets_created": assets_created,
+    }
 
     # 2. Dashboard sync (step_num is 3 after bootstrap)
     dashboard_base = step_num
@@ -203,7 +259,9 @@ async def run_full_sync(
         return result
 
     # 3. Backfill first_detected_at and closed_at
-    _progress(on_progress, total_steps, total_steps, "Backfill: first_detected_at, closed_at")
+    _progress(
+        on_progress, total_steps, total_steps, "Backfill: first_detected_at, closed_at"
+    )
     updated_fd = 0
     updated_ca = 0
     skipped_no_fd = 0
@@ -212,7 +270,10 @@ async def run_full_sync(
         for raw in raw_issues:
             try:
                 transformed = await adapter.to_vat_finding(
-                    raw, repo_map=repo_map, repo_id_to_name=repo_id_to_name, container_name_to_id=container_name_to_id
+                    raw,
+                    repo_map=repo_map,
+                    repo_id_to_name=repo_id_to_name,
+                    container_name_to_id=container_name_to_id,
                 )
                 fd_str = getattr(transformed, "first_detected_at", None)
                 fd_dt = _parse_iso_datetime(fd_str) if fd_str else None
@@ -222,8 +283,12 @@ async def run_full_sync(
                 img = transformed.image or ""
                 branch = getattr(transformed, "branch", None) or ""
                 tag = getattr(transformed, "tag", None) or ""
-                fp = make_fingerprint(transformed.cve_id, comp, image=img, branch=branch, tag=tag)
-                r = await session.execute(select(Finding).where(Finding.fingerprint_id == fp))
+                fp = make_fingerprint(
+                    transformed.cve_id, comp, image=img, branch=branch, tag=tag
+                )
+                r = await session.execute(
+                    select(Finding).where(Finding.fingerprint_id == fp)
+                )
                 existing = r.scalar_one_or_none()
                 if not existing:
                     continue
@@ -244,7 +309,11 @@ async def run_full_sync(
                     await session.commit()
             except Exception as e:
                 await session.rollback()
-                logger.warning("Full sync backfill failed for issue %s: %s", raw.get("id", "?"), str(e).split("\n")[0][:200])
+                logger.warning(
+                    "Full sync backfill failed for issue %s: %s",
+                    raw.get("id", "?"),
+                    str(e).split("\n")[0][:200],
+                )
 
     result["backfill"] = {
         "updated_first_detected": updated_fd,
@@ -252,5 +321,13 @@ async def run_full_sync(
         "skipped_no_first_detected": skipped_no_fd,
         "skipped_already_has": skipped_has_fd,
     }
-    logger.info("Full sync complete: pull %d/%d/%d, dashboard %d issues, backfill fd=%d ca=%d", len(raw_issues), created, merged, result["dashboard"].get("issues", 0), result["backfill"].get("updated_first_detected", 0), result["backfill"].get("updated_closed_at", 0))
+    logger.info(
+        "Full sync complete: pull %d/%d/%d, dashboard %d issues, backfill fd=%d ca=%d",
+        len(raw_issues),
+        created,
+        merged,
+        result["dashboard"].get("issues", 0),
+        result["backfill"].get("updated_first_detected", 0),
+        result["backfill"].get("updated_closed_at", 0),
+    )
     return result

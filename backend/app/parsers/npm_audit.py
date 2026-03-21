@@ -3,7 +3,11 @@
 import logging
 import re
 
-from app.schemas.ingest import CanonicalFindingPayload, CanonicalFindingType, CanonicalSeverity
+from app.schemas.ingest import (
+    CanonicalFindingPayload,
+    CanonicalFindingType,
+    CanonicalSeverity,
+)
 from app.parsers.base import IngestParser
 from app.parsers.utils import extract_scan_tag
 
@@ -41,13 +45,17 @@ class NpmAuditParser(IngestParser):
             raise ValueError("npm audit input must be a JSON object")
         if raw.get("error"):
             err = raw["error"]
-            raise ValueError(f"npm audit error: {err.get('code')} - {err.get('summary', '')}")
+            raise ValueError(
+                f"npm audit error: {err.get('code')} - {err.get('summary', '')}"
+            )
         scan_tag = extract_scan_tag(raw)
         if raw.get("auditReportVersion") == 2:
             return self._parse_v7(raw, scan_tag)
         return self._parse_v6(raw, scan_tag)
 
-    def _parse_v6(self, raw: dict, scan_tag: str | None = None) -> list[CanonicalFindingPayload]:
+    def _parse_v6(
+        self, raw: dict, scan_tag: str | None = None
+    ) -> list[CanonicalFindingPayload]:
         advisories = raw.get("advisories") or {}
         payloads: list[CanonicalFindingPayload] = []
         for adv_id, adv in advisories.items():
@@ -61,7 +69,9 @@ class NpmAuditParser(IngestParser):
             version = first.get("version") or ""
             paths = first.get("paths") or []
             path_str = paths[0] if paths else None
-            file_path = _censor_path(path_str) if path_str else f"package.json>{module_name}"
+            file_path = (
+                _censor_path(path_str) if path_str else f"package.json>{module_name}"
+            )
             component = f"{module_name} {version}".strip()
             fields = {
                 "cve_id": str(cve_id),
@@ -77,7 +87,9 @@ class NpmAuditParser(IngestParser):
             payloads.append(self._create_payload(fields, asset=file_path))
         return payloads
 
-    def _parse_v7(self, raw: dict, scan_tag: str | None = None) -> list[CanonicalFindingPayload]:
+    def _parse_v7(
+        self, raw: dict, scan_tag: str | None = None
+    ) -> list[CanonicalFindingPayload]:
         vulns = raw.get("vulnerabilities") or {}
         payloads: list[CanonicalFindingPayload] = []
         for pkg_name, pkg_data in vulns.items():
@@ -94,7 +106,9 @@ class NpmAuditParser(IngestParser):
             for v in via:
                 if v == "ms" or v == "npm" or not isinstance(v, dict):
                     continue
-                vuln_id = str(v.get("source") or v.get("name") or v.get("dependency") or pkg_name)
+                vuln_id = str(
+                    v.get("source") or v.get("name") or v.get("dependency") or pkg_name
+                )
                 title = v.get("title") or vuln_id
                 desc = v.get("url") or v.get("description") or title
                 fields = {

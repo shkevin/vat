@@ -36,7 +36,10 @@ async def test_google_authorize_redirects(client, db, google_oauth_enabled):
     assert res.status_code in REDIRECT_STATUS
     assert "accounts.google.com" in res.headers["location"]
     assert "client_id=test-google-client-id" in res.headers["location"]
-    assert "redirect_uri=http%3A%2F%2Ftest%2Fapi%2Fauth%2Fgoogle%2Fcallback" in res.headers["location"]
+    assert (
+        "redirect_uri=http%3A%2F%2Ftest%2Fapi%2Fauth%2Fgoogle%2Fcallback"
+        in res.headers["location"]
+    )
 
 
 @pytest.mark.asyncio
@@ -58,7 +61,9 @@ async def test_google_callback_success(client, db, google_respx, google_oauth_en
     )
     await db.commit()
 
-    res = await client.get("/api/auth/google/callback?code=fake-auth-code", follow_redirects=False)
+    res = await client.get(
+        "/api/auth/google/callback?code=fake-auth-code", follow_redirects=False
+    )
     assert res.status_code in REDIRECT_STATUS
     location = res.headers["location"]
     assert location.startswith("http://test/login?code=")
@@ -99,7 +104,9 @@ async def test_google_callback_token_exchange_fails(client, db, google_oauth_ena
             return_value=Response(401, json={"error": "invalid_grant"})
         )
 
-        res = await client.get("/api/auth/google/callback?code=bad-code", follow_redirects=False)
+        res = await client.get(
+            "/api/auth/google/callback?code=bad-code", follow_redirects=False
+        )
         assert res.status_code in REDIRECT_STATUS
         assert "login?error=oauth_failed" in res.headers["location"]
 
@@ -111,14 +118,20 @@ async def test_google_callback_no_email(client, db, google_oauth_enabled):
         router.post("https://oauth2.googleapis.com/token").mock(
             return_value=Response(
                 200,
-                json={"access_token": "mock-token", "token_type": "Bearer", "expires_in": 3600},
+                json={
+                    "access_token": "mock-token",
+                    "token_type": "Bearer",
+                    "expires_in": 3600,
+                },
             )
         )
         router.get("https://www.googleapis.com/oauth2/v2/userinfo").mock(
             return_value=Response(200, json={"id": "123", "name": "No Email User"})
         )
 
-        res = await client.get("/api/auth/google/callback?code=fake-code", follow_redirects=False)
+        res = await client.get(
+            "/api/auth/google/callback?code=fake-code", follow_redirects=False
+        )
         assert res.status_code in REDIRECT_STATUS
         assert "login?error=no_email" in res.headers["location"]
 
@@ -130,7 +143,11 @@ async def test_google_callback_user_not_found(client, db, google_oauth_enabled):
         router.post("https://oauth2.googleapis.com/token").mock(
             return_value=Response(
                 200,
-                json={"access_token": "mock-token", "token_type": "Bearer", "expires_in": 3600},
+                json={
+                    "access_token": "mock-token",
+                    "token_type": "Bearer",
+                    "expires_in": 3600,
+                },
             )
         )
         # Use email that does not exist in any tenant
@@ -150,7 +167,9 @@ async def test_google_callback_user_not_found(client, db, google_oauth_enabled):
         )
         await db.commit()
 
-        res = await client.get("/api/auth/google/callback?code=fake-code", follow_redirects=False)
+        res = await client.get(
+            "/api/auth/google/callback?code=fake-code", follow_redirects=False
+        )
         assert res.status_code in REDIRECT_STATUS
         assert "login?error=user_not_found" in res.headers["location"]
 

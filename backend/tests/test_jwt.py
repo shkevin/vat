@@ -3,7 +3,7 @@
 import pytest
 from unittest.mock import patch
 
-from app.core.jwt import create_token, decode_token, JWT_ALGORITHM, JWT_ISSUER
+from app.core.jwt import create_token, decode_token, JWT_ISSUER
 
 
 @pytest.fixture

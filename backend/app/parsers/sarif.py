@@ -1,9 +1,11 @@
 """SARIF 2.1.0 parser — OASIS Static Analysis Results Interchange Format."""
 
 import logging
-from typing import Any
 
-from app.schemas.ingest import CanonicalFindingPayload, CanonicalFindingType, CanonicalSeverity
+from app.schemas.ingest import (
+    CanonicalFindingPayload,
+    CanonicalSeverity,
+)
 from app.parsers.base import IngestParser
 from app.parsers.utils import normalize_snippet
 
@@ -33,7 +35,9 @@ class SarifParser(IngestParser):
         for run in runs:
             tool_name = self._tool_name(run)
             results = run.get("results") or []
-            rules = self._index_rules(run.get("tool", {}).get("driver", {}).get("rules") or [])
+            rules = self._index_rules(
+                run.get("tool", {}).get("driver", {}).get("rules") or []
+            )
 
             for result in results:
                 try:
@@ -51,7 +55,9 @@ class SarifParser(IngestParser):
     ) -> CanonicalFindingPayload | None:
         rule_id = result.get("ruleId") or result.get("rule", {}).get("id") or "unknown"
         rule_index = result.get("ruleIndex")
-        rule_def = rules.get(rule_id) or (rules.get(str(rule_index)) if rule_index is not None else {})
+        rule_def = rules.get(rule_id) or (
+            rules.get(str(rule_index)) if rule_index is not None else {}
+        )
 
         message = self._get_message(result)
         if not message and rule_def:
@@ -63,7 +69,9 @@ class SarifParser(IngestParser):
             )
         message = message or rule_id
 
-        level = self._map_level(result.get("level"), rule_def.get("defaultConfiguration", {}))
+        level = self._map_level(
+            result.get("level"), rule_def.get("defaultConfiguration", {})
+        )
         loc = (result.get("locations") or [{}])[0]
         phys = loc.get("physicalLocation", {})
         artifact_loc = phys.get("artifactLocation", {})
@@ -95,8 +103,12 @@ class SarifParser(IngestParser):
                 "component": component or None,
                 "file_path": artifact_uri or None,
                 "line": region.get("startLine"),
-                "title": props.get("title") or rule_def.get("shortDescription", {}).get("text") or rule_id,
-                "cvss": str(props.get("security-severity")) if props.get("security-severity") is not None else None,
+                "title": props.get("title")
+                or rule_def.get("shortDescription", {}).get("text")
+                or rule_id,
+                "cvss": str(props.get("security-severity"))
+                if props.get("security-severity") is not None
+                else None,
                 "snippet_masked": snippet_masked,
             },
             asset=asset,

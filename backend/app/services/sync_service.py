@@ -152,7 +152,9 @@ async def reset_failed_tracker_events(db: AsyncSession, target_key: str) -> int:
 
 def _supports_outbound_sync(source_config: dict) -> bool:
     """Push sources (CI, manual) do not support sync back. Webhook sources do."""
-    auth_type = (source_config.get("authType") or source_config.get("auth_type") or "webhook").lower()
+    auth_type = (
+        source_config.get("authType") or source_config.get("auth_type") or "webhook"
+    ).lower()
     if auth_type == "push":
         return False
     return source_config.get("supportsOutboundSync", True)
@@ -217,7 +219,9 @@ async def maybe_enqueue_tracker_for_new_finding(
         return False
 
     push_min_severity = await get_tracker_push_min_severity(db)
-    if not severity_meets_min(finding.severity.value if finding.severity else "", push_min_severity):
+    if not severity_meets_min(
+        finding.severity.value if finding.severity else "", push_min_severity
+    ):
         return False
 
     template = await get_tracker_issue_template(db)
@@ -245,8 +249,13 @@ async def maybe_enqueue_tracker_for_new_finding(
         finding_dict["group_key"] = get_finding_group_key(finding)
 
     evt = await enqueue_tracker_create_issue(
-        db, finding, tracker_key, finding_dict, template,
-        label_names=label_names, label_configs=label_configs,
+        db,
+        finding,
+        tracker_key,
+        finding_dict,
+        template,
+        label_names=label_names,
+        label_configs=label_configs,
     )
     if evt:
         finding.sync_status = "pending_sync"
@@ -294,14 +303,23 @@ async def enqueue_tracker_post_decision(
     if finding.status not in TRACKER_DECISION_STATUSES or not issue_id:
         return None
     status_display = finding.status.value.replace("_", " ").title()
-    body_parts = [f"**VAT Reviewer Decision:** {status_display}", "", f"*Reviewed by {user}*"]
+    body_parts = [
+        f"**VAT Reviewer Decision:** {status_display}",
+        "",
+        f"*Reviewed by {user}*",
+    ]
     if finding.reviewer_note:
         body_parts.extend(["", f"**Note:** {finding.reviewer_note}"])
     if finding.justification:
         body_parts.extend(["", f"**Justification:** {finding.justification[:500]}"])
     if finding.attestation:
         att = finding.attestation
-        body_parts.extend(["", f"**Waiver:** {att.get('waiverRef', 'N/A')} | Expires: {att.get('expiresAt', 'N/A')}"])
+        body_parts.extend(
+            [
+                "",
+                f"**Waiver:** {att.get('waiverRef', 'N/A')} | Expires: {att.get('expiresAt', 'N/A')}",
+            ]
+        )
     body = "\n".join(body_parts)
     request = VatTrackerPostDecisionRequest(
         tracker_issue_id=issue_id,
@@ -362,7 +380,11 @@ async def enqueue_source_ignore(
     lookup_key = source_name or adapter_key
     issue_id = get_source_issue_id(finding, lookup_key)
     if not issue_id:
-        logger.debug("No source_issue_id for %s on finding %s; skipping source ignore", adapter_key, finding.id)
+        logger.debug(
+            "No source_issue_id for %s on finding %s; skipping source ignore",
+            adapter_key,
+            finding.id,
+        )
         return None
     request = VatSourceIgnoreRequest(issue_id=str(issue_id), scope=scope)
     return await enqueue_sync_event(
@@ -386,7 +408,11 @@ async def enqueue_source_unignore(
     lookup_key = source_name or adapter_key
     issue_id = get_source_issue_id(finding, lookup_key)
     if not issue_id:
-        logger.debug("No source_issue_id for %s on finding %s; skipping source unignore", adapter_key, finding.id)
+        logger.debug(
+            "No source_issue_id for %s on finding %s; skipping source unignore",
+            adapter_key,
+            finding.id,
+        )
         return None
     request = VatSourceUnignoreRequest(issue_id=str(issue_id))
     return await enqueue_sync_event(
@@ -418,26 +444,36 @@ async def _apply_create_result(
     finding.sync_last_error = None
     finding.sync_failed_at = None
     audit = list(finding.audit or [])
-    audit.append({
-        "ts": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-        "user": "system",
-        "action": "Synced to Tracker",
-        "note": tracker_id,
-    })
+    audit.append(
+        {
+            "ts": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "user": "system",
+            "action": "Synced to Tracker",
+            "note": tracker_id,
+        }
+    )
     finding.audit = audit
     req = VatTrackerCreateIssueRequest.model_validate(event.payload)
     if linked_to_existing and adapter.get_capabilities().supports_update_issue:
         from app.api.settings import get_labels, labels_to_configs
+
         labels_cfg = await get_labels(db)
         label_names = [l.get("name") for l in labels_cfg if l.get("name")]
         label_configs = labels_to_configs(labels_cfg)
         finding_dict = req.finding or {}
         await enqueue_tracker_update_issue(
-            db, finding, event.target_key, finding_dict, ["labels"],
-            label_names=label_names, label_configs=label_configs,
+            db,
+            finding,
+            event.target_key,
+            finding_dict,
+            ["labels"],
+            label_names=label_names,
+            label_configs=label_configs,
         )
     elif not linked_to_existing:
-        _record_tracker_created_correctly(db, finding, event.target_key, req.finding or {})
+        _record_tracker_created_correctly(
+            db, finding, event.target_key, req.finding or {}
+        )
 
 
 async def process_sync_event(
@@ -453,8 +489,7 @@ async def process_sync_event(
     When adapter is provided (e.g. from batch processing), reuse it to benefit from
     per-adapter caches (e.g. label resolution) and reduce API calls.
     """
-    from app.api.settings import get_tracker_issue_template, get_tracker_push_mode
-    from app.models.finding import Status
+    from app.api.settings import get_tracker_push_mode
 
     event.status = "processing"
     event.attempts += 1
@@ -470,12 +505,16 @@ async def process_sync_event(
             if adapter is not None:
                 pass  # Use provided adapter (batch mode)
             else:
-                creds = await _credential_resolver.get_tracker_credentials(db, event.target_key)
+                creds = await _credential_resolver.get_tracker_credentials(
+                    db, event.target_key
+                )
                 adapter = adapter_cls(**creds)
 
             if event.event_type == "create_issue":
                 if not adapter.get_capabilities().supports_create_issue:
-                    raise ValueError(f"Adapter {event.target_key} does not support create_issue")
+                    raise ValueError(
+                        f"Adapter {event.target_key} does not support create_issue"
+                    )
                 request = VatTrackerCreateIssueRequest.model_validate(event.payload)
                 finding_dict = request.finding or {}
                 cve_id = finding_dict.get("cve_id") or finding_dict.get("cveId")
@@ -486,7 +525,9 @@ async def process_sync_event(
                 tracker_id: Optional[str] = None
                 linked_to_existing = False
                 if push_mode == "groups":
-                    find_group = getattr(adapter, "find_existing_issue_for_group_key", None)
+                    find_group = getattr(
+                        adapter, "find_existing_issue_for_group_key", None
+                    )
                     if callable(find_group) and group_key:
                         existing = await find_group(group_key)
                         if existing:
@@ -512,8 +553,11 @@ async def process_sync_event(
                                 )
                     if tracker_id is None and title:
                         from app.core.config import get_settings
+
                         if get_settings().linear_link_title_fallback:
-                            find_title = getattr(adapter, "find_existing_issue_for_title", None)
+                            find_title = getattr(
+                                adapter, "find_existing_issue_for_title", None
+                            )
                             if callable(find_title):
                                 existing = await find_title(title)
                                 if existing:
@@ -528,53 +572,82 @@ async def process_sync_event(
                 if tracker_id is None:
                     create_result = await adapter.create_issue(request)
                     if isinstance(create_result, tuple):
-                        tracker_id, tracker_uuid = create_result[0], create_result[1] if len(create_result) > 1 else None
+                        tracker_id, tracker_uuid = (
+                            create_result[0],
+                            create_result[1] if len(create_result) > 1 else None,
+                        )
                     else:
                         tracker_id = create_result
                 # Update finding
-                result = await db.execute(select(Finding).where(Finding.id == event.finding_id))
+                result = await db.execute(
+                    select(Finding).where(Finding.id == event.finding_id)
+                )
                 finding = result.scalar_one_or_none()
                 if finding:
-                    add_tracker_link(finding, event.target_key, tracker_id, issue_uuid=tracker_uuid)
+                    add_tracker_link(
+                        finding, event.target_key, tracker_id, issue_uuid=tracker_uuid
+                    )
                     # Preserve status — tracked is shown in a separate column, not as a status
                     finding.sync_status = "synced"
                     finding.sync_last_error = None
                     finding.sync_failed_at = None
                     audit = list(finding.audit or [])
-                    audit.append({
-                        "ts": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-                        "user": "system",
-                        "action": "Synced to Tracker",
-                        "note": tracker_id,
-                    })
+                    audit.append(
+                        {
+                            "ts": datetime.now(timezone.utc).strftime(
+                                "%Y-%m-%dT%H:%M:%SZ"
+                            ),
+                            "user": "system",
+                            "action": "Synced to Tracker",
+                            "note": tracker_id,
+                        }
+                    )
                     finding.audit = audit
                     # When linking to existing issue, labels and status were never applied. Enqueue update_issue.
-                    if linked_to_existing and adapter.get_capabilities().supports_update_issue:
+                    if (
+                        linked_to_existing
+                        and adapter.get_capabilities().supports_update_issue
+                    ):
                         from app.api.settings import get_labels, labels_to_configs
 
                         labels_cfg = await get_labels(db)
-                        label_names = [l.get("name") for l in labels_cfg if l.get("name")]
+                        label_names = [
+                            l.get("name") for l in labels_cfg if l.get("name")
+                        ]
                         label_configs = labels_to_configs(labels_cfg)
                         finding_dict = request.finding or {}
-                        finding_dict["status"] = finding.status.value if finding.status else None
+                        finding_dict["status"] = (
+                            finding.status.value if finding.status else None
+                        )
                         await enqueue_tracker_update_issue(
-                            db, finding, event.target_key, finding_dict, ["labels", "status"],
-                            label_names=label_names, label_configs=label_configs,
+                            db,
+                            finding,
+                            event.target_key,
+                            finding_dict,
+                            ["labels", "status"],
+                            label_names=label_names,
+                            label_configs=label_configs,
                         )
                     # When we created (not linked): issue was created correctly with labels. Record completed
                     # so backfill_tracker_corrections skips it (avoids redundant update_issue).
                     elif not linked_to_existing:
-                        _record_tracker_created_correctly(db, finding, event.target_key, request.finding or {})
+                        _record_tracker_created_correctly(
+                            db, finding, event.target_key, request.finding or {}
+                        )
 
             elif event.event_type == "post_decision":
                 if not adapter.get_capabilities().supports_post_comment:
-                    raise ValueError(f"Adapter {event.target_key} does not support post_comment")
+                    raise ValueError(
+                        f"Adapter {event.target_key} does not support post_comment"
+                    )
                 request = VatTrackerPostDecisionRequest.model_validate(event.payload)
                 await adapter.post_comment(request)
 
             elif event.event_type == "update_issue":
                 if not adapter.get_capabilities().supports_update_issue:
-                    raise ValueError(f"Adapter {event.target_key} does not support update_issue")
+                    raise ValueError(
+                        f"Adapter {event.target_key} does not support update_issue"
+                    )
                 request = VatTrackerUpdateIssueRequest.model_validate(event.payload)
                 await adapter.update_issue(request)
 
@@ -586,18 +659,24 @@ async def process_sync_event(
             if not adapter_cls:
                 raise ValueError(f"Unknown source adapter: {event.target_key}")
 
-            creds = await _credential_resolver.get_source_credentials(db, event.target_key)
+            creds = await _credential_resolver.get_source_credentials(
+                db, event.target_key
+            )
             adapter = adapter_cls(**creds) if creds else adapter_cls()
 
             if event.event_type == "source_ignore":
                 if not adapter.get_capabilities().supports_ignore:
-                    raise ValueError(f"Adapter {event.target_key} does not support ignore_issue")
+                    raise ValueError(
+                        f"Adapter {event.target_key} does not support ignore_issue"
+                    )
                 request = VatSourceIgnoreRequest.model_validate(event.payload)
                 await adapter.ignore_issue(request)
 
             elif event.event_type == "source_unignore":
                 if not adapter.get_capabilities().supports_unignore:
-                    raise ValueError(f"Adapter {event.target_key} does not support unignore_issue")
+                    raise ValueError(
+                        f"Adapter {event.target_key} does not support unignore_issue"
+                    )
                 request = VatSourceUnignoreRequest.model_validate(event.payload)
                 await adapter.unignore_issue(request)
 
@@ -619,13 +698,20 @@ async def process_sync_event(
                     err_detail = f"{err_detail} | response: {body[:500]}"
             except Exception:
                 pass
-        logger.warning("Sync event %s failed (attempt %d): %s", event.id, event.attempts, err_detail)
+        logger.warning(
+            "Sync event %s failed (attempt %d): %s",
+            event.id,
+            event.attempts,
+            err_detail,
+        )
         event.last_error = err_detail[:500]
         if event.attempts >= event.max_attempts:
             event.status = "failed"
             # Update finding sync_status if create_issue
             if event.event_type == "create_issue":
-                result = await db.execute(select(Finding).where(Finding.id == event.finding_id))
+                result = await db.execute(
+                    select(Finding).where(Finding.id == event.finding_id)
+                )
                 finding = result.scalar_one_or_none()
                 if finding:
                     finding.sync_status = "sync_failed"
@@ -670,33 +756,52 @@ async def process_pending_sync_events(db: AsyncSession, limit: int = 50) -> int:
     adapter_cache: dict[tuple[str, str], object] = {}
     tracker_key = await get_tracker_key(db)
     tracker_creds = await _credential_resolver.get_tracker_credentials(db, tracker_key)
-    tracker_configured = bool(tracker_creds.get("api_key") and tracker_creds.get("team_id"))
+    tracker_configured = bool(
+        tracker_creds.get("api_key") and tracker_creds.get("team_id")
+    )
 
     i = 0
     while i < len(events):
         event = events[i]
         if event.target == "tracker" and not tracker_configured:
-            logger.debug("Skipping tracker event %s: tracker not configured", event.event_type)
+            logger.debug(
+                "Skipping tracker event %s: tracker not configured", event.event_type
+            )
             i += 1
             continue
 
-        cache_key = (event.target, event.target_key) if event.target and event.target_key else None
+        cache_key = (
+            (event.target, event.target_key)
+            if event.target and event.target_key
+            else None
+        )
         adapter = adapter_cache.get(cache_key) if cache_key else None
         if adapter is None and cache_key and event.target == "tracker":
             adapter_cls = TRACKER_ADAPTER_REGISTRY.get(event.target_key)
             if adapter_cls:
-                creds = await _credential_resolver.get_tracker_credentials(db, event.target_key)
+                creds = await _credential_resolver.get_tracker_credentials(
+                    db, event.target_key
+                )
                 adapter = adapter_cls(**creds)
                 adapter_cache[cache_key] = adapter
 
         # Batch consecutive create_issue events (Linear issueBatchCreate)
-        if event.target == "tracker" and event.event_type == "create_issue" and adapter is not None:
+        if (
+            event.target == "tracker"
+            and event.event_type == "create_issue"
+            and adapter is not None
+        ):
             from app.api.settings import get_tracker_push_mode
 
             push_mode = await get_tracker_push_mode(db)
             create_batch: list[SyncEvent] = []
             j = i
-            while j < len(events) and events[j].target == event.target and events[j].target_key == event.target_key and events[j].event_type == "create_issue":
+            while (
+                j < len(events)
+                and events[j].target == event.target
+                and events[j].target_key == event.target_key
+                and events[j].event_type == "create_issue"
+            ):
                 create_batch.append(events[j])
                 j += 1
             if len(create_batch) >= 2 and hasattr(adapter, "create_issues_batch"):
@@ -733,7 +838,9 @@ async def process_pending_sync_events(db: AsyncSession, limit: int = 50) -> int:
                         to_create.append((ev, req))
                 # Process links
                 for ev, tid in link_events:
-                    await _apply_create_result(db, ev, adapter, tid, None, linked_to_existing=True)
+                    await _apply_create_result(
+                        db, ev, adapter, tid, None, linked_to_existing=True
+                    )
                     ev.status = "completed"
                     ev.completed_at = datetime.now(timezone.utc)
                     ev.attempts += 1
@@ -749,10 +856,19 @@ async def process_pending_sync_events(db: AsyncSession, limit: int = 50) -> int:
                         if isinstance(res, Exception):
                             ev.status = "pending"
                             ev.last_error = str(res)[:500]
-                            ev.next_retry_at = datetime.now(timezone.utc) + timedelta(seconds=_get_backoff_seconds(ev.attempts))
+                            ev.next_retry_at = datetime.now(timezone.utc) + timedelta(
+                                seconds=_get_backoff_seconds(ev.attempts)
+                            )
                         else:
                             ident, uuid_val = res
-                            await _apply_create_result(db, ev, adapter, ident, uuid_val, linked_to_existing=False)
+                            await _apply_create_result(
+                                db,
+                                ev,
+                                adapter,
+                                ident,
+                                uuid_val,
+                                linked_to_existing=False,
+                            )
                             ev.status = "completed"
                             ev.completed_at = datetime.now(timezone.utc)
                             ev.last_error = None
@@ -765,14 +881,26 @@ async def process_pending_sync_events(db: AsyncSession, limit: int = 50) -> int:
 
         # Batch consecutive update_issue events (Linear supports aliased mutations)
         batch_events: list[SyncEvent] = []
-        if event.target == "tracker" and event.event_type == "update_issue" and adapter is not None:
+        if (
+            event.target == "tracker"
+            and event.event_type == "update_issue"
+            and adapter is not None
+        ):
             j = i
-            while j < len(events) and events[j].target == event.target and events[j].target_key == event.target_key and events[j].event_type == "update_issue":
+            while (
+                j < len(events)
+                and events[j].target == event.target
+                and events[j].target_key == event.target_key
+                and events[j].event_type == "update_issue"
+            ):
                 batch_events.append(events[j])
                 j += 1
             if len(batch_events) >= 2 and hasattr(adapter, "update_issues_batch"):
                 # Process batch
-                requests = [VatTrackerUpdateIssueRequest.model_validate(ev.payload) for ev in batch_events]
+                requests = [
+                    VatTrackerUpdateIssueRequest.model_validate(ev.payload)
+                    for ev in batch_events
+                ]
                 batch_results = await adapter.update_issues_batch(requests)
                 for ev, (_, err) in zip(batch_events, batch_results):
                     ev.status = "completed" if err is None else "pending"
@@ -785,7 +913,9 @@ async def process_pending_sync_events(db: AsyncSession, limit: int = 50) -> int:
                         processed += 1
                     else:
                         ev.last_error = str(err)[:500]
-                        ev.next_retry_at = datetime.now(timezone.utc) + timedelta(seconds=_get_backoff_seconds(ev.attempts))
+                        ev.next_retry_at = datetime.now(timezone.utc) + timedelta(
+                            seconds=_get_backoff_seconds(ev.attempts)
+                        )
                 i = j
                 continue
 
@@ -838,7 +968,9 @@ async def unlink_deleted_linear_issues(db: AsyncSession) -> int:
     try:
         nodes = await adapter.list_issues_by_ids(uuids, include_comments=False)
     except Exception as e:
-        logger.warning("unlink_deleted_linear_issues: Linear API error, skipping: %s", e)
+        logger.warning(
+            "unlink_deleted_linear_issues: Linear API error, skipping: %s", e
+        )
         return 0
 
     existing_ids = {str(n.get("id")) for n in nodes if n.get("id")}
@@ -851,21 +983,28 @@ async def unlink_deleted_linear_issues(db: AsyncSession) -> int:
                 finding.sync_last_error = None
                 finding.sync_failed_at = None
                 audit = list(finding.audit or [])
-                audit.append({
-                    "ts": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-                    "user": "system",
-                    "action": "Unlinked deleted Linear issue",
-                    "note": f"issue_uuid={issue_uuid}",
-                })
+                audit.append(
+                    {
+                        "ts": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                        "user": "system",
+                        "action": "Unlinked deleted Linear issue",
+                        "note": f"issue_uuid={issue_uuid}",
+                    }
+                )
                 finding.audit = audit
                 unlinked += 1
-                logger.info("Unlinked finding %s: Linear issue %s no longer exists", finding.id, issue_uuid)
+                logger.info(
+                    "Unlinked finding %s: Linear issue %s no longer exists",
+                    finding.id,
+                    issue_uuid,
+                )
     return unlinked
 
 
 def _extract_linear_identifier_from_task(task: dict) -> tuple[str | None, str | None]:
     """Extract (issue_id, url) from Aikido task. issue_id for Linear is identifier (e.g. AUT-123)."""
     import re
+
     identifier = task.get("identifier") or task.get("issue_id") or task.get("issueId")
     if identifier and isinstance(identifier, str) and identifier.strip():
         url = task.get("url") or task.get("link") or task.get("html_url")
@@ -987,7 +1126,9 @@ async def sync_aikido_tracker_links(
     return {"updated": updated, "groups_fetched": len(tasks_by_group)}
 
 
-async def link_linear_issues_to_findings(db: AsyncSession, max_issues: int = 500) -> dict:
+async def link_linear_issues_to_findings(
+    db: AsyncSession, max_issues: int = 500
+) -> dict:
     """
     Pull existing Linear issues and link them to VAT findings.
     When pushMode=groups: match by [VAT-GROUP: key] in description (backend group key), then CVE/title fallback.
@@ -995,7 +1136,12 @@ async def link_linear_issues_to_findings(db: AsyncSession, max_issues: int = 500
     When useAikidoTracking: only Aikido findings are skipped — non-Aikido findings still get linked.
     Returns {linked: int, fetched: int}.
     """
-    from app.api.settings import get_tracker_key, get_tracker_push_min_severity, get_use_aikido_tracking, severity_meets_min
+    from app.api.settings import (
+        get_tracker_key,
+        get_tracker_push_min_severity,
+        get_use_aikido_tracking,
+        severity_meets_min,
+    )
     from app.adapters.linear import LinearAdapter
 
     use_aikido = await get_use_aikido_tracking(db)
@@ -1008,16 +1154,22 @@ async def link_linear_issues_to_findings(db: AsyncSession, max_issues: int = 500
         return {"linked": 0, "fetched": 0}
 
     adapter = LinearAdapter(**creds)
-    group_key_to_issue: dict[str, str] = {}  # group_key -> identifier (from [VAT-GROUP: key])
+    group_key_to_issue: dict[
+        str, str
+    ] = {}  # group_key -> identifier (from [VAT-GROUP: key])
     cve_to_issue: dict[str, str] = {}  # cve_id -> identifier (fallback)
     title_to_issue: dict[str, str] = {}  # normalized_title -> identifier (fallback)
-    identifier_to_uuid: dict[str, Optional[str]] = {}  # identifier -> Linear UUID for poll
+    identifier_to_uuid: dict[
+        str, Optional[str]
+    ] = {}  # identifier -> Linear UUID for poll
     fetched = 0
     cursor: Optional[str] = None
 
     while fetched < max_issues:
         first = min(100, max_issues - fetched)
-        nodes, cursor = await adapter.list_issues(first=first, after=cursor, include_archived=False)
+        nodes, cursor = await adapter.list_issues(
+            first=first, after=cursor, include_archived=False
+        )
         fetched += len(nodes)
         for node in nodes:
             identifier = node.get("identifier") or node.get("id")
@@ -1055,16 +1207,22 @@ async def link_linear_issues_to_findings(db: AsyncSession, max_issues: int = 500
             continue
         if has_tracker_link(finding, tracker_key):
             continue
-        if not severity_meets_min(finding.severity.value if finding.severity else "", push_min_severity):
+        if not severity_meets_min(
+            finding.severity.value if finding.severity else "", push_min_severity
+        ):
             continue
         identifier = None
         gk = get_finding_group_key(finding)
         if gk:
             identifier = group_key_to_issue.get(gk)
         if not identifier and finding.cve_id:
-            identifier = cve_to_issue.get(finding.cve_id.upper() if finding.cve_id else "")
+            identifier = cve_to_issue.get(
+                finding.cve_id.upper() if finding.cve_id else ""
+            )
         if not identifier and finding.title:
-            identifier = title_to_issue.get(LinearAdapter._normalize_title(finding.title))
+            identifier = title_to_issue.get(
+                LinearAdapter._normalize_title(finding.title)
+            )
         if not identifier:
             continue
         issue_uuid = identifier_to_uuid.get(identifier) if identifier else None
@@ -1074,12 +1232,14 @@ async def link_linear_issues_to_findings(db: AsyncSession, max_issues: int = 500
         finding.sync_last_error = None
         finding.sync_failed_at = None
         audit = list(finding.audit or [])
-        audit.append({
-            "ts": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-            "user": "system",
-            "action": "Linked to existing Linear issue",
-            "note": identifier,
-        })
+        audit.append(
+            {
+                "ts": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "user": "system",
+                "action": "Linked to existing Linear issue",
+                "note": identifier,
+            }
+        )
         finding.audit = audit
         # Enqueue update_issue to add labels and sync status (linked issues need VAT state applied)
         adapter_cls = TRACKER_ADAPTER_REGISTRY.get(tracker_key)
@@ -1097,14 +1257,23 @@ async def link_linear_issues_to_findings(db: AsyncSession, max_issues: int = 500
                 "status": finding.status.value if finding.status else None,
             }
             await enqueue_tracker_update_issue(
-                db, finding, tracker_key, finding_dict, ["labels", "status"],
-                label_names=label_names, label_configs=label_configs,
+                db,
+                finding,
+                tracker_key,
+                finding_dict,
+                ["labels", "status"],
+                label_names=label_names,
+                label_configs=label_configs,
             )
         linked += 1
 
     if linked > 0:
         await db.commit()
-        logger.info("Linear link: linked %d findings to existing issues (fetched %d)", linked, fetched)
+        logger.info(
+            "Linear link: linked %d findings to existing issues (fetched %d)",
+            linked,
+            fetched,
+        )
     return {"linked": linked, "fetched": fetched}
 
 
@@ -1164,9 +1333,14 @@ async def backfill_tracker_corrections(db: AsyncSession, limit: int = 50) -> int
     findings = list(result.scalars().all())
     if not findings:
         from sqlalchemy import func
-        count_stmt = select(func.count()).select_from(Finding).where(
-            Finding.external_links.op("@>")(type_coerce(needle, JSONB)),
-            Finding.archived == False,
+
+        count_stmt = (
+            select(func.count())
+            .select_from(Finding)
+            .where(
+                Finding.external_links.op("@>")(type_coerce(needle, JSONB)),
+                Finding.archived == False,
+            )
         )
         total_linked = (await db.execute(count_stmt)).scalar() or 0
         logger.debug(
@@ -1184,13 +1358,22 @@ async def backfill_tracker_corrections(db: AsyncSession, limit: int = 50) -> int
         }
         changed = ["labels", "title", "severity", "status"]
         evt = await enqueue_tracker_update_issue(
-            db, finding, tracker_key, finding_dict, changed, label_names=label_names, label_configs=label_configs
+            db,
+            finding,
+            tracker_key,
+            finding_dict,
+            changed,
+            label_names=label_names,
+            label_configs=label_configs,
         )
         if evt:
             enqueued += 1
     if enqueued > 0:
         await db.commit()
-        logger.info("Backfill corrections: enqueued update_issue for %d linked findings", enqueued)
+        logger.info(
+            "Backfill corrections: enqueued update_issue for %d linked findings",
+            enqueued,
+        )
     return enqueued
 
 
@@ -1241,12 +1424,12 @@ async def get_sync_status(db: AsyncSession) -> dict:
     unlinked_meeting_severity = 0
     unique_groups = set()
     if unlinked_ids:
-        result = await db.execute(
-            select(Finding).where(Finding.id.in_(unlinked_ids))
-        )
+        result = await db.execute(select(Finding).where(Finding.id.in_(unlinked_ids)))
         findings = list(result.scalars().unique().all())
         for f in findings:
-            if severity_meets_min(f.severity.value if f.severity else "", push_min_severity):
+            if severity_meets_min(
+                f.severity.value if f.severity else "", push_min_severity
+            ):
                 unlinked_meeting_severity += 1
                 if push_mode == "groups":
                     unique_groups.add(get_finding_group_key(f))
@@ -1269,7 +1452,9 @@ async def get_sync_status(db: AsyncSession) -> dict:
         "total_open": total_open,
         "unlinked": len(unlinked_ids),
         "unlinked_meeting_severity": unlinked_meeting_severity,
-        "unique_groups_to_create": len(unique_groups) if push_mode == "groups" else unlinked_meeting_severity,
+        "unique_groups_to_create": len(unique_groups)
+        if push_mode == "groups"
+        else unlinked_meeting_severity,
         "pending_create_issue": pending_create,
     }
 
@@ -1302,19 +1487,27 @@ async def backfill_unsynced_findings(db: AsyncSession, limit: int = 20) -> int:
 
     # Link findings to existing Linear issues only when pushMode=groups and we have unlinked findings
     push_mode = await get_tracker_push_mode(db)
-    aikido_filter = "\n          AND (f.source IS NULL OR f.source != 'Aikido')" if use_aikido else ""
+    aikido_filter = (
+        "\n          AND (f.source IS NULL OR f.source != 'Aikido')"
+        if use_aikido
+        else ""
+    )
     if push_mode == "groups":
         unlinked_check = await db.execute(
-            text("""
+            text(
+                """
                 SELECT 1 FROM findings f
                 WHERE f.status IN ('Open', 'Reopened', 'InReview') AND f.archived = false
                   AND NOT EXISTS (
                     SELECT 1 FROM jsonb_array_elements(COALESCE(f.external_links, '[]'::jsonb)) AS elem
                     WHERE elem->>'kind' = 'tracker' AND elem->>'adapter_key' = :tk
                   )
-                  """ + aikido_filter + """
+                  """
+                + aikido_filter
+                + """
                 LIMIT 1
-            """),
+            """
+            ),
             {"tk": tracker_key},
         )
         if unlinked_check.scalar():
@@ -1327,7 +1520,8 @@ async def backfill_unsynced_findings(db: AsyncSession, limit: int = 20) -> int:
     # Find Open/Reopened/InReview findings with no tracker link and no pending create_issue.
     # Must filter by unlinked in SQL so we use the limit on actual candidates (not findings that
     # already have links).
-    unlinked_stmt = text("""
+    unlinked_stmt = text(
+        """
         SELECT f.id FROM findings f
         WHERE f.status IN ('Open', 'Reopened', 'InReview') AND f.archived = false
           AND NOT EXISTS (
@@ -1339,10 +1533,13 @@ async def backfill_unsynced_findings(db: AsyncSession, limit: int = 20) -> int:
             WHERE e.finding_id = f.id AND e.target = 'tracker'
               AND e.event_type = 'create_issue' AND e.status IN ('pending', 'processing')
           )
-          """ + aikido_filter + """
+          """
+        + aikido_filter
+        + """
         ORDER BY f.created_at
         LIMIT :lim
-    """)
+    """
+    )
     ids_result = await db.execute(unlinked_stmt, {"tk": tracker_key, "lim": limit})
     ids = [r[0] for r in ids_result.fetchall()]
     if not ids:
@@ -1352,13 +1549,17 @@ async def backfill_unsynced_findings(db: AsyncSession, limit: int = 20) -> int:
         return 0
     result = await db.execute(select(Finding).where(Finding.id.in_(ids)))
     findings = list(result.scalars().unique().all())
-    findings.sort(key=lambda f: f.created_at or datetime(1970, 1, 1, tzinfo=timezone.utc))
+    findings.sort(
+        key=lambda f: f.created_at or datetime(1970, 1, 1, tzinfo=timezone.utc)
+    )
     push_min_severity = await get_tracker_push_min_severity(db)
     enqueued = 0
     for finding in findings:
         if has_tracker_link(finding, tracker_key):
             continue
-        if not severity_meets_min(finding.severity.value if finding.severity else "", push_min_severity):
+        if not severity_meets_min(
+            finding.severity.value if finding.severity else "", push_min_severity
+        ):
             continue
         finding_dict = {
             "cveId": finding.cve_id,
@@ -1377,12 +1578,22 @@ async def backfill_unsynced_findings(db: AsyncSession, limit: int = 20) -> int:
         }
         if push_mode == "groups":
             finding_dict["group_key"] = get_finding_group_key(finding)
-        await enqueue_tracker_create_issue(db, finding, tracker_key, finding_dict, template, label_names=label_names, label_configs=label_configs)
+        await enqueue_tracker_create_issue(
+            db,
+            finding,
+            tracker_key,
+            finding_dict,
+            template,
+            label_names=label_names,
+            label_configs=label_configs,
+        )
         finding.sync_status = "pending_sync"
         enqueued += 1
     if enqueued > 0:
         await db.commit()
-        logger.info("Backfill: enqueued create_issue for %d unsynced findings", enqueued)
+        logger.info(
+            "Backfill: enqueued create_issue for %d unsynced findings", enqueued
+        )
     return enqueued
 
 
@@ -1393,7 +1604,6 @@ async def sync_single_finding_to_tracker(db: AsyncSession, finding_id: str) -> d
     — idempotent so tracker reflects VAT regardless of edits in tracker or closed status.
     Returns {enqueued: bool, message: str}.
     """
-    from sqlalchemy import exists
     from app.api.settings import (
         get_labels,
         get_tracker_issue_template,
@@ -1409,7 +1619,10 @@ async def sync_single_finding_to_tracker(db: AsyncSession, finding_id: str) -> d
     tracker_key = await get_tracker_key(db)
     creds = await _credential_resolver.get_tracker_credentials(db, tracker_key)
     if not creds.get("api_key") or not creds.get("team_id"):
-        return {"enqueued": False, "message": "Linear not configured (API key and Team ID required)"}
+        return {
+            "enqueued": False,
+            "message": "Linear not configured (API key and Team ID required)",
+        }
 
     result = await db.execute(select(Finding).where(Finding.id == finding_id))
     finding = result.scalar_one_or_none()
@@ -1418,16 +1631,24 @@ async def sync_single_finding_to_tracker(db: AsyncSession, finding_id: str) -> d
     if finding.archived:
         return {"enqueued": False, "message": "Finding is archived"}
     if await get_use_aikido_tracking(db) and _is_aikido_finding(finding):
-        return {"enqueued": False, "message": "Aikido findings use Aikido's Linear integration; sync from Aikido instead"}
+        return {
+            "enqueued": False,
+            "message": "Aikido findings use Aikido's Linear integration; sync from Aikido instead",
+        }
 
     adapter_cls = TRACKER_ADAPTER_REGISTRY.get(tracker_key)
-    supports_update = adapter_cls and adapter_cls().get_capabilities().supports_update_issue
+    supports_update = (
+        adapter_cls and adapter_cls().get_capabilities().supports_update_issue
+    )
 
     if has_tracker_link(finding, tracker_key):
         # Already linked: enqueue update_issue to push VAT state (idempotent sync)
         if not supports_update:
             issue_id = get_tracker_issue_id(finding, tracker_key)
-            return {"enqueued": False, "message": f"Finding already synced to {issue_id} (adapter does not support update)"}
+            return {
+                "enqueued": False,
+                "message": f"Finding already synced to {issue_id} (adapter does not support update)",
+            }
 
         pending = await db.execute(
             select(1).where(
@@ -1438,7 +1659,10 @@ async def sync_single_finding_to_tracker(db: AsyncSession, finding_id: str) -> d
             )
         )
         if pending.scalar_one_or_none():
-            return {"enqueued": False, "message": "Update already pending for this finding"}
+            return {
+                "enqueued": False,
+                "message": "Update already pending for this finding",
+            }
 
         labels_cfg = await get_labels(db)
         label_names = [l.get("name") for l in labels_cfg if l.get("name")]
@@ -1462,17 +1686,31 @@ async def sync_single_finding_to_tracker(db: AsyncSession, finding_id: str) -> d
         if evt:
             await db.commit()
             trigger_sync_worker(countdown=1)
-            logger.info("Single sync: enqueued update_issue for finding %s (already linked)", finding_id)
-            return {"enqueued": True, "message": f"Enqueued update to push VAT state to tracker for {finding.cve_id}."}
+            logger.info(
+                "Single sync: enqueued update_issue for finding %s (already linked)",
+                finding_id,
+            )
+            return {
+                "enqueued": True,
+                "message": f"Enqueued update to push VAT state to tracker for {finding.cve_id}.",
+            }
         return {"enqueued": False, "message": "Could not enqueue update"}
 
     # Not linked: create new issue (only for Open/Reopened)
     if finding.status not in (Status.Open, Status.Reopened):
-        return {"enqueued": False, "message": f"Finding status must be Open or Reopened to create tracker issue (current: {finding.status.value})"}
+        return {
+            "enqueued": False,
+            "message": f"Finding status must be Open or Reopened to create tracker issue (current: {finding.status.value})",
+        }
 
     push_min_severity = await get_tracker_push_min_severity(db)
-    if not severity_meets_min(finding.severity.value if finding.severity else "", push_min_severity):
-        return {"enqueued": False, "message": f"Finding severity {finding.severity.value} is below push threshold (push Min Severity in Linear settings)"}
+    if not severity_meets_min(
+        finding.severity.value if finding.severity else "", push_min_severity
+    ):
+        return {
+            "enqueued": False,
+            "message": f"Finding severity {finding.severity.value} is below push threshold (push Min Severity in Linear settings)",
+        }
 
     pending = await db.execute(
         select(1).where(
@@ -1509,10 +1747,18 @@ async def sync_single_finding_to_tracker(db: AsyncSession, finding_id: str) -> d
     if push_mode == "groups":
         finding_dict["group_key"] = get_finding_group_key(finding)
     await enqueue_tracker_create_issue(
-        db, finding, tracker_key, finding_dict, template,
-        label_names=label_names, label_configs=label_configs,
+        db,
+        finding,
+        tracker_key,
+        finding_dict,
+        template,
+        label_names=label_names,
+        label_configs=label_configs,
     )
     finding.sync_status = "pending_sync"
     await db.commit()
     logger.info("Single sync: enqueued create_issue for finding %s", finding_id)
-    return {"enqueued": True, "message": f"Enqueued. Linear issue will be created for {finding.cve_id}."}
+    return {
+        "enqueued": True,
+        "message": f"Enqueued. Linear issue will be created for {finding.cve_id}.",
+    }

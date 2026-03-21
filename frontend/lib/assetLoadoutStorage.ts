@@ -25,24 +25,28 @@ function readStored(): AssetLoadout[] {
     if (!raw) return [];
     const parsed = JSON.parse(raw) as unknown;
     if (!Array.isArray(parsed)) return [];
-    return parsed.filter(
-      (l): l is AssetLoadout =>
-        l &&
-        typeof l === "object" &&
-        typeof (l as AssetLoadout).id === "string" &&
-        typeof (l as AssetLoadout).name === "string" &&
-        Array.isArray((l as AssetLoadout).assetIds) &&
-        typeof (l as AssetLoadout).savedAt === "string"
-    ).map((l) => {
-      const loadout = l as AssetLoadout;
-      const entries = Array.isArray(loadout.entries)
-        ? loadout.entries.filter(
-            (e): e is FavoriteEntry =>
-              e && typeof e === "object" && typeof (e as FavoriteEntry).assetId === "string"
-          )
-        : undefined;
-      return { ...loadout, entries };
-    });
+    return parsed
+      .filter(
+        (l): l is AssetLoadout =>
+          l &&
+          typeof l === "object" &&
+          typeof (l as AssetLoadout).id === "string" &&
+          typeof (l as AssetLoadout).name === "string" &&
+          Array.isArray((l as AssetLoadout).assetIds) &&
+          typeof (l as AssetLoadout).savedAt === "string",
+      )
+      .map((l) => {
+        const loadout = l as AssetLoadout;
+        const entries = Array.isArray(loadout.entries)
+          ? loadout.entries.filter(
+              (e): e is FavoriteEntry =>
+                e &&
+                typeof e === "object" &&
+                typeof (e as FavoriteEntry).assetId === "string",
+            )
+          : undefined;
+        return { ...loadout, entries };
+      });
   } catch {
     return [];
   }
@@ -65,12 +69,16 @@ function generateId(): string {
 export function loadAssetLoadouts(): AssetLoadout[] {
   const loadouts = readStored();
   return [...loadouts].sort(
-    (a, b) => new Date(b.savedAt).getTime() - new Date(a.savedAt).getTime()
+    (a, b) => new Date(b.savedAt).getTime() - new Date(a.savedAt).getTime(),
   );
 }
 
 /** Save a new loadout or update an existing one. Returns the loadout id. */
-export function saveAssetLoadout(id: string | null, name: string, entries: FavoriteEntry[]): string {
+export function saveAssetLoadout(
+  id: string | null,
+  name: string,
+  entries: FavoriteEntry[],
+): string {
   const loadouts = readStored();
   const now = new Date().toISOString();
   const trimmedName = name.trim() || "Unnamed loadout";

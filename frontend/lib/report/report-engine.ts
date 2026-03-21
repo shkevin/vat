@@ -1,6 +1,6 @@
-"use client"
+"use client";
 
-import type { VATDashboardData, VATReportIssue } from "./vatReportAdapter"
+import type { VATDashboardData, VATReportIssue } from "./vatReportAdapter";
 import {
   computeReportRiskScore,
   getReportRiskLevel,
@@ -34,7 +34,7 @@ import {
   type TopVulnerability,
   type ScannerBreakdown,
   type TrendDataPoint,
-} from "./metrics"
+} from "./metrics";
 import type {
   ReportDefinition,
   ReportFilters,
@@ -42,31 +42,34 @@ import type {
   CanvasDefinition,
   WidgetDefinition,
   WidgetType,
-} from "./report-types"
+} from "./report-types";
 import {
   widgetLayoutForSingleColumn,
   widgetLayoutFullWidth,
   inferColumnsFromWidgets,
-} from "./report-types"
-import { renderWidget } from "./report-widgets"
-import { getReportFilterConfig, buildReportFilterBarStructure } from "./report-filter"
-import { getReportBrandingOverride } from "@/config/report"
+} from "./report-types";
+import { renderWidget } from "./report-widgets";
+import {
+  getReportFilterConfig,
+  buildReportFilterBarStructure,
+} from "./report-filter";
+import { getReportBrandingOverride } from "@/config/report";
 
 /** Preview-mode caps for widget display. Keeps preview performant; full report shows all data. */
 const PREVIEW_LIMITS: Partial<Record<WidgetType, Record<string, number>>> = {
   issueList: { limit: 50 },
-}
+};
 
 /** Merge widget config with preview caps when in preview mode. */
 function applyPreviewLimits(
   type: WidgetType,
   config: Record<string, unknown>,
-  preview: boolean
+  preview: boolean,
 ): Record<string, unknown> {
-  if (!preview) return config
-  const caps = PREVIEW_LIMITS[type]
-  if (!caps) return config
-  return { ...config, ...caps }
+  if (!preview) return config;
+  const caps = PREVIEW_LIMITS[type];
+  if (!caps) return config;
+  return { ...config, ...caps };
 }
 
 // ---------------------------------------------------------------------------
@@ -74,29 +77,29 @@ function applyPreviewLimits(
 // ---------------------------------------------------------------------------
 
 export interface ReportBranding {
-  companyName: string
-  tagline: string
-  websiteUrl: string
-  logoUrl: string
-  primaryColor: string
-  headerBgColor: string
-  headerTextColor: string
+  companyName: string;
+  tagline: string;
+  websiteUrl: string;
+  logoUrl: string;
+  primaryColor: string;
+  headerBgColor: string;
+  headerTextColor: string;
   /** Optional: full document palette. When set, theme applies to body, cards, tables, etc. */
-  bodyBg?: string
-  bodyFg?: string
-  borderColor?: string
-  mutedColor?: string
-  cardBg?: string
-  tableHeaderBg?: string
-  tableRowAltBg?: string
+  bodyBg?: string;
+  bodyFg?: string;
+  borderColor?: string;
+  mutedColor?: string;
+  cardBg?: string;
+  tableHeaderBg?: string;
+  tableRowAltBg?: string;
   /** Optional: link color. Use when primaryColor is too dark on the background (e.g. dark themes). */
-  linkColor?: string
+  linkColor?: string;
 }
 
 export interface ReportTheme {
-  id: string
-  name: string
-  branding: ReportBranding
+  id: string;
+  name: string;
+  branding: ReportBranding;
 }
 
 /** Default theme - dark, emerald accent. Branding overridable via NEXT_PUBLIC_REPORT_* env vars. */
@@ -120,7 +123,7 @@ export const THEME_DEFAULT: ReportTheme = {
     tableRowAltBg: "#262626",
     linkColor: "#34d399",
   },
-}
+};
 
 /** Light - clean, neutral light theme */
 export const THEME_LIGHT: ReportTheme = {
@@ -143,7 +146,7 @@ export const THEME_LIGHT: ReportTheme = {
     tableRowAltBg: "#f1f5f9",
     linkColor: "#0284c7",
   },
-}
+};
 
 /** Slate - dark slate with clear hierarchy */
 export const THEME_SLATE: ReportTheme = {
@@ -166,7 +169,7 @@ export const THEME_SLATE: ReportTheme = {
     tableRowAltBg: "#1a2332",
     linkColor: "#38bdf8",
   },
-}
+};
 
 /** Dracula - navy-purple, bright accents */
 export const THEME_DRACULA: ReportTheme = {
@@ -189,7 +192,7 @@ export const THEME_DRACULA: ReportTheme = {
     tableRowAltBg: "#44475a",
     linkColor: "#8be9fd",
   },
-}
+};
 
 /** Nord - arctic, minimal blues */
 export const THEME_NORD: ReportTheme = {
@@ -212,7 +215,7 @@ export const THEME_NORD: ReportTheme = {
     tableRowAltBg: "#4c566a",
     linkColor: "#88c0d0",
   },
-}
+};
 
 /** Catppuccin Mocha - cozy pastel dark */
 export const THEME_CATPPUCCIN: ReportTheme = {
@@ -235,7 +238,7 @@ export const THEME_CATPPUCCIN: ReportTheme = {
     tableRowAltBg: "#363a4f",
     linkColor: "#89b4fa",
   },
-}
+};
 
 /** Tokyo Night - deep indigo, neon accents */
 export const THEME_TOKYO_NIGHT: ReportTheme = {
@@ -258,7 +261,7 @@ export const THEME_TOKYO_NIGHT: ReportTheme = {
     tableRowAltBg: "#24283b",
     linkColor: "#7aa2f7",
   },
-}
+};
 
 /** VAT theme - dark, cyan accent (matches VAT UI) */
 export const THEME_VAT: ReportTheme = {
@@ -281,7 +284,7 @@ export const THEME_VAT: ReportTheme = {
     tableRowAltBg: "#0f172a",
     linkColor: "#38bdf8",
   },
-}
+};
 
 export const REPORT_THEMES: ReportTheme[] = [
   THEME_VAT,
@@ -292,201 +295,224 @@ export const REPORT_THEMES: ReportTheme[] = [
   THEME_NORD,
   THEME_CATPPUCCIN,
   THEME_TOKYO_NIGHT,
-]
+];
 
 /** @deprecated Use getReportTheme(themeId) */
-export const REPORT_BRANDING: ReportBranding = applyBrandingOverride(THEME_DEFAULT.branding)
+export const REPORT_BRANDING: ReportBranding = applyBrandingOverride(
+  THEME_DEFAULT.branding,
+);
 
 export function getReportTheme(themeId?: string | null): ReportBranding {
-  const raw = themeId || "default"
-  const id = raw === "kamiwaza" ? "default" : raw /* migrate old preference */
-  const theme = REPORT_THEMES.find((t) => t.id === id)
-  const base = theme?.branding ?? THEME_DEFAULT.branding
-  return id === "default" ? applyBrandingOverride(base) : base
+  const raw = themeId || "default";
+  const id = raw === "kamiwaza" ? "default" : raw; /* migrate old preference */
+  const theme = REPORT_THEMES.find((t) => t.id === id);
+  const base = theme?.branding ?? THEME_DEFAULT.branding;
+  return id === "default" ? applyBrandingOverride(base) : base;
 }
 
 /** Apply NEXT_PUBLIC_REPORT_* overrides to default theme branding. Override logo, company name, etc. */
 function applyBrandingOverride(branding: ReportBranding): ReportBranding {
-  const over = getReportBrandingOverride()
-  if (!over.logoUrl && !over.companyName && !over.tagline && !over.websiteUrl) return branding
+  const over = getReportBrandingOverride();
+  if (!over.logoUrl && !over.companyName && !over.tagline && !over.websiteUrl)
+    return branding;
   return {
     ...branding,
     ...(over.logoUrl != null && { logoUrl: over.logoUrl }),
     ...(over.companyName != null && { companyName: over.companyName }),
     ...(over.tagline != null && { tagline: over.tagline }),
     ...(over.websiteUrl != null && { websiteUrl: over.websiteUrl }),
-  }
+  };
 }
 
 // ---------------------------------------------------------------------------
 // Canvas report: context (filtered data for widgets)
 // ---------------------------------------------------------------------------
 
-const REPORT_CONTEXT_MAX_REPOS = 100
-const REPORT_CONTEXT_MAX_TOP_VULNS = 200
+const REPORT_CONTEXT_MAX_REPOS = 100;
+const REPORT_CONTEXT_MAX_TOP_VULNS = 200;
 
 /** Calendar week Mon–Sun (matches Aikido). */
 function getCalendarWeekBounds(now: Date): { weekStart: Date; weekEnd: Date } {
-  const day = now.getDay()
-  const diffToMonday = (day - 1 + 7) % 7
-  const weekStart = new Date(now)
-  weekStart.setDate(now.getDate() - diffToMonday)
-  weekStart.setHours(0, 0, 0, 0)
-  const weekEnd = new Date(weekStart)
-  weekEnd.setDate(weekStart.getDate() + 6)
-  weekEnd.setHours(23, 59, 59, 999)
-  return { weekStart, weekEnd }
+  const day = now.getDay();
+  const diffToMonday = (day - 1 + 7) % 7;
+  const weekStart = new Date(now);
+  weekStart.setDate(now.getDate() - diffToMonday);
+  weekStart.setHours(0, 0, 0, 0);
+  const weekEnd = new Date(weekStart);
+  weekEnd.setDate(weekStart.getDate() + 6);
+  weekEnd.setHours(23, 59, 59, 999);
+  return { weekStart, weekEnd };
 }
 
 /** Resolve date filters: use preset (30/90/120/365 days) or custom dateFrom/dateTo.
  * Aligns to Mon–Sun calendar weeks to match Aikido/vulnerability-dashboard. */
-function resolveDateFilters(
-  filters: ReportFilters
-): { dateFrom: string | null; dateTo: string | null } {
+function resolveDateFilters(filters: ReportFilters): {
+  dateFrom: string | null;
+  dateTo: string | null;
+} {
   if (filters.dateRangePreset) {
-    const now = new Date()
-    const { weekEnd } = getCalendarWeekBounds(now)
-    const anchor = new Date(now)
-    anchor.setDate(anchor.getDate() - filters.dateRangePreset)
-    const { weekStart } = getCalendarWeekBounds(anchor)
+    const now = new Date();
+    const { weekEnd } = getCalendarWeekBounds(now);
+    const anchor = new Date(now);
+    anchor.setDate(anchor.getDate() - filters.dateRangePreset);
+    const { weekStart } = getCalendarWeekBounds(anchor);
     const fmt = (d: Date) =>
-      `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
-    return { dateFrom: fmt(weekStart), dateTo: fmt(weekEnd) }
+      `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
+        d.getDate(),
+      ).padStart(2, "0")}`;
+    return { dateFrom: fmt(weekStart), dateTo: fmt(weekEnd) };
   }
-  return { dateFrom: filters.dateFrom, dateTo: filters.dateTo }
+  return { dateFrom: filters.dateFrom, dateTo: filters.dateTo };
 }
 
 export interface ComputeReportContextOptions {
   /** Unfiltered issues for period-over-period trend. */
-  allIssuesForPeriodComparison?: VATReportIssue[]
+  allIssuesForPeriodComparison?: VATReportIssue[];
 }
 
 export function computeReportContext(
   data: VATDashboardData,
   filters: ReportFilters,
-  options?: ComputeReportContextOptions
+  options?: ComputeReportContextOptions,
 ): ReportContext {
-  let issues = data.issues
+  let issues = data.issues;
 
   if (filters.repoFilter.length > 0) {
-    issues = getIssuesForAssets(issues, data.issueGroups, filters.repoFilter)
+    issues = getIssuesForAssets(issues, data.issueGroups, filters.repoFilter);
   }
   if (filters.branchFilter) {
-    issues = issues.filter((i) => i.branch === filters.branchFilter)
+    issues = issues.filter((i) => i.branch === filters.branchFilter);
   }
-  const { dateFrom, dateTo } = resolveDateFilters(filters)
-  const countMode = filters.countMode ?? "groups"
-  const issuesForTrend = [...issues]
+  const { dateFrom, dateTo } = resolveDateFilters(filters);
+  const countMode = filters.countMode ?? "groups";
+  const issuesForTrend = [...issues];
   const periodChangeIssues =
-    options?.allIssuesForPeriodComparison && options.allIssuesForPeriodComparison.length > 0
+    options?.allIssuesForPeriodComparison &&
+    options.allIssuesForPeriodComparison.length > 0
       ? (() => {
-        let all = options.allIssuesForPeriodComparison
-        if (filters.repoFilter.length > 0) {
-          all = getIssuesForAssets(all, data.issueGroups, filters.repoFilter)
-        }
-        if (filters.branchFilter) {
-          all = all.filter((i) => i.branch === filters.branchFilter)
-        }
-        return all
-      })()
-      : issues
+          let all = options.allIssuesForPeriodComparison;
+          if (filters.repoFilter.length > 0) {
+            all = getIssuesForAssets(all, data.issueGroups, filters.repoFilter);
+          }
+          if (filters.branchFilter) {
+            all = all.filter((i) => i.branch === filters.branchFilter);
+          }
+          return all;
+        })()
+      : issues;
   const periodChange = computePeriodOverPeriodChange(
     periodChangeIssues,
     dateFrom,
     dateTo,
-    countMode
-  )
+    countMode,
+  );
   const dateRange =
     dateFrom && dateTo
-      ? `${new Date(dateFrom).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })} – ${new Date(dateTo).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`
-      : null
+      ? `${new Date(dateFrom).toLocaleDateString("en-US", {
+          month: "short",
+          day: "numeric",
+          year: "numeric",
+        })} – ${new Date(dateTo).toLocaleDateString("en-US", {
+          month: "short",
+          day: "numeric",
+          year: "numeric",
+        })}`
+      : null;
   let effectivePeriodDays: number | null =
     dateFrom && dateTo
-      ? Math.round((new Date(dateTo).getTime() - new Date(dateFrom).getTime()) / 86400000)
-      : null
+      ? Math.round(
+          (new Date(dateTo).getTime() - new Date(dateFrom).getTime()) /
+            86400000,
+        )
+      : null;
   // When no date filter: infer period from data span (e.g. dashboard pre-filtered to N days)
   if (effectivePeriodDays == null && issues.length > 0) {
     const dates = issues
       .map((i) => new Date(i.first_detected_at ?? 0).getTime())
-      .filter((t) => t > 0)
+      .filter((t) => t > 0);
     if (dates.length > 0) {
-      const minT = Math.min(...dates)
-      const maxT = Math.max(...dates)
-      effectivePeriodDays = Math.max(1, Math.round((maxT - minT) / 86400000))
+      const minT = Math.min(...dates);
+      const maxT = Math.max(...dates);
+      effectivePeriodDays = Math.max(1, Math.round((maxT - minT) / 86400000));
     }
   }
   if (dateFrom) {
-    const from = new Date(dateFrom + "T00:00:00.000Z").getTime()
-    issues = issues.filter((i) => new Date(i.first_detected_at).getTime() >= from)
+    const from = new Date(dateFrom + "T00:00:00.000Z").getTime();
+    issues = issues.filter(
+      (i) => new Date(i.first_detected_at).getTime() >= from,
+    );
   }
   if (dateTo) {
     // Use end of day so issues on dateTo are included (midnight would exclude same-day detections)
-    const to = new Date(dateTo + "T23:59:59.999Z").getTime()
-    issues = issues.filter((i) => new Date(i.first_detected_at).getTime() <= to)
+    const to = new Date(dateTo + "T23:59:59.999Z").getTime();
+    issues = issues.filter(
+      (i) => new Date(i.first_detected_at).getTime() <= to,
+    );
   }
   if (filters.severityFilter.length > 0) {
-    const allowed = new Set(filters.severityFilter.map((s) => s.toLowerCase()))
-    issues = issues.filter((i) => allowed.has((i.severity ?? "").toLowerCase()))
+    const allowed = new Set(filters.severityFilter.map((s) => s.toLowerCase()));
+    issues = issues.filter((i) =>
+      allowed.has((i.severity ?? "").toLowerCase()),
+    );
   }
 
-  const openIssues = issues.filter(isOpen)
+  const openIssues = issues.filter(isOpen);
   const hasFilters =
     filters.repoFilter.length > 0 ||
     !!filters.branchFilter ||
     filters.severityFilter.length > 0 ||
     !!dateFrom ||
-    !!dateTo
+    !!dateTo;
   const { totalOpen, counts } = resolveOpenCounts(openIssues, {
     countMode,
     issueCounts: data.issueCounts ?? undefined,
     issueGroups: data.issueGroups,
     hasFilters,
-  })
-  const riskScore = computeReportRiskScore(counts)
-  const mttr = computeMTTR(issues, countMode)
-  const assetFilter = new Set(filters.repoFilter)
+  });
+  const riskScore = computeReportRiskScore(counts);
+  const mttr = computeMTTR(issues, countMode);
+  const assetFilter = new Set(filters.repoFilter);
   const reposForRisk =
     assetFilter.size > 0
       ? data.repos.filter((r) => assetFilter.has(r.name))
-      : data.repos
+      : data.repos;
   const containersForRisk =
     assetFilter.size > 0
       ? (data.containers ?? []).filter((c) => assetFilter.has(c.name))
-      : (data.containers ?? [])
-  const repoRisk = computeRepoRiskScores(issues, reposForRisk, data.issueGroups, countMode).slice(
-    0,
-    REPORT_CONTEXT_MAX_REPOS
-  )
+      : data.containers ?? [];
+  const repoRisk = computeRepoRiskScores(
+    issues,
+    reposForRisk,
+    data.issueGroups,
+    countMode,
+  ).slice(0, REPORT_CONTEXT_MAX_REPOS);
   const containerRisk = computeContainerRiskScores(
     containersForRisk,
     data.issues ?? [],
     data.issueGroups ?? [],
     countMode,
-    data.repos ?? []
-  ).slice(
-    0,
-    REPORT_CONTEXT_MAX_REPOS
-  )
+    data.repos ?? [],
+  ).slice(0, REPORT_CONTEXT_MAX_REPOS);
   const assetMix = computeAssetMix(
     issues,
     data.repos,
     data.containers ?? [],
     data.vms ?? [],
     countMode,
-    data.packageRepos ?? []
-  )
-  const teams = (data.teams ?? []).map((t) => ({ id: t.id, name: t.name }))
+    data.packageRepos ?? [],
+  );
+  const teams = (data.teams ?? []).map((t) => ({ id: t.id, name: t.name }));
   const reachabilityMatrix = computeReachabilityMatrix(
     issues,
     undefined,
-    countMode
-  )
+    countMode,
+  );
   const topVulns = getTopVulnerabilities(
     issues,
     data.issueGroups,
     REPORT_CONTEXT_MAX_TOP_VULNS,
-    countMode
-  )
+    countMode,
+  );
 
   return {
     workspace: data.workspace.name,
@@ -523,7 +549,8 @@ export function computeReportContext(
     soc2Compliance: data.soc2Compliance ?? undefined,
     nis2Compliance: data.nis2Compliance ?? undefined,
     iso27001Compliance: data.iso27001Compliance ?? undefined,
-    reachabilityMatrix: reachabilityMatrix.length > 0 ? reachabilityMatrix : undefined,
+    reachabilityMatrix:
+      reachabilityMatrix.length > 0 ? reachabilityMatrix : undefined,
     abcCompliance: (() => {
       const abc = computeABCComplianceForIssues(issues, countMode);
       return {
@@ -539,19 +566,19 @@ export function computeReportContext(
     tasksByGroupId: data.tasksByGroupId as ReportContext["tasksByGroupId"],
     aikidoBaseUrl: undefined,
     repoIdByName: (() => {
-      const m: Record<string, number> = {}
+      const m: Record<string, number> = {};
       for (const r of data.repos) {
-        m[r.name] = r.id
-        const lc = r.name.toLowerCase()
-        if (lc !== r.name) m[lc] = r.id
+        m[r.name] = r.id;
+        const lc = r.name.toLowerCase();
+        if (lc !== r.name) m[lc] = r.id;
       }
       for (const c of data.containers ?? []) {
-        if (m[c.name] !== undefined) continue
-        m[c.name] = c.id
-        const lc = c.name.toLowerCase()
-        if (lc !== c.name && m[lc] === undefined) m[lc] = c.id
+        if (m[c.name] !== undefined) continue;
+        m[c.name] = c.id;
+        const lc = c.name.toLowerCase();
+        if (lc !== c.name && m[lc] === undefined) m[lc] = c.id;
       }
-      return m
+      return m;
     })(),
     issueGroups: data.issueGroups,
     vmNames: (data.vms ?? []).map((v) => v.name),
@@ -560,7 +587,7 @@ export function computeReportContext(
     countMode,
     cveDetailsByCveId: data.cveDetailsByCveId,
     periodChange: periodChange ?? undefined,
-  }
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -569,104 +596,137 @@ export function computeReportContext(
 
 /** Compute column span (1–3) for a widget in a canvas with N columns. */
 function widgetColSpan(width: number, columns: 1 | 2 | 3): number {
-  const unitsPerCol = 12 / columns
-  return Math.min(columns, Math.max(1, Math.round(width / unitsPerCol)))
+  const unitsPerCol = 12 / columns;
+  return Math.min(columns, Math.max(1, Math.round(width / unitsPerCol)));
 }
 
 function buildReportBodyFromDefinition(
   context: ReportContext,
   definition: ReportDefinition,
-  options?: { preview?: boolean }
+  options?: { preview?: boolean },
 ): string {
-  const preview = options?.preview ?? false
-  const parts: string[] = []
+  const preview = options?.preview ?? false;
+  const parts: string[] = [];
   for (let i = 0; i < definition.canvases.length; i++) {
     if (i > 0) {
-      parts.push('<div class="canvas-page-break" style="page-break-before: always;"></div>')
+      parts.push(
+        '<div class="canvas-page-break" style="page-break-before: always;"></div>',
+      );
     }
-    const canvas = definition.canvases[i]
-    const columns = (inferColumnsFromWidgets(canvas.widgets) ?? 1) as 1 | 2 | 3
+    const canvas = definition.canvases[i];
+    const columns = (inferColumnsFromWidgets(canvas.widgets) ?? 1) as 1 | 2 | 3;
     const sortedWidgets = [...canvas.widgets].sort((a, b) => {
-      const ra = a.layout?.row ?? 0
-      const rb = b.layout?.row ?? 0
-      if (ra !== rb) return ra - rb
-      return (a.layout?.col ?? 0) - (b.layout?.col ?? 0)
-    })
+      const ra = a.layout?.row ?? 0;
+      const rb = b.layout?.row ?? 0;
+      if (ra !== rb) return ra - rb;
+      return (a.layout?.col ?? 0) - (b.layout?.col ?? 0);
+    });
     if (columns === 1) {
       for (const widget of sortedWidgets) {
-        const config = applyPreviewLimits(widget.type as WidgetType, widget.config || {}, preview)
-        const html = renderWidget(widget.type as WidgetType, context, config)
-        if (html) parts.push(html)
+        const config = applyPreviewLimits(
+          widget.type as WidgetType,
+          widget.config || {},
+          preview,
+        );
+        const html = renderWidget(widget.type as WidgetType, context, config);
+        if (html) parts.push(html);
       }
     } else {
-      const gridStyle = `display:grid;grid-template-columns:repeat(${columns}, 1fr);gap:16px;grid-auto-rows:auto;align-items:start;`
-      const widgetParts: string[] = []
+      const gridStyle = `display:grid;grid-template-columns:repeat(${columns}, 1fr);gap:16px;grid-auto-rows:auto;align-items:start;`;
+      const widgetParts: string[] = [];
       for (const widget of sortedWidgets) {
-        const layout = widget.layout
-        const width = layout?.width ?? 12
-        const span = widgetColSpan(width, columns)
-        const config = applyPreviewLimits(widget.type as WidgetType, widget.config || {}, preview)
-        const html = renderWidget(widget.type as WidgetType, context, config)
+        const layout = widget.layout;
+        const width = layout?.width ?? 12;
+        const span = widgetColSpan(width, columns);
+        const config = applyPreviewLimits(
+          widget.type as WidgetType,
+          widget.config || {},
+          preview,
+        );
+        const html = renderWidget(widget.type as WidgetType, context, config);
         if (html) {
           widgetParts.push(
-            `<div class="report-widget-cell" style="grid-column:span ${span};min-width:0;">${html}</div>`
-          )
+            `<div class="report-widget-cell" style="grid-column:span ${span};min-width:0;">${html}</div>`,
+          );
         }
       }
-      parts.push(`<div class="canvas-grid report-canvas-multicol" style="${gridStyle}">${widgetParts.join("")}</div>`)
+      parts.push(
+        `<div class="canvas-grid report-canvas-multicol" style="${gridStyle}">${widgetParts.join(
+          "",
+        )}</div>`,
+      );
     }
   }
-  return parts.join("\n")
+  return parts.join("\n");
 }
 
 /** Minimal issue shape for client-side filter re-computation. */
 interface ReportDataIssue {
-  s: string
-  sc: number
-  r: string
-  b: string
-  d: string
-  c: string | null
-  st: string
-  g?: number
+  s: string;
+  sc: number;
+  r: string;
+  b: string;
+  d: string;
+  c: string | null;
+  st: string;
+  g?: number;
   /** Scanner type for trend "Types" filter (e.g. SAST, container scan). */
-  scanner?: string
+  scanner?: string;
   /** Asset type: Code, Container, VM, Package, Other. */
-  at?: string
+  at?: string;
 }
 
 /** Build payload for client-side aggregate widget updates (summary, trend). */
 function buildReportDataPayload(
   context: ReportContext,
   definition: ReportDefinition,
-  options?: { maxIssues?: number }
+  options?: { maxIssues?: number },
 ): {
-  issues: ReportDataIssue[]
-  issuesForTrend?: ReportDataIssue[]
-  dateFrom: string | null
-  dateTo: string | null
-  primaryColor: string
-  countMode: string
-  containers: string[]
-  vmNames: string[]
-  truncated?: boolean
-  serverCounts?: { critical: number; high: number; medium: number; low: number; info: number }
-  totalOpen?: number
-  serverTrendMetrics?: { openOneWeekAgo: number; resolvedThisWeek: number; resolvedLastWeek: number; newThisWeek: number; newLastWeek: number }
+  issues: ReportDataIssue[];
+  issuesForTrend?: ReportDataIssue[];
+  dateFrom: string | null;
+  dateTo: string | null;
+  primaryColor: string;
+  countMode: string;
+  containers: string[];
+  vmNames: string[];
+  truncated?: boolean;
+  serverCounts?: {
+    critical: number;
+    high: number;
+    medium: number;
+    low: number;
+    info: number;
+  };
+  totalOpen?: number;
+  serverTrendMetrics?: {
+    openOneWeekAgo: number;
+    resolvedThisWeek: number;
+    resolvedLastWeek: number;
+    newThisWeek: number;
+    newLastWeek: number;
+  };
 } | null {
-  const branding = getReportTheme(definition.themeId)
-  const { dateFrom, dateTo } = resolveDateFilters(definition.filters)
+  const branding = getReportTheme(definition.themeId);
+  const { dateFrom, dateTo } = resolveDateFilters(definition.filters);
   // Prefer context.countMode — it's the source of truth for computed metrics (openIssues, counts).
   // Ensures report widgets and client-side filter script use the same count mode.
-  const countMode = context.countMode ?? definition.filters.countMode ?? "groups"
-  const maxIssues = options?.maxIssues
-  const repoNames = context.repoRisk.map((r) => r.repo)
-  const containerNames = context.containerRisk.map((c) => c.repo)
-  const vmNames = context.vmNames ?? []
-  const packageNames = context.packageNames ?? []
+  const countMode =
+    context.countMode ?? definition.filters.countMode ?? "groups";
+  const maxIssues = options?.maxIssues;
+  const repoNames = context.repoRisk.map((r) => r.repo);
+  const containerNames = context.containerRisk.map((c) => c.repo);
+  const vmNames = context.vmNames ?? [];
+  const packageNames = context.packageNames ?? [];
   const toPayload = (list: typeof context.filteredIssues) =>
     list.map((i) => {
-      const at = getAssetTypeForIssue(i.repository, repoNames, containerNames, vmNames, packageNames)
+      const at = getAssetTypeForIssue(
+        i.repository,
+        repoNames,
+        containerNames,
+        vmNames,
+        packageNames,
+      );
       return {
         s: i.severity ?? "",
         sc: i.severity_score ?? 0,
@@ -678,22 +738,26 @@ function buildReportDataPayload(
         g: i.issue_group_id ?? undefined,
         scanner: i.scanner_type ?? undefined,
         at,
-      }
-    })
-  const fullIssues = toPayload(context.filteredIssues)
-  let issues = fullIssues
-  const truncated = maxIssues != null && fullIssues.length > maxIssues
+      };
+    });
+  const fullIssues = toPayload(context.filteredIssues);
+  let issues = fullIssues;
+  const truncated = maxIssues != null && fullIssues.length > maxIssues;
   if (truncated) {
-    issues = fullIssues.slice(0, maxIssues)
+    issues = fullIssues.slice(0, maxIssues);
   }
   let issuesForTrend: ReportDataIssue[] | undefined =
     context.issuesForTrend && context.issuesForTrend !== context.filteredIssues
       ? toPayload(context.issuesForTrend)
-      : undefined
-  if (issuesForTrend != null && maxIssues != null && issuesForTrend.length > maxIssues) {
-    issuesForTrend = issuesForTrend.slice(0, maxIssues)
+      : undefined;
+  if (
+    issuesForTrend != null &&
+    maxIssues != null &&
+    issuesForTrend.length > maxIssues
+  ) {
+    issuesForTrend = issuesForTrend.slice(0, maxIssues);
   }
-  const containers = context.containerRisk.map((c) => c.repo).filter(Boolean)
+  const containers = context.containerRisk.map((c) => c.repo).filter(Boolean);
   const result: ReturnType<typeof buildReportDataPayload> = {
     issues,
     issuesForTrend,
@@ -707,36 +771,57 @@ function buildReportDataPayload(
     // Fixes instances-mode showing wrong count (e.g. 2 instead of 3) due to client-side recomputation.
     serverCounts: context.counts,
     totalOpen: context.openIssues,
-  }
+  };
   if (truncated) {
-    result.truncated = true
-    const trendIssues = context.issuesForTrend ?? context.filteredIssues
-    const metrics = computeTrendMetrics(trendIssues, countMode)
+    result.truncated = true;
+    const trendIssues = context.issuesForTrend ?? context.filteredIssues;
+    const metrics = computeTrendMetrics(trendIssues, countMode);
     result.serverTrendMetrics = {
       openOneWeekAgo: metrics.openOneWeekAgo,
       resolvedThisWeek: metrics.resolvedThisWeek,
       resolvedLastWeek: metrics.resolvedLastWeek,
       newThisWeek: metrics.newThisWeek,
       newLastWeek: metrics.newLastWeek,
-    }
+    };
   }
-  return result
+  return result;
 }
 
 /** Escape JSON for safe embedding in HTML script tags (prevents </script> break-out). */
 function jsonForScript(obj: unknown): string {
-  return JSON.stringify(obj).replace(/<\//g, "\\u003c/")
+  return JSON.stringify(obj).replace(/<\//g, "\\u003c/");
 }
 
 function buildReportFilterBar(
-  filterConfig: { severities: string[]; assetTypes: string[]; assets: string[]; branches: string[] },
+  filterConfig: {
+    severities: string[];
+    assetTypes: string[];
+    assets: string[];
+    branches: string[];
+  },
   borderColor: string,
   mutedColor: string,
   primaryColor: string,
-  reportData?: { issues: ReportDataIssue[]; issuesForTrend?: ReportDataIssue[]; dateFrom: string | null; dateTo: string | null; primaryColor: string; countMode?: string; containers?: string[]; vmNames?: string[] } | null
+  reportData?: {
+    issues: ReportDataIssue[];
+    issuesForTrend?: ReportDataIssue[];
+    dateFrom: string | null;
+    dateTo: string | null;
+    primaryColor: string;
+    countMode?: string;
+    containers?: string[];
+    vmNames?: string[];
+  } | null,
 ): string {
-  var payload = reportData ?? null
-  return buildReportFilterBarStructure(filterConfig, borderColor, mutedColor, false) + `
+  var payload = reportData ?? null;
+  return (
+    buildReportFilterBarStructure(
+      filterConfig,
+      borderColor,
+      mutedColor,
+      false,
+    ) +
+    `
 <script>
 (function(){
   function init(){
@@ -1231,8 +1316,8 @@ function buildReportFilterBar(
       var detail2 = grid.querySelector(".kpi-card:nth-child(2) .kpi-detail"); if (detail2) detail2.textContent = counts.critical + " critical";
       var detail4 = grid.querySelector(".kpi-card:nth-child(4) .kpi-detail"); if (detail4) detail4.textContent = avgMttr !== undefined ? "days" : "No data";
     });
-    var trendSection = document.querySelector("[data-report-aggregate=trend-stacked]");
-    if (trendSection && trendBase.length > 0) {
+    document.querySelectorAll("[data-report-aggregate=trend-stacked]").forEach(function(trendSection) {
+      if (trendBase.length === 0) return;
       var trendCountMode = (trendSection.getAttribute("data-trend-count-mode") || countMode) === "instances" ? "instances" : "groups";
       var trendPeriodDays = parseInt(trendSection.getAttribute("data-trend-period-days") || "90", 10) || 90;
       var trendGranularity = (trendSection.getAttribute("data-trend-granularity") || "weekly").toLowerCase();
@@ -1272,27 +1357,23 @@ function buildReportFilterBar(
         return c;
       }
       var now = new Date();
-      var day = now.getUTCDay();
-      var diff = (day - 1 + 7) % 7;
-      var thisWeekStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - diff, 0, 0, 0, 0));
-      var thisWeekEnd = new Date(thisWeekStart); thisWeekEnd.setUTCDate(thisWeekStart.getUTCDate() + 6); thisWeekEnd.setUTCHours(23, 59, 59, 999);
-      var lastWeekStart = new Date(thisWeekStart); lastWeekStart.setUTCDate(thisWeekStart.getUTCDate() - 7);
-      var lastWeekEnd = new Date(lastWeekStart); lastWeekEnd.setUTCDate(lastWeekStart.getUTCDate() + 6); lastWeekEnd.setUTCHours(23, 59, 59, 999);
-      var thisStartTs = thisWeekStart.getTime();
-      var thisEndTs = thisWeekEnd.getTime();
-      var lastStartTs = lastWeekStart.getTime();
-      var lastEndTs = lastWeekEnd.getTime();
       var nowTs = now.getTime();
+      var bucketDays = trendGranularity === "daily" ? 1 : trendGranularity === "monthly" ? 30 : 7;
+      var currentWindowEnd = new Date(now);
+      currentWindowEnd.setHours(23, 59, 59, 999);
+      var currentWindowStart = new Date(currentWindowEnd);
+      currentWindowStart.setDate(currentWindowStart.getDate() - (bucketDays - 1));
+      currentWindowStart.setHours(0, 0, 0, 0);
+      var previousWindowEnd = new Date(currentWindowStart.getTime() - 1);
+      var previousWindowStart = new Date(previousWindowEnd);
+      previousWindowStart.setDate(previousWindowStart.getDate() - (bucketDays - 1));
+      previousWindowStart.setHours(0, 0, 0, 0);
+      var thisStartTs = currentWindowStart.getTime();
+      var thisEndTs = currentWindowEnd.getTime();
+      var lastStartTs = previousWindowStart.getTime();
+      var lastEndTs = previousWindowEnd.getTime();
       var countTotalTrend = function(issues) { return trendCountMode === "groups" ? (function() { var seen = {}; return issues.filter(function(i) { var gid = i.g != null ? i.g : (i.r + "|" + i.d + "|" + (i.s||"")); if (seen[gid]) return false; seen[gid] = true; return true; }).length; })() : issues.length; };
       var isResolvedStatus = function(st) { return ["resolved","closed"].indexOf((st||"").toLowerCase()) >= 0; };
-      var trendCurrOpen = trendFilteredScoped.filter(function(i) {
-        var det = new Date(i.d); if (isNaN(det.getTime()) || det.getTime() > nowTs) return false;
-        var cls = i.c ? new Date(i.c) : null; return !cls || isNaN(cls.getTime()) || cls.getTime() > nowTs;
-      }).filter(function(i) { return isOpenStatus(i.st); });
-      var trendPrevOpen = trendFilteredScoped.filter(function(i) {
-        var det = new Date(i.d); if (isNaN(det.getTime()) || det.getTime() > lastEndTs) return false;
-        var cls = i.c ? new Date(i.c) : null; return !cls || isNaN(cls.getTime()) || cls.getTime() > lastEndTs;
-      }).filter(function(i) { return isOpenStatus(i.st); });
       var resolvedThisWeek = 0, resolvedLastWeek = 0, newThisWeek = 0, newLastWeek = 0;
       trendFilteredScoped.forEach(function(i) {
         if (i.c && isResolvedStatus(i.st)) { var ts = new Date(i.c).getTime(); if (ts >= thisStartTs && ts <= thisEndTs) resolvedThisWeek++; else if (ts >= lastStartTs && ts <= lastEndTs) resolvedLastWeek++; }
@@ -1301,27 +1382,6 @@ function buildReportFilterBar(
         var st = (i.st||"").toLowerCase(); if (st === "ignored" || st === "auto_ignored" || st === "suppressed") return;
         if (i.d) { var ts = new Date(i.d).getTime(); if (ts >= thisStartTs && ts <= thisEndTs) newThisWeek++; else if (ts >= lastStartTs && ts <= lastEndTs) newLastWeek++; }
       });
-      var m = reportData.serverTrendMetrics;
-      var trendCurr = useServerCounts ? reportData.totalOpen : countTotal(openIssues);
-      var trendPrev = useServerCounts && m ? m.openOneWeekAgo : countTotalTrend(trendPrevOpen);
-      var resThis = useServerCounts && m ? m.resolvedThisWeek : resolvedThisWeek;
-      var resLast = useServerCounts && m ? m.resolvedLastWeek : resolvedLastWeek;
-      var newThis = useServerCounts && m ? m.newThisWeek : newThisWeek;
-      var newLast = useServerCounts && m ? m.newLastWeek : newLastWeek;
-      var openPct = trendPrev === 0 ? (trendCurr > 0 ? 100 : 0) : Math.round(((trendCurr - trendPrev) / trendPrev) * 100);
-      var resolvedPct = resLast === 0 ? (resThis > 0 ? 100 : 0) : Math.round(((resThis - resLast) / resLast) * 100);
-      var newPct = newLast === 0 ? (newThis > 0 ? 100 : 0) : Math.round(((newThis - newLast) / newLast) * 100);
-      var trendTopBar = trendSection.querySelector(".trend-stacked-topbar");
-      if (trendTopBar) {
-        var setVal = function(sel, val, pct, isGood) { var el = trendTopBar.querySelector(sel); if (el) { el.textContent = val; var card = el.closest(".kpi-card"); var trendEl = card ? card.querySelector(".kpi-trend") : null; if (trendEl) { trendEl.textContent = (pct > 0 ? "+" : "") + pct + "%"; trendEl.style.color = isGood ? "#22c55e" : "#ef4444"; } } };
-        setVal(".kpi-card:nth-child(1) .value", trendCurr.toLocaleString(), openPct, trendCurr <= trendPrev);
-        setVal(".kpi-card:nth-child(2) .value", resThis.toLocaleString(), resolvedPct, resThis >= resLast);
-        setVal(".kpi-card:nth-child(3) .value", newThis.toLocaleString(), newPct, newThis <= newLast);
-        var d1 = trendTopBar.querySelector(".kpi-card:nth-child(1) .detail"); if (d1) d1.textContent = "vs " + trendPrev.toLocaleString() + " one week ago";
-        var d2 = trendTopBar.querySelector(".kpi-card:nth-child(2) .detail"); if (d2) d2.textContent = "vs " + resLast.toLocaleString() + " last week";
-        var d3 = trendTopBar.querySelector(".kpi-card:nth-child(3) .detail"); if (d3) d3.textContent = "vs " + newLast.toLocaleString() + " last week";
-      }
-      var bucketDays = trendGranularity === "daily" ? 1 : trendGranularity === "monthly" ? 30 : 7;
       var numBuckets = Math.max(1, Math.ceil(trendPeriodDays / bucketDays));
       var trends = [];
       for (var w = numBuckets - 1; w >= 0; w--) {
@@ -1338,8 +1398,27 @@ function buildReportFilterBar(
         trends.push({ date: label, critical: c.critical, high: c.high, medium: c.medium, low: c.low, total: countTotalTrend(weekOpen) });
       }
       trends = trends.filter(function(t){ return t.total > 0; });
+      var trendCurr = trends.length > 0 ? trends[trends.length - 1].total : 0;
+      var trendPrev = trends.length > 1 ? trends[trends.length - 2].total : 0;
+      var resThis = resolvedThisWeek;
+      var resLast = resolvedLastWeek;
+      var newThis = newThisWeek;
+      var newLast = newLastWeek;
+      var openPct = trendPrev === 0 ? (trendCurr > 0 ? 100 : 0) : Math.round(((trendCurr - trendPrev) / trendPrev) * 100);
+      var resolvedPct = resLast === 0 ? (resThis > 0 ? 100 : 0) : Math.round(((resThis - resLast) / resLast) * 100);
+      var newPct = newLast === 0 ? (newThis > 0 ? 100 : 0) : Math.round(((newThis - newLast) / newLast) * 100);
+      var trendTopBar = trendSection.querySelector(".trend-stacked-topbar");
+      if (trendTopBar) {
+        var setVal = function(sel, val, pct, isGood) { var el = trendTopBar.querySelector(sel); if (el) { el.textContent = val; var card = el.closest(".kpi-card"); var trendEl = card ? card.querySelector(".kpi-trend") : null; if (trendEl) { trendEl.textContent = (pct > 0 ? "+" : "") + pct + "%"; trendEl.style.color = isGood ? "#22c55e" : "#ef4444"; } } };
+        setVal(".kpi-card:nth-child(1) .value", trendCurr.toLocaleString(), openPct, trendCurr <= trendPrev);
+        setVal(".kpi-card:nth-child(2) .value", resThis.toLocaleString(), resolvedPct, resThis >= resLast);
+        setVal(".kpi-card:nth-child(3) .value", newThis.toLocaleString(), newPct, newThis <= newLast);
+        var d1 = trendTopBar.querySelector(".kpi-card:nth-child(1) .detail"); if (d1) d1.textContent = "vs " + trendPrev.toLocaleString() + " previous period";
+        var d2 = trendTopBar.querySelector(".kpi-card:nth-child(2) .detail"); if (d2) d2.textContent = "vs " + resLast.toLocaleString() + " previous period";
+        var d3 = trendTopBar.querySelector(".kpi-card:nth-child(3) .detail"); if (d3) d3.textContent = "vs " + newLast.toLocaleString() + " previous period";
+      }
       var wrap = trendSection.querySelector(".viz-trend-stacked-wrap");
-      if (wrap && trends.length > 0 && !useServerCounts) {
+      if (wrap && trends.length > 0) {
         var w = 560; var h = 160; var maxTotal = Math.max(1, Math.max.apply(null, trends.map(function(t) { return t.total; })));
         var yMax = maxTotal <= 10 ? 10 : maxTotal <= 50 ? 50 : maxTotal <= 200 ? 200 : maxTotal <= 500 ? 500 : Math.ceil(maxTotal / 200) * 200;
         var pad = { left: 76, right: 40, top: 24, bottom: 28 }; var chartW = w - pad.left - pad.right; var chartH = h - pad.top - pad.bottom;
@@ -1372,8 +1451,10 @@ function buildReportFilterBar(
         var svg = '<svg viewBox="0 0 ' + w + ' ' + h + '" class="viz-trend-stacked" width="100%" height="100%" preserveAspectRatio="xMidYMid meet">' + legend + axisLine + yAxisLine + barRects.join("") + yLabels + xLabels + '</svg>';
         var overlay = '<svg viewBox="0 0 ' + w + ' ' + h + '" class="viz-trend-stacked-overlay" width="100%" height="100%" preserveAspectRatio="xMidYMid meet" style="position:absolute;top:0;left:0;pointer-events:none"><defs><style>.trend-segment-tooltip{opacity:0;transition:opacity .03s ease-out}' + hoverCss + '</style></defs><g class="trend-tooltip-layer">' + tooltips.join("") + '</g></svg>';
         wrap.innerHTML = '<div class="viz-trend-stacked-container" style="position:relative;width:100%;height:100%;min-height:140px">' + svg + overlay + '</div>';
+      } else if (wrap) {
+        wrap.innerHTML = '<div class="viz-trend-empty" style="display:flex;align-items:center;justify-content:center;min-height:140px;color:#64748b;font-size:14px">No findings in selected period</div>';
       }
-    }
+    });
     document.querySelectorAll("[data-report-aggregate=severity-distribution]").forEach(function(section) {
       var donutWrap = section.querySelector(".severity-donut-wrap");
       var barEl = section.querySelector(".severity-bar");
@@ -1749,6 +1830,7 @@ function buildReportFilterBar(
   }
 })();
 </script>`
+  );
 }
 
 function buildReportDocumentShell(
@@ -1758,19 +1840,47 @@ function buildReportDocumentShell(
   dateRange: string | null,
   body: string,
   branding: ReportBranding,
-  filterConfig?: { severities: string[]; assetTypes: string[]; assets: string[]; branches: string[] } | null,
-  reportData?: { issues: ReportDataIssue[]; issuesForTrend?: ReportDataIssue[]; dateFrom: string | null; dateTo: string | null; primaryColor: string; countMode?: string; containers?: string[]; vmNames?: string[] } | null
+  filterConfig?: {
+    severities: string[];
+    assetTypes: string[];
+    assets: string[];
+    branches: string[];
+  } | null,
+  reportData?: {
+    issues: ReportDataIssue[];
+    issuesForTrend?: ReportDataIssue[];
+    dateFrom: string | null;
+    dateTo: string | null;
+    primaryColor: string;
+    countMode?: string;
+    containers?: string[];
+    vmNames?: string[];
+  } | null,
 ): string {
-  const brand = branding
-  const hasBrand = !!(brand.companyName || brand.logoUrl)
-  const pageTitle = brand.companyName ? `${title} | ${brand.companyName}` : title
+  const brand = branding;
+  const hasBrand = !!(brand.companyName || brand.logoUrl);
+  const pageTitle = brand.companyName
+    ? `${title} | ${brand.companyName}`
+    : title;
   const brandHeaderHtml = hasBrand
     ? `<div class="brand-header">
     <div class="brand-header-left">
-      ${brand.logoUrl ? `<img src="${brand.logoUrl}" alt="${brand.companyName}" class="brand-logo" />` : ""}
+      ${
+        brand.logoUrl
+          ? `<img src="${brand.logoUrl}" alt="${brand.companyName}" class="brand-logo" />`
+          : ""
+      }
       <div>
-        ${brand.companyName ? `<div class="brand-name">${brand.companyName}</div>` : ""}
-        ${brand.tagline ? `<div class="brand-tagline">${brand.tagline}</div>` : ""}
+        ${
+          brand.companyName
+            ? `<div class="brand-name">${brand.companyName}</div>`
+            : ""
+        }
+        ${
+          brand.tagline
+            ? `<div class="brand-tagline">${brand.tagline}</div>`
+            : ""
+        }
       </div>
     </div>
     <div class="report-title-block">
@@ -1783,32 +1893,32 @@ function buildReportDocumentShell(
       <div class="report-title">${title}</div>
       <div class="report-workspace">${workspace}</div>
     </div>
-  </div>`
+  </div>`;
   const footerBrandText = brand.companyName
     ? brand.companyName + (brand.tagline ? ` — ${brand.tagline}` : "")
-    : "Vulnerability Report"
+    : "Vulnerability Report";
   const footerBrandHtml =
     brand.websiteUrl && brand.companyName
       ? `<a href="${brand.websiteUrl}" target="_blank" rel="noopener">${footerBrandText}</a>`
-      : footerBrandText
-  const bodyBg = brand.bodyBg ?? "#fff"
-  const bodyFg = brand.bodyFg ?? "#1a1a2e"
-  const borderColor = brand.borderColor ?? "#e2e8f0"
-  const mutedColor = brand.mutedColor ?? "#64748b"
-  const cardBg = brand.cardBg ?? "transparent"
-  const tableHeaderBg = brand.tableHeaderBg ?? "#f8fafc"
-  const tableRowAltBg = brand.tableRowAltBg ?? "#fafbfc"
-  const headingColor = brand.bodyFg ?? "#0f172a"
-  const trackBg = brand.bodyBg ? (brand.borderColor ?? "#334155") : "#f1f5f9"
-  const notesBg = brand.bodyBg ? "rgba(251,191,36,0.15)" : "#fffbeb"
-  const notesBorder = brand.bodyBg ? "rgba(251,191,36,0.3)" : "#fef08a"
-  const filterNoteBg = brand.cardBg ?? "#f8fafc"
-  const advisoryCodeBg = brand.cardBg ? "rgba(255,255,255,0.08)" : "#f1f5f9"
-  const badgeLowBg = brand.cardBg ? "rgba(255,255,255,0.08)" : "#f0f9ff"
-  const badgeLowBorder = brand.cardBg ? brand.primaryColor : "#bae6fd"
-  const footerFg = brand.mutedColor ?? "#64748b"
-  const footerBrandFg = brand.bodyFg ?? "#0f172a"
-  const footerMetaFg = brand.mutedColor ?? "#94a3b8"
+      : footerBrandText;
+  const bodyBg = brand.bodyBg ?? "#fff";
+  const bodyFg = brand.bodyFg ?? "#1a1a2e";
+  const borderColor = brand.borderColor ?? "#e2e8f0";
+  const mutedColor = brand.mutedColor ?? "#64748b";
+  const cardBg = brand.cardBg ?? "transparent";
+  const tableHeaderBg = brand.tableHeaderBg ?? "#f8fafc";
+  const tableRowAltBg = brand.tableRowAltBg ?? "#fafbfc";
+  const headingColor = brand.bodyFg ?? "#0f172a";
+  const trackBg = brand.bodyBg ? brand.borderColor ?? "#334155" : "#f1f5f9";
+  const notesBg = brand.bodyBg ? "rgba(251,191,36,0.15)" : "#fffbeb";
+  const notesBorder = brand.bodyBg ? "rgba(251,191,36,0.3)" : "#fef08a";
+  const filterNoteBg = brand.cardBg ?? "#f8fafc";
+  const advisoryCodeBg = brand.cardBg ? "rgba(255,255,255,0.08)" : "#f1f5f9";
+  const badgeLowBg = brand.cardBg ? "rgba(255,255,255,0.08)" : "#f0f9ff";
+  const badgeLowBorder = brand.cardBg ? brand.primaryColor : "#bae6fd";
+  const footerFg = brand.mutedColor ?? "#64748b";
+  const footerBrandFg = brand.bodyFg ?? "#0f172a";
+  const footerMetaFg = brand.mutedColor ?? "#94a3b8";
 
   return `<!DOCTYPE html>
 <html>
@@ -1819,7 +1929,9 @@ function buildReportDocumentShell(
   @page { margin: 32px; size: A4; }
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: ${bodyFg}; background: ${bodyBg}; font-size: clamp(11px, 1.2vw + 0.5rem, 14px); line-height: 1.5; padding: 40px; }
-  .brand-header { background: ${brand.headerBgColor}; color: ${brand.headerTextColor}; padding: 16px 24px; margin: -40px -40px 24px -40px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
+  .brand-header { background: ${brand.headerBgColor}; color: ${
+    brand.headerTextColor
+  }; padding: 16px 24px; margin: -40px -40px 24px -40px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
   .brand-header-minimal .report-title-block { text-align: left; }
   .brand-header-left { display: flex; align-items: center; gap: 16px; }
   .brand-logo { height: 28px; width: auto; display: block; }
@@ -1828,7 +1940,9 @@ function buildReportDocumentShell(
   .report-title-block { text-align: right; }
   .report-title-block .report-title { font-size: 16px; font-weight: 600; }
   .report-title-block .report-workspace { font-size: 11px; opacity: 0.9; }
-  .header { border-bottom: 3px solid ${brand.primaryColor}; padding-bottom: 16px; margin-bottom: 24px; }
+  .header { border-bottom: 3px solid ${
+    brand.primaryColor
+  }; padding-bottom: 16px; margin-bottom: 24px; }
   .header .meta { display: flex; gap: 24px; margin-top: 8px; color: ${mutedColor}; font-size: 11px; }
   .section { margin-bottom: 24px; page-break-inside: avoid; }
   .section h2 { font-size: clamp(13px, 1.2vw + 0.5rem, 18px); font-weight: 600; color: ${headingColor}; border-bottom: 1px solid ${borderColor}; padding-bottom: 6px; margin-bottom: 12px; }
@@ -1859,14 +1973,18 @@ function buildReportDocumentShell(
   .badge-critical { background: #fef2f2; color: #ef4444; border: 1px solid #fecaca; }
   .badge-high { background: #fff7ed; color: #f97316; border: 1px solid #fed7aa; }
   .badge-medium { background: #fefce8; color: #ca8a04; border: 1px solid #fef08a; }
-  .badge-low { background: ${badgeLowBg}; color: ${brand.primaryColor}; border: 1px solid ${badgeLowBorder}; }
+  .badge-low { background: ${badgeLowBg}; color: ${
+    brand.primaryColor
+  }; border: 1px solid ${badgeLowBorder}; }
   .mono { font-family: 'SF Mono', SFMono-Regular, ui-monospace, monospace; }
   .text-right { text-align: right; }
   .filter-note { font-size: 11px; color: ${mutedColor}; margin-bottom: 12px; padding: 6px 10px; background: ${filterNoteBg}; border-radius: 6px; border: 1px solid ${borderColor}; }
   .notes { font-size: 11px; color: ${mutedColor}; margin-bottom: 16px; padding: 10px; background: ${notesBg}; border-radius: 6px; border: 1px solid ${notesBorder}; }
   .footer { border-top: 2px solid ${borderColor}; padding-top: 12px; margin-top: 24px; color: ${footerFg}; font-size: 10px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; }
   .footer-brand { font-weight: 600; color: ${footerBrandFg}; }
-  .footer-brand a { color: ${brand.linkColor ?? brand.primaryColor}; text-decoration: none; }
+  .footer-brand a { color: ${
+    brand.linkColor ?? brand.primaryColor
+  }; text-decoration: none; }
   .footer-meta { color: ${footerMetaFg}; }
   .narrative-line { font-size: 11px; color: ${mutedColor}; margin-bottom: 12px; }
   .board-hero { display: flex; align-items: center; justify-content: center; gap: 24px; flex-wrap: wrap; padding: 16px 0; }
@@ -1917,7 +2035,9 @@ function buildReportDocumentShell(
   .advisory-title { font-weight: 600; color: ${headingColor}; }
   .advisory-row { font-size: 10px; margin-bottom: 6px; }
   .advisory-row code { background: ${advisoryCodeBg}; padding: 1px 4px; border-radius: 4px; }
-  .cve-link, .task-link, .aikido-link { color: ${brand.linkColor ?? brand.primaryColor}; text-decoration: none; }
+  .cve-link, .task-link, .aikido-link { color: ${
+    brand.linkColor ?? brand.primaryColor
+  }; text-decoration: none; }
   .cve-link:hover, .task-link:hover, .aikido-link:hover { text-decoration: underline; }
   .report-canvas-multicol { margin-bottom: 24px; }
   .report-widget-cell {
@@ -1945,7 +2065,9 @@ function buildReportDocumentShell(
   .report-filter-panel { display: none; position: absolute; top: 100%; left: 0; margin-top: 4px; min-width: 220px; max-width: 320px; max-height: 320px; padding: 0; background: ${cardBg}; border: 1px solid ${borderColor}; border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,0.12); z-index: 200; overflow: hidden; }
   .report-filter-dd.open .report-filter-panel { display: block; }
   .report-filter-search { width: 100%; padding: 8px 12px; border: none; border-bottom: 1px solid ${borderColor}; font-size: 12px; box-sizing: border-box; }
-  .report-filter-search:focus { outline: 2px solid ${brand.primaryColor}; outline-offset: -2px; }
+  .report-filter-search:focus { outline: 2px solid ${
+    brand.primaryColor
+  }; outline-offset: -2px; }
   .report-filter-panel-inner { max-height: 260px; overflow-y: auto; padding: 8px; }
   .report-filter-option { display: flex; align-items: center; gap: 8px; padding: 6px 8px; font-size: 12px; cursor: pointer; border-radius: 4px; }
   .report-filter-option:hover { background: ${tableRowAltBg}; }
@@ -1953,7 +2075,9 @@ function buildReportDocumentShell(
   .report-filter-option-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .report-filter-count { font-size: 11px; color: ${mutedColor}; flex-shrink: 0; }
   .report-filter-actions { margin-top: 8px; padding-top: 8px; border-top: 1px solid ${borderColor}; display: flex; gap: 8px; }
-  .report-filter-actions button { font-size: 11px; padding: 4px 8px; background: transparent; border: none; color: ${brand.primaryColor}; cursor: pointer; }
+  .report-filter-actions button { font-size: 11px; padding: 4px 8px; background: transparent; border: none; color: ${
+    brand.primaryColor
+  }; cursor: pointer; }
   .report-filter-actions button:hover { text-decoration: underline; }
   .report-filter-chips { display: flex; flex-wrap: wrap; gap: 6px; flex: 1; min-width: 0; }
   .report-filter-chip { display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px; font-size: 11px; background: ${tableRowAltBg}; border: 1px solid ${borderColor}; border-radius: 999px; color: ${bodyFg}; }
@@ -2005,7 +2129,11 @@ function buildReportDocumentShell(
 </style>
 </head>
 <body>
-  ${filterConfig ? '<script src="https://cdnjs.cloudflare.com/ajax/libs/regression/2.0.1/regression.min.js" async></script>' : ""}
+  ${
+    filterConfig
+      ? '<script src="https://cdnjs.cloudflare.com/ajax/libs/regression/2.0.1/regression.min.js" async></script>'
+      : ""
+  }
   ${brandHeaderHtml}
   <div class="header">
     <div class="meta">
@@ -2015,7 +2143,17 @@ function buildReportDocumentShell(
       <span>Classification: Internal</span>
     </div>
   </div>
-  ${filterConfig ? buildReportFilterBar(filterConfig, borderColor, mutedColor, brand.primaryColor, reportData) : ""}
+  ${
+    filterConfig
+      ? buildReportFilterBar(
+          filterConfig,
+          borderColor,
+          mutedColor,
+          brand.primaryColor,
+          reportData,
+        )
+      : ""
+  }
   <div class="report-filterable-root">${body}</div>
   <div class="footer">
     <span class="footer-brand">${footerBrandHtml}</span>
@@ -2064,28 +2202,30 @@ function buildReportDocumentShell(
   })();
   </script>
 </body>
-</html>`
+</html>`;
 }
 
 export function buildReportHtmlFromDefinition(
   context: ReportContext,
   definition: ReportDefinition,
-  options?: { preview?: boolean }
+  options?: { preview?: boolean },
 ): string {
-  const preview = options?.preview ?? false
-  const branding = getReportTheme(definition.themeId)
+  const preview = options?.preview ?? false;
+  const branding = getReportTheme(definition.themeId);
   const contextWithBranding: ReportContext = {
     ...context,
     branding: {
       primaryColor: branding.primaryColor,
       mutedColor: branding.mutedColor,
     },
-  }
-  const body = buildReportBodyFromDefinition(contextWithBranding, definition, { preview })
-  const filterConfig = getReportFilterConfig(contextWithBranding)
+  };
+  const body = buildReportBodyFromDefinition(contextWithBranding, definition, {
+    preview,
+  });
+  const filterConfig = getReportFilterConfig(contextWithBranding);
   // No payload truncation in preview — filter script needs full data for accurate counts.
   // Only widget display is truncated (e.g. issue inventory via PREVIEW_LIMITS).
-  const reportData = buildReportDataPayload(context, definition)
+  const reportData = buildReportDataPayload(context, definition);
   return buildReportDocumentShell(
     definition.title,
     context.workspace,
@@ -2094,18 +2234,18 @@ export function buildReportHtmlFromDefinition(
     body,
     branding,
     filterConfig,
-    reportData
-  )
+    reportData,
+  );
 }
 
 /** Build a minimal HTML document for a single widget preview (e.g. hover in report builder). */
 export function buildSingleWidgetPreviewHtml(
   context: ReportContext,
   type: WidgetType,
-  config: Record<string, unknown>
+  config: Record<string, unknown>,
 ): string {
-  const limitedConfig = applyPreviewLimits(type, config, true)
-  const body = renderWidget(type, context, limitedConfig)
+  const limitedConfig = applyPreviewLimits(type, config, true);
+  const body = renderWidget(type, context, limitedConfig);
   const styles = `
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #1a1a2e; background: #fff; font-size: clamp(11px, 1.2vw + 0.5rem, 14px); line-height: 1.5; padding: 16px; }
@@ -2211,7 +2351,7 @@ export function buildSingleWidgetPreviewHtml(
   .trend-filter-checkbox { display: flex; align-items: center; gap: 8px; padding: 4px 0; font-size: 12px; cursor: pointer; color: #0f172a; }
   .trend-filter-checkbox:hover { color: #0ea5e9; }
   .trend-filter-checkbox input { margin: 0; }
-`
+`;
   return `<!DOCTYPE html>
 <html>
 <head>
@@ -2222,7 +2362,7 @@ export function buildSingleWidgetPreviewHtml(
 <body>
 ${body}
 </body>
-</html>`
+</html>`;
 }
 
 // ---------------------------------------------------------------------------
@@ -2235,33 +2375,88 @@ ${body}
 // Widget selection affects only PDF/HTML output.
 
 function buildCsvContentFromContext(context: ReportContext): string {
-  const r = context
-  const rows: string[][] = []
-  rows.push(["Vulnerability Report", r.workspace, r.date])
-  rows.push([])
-  rows.push(["Risk Score", String(r.riskScore), r.riskLevel])
-  rows.push(["Open Vulnerabilities", String(r.openIssues)])
-  rows.push(["Avg MTTR (days)", r.avgMttr !== undefined ? String(r.avgMttr) : "N/A"])
-  rows.push([])
-  rows.push(["Severity", "Count"])
-  rows.push(["Critical", String(r.counts.critical)])
-  rows.push(["High", String(r.counts.high)])
-  rows.push(["Medium", String(r.counts.medium)])
-  rows.push(["Low", String(r.counts.low)])
-  rows.push(["Info", String(r.counts.info)])
-  rows.push([])
+  const r = context;
+  const rows: string[][] = [];
+  rows.push(["Vulnerability Report", r.workspace, r.date]);
+  rows.push([]);
+  rows.push(["Risk Score", String(r.riskScore), r.riskLevel]);
+  rows.push(["Open Vulnerabilities", String(r.openIssues)]);
+  rows.push([
+    "Avg MTTR (days)",
+    r.avgMttr !== undefined ? String(r.avgMttr) : "N/A",
+  ]);
+  rows.push([]);
+  rows.push(["Severity", "Count"]);
+  rows.push(["Critical", String(r.counts.critical)]);
+  rows.push(["High", String(r.counts.high)]);
+  rows.push(["Medium", String(r.counts.medium)]);
+  rows.push(["Low", String(r.counts.low)]);
+  rows.push(["Info", String(r.counts.info)]);
+  rows.push([]);
   if (r.repoRisk.length > 0) {
-    rows.push(["Repository", "Critical", "High", "Medium", "Low", "Total", "Risk Score"])
+    rows.push([
+      "Repository",
+      "Critical",
+      "High",
+      "Medium",
+      "Low",
+      "Total",
+      "Risk Score",
+    ]);
     for (const repo of r.repoRisk) {
-      rows.push([repo.repo, String(repo.critical), String(repo.high), String(repo.medium), String(repo.low), String(repo.total), String(repo.score)])
+      rows.push([
+        repo.repo,
+        String(repo.critical),
+        String(repo.high),
+        String(repo.medium),
+        String(repo.low),
+        String(repo.total),
+        String(repo.score),
+      ]);
     }
-    rows.push([])
+    rows.push([]);
   }
-  rows.push(["Issue ID", "Title", "Severity", "Score", "Repository", "Package", "Version", "Fixed Version", "CVE", "CWE", "Scanner", "Status", "First Detected", "Closed At"])
+  rows.push([
+    "Issue ID",
+    "Title",
+    "Severity",
+    "Score",
+    "Repository",
+    "Package",
+    "Version",
+    "Fixed Version",
+    "CVE",
+    "CWE",
+    "Scanner",
+    "Status",
+    "First Detected",
+    "Closed At",
+    "Source URL",
+  ]);
   for (const i of r.filteredIssues) {
-    rows.push([String(i.issue_id), i.title, i.severity, String(i.severity_score), i.repository || "", i.affected_package || "", i.affected_version || "", i.fixed_version || "", i.cve_id || "", i.cwe_id || "", i.scanner_type || "", i.status, i.first_detected_at, i.closed_at || ""])
+    rows.push([
+      String(i.issue_id),
+      i.title,
+      i.severity,
+      String(i.severity_score),
+      i.repository || "",
+      i.affected_package || "",
+      i.affected_version || "",
+      i.fixed_version || "",
+      i.cve_id || "",
+      i.cwe_id || "",
+      i.scanner_type || "",
+      i.status,
+      i.first_detected_at,
+      i.closed_at || "",
+      i.source_url || "",
+    ]);
   }
-  return rows.map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(",")).join("\n")
+  return rows
+    .map((row) =>
+      row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(","),
+    )
+    .join("\n");
 }
 
 // ---------------------------------------------------------------------------
@@ -2269,40 +2464,63 @@ function buildCsvContentFromContext(context: ReportContext): string {
 // ---------------------------------------------------------------------------
 
 function downloadBlob(content: string, filename: string, mime: string) {
-  const blob = new Blob([content], { type: mime })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement("a")
-  a.href = url
-  a.download = filename
-  document.body.appendChild(a)
-  a.click()
-  document.body.removeChild(a)
-  URL.revokeObjectURL(url)
+  const blob = new Blob([content], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }
 
-export function exportPdfFromDefinition(data: VATDashboardData, definition: ReportDefinition): void {
-  const context = computeReportContext(data, definition.filters)
-  const html = buildReportHtmlFromDefinition(context, definition)
-  const printWindow = window.open("", "_blank")
+export function exportPdfFromDefinition(
+  data: VATDashboardData,
+  definition: ReportDefinition,
+): void {
+  const context = computeReportContext(data, definition.filters);
+  const html = buildReportHtmlFromDefinition(context, definition);
+  const printWindow = window.open("", "_blank");
   if (printWindow) {
-    printWindow.document.write(html)
-    printWindow.document.close()
-    setTimeout(() => printWindow.print(), 500)
+    printWindow.document.write(html);
+    printWindow.document.close();
+    setTimeout(() => printWindow.print(), 500);
   }
 }
 
-export function exportHtmlFromDefinition(data: VATDashboardData, definition: ReportDefinition): void {
-  const context = computeReportContext(data, definition.filters)
-  const html = buildReportHtmlFromDefinition(context, definition)
-  const slug = definition.title.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "")
-  downloadBlob(html, `${slug}-${new Date().toISOString().slice(0, 10)}.html`, "text/html")
+export function exportHtmlFromDefinition(
+  data: VATDashboardData,
+  definition: ReportDefinition,
+): void {
+  const context = computeReportContext(data, definition.filters);
+  const html = buildReportHtmlFromDefinition(context, definition);
+  const slug = definition.title
+    .toLowerCase()
+    .replace(/\s+/g, "-")
+    .replace(/[^a-z0-9-]/g, "");
+  downloadBlob(
+    html,
+    `${slug}-${new Date().toISOString().slice(0, 10)}.html`,
+    "text/html",
+  );
 }
 
-export function exportCsvFromDefinition(data: VATDashboardData, definition: ReportDefinition): void {
-  const context = computeReportContext(data, definition.filters)
-  const csv = buildCsvContentFromContext(context)
-  const slug = definition.title.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "")
-  downloadBlob(csv, `${slug}-${new Date().toISOString().slice(0, 10)}.csv`, "text/csv")
+export function exportCsvFromDefinition(
+  data: VATDashboardData,
+  definition: ReportDefinition,
+): void {
+  const context = computeReportContext(data, definition.filters);
+  const csv = buildCsvContentFromContext(context);
+  const slug = definition.title
+    .toLowerCase()
+    .replace(/\s+/g, "-")
+    .replace(/[^a-z0-9-]/g, "");
+  downloadBlob(
+    csv,
+    `${slug}-${new Date().toISOString().slice(0, 10)}.csv`,
+    "text/csv",
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -2310,15 +2528,15 @@ export function exportCsvFromDefinition(data: VATDashboardData, definition: Repo
 // ---------------------------------------------------------------------------
 
 export interface ReportPreset {
-  id: string
-  name: string
-  description?: string
-  definition: ReportDefinition
+  id: string;
+  name: string;
+  description?: string;
+  definition: ReportDefinition;
 }
 
 /** Apply single-column layout to each widget in a canvas (row = index). */
 function withSingleColumnLayout<T extends { widgets: WidgetDefinition[] }>(
-  canvas: T & { columns?: number }
+  canvas: T & { columns?: number },
 ): T & { columns: 1 } {
   return {
     ...canvas,
@@ -2327,17 +2545,28 @@ function withSingleColumnLayout<T extends { widgets: WidgetDefinition[] }>(
       ...w,
       layout: widgetLayoutForSingleColumn(i),
     })),
-  }
+  };
 }
 
 export const REPORT_PRESETS: ReportPreset[] = [
   {
     id: "executive",
     name: "Executive Summary",
-    description: "High-level risk posture for leadership. 30-day window with KPIs, severity, aging, MTTR, and top vulns.",
+    description:
+      "High-level risk posture for leadership. 30-day window with KPIs, severity, aging, MTTR, and top vulns.",
     definition: {
       title: "Executive Summary",
-      filters: { repoFilter: [], branchFilter: null, severityFilter: [], dateRangePreset: 30, dateFrom: null, dateTo: null, notes: "", external: false, countMode: "groups" },
+      filters: {
+        repoFilter: [],
+        branchFilter: null,
+        severityFilter: [],
+        dateRangePreset: 30,
+        dateFrom: null,
+        dateTo: null,
+        notes: "",
+        external: false,
+        countMode: "groups",
+      },
       canvases: [
         withSingleColumnLayout({
           id: "c-exec",
@@ -2357,24 +2586,51 @@ export const REPORT_PRESETS: ReportPreset[] = [
   {
     id: "executive-detailed",
     name: "Executive Summary (Detailed)",
-    description: "Executive overview with risk gauge, severity trends, and full risk rankings plus vulnerabilities for all repos and containers.",
+    description:
+      "Executive overview with risk gauge, severity trends, and full risk rankings plus vulnerabilities for all repos and containers.",
     definition: {
       title: "Executive Summary - Detailed",
-      filters: { repoFilter: [], branchFilter: null, severityFilter: [], dateRangePreset: 90, dateFrom: null, dateTo: null, notes: "", external: false, countMode: "groups" },
+      filters: {
+        repoFilter: [],
+        branchFilter: null,
+        severityFilter: [],
+        dateRangePreset: 90,
+        dateFrom: null,
+        dateTo: null,
+        notes: "",
+        external: false,
+        countMode: "groups",
+      },
       canvases: [
         withSingleColumnLayout({
           id: "c-exec-det",
           name: "Summary",
           widgets: [
-            { id: "w-exec-det-1", type: "summary", config: { variant: "default" } },
-            { id: "w-exec-det-2", type: "trendStacked", config: { periodDays: 90 } },
+            {
+              id: "w-exec-det-1",
+              type: "summary",
+              config: { variant: "default" },
+            },
+            {
+              id: "w-exec-det-2",
+              type: "trendStacked",
+              config: { periodDays: 90 },
+            },
             { id: "w-exec-det-3", type: "severityBar", config: {} },
             { id: "w-exec-det-4", type: "assetMixDonut", config: {} },
             { id: "w-exec-det-5", type: "agingTable", config: {} },
             { id: "w-exec-det-6", type: "mttrTable", config: {} },
             { id: "w-exec-det-7", type: "repoTable", config: { limit: 100 } },
-            { id: "w-exec-det-8", type: "containerTable", config: { limit: 100 } },
-            { id: "w-exec-det-9", type: "issueList", config: { limit: 100000 } },
+            {
+              id: "w-exec-det-8",
+              type: "containerTable",
+              config: { limit: 100 },
+            },
+            {
+              id: "w-exec-det-9",
+              type: "issueList",
+              config: { limit: 100000 },
+            },
           ],
         }),
       ],
@@ -2383,25 +2639,52 @@ export const REPORT_PRESETS: ReportPreset[] = [
   {
     id: "executive-detailed-yearly-instances",
     name: "Executive Summary - Yearly (All Instances)",
-    description: "Copy of Executive Summary - Detailed with full year (365 days) and individual issue counts rather than grouped.",
+    description:
+      "Copy of Executive Summary - Detailed with full year (365 days) and individual issue counts rather than grouped.",
     definition: {
       title: "Executive Summary - Detailed (Yearly, All Instances)",
-      filters: { repoFilter: [], branchFilter: null, severityFilter: [], dateRangePreset: 365, dateFrom: null, dateTo: null, notes: "", external: false, countMode: "instances" },
+      filters: {
+        repoFilter: [],
+        branchFilter: null,
+        severityFilter: [],
+        dateRangePreset: 365,
+        dateFrom: null,
+        dateTo: null,
+        notes: "",
+        external: false,
+        countMode: "instances",
+      },
       canvases: [
         withSingleColumnLayout({
           id: "c-exec-det-yearly",
           name: "Summary",
           widgets: [
-            { id: "w-exec-det-y1", type: "summary", config: { variant: "default" } },
-            { id: "w-exec-det-y2", type: "trendStacked", config: { periodDays: 365 } },
+            {
+              id: "w-exec-det-y1",
+              type: "summary",
+              config: { variant: "default" },
+            },
+            {
+              id: "w-exec-det-y2",
+              type: "trendStacked",
+              config: { periodDays: 365 },
+            },
             { id: "w-exec-det-y3", type: "severityBar", config: {} },
             { id: "w-exec-det-y4", type: "sourceBar", config: {} },
             { id: "w-exec-det-y5", type: "assetMixDonut", config: {} },
             { id: "w-exec-det-y6", type: "agingTable", config: {} },
             { id: "w-exec-det-y7", type: "mttrTable", config: {} },
             { id: "w-exec-det-y8", type: "repoTable", config: { limit: 100 } },
-            { id: "w-exec-det-y9", type: "containerTable", config: { limit: 100 } },
-            { id: "w-exec-det-y10", type: "issueList", config: { limit: 100000 } },
+            {
+              id: "w-exec-det-y9",
+              type: "containerTable",
+              config: { limit: 100 },
+            },
+            {
+              id: "w-exec-det-y10",
+              type: "issueList",
+              config: { limit: 100000 },
+            },
           ],
         }),
       ],
@@ -2410,17 +2693,36 @@ export const REPORT_PRESETS: ReportPreset[] = [
   {
     id: "executive-summary2",
     name: "Executive Summary v2",
-    description: "Trend-focused executive report with severity trends, reachability, and asset mix.",
+    description:
+      "Trend-focused executive report with severity trends, reachability, and asset mix.",
     definition: {
       title: "Executive Summary",
-      filters: { repoFilter: [], branchFilter: null, severityFilter: [], dateRangePreset: 90, dateFrom: null, dateTo: null, notes: "", external: false, countMode: "groups" },
+      filters: {
+        repoFilter: [],
+        branchFilter: null,
+        severityFilter: [],
+        dateRangePreset: 90,
+        dateFrom: null,
+        dateTo: null,
+        notes: "",
+        external: false,
+        countMode: "groups",
+      },
       canvases: [
         withSingleColumnLayout({
           id: "c-exec2",
           name: "Summary",
           widgets: [
-            { id: "w-exec2-1", type: "summary", config: { variant: "default" } },
-            { id: "w-exec2-2", type: "trendStacked", config: { periodDays: 90 } },
+            {
+              id: "w-exec2-1",
+              type: "summary",
+              config: { variant: "default" },
+            },
+            {
+              id: "w-exec2-2",
+              type: "trendStacked",
+              config: { periodDays: 90 },
+            },
             { id: "w-exec2-3", type: "severityBar", config: {} },
             { id: "w-exec2-4", type: "reachabilityMatrix", config: {} },
             { id: "w-exec2-5", type: "assetMixDonut", config: {} },
@@ -2435,10 +2737,21 @@ export const REPORT_PRESETS: ReportPreset[] = [
   {
     id: "board",
     name: "Board One-Pager",
-    description: "Single-page snapshot for board meetings. Risk gauge, severity pills, and top 5 findings.",
+    description:
+      "Single-page snapshot for board meetings. Risk gauge, severity pills, and top 5 findings.",
     definition: {
       title: "Board One-Pager",
-      filters: { repoFilter: [], branchFilter: null, severityFilter: [], dateRangePreset: 30, dateFrom: null, dateTo: null, notes: "", external: false, countMode: "groups" },
+      filters: {
+        repoFilter: [],
+        branchFilter: null,
+        severityFilter: [],
+        dateRangePreset: 30,
+        dateFrom: null,
+        dateTo: null,
+        notes: "",
+        external: false,
+        countMode: "groups",
+      },
       canvases: [
         withSingleColumnLayout({
           id: "c-board",
@@ -2456,10 +2769,21 @@ export const REPORT_PRESETS: ReportPreset[] = [
   {
     id: "engineering",
     name: "Engineering Detail",
-    description: "Full technical report with scanners, aging, MTTR, repo risk, and full issue inventory.",
+    description:
+      "Full technical report with scanners, aging, MTTR, repo risk, and full issue inventory.",
     definition: {
       title: "Engineering Detail",
-      filters: { repoFilter: [], branchFilter: null, severityFilter: [], dateRangePreset: 30, dateFrom: null, dateTo: null, notes: "", external: false, countMode: "groups" },
+      filters: {
+        repoFilter: [],
+        branchFilter: null,
+        severityFilter: [],
+        dateRangePreset: 30,
+        dateFrom: null,
+        dateTo: null,
+        notes: "",
+        external: false,
+        countMode: "groups",
+      },
       canvases: [
         withSingleColumnLayout({
           id: "c-eng",
@@ -2485,22 +2809,68 @@ export const REPORT_PRESETS: ReportPreset[] = [
   {
     id: "compliance-all-frameworks",
     name: "Compliance (All Frameworks)",
-    description: "SOC2, NIS2, and ISO 27001 side by side. Audit-ready multi-framework view.",
+    description:
+      "SOC2, NIS2, and ISO 27001 side by side. Audit-ready multi-framework view.",
     definition: {
       title: "Compliance - All Frameworks",
-      filters: { repoFilter: [], branchFilter: null, severityFilter: [], dateRangePreset: 30, dateFrom: null, dateTo: null, notes: "", external: false, countMode: "groups" },
+      filters: {
+        repoFilter: [],
+        branchFilter: null,
+        severityFilter: [],
+        dateRangePreset: 30,
+        dateFrom: null,
+        dateTo: null,
+        notes: "",
+        external: false,
+        countMode: "groups",
+      },
       canvases: [
         {
           id: "c-comp-all",
           name: "Compliance",
           widgets: [
-            { id: "w-comp-all-1", type: "summary", config: { variant: "compliance" }, layout: widgetLayoutForSingleColumn(0) },
-            { id: "w-comp-all-2", type: "complianceScoreCard", config: { framework: "soc2" }, layout: { row: 1, col: 0, width: 4, height: 1 } },
-            { id: "w-comp-all-3", type: "complianceScoreCard", config: { framework: "nis2" }, layout: { row: 1, col: 4, width: 4, height: 1 } },
-            { id: "w-comp-all-4", type: "complianceScoreCard", config: { framework: "iso27001" }, layout: { row: 1, col: 8, width: 4, height: 1 } },
-            { id: "w-comp-all-5", type: "reachabilityMatrix", config: {}, layout: widgetLayoutForSingleColumn(2) },
-            { id: "w-comp-all-6", type: "severityBar", config: {}, layout: widgetLayoutForSingleColumn(3) },
-            { id: "w-comp-all-7", type: "repoTable", config: { limit: 25 }, layout: widgetLayoutForSingleColumn(4) },
+            {
+              id: "w-comp-all-1",
+              type: "summary",
+              config: { variant: "compliance" },
+              layout: widgetLayoutForSingleColumn(0),
+            },
+            {
+              id: "w-comp-all-2",
+              type: "complianceScoreCard",
+              config: { framework: "soc2" },
+              layout: { row: 1, col: 0, width: 4, height: 1 },
+            },
+            {
+              id: "w-comp-all-3",
+              type: "complianceScoreCard",
+              config: { framework: "nis2" },
+              layout: { row: 1, col: 4, width: 4, height: 1 },
+            },
+            {
+              id: "w-comp-all-4",
+              type: "complianceScoreCard",
+              config: { framework: "iso27001" },
+              layout: { row: 1, col: 8, width: 4, height: 1 },
+            },
+            {
+              id: "w-comp-all-5",
+              type: "reachabilityMatrix",
+              config: {},
+              layout: widgetLayoutForSingleColumn(2),
+            },
+            {
+              id: "w-comp-all-6",
+              type: "severityBar",
+              config: {},
+              layout: widgetLayoutForSingleColumn(3),
+            },
+            {
+              id: "w-comp-all-7",
+              type: "repoTable",
+              config: { limit: 25 },
+              layout: widgetLayoutForSingleColumn(4),
+            },
           ],
         },
       ],
@@ -2509,16 +2879,31 @@ export const REPORT_PRESETS: ReportPreset[] = [
   {
     id: "compliance",
     name: "Compliance Report",
-    description: "Audit-ready with SOC2/NIS2/ISO, reachability, and full inventory.",
+    description:
+      "Audit-ready with SOC2/NIS2/ISO, reachability, and full inventory.",
     definition: {
       title: "Compliance Report",
-      filters: { repoFilter: [], branchFilter: null, severityFilter: [], dateRangePreset: 30, dateFrom: null, dateTo: null, notes: "", external: false, countMode: "groups" },
+      filters: {
+        repoFilter: [],
+        branchFilter: null,
+        severityFilter: [],
+        dateRangePreset: 30,
+        dateFrom: null,
+        dateTo: null,
+        notes: "",
+        external: false,
+        countMode: "groups",
+      },
       canvases: [
         withSingleColumnLayout({
           id: "c-compliance",
           name: "Compliance",
           widgets: [
-            { id: "w-comp-1", type: "summary", config: { variant: "compliance" } },
+            {
+              id: "w-comp-1",
+              type: "summary",
+              config: { variant: "compliance" },
+            },
             { id: "w-comp-2", type: "complianceScoreCard", config: {} },
             { id: "w-comp-3", type: "reachabilityMatrix", config: {} },
             { id: "w-comp-4", type: "assetMixDonut", config: {} },
@@ -2539,16 +2924,31 @@ export const REPORT_PRESETS: ReportPreset[] = [
   {
     id: "weekly",
     name: "Weekly Digest",
-    description: "Trend and MTTR focus for standups. 30-day trend sparkline and summary.",
+    description:
+      "Trend and MTTR focus for standups. 30-day trend sparkline and summary.",
     definition: {
       title: "Weekly Digest",
-      filters: { repoFilter: [], branchFilter: null, severityFilter: [], dateRangePreset: 30, dateFrom: null, dateTo: null, notes: "", external: false, countMode: "groups" },
+      filters: {
+        repoFilter: [],
+        branchFilter: null,
+        severityFilter: [],
+        dateRangePreset: 30,
+        dateFrom: null,
+        dateTo: null,
+        notes: "",
+        external: false,
+        countMode: "groups",
+      },
       canvases: [
         withSingleColumnLayout({
           id: "c-weekly",
           name: "Weekly",
           widgets: [
-            { id: "w-weekly-1", type: "summary", config: { variant: "weekly" } },
+            {
+              id: "w-weekly-1",
+              type: "summary",
+              config: { variant: "weekly" },
+            },
             { id: "w-weekly-2", type: "severityBar", config: {} },
             { id: "w-weekly-3", type: "trendSparkline", config: {} },
             { id: "w-weekly-4", type: "trendTable", config: {} },
@@ -2562,42 +2962,63 @@ export const REPORT_PRESETS: ReportPreset[] = [
   {
     id: "vendor",
     name: "Vendor Disclosure",
-    description: "Advisory-style findings for coordination. Summary, repo table, and advisory cards.",
+    description:
+      "Advisory-style findings for coordination. Summary, repo table, and advisory cards.",
     definition: {
       title: "Vendor Disclosure",
-      filters: { repoFilter: [], branchFilter: null, severityFilter: [], dateRangePreset: 30, dateFrom: null, dateTo: null, notes: "", external: false, countMode: "groups" },
+      filters: {
+        repoFilter: [],
+        branchFilter: null,
+        severityFilter: [],
+        dateRangePreset: 30,
+        dateFrom: null,
+        dateTo: null,
+        notes: "",
+        external: false,
+        countMode: "groups",
+      },
       canvases: [
         withSingleColumnLayout({
           id: "c-vendor",
           name: "Findings",
           widgets: [
-            { id: "w-vendor-1", type: "summary", config: { variant: "default" } },
+            {
+              id: "w-vendor-1",
+              type: "summary",
+              config: { variant: "default" },
+            },
             { id: "w-vendor-2", type: "severityBar", config: {} },
             { id: "w-vendor-3", type: "repoTable", config: { limit: 20 } },
-            { id: "w-vendor-4", type: "topVulnsAdvisory", config: { limit: 30 } },
+            {
+              id: "w-vendor-4",
+              type: "topVulnsAdvisory",
+              config: { limit: 30 },
+            },
             { id: "w-vendor-5", type: "issueList", config: { limit: 200 } },
           ],
         }),
       ],
     },
   },
-]
+];
 
 /** Deep clone a preset definition so the user can edit without mutating the preset. */
 export function clonePresetDefinition(preset: ReportPreset): ReportDefinition {
-  return JSON.parse(JSON.stringify(preset.definition))
+  return JSON.parse(JSON.stringify(preset.definition));
 }
 
 /** Initial filters from dashboard state - used to sync new reports with current view. */
 export interface DashboardReportFilters {
-  dateRangePeriod: 30 | 90 | 365
-  repoFilter: string | null
-  containerFilter: string | null
-  countMode: ReportFilters["countMode"]
+  dateRangePeriod: 30 | 90 | 365;
+  repoFilter: string | null;
+  containerFilter: string | null;
+  countMode: ReportFilters["countMode"];
 }
 
 /** Map dashboard date range to report filters. */
-function filtersFromDashboardState(dashboard?: DashboardReportFilters): ReportFilters {
+function filtersFromDashboardState(
+  dashboard?: DashboardReportFilters,
+): ReportFilters {
   const base: ReportFilters = {
     repoFilter: [],
     branchFilter: null,
@@ -2608,24 +3029,24 @@ function filtersFromDashboardState(dashboard?: DashboardReportFilters): ReportFi
     notes: "",
     external: false,
     countMode: "groups",
-  }
-  if (!dashboard) return base
+  };
+  if (!dashboard) return base;
 
-  const { dateRangePeriod, repoFilter, containerFilter, countMode } = dashboard
+  const { dateRangePeriod, repoFilter, containerFilter, countMode } = dashboard;
 
   // Sync repo filter (container-filtered data is already correct; report uses repoFilter for repo-scoped)
   if (repoFilter) {
-    base.repoFilter = [repoFilter]
+    base.repoFilter = [repoFilter];
   }
   // containerFilter: data is already filtered at dashboard level; no report-level container filter
-  base.countMode = countMode ?? "groups"
+  base.countMode = countMode ?? "groups";
 
   // Sync date range from dashboard's dateRangePeriod (30, 90, or 365 days)
   if (dateRangePeriod) {
-    base.dateRangePreset = dateRangePeriod as ReportFilters["dateRangePreset"]
+    base.dateRangePreset = dateRangePeriod as ReportFilters["dateRangePreset"];
   }
 
-  return base
+  return base;
 }
 
 /** Create a default empty report definition (one canvas, one summary widget). */
@@ -2633,15 +3054,24 @@ export function createDefaultReportDefinition(
   workspaceName: string,
   dashboardFilters?: DashboardReportFilters,
   themeId?: string | null,
-  defaultCountMode?: "groups" | "instances"
+  defaultCountMode?: "groups" | "instances",
 ): ReportDefinition {
-  const filters = filtersFromDashboardState(dashboardFilters)
-  if (defaultCountMode) filters.countMode = defaultCountMode
-  const validThemeIds = ["vat", "default", "light", "slate", "dracula", "nord", "catppuccin", "tokyo-night"]
+  const filters = filtersFromDashboardState(dashboardFilters);
+  if (defaultCountMode) filters.countMode = defaultCountMode;
+  const validThemeIds = [
+    "vat",
+    "default",
+    "light",
+    "slate",
+    "dracula",
+    "nord",
+    "catppuccin",
+    "tokyo-night",
+  ];
   const effectiveThemeId = (() => {
-    const id = themeId === "kamiwaza" ? "default" : themeId
-    return id && validThemeIds.includes(id) ? id : "vat"
-  })()
+    const id = themeId === "kamiwaza" ? "default" : themeId;
+    return id && validThemeIds.includes(id) ? id : "vat";
+  })();
   return {
     title: `Vulnerability Report - ${workspaceName}`,
     filters,
@@ -2660,6 +3090,5 @@ export function createDefaultReportDefinition(
         ],
       },
     ],
-  }
+  };
 }
-

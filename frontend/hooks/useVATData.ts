@@ -24,8 +24,17 @@ import {
   SAMPLE_SBOM,
   SEV_ORDER,
 } from "@/lib/constants";
-import { deriveAssets, getAssetTypeFromAsset, assetIdForFinding } from "@/lib/assetUtils";
-import { FAVORITES_KEY, loadFavoriteEntries, saveFavoriteEntries, type FavoriteEntry } from "@/lib/userSettings";
+import {
+  deriveAssets,
+  getAssetTypeFromAsset,
+  assetIdForFinding,
+} from "@/lib/assetUtils";
+import {
+  FAVORITES_KEY,
+  loadFavoriteEntries,
+  saveFavoriteEntries,
+  type FavoriteEntry,
+} from "@/lib/userSettings";
 import {
   ASSET_LOADOUTS_KEY,
   loadAssetLoadouts,
@@ -34,7 +43,14 @@ import {
   renameAssetLoadout as renameLoadoutStorage,
   type AssetLoadout,
 } from "@/lib/assetLoadoutStorage";
-import type { Asset, Finding, Source, Tracker, WatchedLabel, Alert } from "@/types";
+import type {
+  Asset,
+  Finding,
+  Source,
+  Tracker,
+  WatchedLabel,
+  Alert,
+} from "@/types";
 
 /** Map API response to Finding type */
 function toFinding(raw: Record<string, unknown>): Finding {
@@ -50,11 +66,16 @@ function toFinding(raw: Record<string, unknown>): Finding {
     image: raw.image ? String(raw.image) : undefined,
     branch: raw.branch ? String(raw.branch) : undefined,
     tag: raw.tag ? String(raw.tag) : undefined,
-    sources: Array.isArray(raw.sources) ? raw.sources as Finding["sources"] : [],
-    audit: Array.isArray(raw.audit) ? raw.audit as Finding["audit"] : [],
-    regressionOf: Array.isArray(raw.regressionOf) ? raw.regressionOf as string[] : undefined,
-    regressionCount: typeof raw.regressionCount === "number" ? raw.regressionCount : 0,
-    attestation: raw.attestation as Finding["attestation"] ?? null,
+    sources: Array.isArray(raw.sources)
+      ? (raw.sources as Finding["sources"])
+      : [],
+    audit: Array.isArray(raw.audit) ? (raw.audit as Finding["audit"]) : [],
+    regressionOf: Array.isArray(raw.regressionOf)
+      ? (raw.regressionOf as string[])
+      : undefined,
+    regressionCount:
+      typeof raw.regressionCount === "number" ? raw.regressionCount : 0,
+    attestation: (raw.attestation as Finding["attestation"]) ?? null,
     archived: Boolean(raw.archived),
     slaDue: raw.slaDue ? String(raw.slaDue) : undefined,
     trackerId: raw.trackerId ? String(raw.trackerId) : undefined,
@@ -62,9 +83,14 @@ function toFinding(raw: Record<string, unknown>): Finding {
     team: raw.team ? String(raw.team) : undefined,
     owner: raw.owner ? String(raw.owner) : undefined,
     justification: raw.justification ? String(raw.justification) : undefined,
-    previousStatus: raw.previousStatus != null ? String(raw.previousStatus) : null,
-    sourceIssueGroupId: raw.sourceIssueGroupId ? String(raw.sourceIssueGroupId) : undefined,
-    sourceGroupSeverity: raw.sourceGroupSeverity ? String(raw.sourceGroupSeverity) : undefined,
+    previousStatus:
+      raw.previousStatus != null ? String(raw.previousStatus) : null,
+    sourceIssueGroupId: raw.sourceIssueGroupId
+      ? String(raw.sourceIssueGroupId)
+      : undefined,
+    sourceGroupSeverity: raw.sourceGroupSeverity
+      ? String(raw.sourceGroupSeverity)
+      : undefined,
     filePath: raw.filePath ? String(raw.filePath) : undefined,
     line: typeof raw.line === "number" ? raw.line : undefined,
     snippetMasked: raw.snippetMasked ? String(raw.snippetMasked) : undefined,
@@ -77,10 +103,7 @@ function toFinding(raw: Record<string, unknown>): Finding {
 /** Auto-reopen expired waivers on load (client-side) */
 function applyWaiverExpiry(findings: Finding[]): Finding[] {
   return findings.map((finding) => {
-    if (
-      finding.status !== "Risk Accepted" ||
-      !finding.attestation?.expiresAt
-    ) {
+    if (finding.status !== "Risk Accepted" || !finding.attestation?.expiresAt) {
       return finding;
     }
     const d = daysLeft(finding.attestation.expiresAt);
@@ -100,7 +123,9 @@ function applyWaiverExpiry(findings: Finding[]): Finding[] {
           ts: now(),
           user: "system",
           action: "Waiver expired — auto-reopened",
-          note: `Waiver ${finding.attestation.waiverRef || ""} expired ${finding.attestation.expiresAt}`,
+          note: `Waiver ${finding.attestation.waiverRef || ""} expired ${
+            finding.attestation.expiresAt
+          }`,
         },
       ],
     };
@@ -113,7 +138,14 @@ export interface UseVATDataReturn {
   tracker: Tracker;
   trackers: Tracker[];
   labels: WatchedLabel[];
-  sbom: Array<{ id: string; name: string; version: string; license: string; component: string; language: string }>;
+  sbom: Array<{
+    id: string;
+    name: string;
+    version: string;
+    license: string;
+    component: string;
+    language: string;
+  }>;
   setSbom: React.Dispatch<React.SetStateAction<typeof SAMPLE_SBOM>>;
   loading: boolean;
   error: string | null;
@@ -126,7 +158,9 @@ export interface UseVATDataReturn {
   setView: (v: string) => void;
 
   filterFindingStatuses: Set<string>;
-  setFilterFindingStatuses: (v: Set<string> | ((prev: Set<string>) => Set<string>)) => void;
+  setFilterFindingStatuses: (
+    v: Set<string> | ((prev: Set<string>) => Set<string>),
+  ) => void;
   filterABC: Set<string>;
   setFilterABC: (v: Set<string> | ((prev: Set<string>) => Set<string>)) => void;
   filterVerifiedRange: [number, number];
@@ -134,27 +168,48 @@ export interface UseVATDataReturn {
   filterORARange: [number, number];
   setFilterORARange: (v: [number, number]) => void;
   filterAssetTypes: Set<string>;
-  setFilterAssetTypes: (v: Set<string> | ((prev: Set<string>) => Set<string>)) => void;
+  setFilterAssetTypes: (
+    v: Set<string> | ((prev: Set<string>) => Set<string>),
+  ) => void;
   onlyFavorites: boolean;
   setOnlyFavorites: (v: boolean | ((prev: boolean) => boolean)) => void;
   favoriteAssetIds: Set<string>;
   favoriteEntries: FavoriteEntry[];
-  toggleFavorite: (assetId: string, context?: { branch?: string; tag?: string }) => void;
-  isFavoriteInContext: (assetId: string, context?: { branch?: string; tag?: string }) => boolean;
+  toggleFavorite: (
+    assetId: string,
+    context?: { branch?: string; tag?: string },
+  ) => void;
+  isFavoriteInContext: (
+    assetId: string,
+    context?: { branch?: string; tag?: string },
+  ) => boolean;
   /** Returns branch/tag from a favorite entry for this asset (for defaulting asset page view). */
-  getFavoriteContextForAsset: (assetId: string) => { branch?: string; tag?: string } | null;
+  getFavoriteContextForAsset: (
+    assetId: string,
+  ) => { branch?: string; tag?: string } | null;
   /** Saved asset loadouts — named sets of favorite asset IDs for quick switching */
   loadouts: AssetLoadout[];
-  applyLoadout: (loadout: AssetLoadout, options?: { enableOnlyFavorites?: boolean }) => void;
-  saveLoadout: (id: string | null, name: string, entries: FavoriteEntry[]) => void;
+  applyLoadout: (
+    loadout: AssetLoadout,
+    options?: { enableOnlyFavorites?: boolean },
+  ) => void;
+  saveLoadout: (
+    id: string | null,
+    name: string,
+    entries: FavoriteEntry[],
+  ) => void;
   deleteLoadout: (id: string) => void;
   renameLoadout: (id: string, name: string) => void;
   search: string;
   setSearch: (v: string) => void;
   searchFields: Set<string>;
-  setSearchFields: (v: Set<string> | ((prev: Set<string>) => Set<string>)) => void;
+  setSearchFields: (
+    v: Set<string> | ((prev: Set<string>) => Set<string>),
+  ) => void;
   showArchived: boolean | "both";
-  setShowArchived: (v: boolean | "both" | ((prev: boolean | "both") => boolean | "both")) => void;
+  setShowArchived: (
+    v: boolean | "both" | ((prev: boolean | "both") => boolean | "both"),
+  ) => void;
   needsJustification: boolean;
   setNeedsJustification: (v: boolean | ((prev: boolean) => boolean)) => void;
 
@@ -214,20 +269,30 @@ export function useVATDataCore(): UseVATDataReturn {
   const [showArchived, setShowArchived] = useState(false);
   const [needsJustification, setNeedsJustification] = useState(false);
 
-  const [filterFindingStatuses, setFilterFindingStatuses] = useState<Set<string>>(new Set());
+  const [filterFindingStatuses, setFilterFindingStatuses] = useState<
+    Set<string>
+  >(new Set());
   const [filterABC, setFilterABC] = useState<Set<string>>(new Set());
-  const [filterVerifiedRange, setFilterVerifiedRange] = useState<[number, number]>([0, 100]);
-  const [filterORARange, setFilterORARange] = useState<[number, number]>([0, 100]);
-  const [filterAssetTypes, setFilterAssetTypes] = useState<Set<string>>(new Set());
+  const [filterVerifiedRange, setFilterVerifiedRange] = useState<
+    [number, number]
+  >([0, 100]);
+  const [filterORARange, setFilterORARange] = useState<[number, number]>([
+    0, 100,
+  ]);
+  const [filterAssetTypes, setFilterAssetTypes] = useState<Set<string>>(
+    new Set(),
+  );
   const [onlyFavorites, setOnlyFavorites] = useState(false);
-  const [favoriteEntries, setFavoriteEntries] = useState<FavoriteEntry[]>(() => {
-    if (typeof window === "undefined") return [];
-    return loadFavoriteEntries();
-  });
+  const [favoriteEntries, setFavoriteEntries] = useState<FavoriteEntry[]>(
+    () => {
+      if (typeof window === "undefined") return [];
+      return loadFavoriteEntries();
+    },
+  );
 
   const favoriteAssetIds = useMemo(
     () => new Set(favoriteEntries.map((e) => e.assetId)),
-    [favoriteEntries]
+    [favoriteEntries],
   );
 
   /** Sync favorites from localStorage (e.g. after another tab changes them or on focus) */
@@ -235,7 +300,15 @@ export function useVATDataCore(): UseVATDataReturn {
     if (typeof window === "undefined") return;
     const entries = loadFavoriteEntries();
     setFavoriteEntries((prev) => {
-      if (prev.length !== entries.length || entries.some((e, i) => prev[i]?.assetId !== e.assetId || prev[i]?.branch !== e.branch || prev[i]?.tag !== e.tag)) {
+      if (
+        prev.length !== entries.length ||
+        entries.some(
+          (e, i) =>
+            prev[i]?.assetId !== e.assetId ||
+            prev[i]?.branch !== e.branch ||
+            prev[i]?.tag !== e.tag,
+        )
+      ) {
         return entries;
       }
       return prev;
@@ -263,16 +336,19 @@ export function useVATDataCore(): UseVATDataReturn {
     return () => window.removeEventListener("focus", onFocus);
   }, [syncFavoritesFromStorage]);
 
-  const toggleFavorite = useCallback((assetId: string, context?: { branch?: string; tag?: string }) => {
-    setFavoriteEntries((prev) => {
-      const hasAny = prev.some((e) => e.assetId === assetId);
-      const next = hasAny
-        ? prev.filter((e) => e.assetId !== assetId)
-        : [...prev, { assetId, branch: context?.branch, tag: context?.tag }];
-      saveFavoriteEntries(next);
-      return next;
-    });
-  }, []);
+  const toggleFavorite = useCallback(
+    (assetId: string, context?: { branch?: string; tag?: string }) => {
+      setFavoriteEntries((prev) => {
+        const hasAny = prev.some((e) => e.assetId === assetId);
+        const next = hasAny
+          ? prev.filter((e) => e.assetId !== assetId)
+          : [...prev, { assetId, branch: context?.branch, tag: context?.tag }];
+        saveFavoriteEntries(next);
+        return next;
+      });
+    },
+    [],
+  );
 
   const isFavoriteInContext = useCallback(
     (assetId: string, context?: { branch?: string; tag?: string }) => {
@@ -281,19 +357,23 @@ export function useVATDataCore(): UseVATDataReturn {
       return favoriteEntries.some(
         (e) =>
           e.assetId === assetId &&
-          (((e.branch ?? "") === (branch ?? "") && (e.tag ?? "") === (tag ?? "")) || (!e.branch && !e.tag))
+          (((e.branch ?? "") === (branch ?? "") &&
+            (e.tag ?? "") === (tag ?? "")) ||
+            (!e.branch && !e.tag)),
       );
     },
-    [favoriteEntries]
+    [favoriteEntries],
   );
 
   const getFavoriteContextForAsset = useCallback(
     (assetId: string): { branch?: string; tag?: string } | null => {
-      const entry = favoriteEntries.find((e) => e.assetId === assetId && (e.branch || e.tag));
+      const entry = favoriteEntries.find(
+        (e) => e.assetId === assetId && (e.branch || e.tag),
+      );
       if (!entry) return null;
       return { branch: entry.branch, tag: entry.tag };
     },
-    [favoriteEntries]
+    [favoriteEntries],
   );
 
   const [loadouts, setLoadouts] = useState<AssetLoadout[]>(() => {
@@ -317,21 +397,25 @@ export function useVATDataCore(): UseVATDataReturn {
 
   const applyLoadout = useCallback(
     (loadout: AssetLoadout, options?: { enableOnlyFavorites?: boolean }) => {
-      const entries: FavoriteEntry[] =
-        loadout.entries?.length ? loadout.entries : loadout.assetIds.map((id) => ({ assetId: id }));
+      const entries: FavoriteEntry[] = loadout.entries?.length
+        ? loadout.entries
+        : loadout.assetIds.map((id) => ({ assetId: id }));
       setFavoriteEntries(entries);
       saveFavoriteEntries(entries);
       if (options?.enableOnlyFavorites !== false) {
         setOnlyFavorites(true);
       }
     },
-    []
+    [],
   );
 
-  const saveLoadout = useCallback((id: string | null, name: string, entries: FavoriteEntry[]) => {
-    saveAssetLoadout(id, name, entries);
-    setLoadouts(loadAssetLoadouts());
-  }, []);
+  const saveLoadout = useCallback(
+    (id: string | null, name: string, entries: FavoriteEntry[]) => {
+      saveAssetLoadout(id, name, entries);
+      setLoadouts(loadAssetLoadouts());
+    },
+    [],
+  );
 
   const deleteLoadout = useCallback((id: string) => {
     deleteLoadoutStorage(id);
@@ -343,99 +427,127 @@ export function useVATDataCore(): UseVATDataReturn {
     setLoadouts(loadAssetLoadouts());
   }, []);
 
-  const refetch = useCallback(async (opts?: { silent?: boolean }) => {
-    const silent = opts?.silent ?? false;
-    if (!silent) setLoading(true);
-    setError(null);
-    try {
-      const params: Record<string, string | string[] | number | boolean> = { limit: 0 };  // 0 = no limit
-      if (showArchived !== "both") params.archived = showArchived;
-      // Asset search is applied client-side to avoid refetch on every keystroke
-      const [vatRes, settingsRes, sbomRes] = await Promise.all([
-        fetchVATData(params, auth),
-        fetchSettings(auth).catch(() => null),
-        fetchSbomPackages({ limit: 5000 }, auth).catch(() => []),
-      ]);
-      const mapped = vatRes.findings.map((r) => toFinding(r as unknown as Record<string, unknown>));
-      const withExpiry = applyWaiverExpiry(mapped);
-      setFindings(withExpiry);
-      const apiAssets = (vatRes.assets ?? []).map((a) => ({
-        ...a,
-        findings: (a.findings ?? []).map((r) => toFinding(r as unknown as Record<string, unknown>)),
-      })) as Asset[];
-      setAssetsFromApi(apiAssets);
-      if (settingsRes) {
-        const src = (settingsRes.sources ?? []) as unknown as Source[];
-        const trkList = (settingsRes.trackers ?? []) as unknown as Tracker[];
-        const trk = (settingsRes.tracker && Object.keys(settingsRes.tracker).length)
-          ? (settingsRes.tracker as unknown as Tracker)
-          : trkList.length
-            ? (trkList.find((t) => !t.useAikidoTracking) ?? trkList[0])
-            : ({} as unknown as Tracker);
-        const lbl = (settingsRes.labels ?? []) as unknown as WatchedLabel[];
-        setSources(src);
-        setTracker(trk);
-        setTrackers(trkList);
-        if (lbl.length) setLabels(lbl);
-        saveToStorage({ sources: settingsRes.sources ?? [], tracker: settingsRes.tracker ?? {}, labels: settingsRes.labels ?? [] });
+  const refetch = useCallback(
+    async (opts?: { silent?: boolean }) => {
+      const silent = opts?.silent ?? false;
+      if (!silent) setLoading(true);
+      setError(null);
+      try {
+        const params: Record<string, string | string[] | number | boolean> = {
+          limit: 0,
+        }; // 0 = no limit
+        if (showArchived !== "both") params.archived = showArchived;
+        // Asset search is applied client-side to avoid refetch on every keystroke
+        const [vatRes, settingsRes, sbomRes] = await Promise.all([
+          fetchVATData(params, auth),
+          fetchSettings(auth).catch(() => null),
+          fetchSbomPackages({ limit: 5000 }, auth).catch(() => []),
+        ]);
+        const mapped = vatRes.findings.map((r) =>
+          toFinding(r as unknown as Record<string, unknown>),
+        );
+        const withExpiry = applyWaiverExpiry(mapped);
+        setFindings(withExpiry);
+        const apiAssets = (vatRes.assets ?? []).map((a) => ({
+          ...a,
+          findings: (a.findings ?? []).map((r) =>
+            toFinding(r as unknown as Record<string, unknown>),
+          ),
+        })) as Asset[];
+        setAssetsFromApi(apiAssets);
+        if (settingsRes) {
+          const src = (settingsRes.sources ?? []) as unknown as Source[];
+          const trkList = (settingsRes.trackers ?? []) as unknown as Tracker[];
+          const trk =
+            settingsRes.tracker && Object.keys(settingsRes.tracker).length
+              ? (settingsRes.tracker as unknown as Tracker)
+              : trkList.length
+                ? trkList.find((t) => !t.useAikidoTracking) ?? trkList[0]
+                : ({} as unknown as Tracker);
+          const lbl = (settingsRes.labels ?? []) as unknown as WatchedLabel[];
+          setSources(src);
+          setTracker(trk);
+          setTrackers(trkList);
+          if (lbl.length) setLabels(lbl);
+          saveToStorage({
+            sources: settingsRes.sources ?? [],
+            tracker: settingsRes.tracker ?? {},
+            labels: settingsRes.labels ?? [],
+          });
+        }
+        // SBOM: use API data when available; fallback to SAMPLE_SBOM only when API returns empty
+        const apiSbom = Array.isArray(sbomRes) ? sbomRes : [];
+        const mappedSbom =
+          apiSbom.length > 0
+            ? apiSbom.map((p) => ({
+                id: p.id,
+                name: p.name,
+                version: p.version,
+                license: p.licenseId ?? "",
+                licenseRisk: p.licenseRisk,
+                component: p.component ?? "",
+                language: p.language ?? "",
+              }))
+            : SAMPLE_SBOM;
+        setSbom(mappedSbom);
+        if (!settingsRes) {
+          const stored = loadSettingsFromStorage();
+          setSources((stored.sources ?? []) as unknown as Source[]);
+          const single =
+            stored.tracker && Object.keys(stored.tracker).length
+              ? ({
+                  ...DEFAULT_TRACKER,
+                  ...stored.tracker,
+                } as unknown as Tracker)
+              : ({} as unknown as Tracker);
+          setTracker(single);
+          setTrackers(single && single.name ? [single] : []);
+          if (stored.labels?.length)
+            setLabels(stored.labels as unknown as WatchedLabel[]);
+        }
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Failed to fetch findings");
+        setFindings([]);
+        setAssetsFromApi(null);
+      } finally {
+        if (!silent) setLoading(false);
       }
-      // SBOM: use API data when available; fallback to SAMPLE_SBOM only when API returns empty
-      const apiSbom = Array.isArray(sbomRes) ? sbomRes : [];
-      const mappedSbom = apiSbom.length > 0
-        ? apiSbom.map((p) => ({
-            id: p.id,
-            name: p.name,
-            version: p.version,
-            license: p.licenseId ?? "",
-            licenseRisk: p.licenseRisk,
-            component: p.component ?? "",
-            language: p.language ?? "",
-          }))
-        : SAMPLE_SBOM;
-      setSbom(mappedSbom);
-      if (!settingsRes) {
-        const stored = loadSettingsFromStorage();
-        setSources((stored.sources ?? []) as unknown as Source[]);
-        const single = stored.tracker && Object.keys(stored.tracker).length
-          ? ({ ...DEFAULT_TRACKER, ...stored.tracker } as unknown as Tracker)
-          : ({} as unknown as Tracker);
-        setTracker(single);
-        setTrackers(single && single.name ? [single] : []);
-        if (stored.labels?.length) setLabels(stored.labels as unknown as WatchedLabel[]);
-      }
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to fetch findings");
-      setFindings([]);
-      setAssetsFromApi(null);
-    } finally {
-      if (!silent) setLoading(false);
-    }
-  }, [showArchived, token, user?.email]);
+    },
+    [showArchived, token, user?.email],
+  );
 
   /** Refetch only settings — does NOT set loading, so Settings pane stays mounted */
   const refetchSettings = useCallback(async () => {
     try {
       const settingsRes = await fetchSettings(auth);
       const trkList = (settingsRes.trackers ?? []) as unknown as Tracker[];
-      const trk = (settingsRes.tracker && Object.keys(settingsRes.tracker).length)
-        ? (settingsRes.tracker as unknown as Tracker)
-        : trkList.length
-          ? (trkList.find((t) => !t.useAikidoTracking) ?? trkList[0])
-          : ({} as unknown as Tracker);
+      const trk =
+        settingsRes.tracker && Object.keys(settingsRes.tracker).length
+          ? (settingsRes.tracker as unknown as Tracker)
+          : trkList.length
+            ? trkList.find((t) => !t.useAikidoTracking) ?? trkList[0]
+            : ({} as unknown as Tracker);
       setSources((settingsRes.sources ?? []) as unknown as Source[]);
       setTracker(trk);
       setTrackers(trkList);
-      if (settingsRes.labels?.length) setLabels(settingsRes.labels as unknown as WatchedLabel[]);
-      saveToStorage({ sources: settingsRes.sources ?? [], tracker: settingsRes.tracker ?? {}, labels: settingsRes.labels ?? [] });
+      if (settingsRes.labels?.length)
+        setLabels(settingsRes.labels as unknown as WatchedLabel[]);
+      saveToStorage({
+        sources: settingsRes.sources ?? [],
+        tracker: settingsRes.tracker ?? {},
+        labels: settingsRes.labels ?? [],
+      });
     } catch {
       const stored = loadSettingsFromStorage();
       setSources((stored.sources ?? []) as unknown as Source[]);
-      const single = stored.tracker && Object.keys(stored.tracker).length
-        ? ({ ...DEFAULT_TRACKER, ...stored.tracker } as unknown as Tracker)
-        : ({} as unknown as Tracker);
+      const single =
+        stored.tracker && Object.keys(stored.tracker).length
+          ? ({ ...DEFAULT_TRACKER, ...stored.tracker } as unknown as Tracker)
+          : ({} as unknown as Tracker);
       setTracker(single);
       setTrackers(single && single.name ? [single] : []);
-      if (stored.labels?.length) setLabels(stored.labels as unknown as WatchedLabel[]);
+      if (stored.labels?.length)
+        setLabels(stored.labels as unknown as WatchedLabel[]);
     }
   }, [token, user?.email]);
 
@@ -456,17 +568,19 @@ export function useVATDataCore(): UseVATDataReturn {
             suppressionScope: upd.suppressionScope ?? undefined,
             attestation: upd.attestation ?? undefined,
           },
-          auth
+          auth,
         );
         const mapped = toFinding(raw as unknown as Record<string, unknown>);
-        setFindings((prev) => prev.map((f) => (f.id === mapped.id ? mapped : f)));
+        setFindings((prev) =>
+          prev.map((f) => (f.id === mapped.id ? mapped : f)),
+        );
         setSelected(mapped);
       } catch (err) {
         await refetch();
         throw err;
       }
     },
-    [refetch, token, user?.email]
+    [refetch, token, user?.email],
   );
 
   const handleArchive = useCallback(
@@ -480,7 +594,7 @@ export function useVATDataCore(): UseVATDataReturn {
         throw err;
       }
     },
-    [refetch, token, user?.email]
+    [refetch, token, user?.email],
   );
 
   const handleUnarchive = useCallback(
@@ -492,7 +606,7 @@ export function useVATDataCore(): UseVATDataReturn {
         await refetch();
       }
     },
-    [refetch, token, user?.email]
+    [refetch, token, user?.email],
   );
 
   const handleRevert = useCallback(
@@ -500,29 +614,36 @@ export function useVATDataCore(): UseVATDataReturn {
       try {
         const raw = await revertFinding(id, reason, userEmail ?? undefined);
         const mapped = toFinding(raw as unknown as Record<string, unknown>);
-        setFindings((prev) => prev.map((f) => (f.id === mapped.id ? mapped : f)));
+        setFindings((prev) =>
+          prev.map((f) => (f.id === mapped.id ? mapped : f)),
+        );
         setSelected(mapped);
       } catch (err) {
         await refetch();
         throw err;
       }
     },
-    [refetch, token, user?.email]
+    [refetch, token, user?.email],
   );
 
   const handleOverrideFingerprint = useCallback(
     async (id: string) => {
       try {
-        const raw = await overrideFindingFingerprint(id, userEmail ?? undefined);
+        const raw = await overrideFindingFingerprint(
+          id,
+          userEmail ?? undefined,
+        );
         const mapped = toFinding(raw as unknown as Record<string, unknown>);
-        setFindings((prev) => prev.map((f) => (f.id === mapped.id ? mapped : f)));
+        setFindings((prev) =>
+          prev.map((f) => (f.id === mapped.id ? mapped : f)),
+        );
         setSelected(mapped);
       } catch (err) {
         await refetch();
         throw err;
       }
     },
-    [refetch, token, user?.email]
+    [refetch, token, user?.email],
   );
 
   const handleBulk = useCallback(
@@ -530,7 +651,12 @@ export function useVATDataCore(): UseVATDataReturn {
       const ids = Array.from(checked);
       if (ids.length === 0) return;
       try {
-        await bulkUpdateFindings(ids, status, justification, userEmail ?? undefined);
+        await bulkUpdateFindings(
+          ids,
+          status,
+          justification,
+          userEmail ?? undefined,
+        );
         setChecked(new Set());
         await refetch();
       } catch (err) {
@@ -538,7 +664,7 @@ export function useVATDataCore(): UseVATDataReturn {
         throw err;
       }
     },
-    [checked, refetch, token, user?.email]
+    [checked, refetch, token, user?.email],
   );
 
   const onSourcesChange = useCallback(
@@ -546,16 +672,20 @@ export function useVATDataCore(): UseVATDataReturn {
       try {
         await putSettingsSources(
           next as unknown as Array<Record<string, unknown>>,
-          auth
+          auth,
         );
         setSources(next);
-        saveToStorage({ sources: next as unknown as Array<Record<string, unknown>> });
+        saveToStorage({
+          sources: next as unknown as Array<Record<string, unknown>>,
+        });
       } catch {
-        saveToStorage({ sources: next as unknown as Array<Record<string, unknown>> });
+        saveToStorage({
+          sources: next as unknown as Array<Record<string, unknown>>,
+        });
         setSources(next);
       }
     },
-    [userEmail]
+    [userEmail],
   );
 
   const onTrackerChange = useCallback(
@@ -563,7 +693,7 @@ export function useVATDataCore(): UseVATDataReturn {
       try {
         await putSettingsTracker(
           next as unknown as Record<string, unknown>,
-          auth
+          auth,
         );
         setTracker(next);
         saveToStorage({ tracker: next as unknown as Record<string, unknown> });
@@ -572,7 +702,7 @@ export function useVATDataCore(): UseVATDataReturn {
         setTracker(next);
       }
     },
-    [userEmail]
+    [userEmail],
   );
 
   const onLabelsChange = useCallback(
@@ -580,16 +710,20 @@ export function useVATDataCore(): UseVATDataReturn {
       try {
         await putSettingsLabels(
           next as unknown as Array<Record<string, unknown>>,
-          auth
+          auth,
         );
         setLabels(next);
-        saveToStorage({ labels: next as unknown as Array<Record<string, unknown>> });
+        saveToStorage({
+          labels: next as unknown as Array<Record<string, unknown>>,
+        });
       } catch {
-        saveToStorage({ labels: next as unknown as Array<Record<string, unknown>> });
+        saveToStorage({
+          labels: next as unknown as Array<Record<string, unknown>>,
+        });
         setLabels(next);
       }
     },
-    [userEmail]
+    [userEmail],
   );
 
   const toggleCheck = useCallback((id: string, val: boolean) => {
@@ -600,26 +734,40 @@ export function useVATDataCore(): UseVATDataReturn {
     });
   }, []);
 
-  const navigateToFinding = useCallback((fId: string) => {
-    const f = findings.find((x) => x.id === fId);
-    if (f) {
-      setSelected(f);
-      setView("findings");
-    }
-  }, [findings]);
+  const navigateToFinding = useCallback(
+    (fId: string) => {
+      const f = findings.find((x) => x.id === fId);
+      if (f) {
+        setSelected(f);
+        setView("findings");
+      }
+    },
+    [findings],
+  );
 
   const alerts = useMemo(() => computeAlerts(findings, daysLeft), [findings]);
   const active = useMemo(() => findings.filter((f) => !f.archived), [findings]);
-  const archivedCount = useMemo(() => findings.filter((f) => f.archived).length, [findings]);
-  const reviewQueue = useMemo(() => active.filter((f) => f.status === "In Review"), [active]);
+  const archivedCount = useMemo(
+    () => findings.filter((f) => f.archived).length,
+    [findings],
+  );
+  const reviewQueue = useMemo(
+    () => active.filter((f) => f.status === "In Review"),
+    [active],
+  );
   const total = active.length;
   const open = active.filter((f) => f.status === "Open").length;
   const inRev = reviewQueue.length;
   const overdue = active.filter((f) => {
     if (
-      ["Resolved", "False Positive", "Duplicate", "Not Applicable", "Approved", "Suppressed"].includes(
-        f.status
-      )
+      [
+        "Resolved",
+        "False Positive",
+        "Duplicate",
+        "Not Applicable",
+        "Approved",
+        "Suppressed",
+      ].includes(f.status)
     )
       return false;
     const d = daysLeft(f.slaDue);
@@ -632,7 +780,7 @@ export function useVATDataCore(): UseVATDataReturn {
 
   const waivers = useMemo(
     () => active.filter((f) => f.status === "Risk Accepted" && f.attestation),
-    [active]
+    [active],
   );
 
   const displayed = useMemo(() => {
@@ -641,13 +789,13 @@ export function useVATDataCore(): UseVATDataReturn {
       list = list.filter(
         (f) =>
           (f.status === "Open" || f.status === "In Review") &&
-          !(f.justification?.trim())
+          !f.justification?.trim(),
       );
     }
     return [...list].sort(
       (a, b) =>
         SEV_ORDER.indexOf(a.severity as (typeof SEV_ORDER)[number]) -
-        SEV_ORDER.indexOf(b.severity as (typeof SEV_ORDER)[number])
+        SEV_ORDER.indexOf(b.severity as (typeof SEV_ORDER)[number]),
     );
   }, [findings, active, showArchived, needsJustification]);
 
@@ -656,7 +804,9 @@ export function useVATDataCore(): UseVATDataReturn {
     let assets: Asset[] =
       assetsFromApi != null
         ? assetsFromApi.filter(
-            (a) => a.findings.length === 0 || a.findings.some((f) => displayedIds.has(f.id))
+            (a) =>
+              a.findings.length === 0 ||
+              a.findings.some((f) => displayedIds.has(f.id)),
           )
         : deriveAssets(displayed, SEV_ORDER);
 
@@ -678,56 +828,71 @@ export function useVATDataCore(): UseVATDataReturn {
         for (const f of asset.findings) {
           if (status === "Needs Justification") {
             if (f.status === "Open") return true;
-            if (f.status === "In Review" && !f.justification?.trim()) return true;
+            if (f.status === "In Review" && !f.justification?.trim())
+              return true;
           } else if (status === "Justified") {
-            if (f.status === "In Review" && f.justification?.trim()) return true;
+            if (f.status === "In Review" && f.justification?.trim())
+              return true;
           } else if (status === "Verified") {
             if (
-              ["Resolved", "False Positive", "Approved", "Suppressed", "Not Applicable", "Duplicate"].includes(
-                f.status
-              )
+              [
+                "Resolved",
+                "False Positive",
+                "Approved",
+                "Suppressed",
+                "Not Applicable",
+                "Duplicate",
+              ].includes(f.status)
             )
               return true;
-          } else if (status === "Needs Rework" && f.status === "Rejected") return true;
-          else if (status === "Needs Reverified" && f.status === "Reopened") return true;
+          } else if (status === "Needs Rework" && f.status === "Rejected")
+            return true;
+          else if (status === "Needs Reverified" && f.status === "Reopened")
+            return true;
         }
         return false;
       };
       assets = assets.filter((a) =>
-        FINDING_STATUS_OPTS.some((s) => filterFindingStatuses.has(s) && hasStatus(a, s))
+        FINDING_STATUS_OPTS.some(
+          (s) => filterFindingStatuses.has(s) && hasStatus(a, s),
+        ),
       );
     }
 
     if (filterABC.size > 0) {
       const matchesABC = (asset: Asset, abc: string): boolean => {
         if (abc === "Compliant") return asset.verifiedPct === 100;
-        if (abc === "Compliant With Warnings") return asset.verifiedPct > 0 && asset.verifiedPct < 100;
+        if (abc === "Compliant With Warnings")
+          return asset.verifiedPct > 0 && asset.verifiedPct < 100;
         if (abc === "Non-compliant") return asset.verifiedPct === 0;
         return false;
       };
       assets = assets.filter((a) =>
-        ABC_OPTS.some((abc) => filterABC.has(abc) && matchesABC(a, abc))
+        ABC_OPTS.some((abc) => filterABC.has(abc) && matchesABC(a, abc)),
       );
     }
 
     assets = assets.filter(
       (a) =>
         a.verifiedPct >= filterVerifiedRange[0] &&
-        a.verifiedPct <= filterVerifiedRange[1]
+        a.verifiedPct <= filterVerifiedRange[1],
     );
     assets = assets.filter(
-      (a) => a.oraPct >= filterORARange[0] && a.oraPct <= filterORARange[1]
+      (a) => a.oraPct >= filterORARange[0] && a.oraPct <= filterORARange[1],
     );
 
     if (filterAssetTypes.size > 0) {
-      assets = assets.filter((a) => filterAssetTypes.has(getAssetTypeFromAsset(a)));
+      assets = assets.filter((a) =>
+        filterAssetTypes.has(getAssetTypeFromAsset(a)),
+      );
     }
 
     if (search.trim()) {
       const q = search.toLowerCase().trim();
       assets = assets.filter(
         (a) =>
-          (a.name ?? "").toLowerCase().includes(q) || (a.id ?? "").toLowerCase().includes(q)
+          (a.name ?? "").toLowerCase().includes(q) ||
+          (a.id ?? "").toLowerCase().includes(q),
       );
     }
 
@@ -749,7 +914,9 @@ export function useVATDataCore(): UseVATDataReturn {
     if (assetsFromApi != null) {
       const displayedIds = new Set(displayed.map((f) => f.id));
       return assetsFromApi.filter(
-        (a) => a.findings.length === 0 || a.findings.some((f) => displayedIds.has(f.id))
+        (a) =>
+          a.findings.length === 0 ||
+          a.findings.some((f) => displayedIds.has(f.id)),
       );
     }
     return deriveAssets(displayed, SEV_ORDER);

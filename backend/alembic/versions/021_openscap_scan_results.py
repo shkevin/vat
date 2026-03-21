@@ -27,7 +27,9 @@ def upgrade() -> None:
         sa.Column("raw_xccdf_xml", sa.LargeBinary(), nullable=False),
         sa.Column("benchmark_id", sa.String(256), nullable=True),
         sa.Column("parser_id", sa.String(32), nullable=False),
-        sa.Column("created_at", sa.DateTime(), nullable=False, server_default=sa.func.now()),
+        sa.Column(
+            "created_at", sa.DateTime(), nullable=False, server_default=sa.func.now()
+        ),
         sa.Column("tenant_id", sa.String(64), nullable=True),
     )
     op.create_index(

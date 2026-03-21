@@ -2,7 +2,11 @@
 
 import logging
 
-from app.schemas.ingest import CanonicalFindingPayload, CanonicalFindingType, CanonicalSeverity
+from app.schemas.ingest import (
+    CanonicalFindingPayload,
+    CanonicalFindingType,
+    CanonicalSeverity,
+)
 from app.parsers.base import IngestParser
 from app.parsers.utils import extract_scan_tag
 
@@ -33,9 +37,13 @@ class PipAuditParser(IngestParser):
             return self._parse_new(raw, extract_scan_tag(raw))
         if isinstance(raw, dict):
             return []
-        raise ValueError("pip-audit input must be JSON array or object with dependencies")
+        raise ValueError(
+            "pip-audit input must be JSON array or object with dependencies"
+        )
 
-    def _parse_legacy(self, data: list, scan_tag: str | None) -> list[CanonicalFindingPayload]:
+    def _parse_legacy(
+        self, data: list, scan_tag: str | None
+    ) -> list[CanonicalFindingPayload]:
         payloads: list[CanonicalFindingPayload] = []
         for item in data:
             if not isinstance(item, dict):
@@ -43,7 +51,9 @@ class PipAuditParser(IngestParser):
             payloads.extend(self._item_findings(item, scan_tag))
         return payloads
 
-    def _parse_new(self, data: dict, scan_tag: str | None = None) -> list[CanonicalFindingPayload]:
+    def _parse_new(
+        self, data: dict, scan_tag: str | None = None
+    ) -> list[CanonicalFindingPayload]:
         payloads: list[CanonicalFindingPayload] = []
         for dep in data.get("dependencies") or []:
             if not isinstance(dep, dict):
@@ -51,7 +61,9 @@ class PipAuditParser(IngestParser):
             payloads.extend(self._item_findings(dep, scan_tag))
         return payloads
 
-    def _item_findings(self, item: dict, scan_tag: str | None = None) -> list[CanonicalFindingPayload]:
+    def _item_findings(
+        self, item: dict, scan_tag: str | None = None
+    ) -> list[CanonicalFindingPayload]:
         payloads: list[CanonicalFindingPayload] = []
         name = item.get("name") or "unknown"
         version = item.get("version") or ""
@@ -77,5 +89,7 @@ class PipAuditParser(IngestParser):
             }
             if scan_tag:
                 fields["tag"] = scan_tag
-            payloads.append(self._create_payload(fields, asset=f"requirements.txt>{name}"))
+            payloads.append(
+                self._create_payload(fields, asset=f"requirements.txt>{name}")
+            )
         return payloads

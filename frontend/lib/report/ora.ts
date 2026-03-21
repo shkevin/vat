@@ -77,15 +77,19 @@ export const ABC_CVE_AGE_TOLERANCE_DAYS = {
  */
 export function computeORAPenalty(
   counts: SeverityCountsLike,
-  mitigatedCounts?: Partial<SeverityCountsLike>
+  mitigatedCounts?: Partial<SeverityCountsLike>,
 ): number {
   let penalty = 0;
 
   penalty += (counts.critical ?? 0) * ORA_WEIGHTS.critical;
-  penalty += (mitigatedCounts?.critical ?? 0) * ORA_WEIGHTS.critical * ORA_MITIGATED_FACTOR;
+  penalty +=
+    (mitigatedCounts?.critical ?? 0) *
+    ORA_WEIGHTS.critical *
+    ORA_MITIGATED_FACTOR;
 
   penalty += (counts.high ?? 0) * ORA_WEIGHTS.high;
-  penalty += (mitigatedCounts?.high ?? 0) * ORA_WEIGHTS.high * ORA_MITIGATED_FACTOR;
+  penalty +=
+    (mitigatedCounts?.high ?? 0) * ORA_WEIGHTS.high * ORA_MITIGATED_FACTOR;
 
   const medTotal =
     (counts.medium ?? 0) * ORA_WEIGHTS.medium +
@@ -106,7 +110,7 @@ export function computeORAPenalty(
  */
 export function computeORAScore(
   counts: SeverityCountsLike,
-  mitigatedCounts?: Partial<SeverityCountsLike>
+  mitigatedCounts?: Partial<SeverityCountsLike>,
 ): number {
   const penalty = computeORAPenalty(counts, mitigatedCounts);
   return Math.max(0, Math.min(100, Math.round(100 - penalty)));
@@ -125,7 +129,7 @@ export function toDisplayORA(vulnerabilityScore: number): number {
 
 /** Risk level from ORA score. Lower score = higher risk. */
 export function getORARiskLevel(
-  score: number
+  score: number,
 ): "Critical" | "High" | "Medium" | "Low" {
   if (score < 25) return "Critical";
   if (score < 50) return "High";
@@ -185,12 +189,18 @@ function daysSince(dateStr: string): number {
 /**
  * Compute ABC compliance for a set of open findings.
  */
-export function computeABCCompliance(issues: ABCIssueInput[]): ABCCriteriaResult {
+export function computeABCCompliance(
+  issues: ABCIssueInput[],
+): ABCCriteriaResult {
   const open = issues.filter(
     (i) =>
-      !["resolved", "closed", "false positive", "ignored", "auto_ignored"].includes(
-        (i.status ?? "").toLowerCase()
-      )
+      ![
+        "resolved",
+        "closed",
+        "false positive",
+        "ignored",
+        "auto_ignored",
+      ].includes((i.status ?? "").toLowerCase()),
   );
 
   const bySev: Record<
@@ -244,11 +254,18 @@ export function computeABCCompliance(issues: ABCIssueInput[]): ABCCriteriaResult
     entry.count++;
 
     const daysSinceDetection = daysSince(i.firstDetectedAt);
-    const cveAge = i.cvePublishedAt ? daysSince(i.cvePublishedAt) : daysSinceDetection;
+    const cveAge = i.cvePublishedAt
+      ? daysSince(i.cvePublishedAt)
+      : daysSinceDetection;
 
-    const justDays = ABC_JUSTIFICATION_DAYS[sev as keyof typeof ABC_JUSTIFICATION_DAYS];
-    const remDays = ABC_REMEDIATION_DAYS[sev as keyof typeof ABC_REMEDIATION_DAYS];
-    const ageTol = ABC_CVE_AGE_TOLERANCE_DAYS[sev as keyof typeof ABC_CVE_AGE_TOLERANCE_DAYS];
+    const justDays =
+      ABC_JUSTIFICATION_DAYS[sev as keyof typeof ABC_JUSTIFICATION_DAYS];
+    const remDays =
+      ABC_REMEDIATION_DAYS[sev as keyof typeof ABC_REMEDIATION_DAYS];
+    const ageTol =
+      ABC_CVE_AGE_TOLERANCE_DAYS[
+        sev as keyof typeof ABC_CVE_AGE_TOLERANCE_DAYS
+      ];
 
     if (justDays !== undefined && daysSinceDetection > justDays) {
       entry.justificationOverdue++;
@@ -265,7 +282,8 @@ export function computeABCCompliance(issues: ABCIssueInput[]): ABCCriteriaResult
   }
 
   const maxCountExceeded = {
-    critical: (bySev.critical?.count ?? 0) > (ABC_MAX_COUNTS.critical ?? Infinity),
+    critical:
+      (bySev.critical?.count ?? 0) > (ABC_MAX_COUNTS.critical ?? Infinity),
     high: (bySev.high?.count ?? 0) > (ABC_MAX_COUNTS.high ?? Infinity),
   };
 

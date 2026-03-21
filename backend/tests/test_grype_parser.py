@@ -5,7 +5,13 @@ from pathlib import Path
 
 from app.parsers.grype import GrypeParser
 
-_SAMPLES = Path(__file__).resolve().parent.parent.parent / "django-DefectDojo" / "unittests" / "scans" / "anchore_grype"
+_SAMPLES = (
+    Path(__file__).resolve().parent.parent.parent
+    / "django-DefectDojo"
+    / "unittests"
+    / "scans"
+    / "anchore_grype"
+)
 
 
 def _load(name: str) -> dict:
@@ -29,4 +35,3 @@ def test_grype_many():
     assert p.cve_id
     assert p.component
     assert "libgnutls" in p.component or "deb" in str(p.component).lower()
-

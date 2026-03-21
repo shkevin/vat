@@ -23,9 +23,16 @@ async def _run_linear_poll(force: bool = False) -> dict:
     """Run Linear API poll. When force=True (manual sync), runs regardless of linear_poll_enabled."""
     settings = get_settings()
     if not force and not settings.linear_poll_enabled:
-        return {"issues_fetched": 0, "comments_processed": 0, "descriptions_processed": 0, "errors": []}
+        return {
+            "issues_fetched": 0,
+            "comments_processed": 0,
+            "descriptions_processed": 0,
+            "errors": [],
+        }
     engine = create_async_engine(settings.database_url)
-    session_factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    session_factory = async_sessionmaker(
+        engine, class_=AsyncSession, expire_on_commit=False
+    )
     try:
         async with session_factory() as db:
             return await poll_linear_for_updates(db, force=force)
@@ -37,7 +44,9 @@ async def _run_sync_batch(limit: int) -> int:
     """Process a batch of pending sync events. Used for parallel fan-out."""
     settings = get_settings()
     engine = create_async_engine(settings.database_url)
-    session_factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    session_factory = async_sessionmaker(
+        engine, class_=AsyncSession, expire_on_commit=False
+    )
     try:
         async with session_factory() as db:
             return await process_pending_sync_events(db, limit=limit)
@@ -63,7 +72,9 @@ async def _run_sync_worker(
 
     settings = get_settings()
     engine = create_async_engine(settings.database_url)
-    session_factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    session_factory = async_sessionmaker(
+        engine, class_=AsyncSession, expire_on_commit=False
+    )
     resolver = SettingsCredentialResolver()
     try:
         async with session_factory() as db:
@@ -77,13 +88,17 @@ async def _run_sync_worker(
             if tracker_configured:
                 push_mode = await get_tracker_push_mode(db)
                 if push_mode == "groups":
-                    link_result = await link_linear_issues_to_findings(db, max_issues=500)
+                    link_result = await link_linear_issues_to_findings(
+                        db, max_issues=500
+                    )
                     linked = link_result.get("linked", 0)
                     link_fetched = link_result.get("fetched", 0)
                 if linked > 0:
                     await db.commit()
                 # Backfill before process so newly enqueued create_issue events are processed in same run
-                corrections_enqueued = await backfill_tracker_corrections(db, limit=corrections_limit)
+                corrections_enqueued = await backfill_tracker_corrections(
+                    db, limit=corrections_limit
+                )
                 enqueued = await backfill_unsynced_findings(db, limit=backfill_limit)
             else:
                 corrections_enqueued = 0

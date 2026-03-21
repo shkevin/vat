@@ -67,6 +67,7 @@ async def _resolve_user_context(
 
         # 2. Admin API key (vat_ prefix) — grants admin role for automation
         from app.services.admin_keys import validate_admin_key
+
         if await validate_admin_key(db, authorization.credentials):
             return (
                 UserContext(
@@ -141,9 +142,7 @@ async def get_user_context_optional(
     Resolve user context without raising. Returns anonymous context if unauthenticated.
     Use for endpoints that allow optional audit attribution (e.g. SBOM upload).
     """
-    ctx, _ = await _resolve_user_context(
-        authorization, x_api_key, x_vat_user, db
-    )
+    ctx, _ = await _resolve_user_context(authorization, x_api_key, x_vat_user, db)
     return ctx
 
 
@@ -161,7 +160,9 @@ async def get_current_user_optional(
     return ctx.email or ctx.raw_identity
 
 
-async def require_reviewer(ctx: UserContext = Depends(get_current_user_context)) -> UserContext:
+async def require_reviewer(
+    ctx: UserContext = Depends(get_current_user_context),
+) -> UserContext:
     """
     RBAC: require reviewer or admin role for write operations.
     Raises 403 if role is read_only.
@@ -174,7 +175,9 @@ async def require_reviewer(ctx: UserContext = Depends(get_current_user_context))
     return ctx
 
 
-async def require_admin(ctx: UserContext = Depends(get_current_user_context)) -> UserContext:
+async def require_admin(
+    ctx: UserContext = Depends(get_current_user_context),
+) -> UserContext:
     """RBAC: require admin role for tenant/user management."""
     if ctx.role != "admin":
         raise HTTPException(

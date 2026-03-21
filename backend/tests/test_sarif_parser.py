@@ -75,7 +75,9 @@ def test_sarif_parser_unsupported_version():
 
 
 def test_sarif_parser_fixture():
-    fixture_path = Path(__file__).parent / "fixtures" / "sarif" / "trivy-sample.sarif.json"
+    fixture_path = (
+        Path(__file__).parent / "fixtures" / "sarif" / "trivy-sample.sarif.json"
+    )
     if not fixture_path.exists():
         pytest.skip("Fixture not found")
     with open(fixture_path) as f:

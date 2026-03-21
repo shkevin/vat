@@ -22,9 +22,13 @@ async def post_token(
     Accepts application/x-www-form-urlencoded. Returns access_token for ingest.
     """
     if grant_type != "client_credentials":
-        raise HTTPException(status_code=400, detail="grant_type must be client_credentials")
+        raise HTTPException(
+            status_code=400, detail="grant_type must be client_credentials"
+        )
     if not client_id or not client_secret:
-        raise HTTPException(status_code=400, detail="client_id and client_secret required")
+        raise HTTPException(
+            status_code=400, detail="client_id and client_secret required"
+        )
 
     result = await validate_oauth_client(db, client_id, client_secret)
     if not result:

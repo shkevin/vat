@@ -12,7 +12,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import async_session
 from app.models.finding import Finding
@@ -23,7 +22,15 @@ def _status_display(s) -> str:
     if s is None:
         return ""
     val = s.value if hasattr(s, "value") else str(s)
-    return str(val).replace("_", " ").replace("SyncedToTracker", "Synced to Tracker").replace("InReview", "In Review").replace("FalsePositive", "False Positive").replace("NotApplicable", "Not Applicable").replace("RiskAccepted", "Risk Accepted")
+    return (
+        str(val)
+        .replace("_", " ")
+        .replace("SyncedToTracker", "Synced to Tracker")
+        .replace("InReview", "In Review")
+        .replace("FalsePositive", "False Positive")
+        .replace("NotApplicable", "Not Applicable")
+        .replace("RiskAccepted", "Risk Accepted")
+    )
 
 
 async def main():
@@ -31,11 +38,24 @@ async def main():
     if path and Path(path).exists():
         try:
             import pandas as pd
+
             df = pd.read_excel(path, sheet_name="Issues")
-            df = df.rename(columns=lambda c: c.strip().lower().replace(" ", "_") if isinstance(c, str) else c)
-            repo_col = "repository" if "repository" in df.columns else next((c for c in df.columns if "repo" in str(c).lower()), "repository")
+            df = df.rename(
+                columns=lambda c: c.strip().lower().replace(" ", "_")
+                if isinstance(c, str)
+                else c
+            )
+            repo_col = (
+                "repository"
+                if "repository" in df.columns
+                else next(
+                    (c for c in df.columns if "repo" in str(c).lower()), "repository"
+                )
+            )
             vat_col = "vat_status" if "vat_status" in df.columns else None
-            excel_by_asset: dict[str, dict] = defaultdict(lambda: {"total": 0, "Open": 0, "Resolved": 0, "Suppressed": 0})
+            excel_by_asset: dict[str, dict] = defaultdict(
+                lambda: {"total": 0, "Open": 0, "Resolved": 0, "Suppressed": 0}
+            )
             for _, row in df.iterrows():
                 asset = str(row.get(repo_col, "")).strip() or "unknown"
                 if asset.lower() == "nan":
@@ -63,7 +83,9 @@ async def main():
 
     async with async_session() as session:
         result = await session.execute(
-            select(Finding).where(Finding.archived == False).where(Finding.source == "Aikido")
+            select(Finding)
+            .where(Finding.archived == False)
+            .where(Finding.source == "Aikido")
         )
         findings = list(result.scalars().all())
 
@@ -79,7 +101,14 @@ async def main():
     print(f"Total Aikido findings in DB: {len(findings)}")
     print()
 
-    CLOSED = {"Resolved", "False Positive", "Duplicate", "Not Applicable", "Approved", "Suppressed"}
+    CLOSED = {
+        "Resolved",
+        "False Positive",
+        "Duplicate",
+        "Not Applicable",
+        "Approved",
+        "Suppressed",
+    }
     all_ok = True
 
     for asset in sorted(by_asset.keys()):
@@ -114,8 +143,12 @@ async def main():
             if not match_total or not match_open:
                 all_ok = False
             print("  vs Excel:")
-            print(f"    Total:  VAT={total}  Excel={ex_total}  {'OK' if match_total else 'MISMATCH'}")
-            print(f"    Open:   VAT={open_count}  Excel={ex_open}  {'OK' if match_open else 'MISMATCH'}")
+            print(
+                f"    Total:  VAT={total}  Excel={ex_total}  {'OK' if match_total else 'MISMATCH'}"
+            )
+            print(
+                f"    Open:   VAT={open_count}  Excel={ex_open}  {'OK' if match_open else 'MISMATCH'}"
+            )
             print()
         print()
 
@@ -126,7 +159,9 @@ async def main():
         print("=" * 80)
         print(f"VAT total:   {len(findings)}")
         print(f"Excel total: {ex_total_all}")
-        print(f"Match: {'YES' if len(findings) == ex_total_all and all_ok else 'NO - investigate'}")
+        print(
+            f"Match: {'YES' if len(findings) == ex_total_all and all_ok else 'NO - investigate'}"
+        )
         print("=" * 80)
 
 

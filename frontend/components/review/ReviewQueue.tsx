@@ -24,7 +24,7 @@ export function ReviewQueue({
   const sorted = [...reviewQueue].sort(
     (a, b) =>
       SEV_ORDER.indexOf(a.severity as (typeof SEV_ORDER)[number]) -
-      SEV_ORDER.indexOf(b.severity as (typeof SEV_ORDER)[number])
+      SEV_ORDER.indexOf(b.severity as (typeof SEV_ORDER)[number]),
   );
 
   return (

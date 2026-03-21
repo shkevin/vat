@@ -5,7 +5,10 @@ import {
   buildReportHtmlFromDefinition,
   computeReportContext,
 } from "@/lib/report/report-engine";
-import type { VATDashboardData, VATReportIssue } from "@/lib/report/vatReportAdapter";
+import type {
+  VATDashboardData,
+  VATReportIssue,
+} from "@/lib/report/vatReportAdapter";
 import type { ReportDefinition } from "@/lib/report/report-types";
 import { createDefaultReportDefinition } from "@/lib/report/report-engine";
 
@@ -64,11 +67,29 @@ function createMockDashboardData(): VATDashboardData {
       scanner_type: "SAST",
       cve_id: undefined,
       has_task: false,
-      aikido_url: "",
+      source_url: "",
     })),
     repos: [
-      { id: 1, name: "acme/backend", provider: "github", issue_count: 2, critical_count: 1, high_count: 1, medium_count: 0, low_count: 0 },
-      { id: 2, name: "acme/frontend", provider: "github", issue_count: 1, critical_count: 0, high_count: 0, medium_count: 1, low_count: 0 },
+      {
+        id: 1,
+        name: "acme/backend",
+        provider: "github",
+        issue_count: 2,
+        critical_count: 1,
+        high_count: 1,
+        medium_count: 0,
+        low_count: 0,
+      },
+      {
+        id: 2,
+        name: "acme/frontend",
+        provider: "github",
+        issue_count: 1,
+        critical_count: 0,
+        high_count: 0,
+        medium_count: 1,
+        low_count: 0,
+      },
     ],
     containers: [],
     vms: [],
@@ -79,7 +100,10 @@ function createMockDashboardData(): VATDashboardData {
 }
 
 /** Extract body content and script content from full report HTML. */
-function extractBodyAndScripts(html: string): { body: string; scripts: string[] } {
+function extractBodyAndScripts(html: string): {
+  body: string;
+  scripts: string[];
+} {
   const bodyMatch = html.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
   const body = bodyMatch ? bodyMatch[1] : html;
   const scripts: string[] = [];
@@ -99,10 +123,12 @@ export default function TestReportPage() {
     const definition: ReportDefinition = createDefaultReportDefinition(
       data.workspace.name,
       undefined,
-      "vat"
+      "vat",
     );
     const context = computeReportContext(data, definition.filters);
-    return buildReportHtmlFromDefinition(context, definition, { preview: true });
+    return buildReportHtmlFromDefinition(context, definition, {
+      preview: true,
+    });
   }, []);
 
   useEffect(() => {
@@ -111,7 +137,8 @@ export default function TestReportPage() {
 
     const { body, scripts } = extractBodyAndScripts(reportHtml);
     el.innerHTML = body;
-    (window as unknown as { __reportScripts?: string[] }).__reportScripts = scripts;
+    (window as unknown as { __reportScripts?: string[] }).__reportScripts =
+      scripts;
 
     // Scripts injected via innerHTML do not execute. Use eval so IIFE runs in global scope.
     for (let i = 0; i < scripts.length; i++) {
@@ -122,15 +149,19 @@ export default function TestReportPage() {
       } catch (err) {
         const msg = (err as Error).message;
         // Try to find position from V8/SpiderMonkey format: "Unexpected token ')' (at line 1, col 12345)"
-        const posMatch = msg.match(/at line (\d+)/i) || msg.match(/position (\d+)/i);
+        const posMatch =
+          msg.match(/at line (\d+)/i) || msg.match(/position (\d+)/i);
         const pos = posMatch ? parseInt(posMatch[1], 10) : -1;
         const search = scriptContent.indexOf("Unexpected");
-        const ctx = scriptContent.slice(0, 500) + "\n...[truncated]...\n" + scriptContent.slice(-500);
+        const ctx =
+          scriptContent.slice(0, 500) +
+          "\n...[truncated]...\n" +
+          scriptContent.slice(-500);
         console.error(
           `[test-report] Script ${i} (len=${scriptContent.length}) error:`,
           msg,
           "\nFirst 500 chars:",
-          scriptContent.slice(0, 500)
+          scriptContent.slice(0, 500),
         );
       }
     }
@@ -144,23 +175,30 @@ export default function TestReportPage() {
 
   return (
     <div style={{ padding: 24, maxWidth: 1200, margin: "0 auto" }}>
-      <h1 style={{ marginBottom: 16, fontSize: 18 }}>Report Filter Test Page</h1>
+      <h1 style={{ marginBottom: 16, fontSize: 18 }}>
+        Report Filter Test Page
+      </h1>
       <p style={{ marginBottom: 24, color: "#64748b", fontSize: 14 }}>
-        Minimal report HTML rendered directly (no iframe) to test the filter script.
-        {" "}
+        Minimal report HTML rendered directly (no iframe) to test the filter
+        script.{" "}
         <button
           type="button"
           onClick={openStandalone}
           style={{ padding: "4px 8px", cursor: "pointer", fontSize: 13 }}
         >
           Open as standalone HTML
-        </button>
-        {" "}(opens full document in new tab)
+        </button>{" "}
+        (opens full document in new tab)
       </p>
       <div
         ref={containerRef}
         className="report-test-container"
-        style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: 24, background: "#fff" }}
+        style={{
+          border: "1px solid #e2e8f0",
+          borderRadius: 8,
+          padding: 24,
+          background: "#fff",
+        }}
       />
     </div>
   );

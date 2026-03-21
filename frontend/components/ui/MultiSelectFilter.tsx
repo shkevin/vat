@@ -84,7 +84,10 @@ export function MultiSelectFilter({
           padding: "6px 10px",
           borderRadius: 6,
           border: "1px solid var(--app-border)",
-          background: selected.size > 0 ? "color-mix(in srgb, var(--app-accent) 12%, transparent)" : "var(--app-input-bg)",
+          background:
+            selected.size > 0
+              ? "color-mix(in srgb, var(--app-accent) 12%, transparent)"
+              : "var(--app-input-bg)",
           color: "var(--app-fg)",
           fontSize: 11,
           cursor: "pointer",
@@ -92,8 +95,18 @@ export function MultiSelectFilter({
           ...sans,
         }}
       >
-        <Filter size={12} style={{ color: "var(--app-muted)", flexShrink: 0 }} />
-        <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>
+        <Filter
+          size={12}
+          style={{ color: "var(--app-muted)", flexShrink: 0 }}
+        />
+        <span
+          style={{
+            flex: 1,
+            minWidth: 0,
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+          }}
+        >
           {label}: {displayText}
         </span>
         <ChevronDown
@@ -178,7 +191,8 @@ export function MultiSelectFilter({
                   "color-mix(in srgb, var(--app-accent) 12%, transparent)";
               }}
               onMouseLeave={(e) => {
-                (e.currentTarget as HTMLElement).style.background = "transparent";
+                (e.currentTarget as HTMLElement).style.background =
+                  "transparent";
               }}
             >
               <input

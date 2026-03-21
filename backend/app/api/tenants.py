@@ -89,6 +89,8 @@ async def delete_tenant(
                 detail="Cannot delete the default tenant while there is only one admin.",
             )
     # Unassign users from this tenant before deleting
-    await db.execute(update(User).where(User.tenant_id == tenant_id).values(tenant_id=None))
+    await db.execute(
+        update(User).where(User.tenant_id == tenant_id).values(tenant_id=None)
+    )
     await db.delete(tenant)
     await db.commit()

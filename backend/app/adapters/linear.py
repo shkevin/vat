@@ -18,7 +18,6 @@ try:
 except ImportError:
     _SPACY_AVAILABLE = False
 
-from app.adapters.base import TrackerAdapter
 from app.adapters.registry import TrackerAdapterCapabilities, register_tracker_adapter
 from app.core.config import get_settings
 from app.schemas.integration_ui import IntegrationFieldSchema, IntegrationSettingsSchema
@@ -37,7 +36,9 @@ LINEAR_GRAPHQL_DEFAULT = "https://api.linear.app/graphql"
 _CVE_PATTERN = re.compile(r"CVE-\d{4}-\d{4,}", re.IGNORECASE)
 
 # UUID pattern for Linear team/entity IDs (team.id expects UUID; team.key is slug like "ENG", "Automatedhass")
-_UUID_PATTERN = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.IGNORECASE)
+_UUID_PATTERN = re.compile(
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.IGNORECASE
+)
 
 
 def _is_uuid(value: str) -> bool:
@@ -111,7 +112,9 @@ async def _resolve_team_uuid(adapter) -> str:
     nodes = result.get("teams", {}).get("nodes", [])
     if nodes:
         return nodes[0]["id"]
-    raise ValueError(f"Linear team '{tid}' not found. Use team key (e.g. Automatedhass) or team UUID.")
+    raise ValueError(
+        f"Linear team '{tid}' not found. Use team key (e.g. Automatedhass) or team UUID."
+    )
 
 
 async def get_organization_url_key(adapter: "LinearAdapter") -> Optional[str]:
@@ -141,7 +144,9 @@ async def get_organization_url_key(adapter: "LinearAdapter") -> Optional[str]:
                 }
             }
             """
-            result = await adapter._request(query, {"filter": {"key": {"eqIgnoreCase": tid}}})
+            result = await adapter._request(
+                query, {"filter": {"key": {"eqIgnoreCase": tid}}}
+            )
             nodes = (result.get("teams") or {}).get("nodes") or []
             if not nodes:
                 return None
@@ -150,6 +155,7 @@ async def get_organization_url_key(adapter: "LinearAdapter") -> Optional[str]:
         return org.get("urlKey")
     except Exception:
         return None
+
 
 # [VAT] block parser per PRD §5.9.3
 _VAT_BLOCK_RE = re.compile(
@@ -196,11 +202,22 @@ _STATUS_MAP = {
     "dup": "Duplicate",
 }
 # Canonical status values for RapidFuzz fuzzy matching (typos, variations)
-_STATUS_CANONICAL = ["False Positive", "Not Applicable", "Risk Accepted", "Mitigated", "Duplicate"]
+_STATUS_CANONICAL = [
+    "False Positive",
+    "Not Applicable",
+    "Risk Accepted",
+    "Mitigated",
+    "Duplicate",
+]
 # Alternative keys for key-value extraction (Verdict, Disposition, etc.)
 _STATUS_KEYS = ["status", "verdict", "disposition", "result", "outcome"]
 _JUSTIFICATION_KEYS = ["justification", "reason", "rationale", "because"]
-_COMPENSATING_KEYS = ["compensating-controls", "compensating controls", "compensating", "controls"]
+_COMPENSATING_KEYS = [
+    "compensating-controls",
+    "compensating controls",
+    "compensating",
+    "controls",
+]
 
 
 def _normalize_status(raw: str) -> Optional[str]:
@@ -214,7 +231,9 @@ def _normalize_status(raw: str) -> Optional[str]:
         if k.replace("-", "") == key.replace("-", ""):
             return v
     # Fuzzy match for typos (e.g. "fals positive", "mitagated")
-    match = process.extractOne(raw.strip(), _STATUS_CANONICAL, scorer=fuzz.ratio, score_cutoff=70)
+    match = process.extractOne(
+        raw.strip(), _STATUS_CANONICAL, scorer=fuzz.ratio, score_cutoff=70
+    )
     return match[0] if match else None
 
 
@@ -227,12 +246,16 @@ def _parse_vat_block(text: str, cve_id_hint: Optional[str] = None) -> Optional[d
     if not text or not isinstance(text, str):
         return None
 
-    def _make_result(cve_id: str, status: str, justification: str, compensating: str = "") -> dict:
+    def _make_result(
+        cve_id: str, status: str, justification: str, compensating: str = ""
+    ) -> dict:
         return {
             "cve_id": cve_id.strip(),
             "status": status,
             "justification": (justification or "").strip(),
-            "compensating_controls": (compensating or "").strip() if compensating else "",
+            "compensating_controls": (compensating or "").strip()
+            if compensating
+            else "",
         }
 
     def _extract_status(raw: str) -> Optional[str]:
@@ -251,13 +274,21 @@ def _parse_vat_block(text: str, cve_id_hint: Optional[str] = None) -> Optional[d
         m = _VAT_BLOCK_RE.search(chunk)
         if m:
             status = _STATUS_MAP.get(m.group("status").lower(), m.group("status"))
-            return _make_result(m.group("cve_id"), status, m.group("justification") or "", m.group("compensating") or "")
+            return _make_result(
+                m.group("cve_id"),
+                status,
+                m.group("justification") or "",
+                m.group("compensating") or "",
+            )
         m = _VAT_BLOCK_RELAXED_RE.search(chunk)
         if m:
             normalized = _extract_status(m.group("status"))
             if normalized:
                 return _make_result(
-                    m.group("cve_id"), normalized, m.group("justification") or "", m.group("compensating") or ""
+                    m.group("cve_id"),
+                    normalized,
+                    m.group("justification") or "",
+                    m.group("compensating") or "",
                 )
 
     # 2. Compact/single-line: [VAT] CVE-XXX status: fp justification: ...
@@ -265,7 +296,9 @@ def _parse_vat_block(text: str, cve_id_hint: Optional[str] = None) -> Optional[d
     if m:
         normalized = _extract_status(m.group("status"))
         if normalized:
-            return _make_result(m.group("cve_id"), normalized, m.group("justification") or "", "")
+            return _make_result(
+                m.group("cve_id"), normalized, m.group("justification") or "", ""
+            )
 
     # 3. Flexible format (Status:, Justification: with variations) — requires CVE from [VAT] or hint
     m = _VAT_FLEXIBLE_RE.search(text)
@@ -274,9 +307,19 @@ def _parse_vat_block(text: str, cve_id_hint: Optional[str] = None) -> Optional[d
         if normalized:
             cve_id = (m.group("cve_id") or "").strip()
             if cve_id:
-                return _make_result(cve_id, normalized, m.group("justification") or "", m.group("compensating") or "")
+                return _make_result(
+                    cve_id,
+                    normalized,
+                    m.group("justification") or "",
+                    m.group("compensating") or "",
+                )
             if cve_id_hint:
-                return _make_result(cve_id_hint, normalized, m.group("justification") or "", m.group("compensating") or "")
+                return _make_result(
+                    cve_id_hint,
+                    normalized,
+                    m.group("justification") or "",
+                    m.group("compensating") or "",
+                )
 
     # 4. Context-aware: no [VAT] prefix but has status/justification — use CVE from issue
     if cve_id_hint:
@@ -289,7 +332,10 @@ def _parse_vat_block(text: str, cve_id_hint: Optional[str] = None) -> Optional[d
             normalized = _extract_status(m.group("status"))
             if normalized:
                 return _make_result(
-                    cve_id_hint, normalized, m.group("justification") or "", m.group("compensating") or ""
+                    cve_id_hint,
+                    normalized,
+                    m.group("justification") or "",
+                    m.group("compensating") or "",
                 )
 
     # 5. Key-value extraction — flexible keys (Status, Verdict, Justification, Reason), separators : = -
@@ -317,11 +363,15 @@ def _get_spacy_nlp():
         try:
             return spacy.load("en_core_web_sm")
         except OSError:
-            logger.debug("spaCy en_core_web_sm not found; run: python -m spacy download en_core_web_sm")
+            logger.debug(
+                "spaCy en_core_web_sm not found; run: python -m spacy download en_core_web_sm"
+            )
             return None
 
 
-def _parse_vat_block_spacy(text: str, cve_id_hint: Optional[str] = None) -> Optional[dict]:
+def _parse_vat_block_spacy(
+    text: str, cve_id_hint: Optional[str] = None
+) -> Optional[dict]:
     """
     Extract VAT fields via spaCy token-based matching. Handles unusual whitespace,
     fragmented tokens, and punctuation variations. Fallback when regex/key-value miss.
@@ -337,10 +387,21 @@ def _parse_vat_block_spacy(text: str, cve_id_hint: Optional[str] = None) -> Opti
         return None
 
     matcher = Matcher(nlp.vocab)
-    keys_lower = [k.lower() for k in _STATUS_KEYS + _JUSTIFICATION_KEYS + _COMPENSATING_KEYS]
+    keys_lower = [
+        k.lower() for k in _STATUS_KEYS + _JUSTIFICATION_KEYS + _COMPENSATING_KEYS
+    ]
     # Pattern: key + optional space + separator (: or =). Handles "status:" "Status :" "verdict ="
     for sep in [":", "="]:
-        matcher.add("KV", [[{"LOWER": {"IN": keys_lower}}, {"IS_SPACE": True, "OP": "?"}, {"ORTH": sep}]])
+        matcher.add(
+            "KV",
+            [
+                [
+                    {"LOWER": {"IN": keys_lower}},
+                    {"IS_SPACE": True, "OP": "?"},
+                    {"ORTH": sep},
+                ]
+            ],
+        )
 
     status_val = None
     justification_val = None
@@ -378,7 +439,9 @@ def _parse_vat_block_spacy(text: str, cve_id_hint: Optional[str] = None) -> Opti
     }
 
 
-def _parse_vat_block_key_value(text: str, cve_id_hint: Optional[str] = None) -> Optional[dict]:
+def _parse_vat_block_key_value(
+    text: str, cve_id_hint: Optional[str] = None
+) -> Optional[dict]:
     """
     Extract VAT fields via key-value pairs. Handles alternative keys (Verdict, Reason)
     and separators (: = -). Fallback when regex patterns miss.
@@ -501,7 +564,9 @@ class LinearAdapter:
         last_error = None
         for attempt in range(2):
             async with httpx.AsyncClient(timeout=60.0) as client:
-                resp = await client.post(self._graphql_url, json=payload, headers=self._headers())
+                resp = await client.post(
+                    self._graphql_url, json=payload, headers=self._headers()
+                )
                 data = resp.json() if resp.content else {}
                 errors = data.get("errors", [])
                 # Check for rate limit (Linear returns 400 with RATELIMITED code)
@@ -512,10 +577,12 @@ class LinearAdapter:
                     delay = 65  # Default 65s if no header
                     if reset_ms:
                         import time
+
                         delay = max(5, (int(reset_ms) / 1000) - time.time())
                     logger.warning(
                         "Linear API rate limited, retrying in %.0fs (attempt %d/2)",
-                        delay, attempt + 1,
+                        delay,
+                        attempt + 1,
                     )
                     await asyncio.sleep(min(delay, 120))
                     last_error = RuntimeError(f"Linear API errors: {errors}")
@@ -531,7 +598,9 @@ class LinearAdapter:
             raise last_error
         return {}
 
-    async def _create_label(self, team_uuid: str, label_name: str, color: str = "#E53935") -> Optional[str]:
+    async def _create_label(
+        self, team_uuid: str, label_name: str, color: str = "#E53935"
+    ) -> Optional[str]:
         """
         Create a Linear label for the team if it doesn't exist.
         Returns the new label ID or None on failure.
@@ -565,14 +634,20 @@ class LinearAdapter:
                 # Label exists; re-fetch team labels and return the existing ID
                 existing = await self._fetch_label_id_by_name(team_uuid, display_name)
                 if existing:
-                    logger.debug("Using existing Linear label '%s' (id=%s)", display_name, existing)
+                    logger.debug(
+                        "Using existing Linear label '%s' (id=%s)",
+                        display_name,
+                        existing,
+                    )
                     return existing
             logger.warning("Failed to create Linear label '%s': %s", display_name, e)
         except Exception as e:
             logger.warning("Failed to create Linear label '%s': %s", display_name, e)
         return None
 
-    async def _fetch_label_id_by_name(self, team_uuid: str, label_name: str) -> Optional[str]:
+    async def _fetch_label_id_by_name(
+        self, team_uuid: str, label_name: str
+    ) -> Optional[str]:
         """Fetch team label ID by name (case-insensitive). Returns None if not found."""
         # Use issueLabels with team filter. Linear API max for first is 250.
         query = """
@@ -683,7 +758,12 @@ class LinearAdapter:
                     name_to_color[c.name.strip().lower()] = c.color or "#E53935"
 
         body = self._build_issue_body(finding, template)
-        title = finding.get("title") or finding.get("cveId") or finding.get("cve_id") or "VAT Finding"
+        title = (
+            finding.get("title")
+            or finding.get("cveId")
+            or finding.get("cve_id")
+            or "VAT Finding"
+        )
         if len(title) > 255:
             title = title[:252] + "..."
 
@@ -693,12 +773,20 @@ class LinearAdapter:
             "title": title,
             "description": body,
         }
-        label_ids = await self._resolve_label_ids(label_names or [], name_to_color=name_to_color if name_to_color else None)
+        label_ids = await self._resolve_label_ids(
+            label_names or [], name_to_color=name_to_color if name_to_color else None
+        )
         if label_ids:
             input_data["labelIds"] = label_ids
         # Set priority from severity (Linear: 0=urgent/none, 1=critical, 2=high, 3=medium, 4=low)
         sev = (finding.get("severity") or "").lower()
-        priority_map = {"critical": 1, "high": 2, "medium": 3, "low": 4, "informational": 0}
+        priority_map = {
+            "critical": 1,
+            "high": 2,
+            "medium": 3,
+            "low": 4,
+            "informational": 0,
+        }
         input_data["priority"] = priority_map.get(sev, 3)
 
         mutation = """
@@ -745,18 +833,30 @@ class LinearAdapter:
                     if c.name:
                         name_to_color[c.name.strip().lower()] = c.color or "#E53935"
         label_ids = await self._resolve_label_ids(
-            requests[0].label_names or [], name_to_color=name_to_color if name_to_color else None
+            requests[0].label_names or [],
+            name_to_color=name_to_color if name_to_color else None,
         )
 
         inputs = []
         for req in requests[:max_batch]:
             finding = req.finding or {}
             body = self._build_issue_body(finding, req.template or "")
-            title = finding.get("title") or finding.get("cveId") or finding.get("cve_id") or "VAT Finding"
+            title = (
+                finding.get("title")
+                or finding.get("cveId")
+                or finding.get("cve_id")
+                or "VAT Finding"
+            )
             if len(title) > 255:
                 title = title[:252] + "..."
             sev = (finding.get("severity") or "").lower()
-            priority_map = {"critical": 1, "high": 2, "medium": 3, "low": 4, "informational": 0}
+            priority_map = {
+                "critical": 1,
+                "high": 2,
+                "medium": 3,
+                "low": 4,
+                "informational": 0,
+            }
             inp = {
                 "teamId": team_uuid,
                 "title": title,
@@ -787,7 +887,9 @@ class LinearAdapter:
                     if ident:
                         out.append((ident, uuid_val))
                     else:
-                        out.append(RuntimeError("Linear did not return issue identifier"))
+                        out.append(
+                            RuntimeError("Linear did not return issue identifier")
+                        )
                 else:
                     out.append(RuntimeError("Batch response missing issue"))
             return out
@@ -802,14 +904,22 @@ compensating-controls: <optional>"""
     def _build_issue_body(self, finding: dict, template: str) -> str:
         """Build issue body with finding details and [VAT] template. Ensures a parseable block exists."""
         cve_id = finding.get("cveId") or finding.get("cve_id") or "unknown"
-        finding_id = finding.get("finding_id") or cve_id  # finding_id for unambiguous lookup; fallback to cve_id
+        finding_id = (
+            finding.get("finding_id") or cve_id
+        )  # finding_id for unambiguous lookup; fallback to cve_id
         file_path = finding.get("file_path") or finding.get("filePath") or ""
         line = finding.get("line")
-        source_file_url = finding.get("source_file_url") or finding.get("sourceFileUrl") or ""
-        source_issue_url = finding.get("source_issue_url") or finding.get("sourceIssueUrl") or ""
+        source_file_url = (
+            finding.get("source_file_url") or finding.get("sourceFileUrl") or ""
+        )
+        source_issue_url = (
+            finding.get("source_issue_url") or finding.get("sourceIssueUrl") or ""
+        )
         location_parts = []
         if file_path:
-            location_parts.append(f"**File:** `{file_path}`" + (f" (line {line})" if line else ""))
+            location_parts.append(
+                f"**File:** `{file_path}`" + (f" (line {line})" if line else "")
+            )
         if source_file_url:
             location_parts.append(f"**Code:** {source_file_url}")
         if source_issue_url:
@@ -828,8 +938,14 @@ compensating-controls: <optional>"""
         except KeyError:
             formatted = self._REQUIRED_BLOCK.format(cve_id=cve_id)
         # Ensure template has parseable structure; append minimal block if admin removed it
-        if "status:" not in formatted or "justification:" not in formatted or "[VAT]" not in formatted:
-            formatted = formatted.rstrip() + "\n\n" + self._REQUIRED_BLOCK.format(cve_id=cve_id)
+        if (
+            "status:" not in formatted
+            or "justification:" not in formatted
+            or "[VAT]" not in formatted
+        ):
+            formatted = (
+                formatted.rstrip() + "\n\n" + self._REQUIRED_BLOCK.format(cve_id=cve_id)
+            )
         parts = [
             f"## VAT Finding: {cve_id}",
             "",
@@ -883,7 +999,12 @@ compensating-controls: <optional>"""
         """Update Linear issue: labels, title, priority. Uses issue_uuid when present to avoid resolve query."""
         issue_id = request.issue_id
         issue_uuid = getattr(request, "issue_uuid", None) or request.issue_id
-        if not _is_uuid(issue_uuid) and "-" in issue_id and len(issue_id) < 40 and not issue_id.startswith(" "):
+        if (
+            not _is_uuid(issue_uuid)
+            and "-" in issue_id
+            and len(issue_id) < 40
+            and not issue_id.startswith(" ")
+        ):
             resolved = await _resolve_issue_id(self, issue_id)
             if resolved:
                 issue_uuid = resolved
@@ -908,14 +1029,25 @@ compensating-controls: <optional>"""
             input_data["labelIds"] = label_ids
 
         if "title" in changed:
-            title = finding.get("title") or finding.get("cveId") or finding.get("cve_id") or "VAT Finding"
+            title = (
+                finding.get("title")
+                or finding.get("cveId")
+                or finding.get("cve_id")
+                or "VAT Finding"
+            )
             if len(title) > 255:
                 title = title[:252] + "..."
             input_data["title"] = title
 
         if "severity" in changed:
             sev = (finding.get("severity") or "").lower()
-            priority_map = {"critical": 1, "high": 2, "medium": 3, "low": 4, "informational": 0}
+            priority_map = {
+                "critical": 1,
+                "high": 2,
+                "medium": 3,
+                "low": 4,
+                "informational": 0,
+            }
             input_data["priority"] = priority_map.get(sev, 3)
 
         if "status" in changed:
@@ -945,7 +1077,9 @@ compensating-controls: <optional>"""
             raise RuntimeError("Linear issueUpdate failed")
 
     async def update_issues_batch(
-        self, requests: list[VatTrackerUpdateIssueRequest], batch_size: int | None = None
+        self,
+        requests: list[VatTrackerUpdateIssueRequest],
+        batch_size: int | None = None,
     ) -> list[tuple[int, Exception | None]]:
         """
         Update multiple issues in batched GraphQL requests (aliased mutations).
@@ -968,7 +1102,8 @@ compensating-controls: <optional>"""
                 id_to_uuid[r.issue_id] = uid
                 id_to_uuid[r.issue_id.upper()] = uid
         needs_resolve = [
-            r.issue_id for r in requests
+            r.issue_id
+            for r in requests
             if r.issue_id not in id_to_uuid
             and "-" in r.issue_id
             and len(r.issue_id) < 40
@@ -978,7 +1113,9 @@ compensating-controls: <optional>"""
             seen: set[str] = set()
             cursor: Optional[str] = None
             for _ in range(20):
-                nodes, cursor = await self.list_issues(first=250, after=cursor, include_archived=True)
+                nodes, cursor = await self.list_issues(
+                    first=250, after=cursor, include_archived=True
+                )
                 for n in nodes:
                     ident = (n.get("identifier") or "").upper()
                     orig = n.get("identifier") or ""
@@ -999,7 +1136,11 @@ compensating-controls: <optional>"""
         def _uuid(r: VatTrackerUpdateIssueRequest) -> str:
             if _is_uuid(r.issue_id):
                 return r.issue_id
-            return id_to_uuid.get(r.issue_id) or id_to_uuid.get(r.issue_id.upper()) or r.issue_id
+            return (
+                id_to_uuid.get(r.issue_id)
+                or id_to_uuid.get(r.issue_id.upper())
+                or r.issue_id
+            )
 
         for batch_start in range(0, len(requests), size):
             batch = requests[batch_start : batch_start + size]
@@ -1016,18 +1157,35 @@ compensating-controls: <optional>"""
                     if req.label_configs:
                         for c in req.label_configs:
                             if c.name:
-                                name_to_color[c.name.strip().lower()] = c.color or "#E53935"
+                                name_to_color[c.name.strip().lower()] = (
+                                    c.color or "#E53935"
+                                )
                     label_ids = await self._resolve_label_ids(
-                        req.label_names or [], name_to_color=name_to_color or None, allow_empty=True
+                        req.label_names or [],
+                        name_to_color=name_to_color or None,
+                        allow_empty=True,
                     )
                     input_data["labelIds"] = label_ids
                 if "title" in changed:
                     f = req.finding or {}
-                    title = f.get("title") or f.get("cveId") or f.get("cve_id") or "VAT Finding"
-                    input_data["title"] = title[:252] + "..." if len(title) > 255 else title
+                    title = (
+                        f.get("title")
+                        or f.get("cveId")
+                        or f.get("cve_id")
+                        or "VAT Finding"
+                    )
+                    input_data["title"] = (
+                        title[:252] + "..." if len(title) > 255 else title
+                    )
                 if "severity" in changed:
                     sev = (req.finding or {}).get("severity", "").lower()
-                    input_data["priority"] = {"critical": 1, "high": 2, "medium": 3, "low": 4, "informational": 0}.get(sev, 3)
+                    input_data["priority"] = {
+                        "critical": 1,
+                        "high": 2,
+                        "medium": 3,
+                        "low": 4,
+                        "informational": 0,
+                    }.get(sev, 3)
                 if "status" in changed:
                     vat_status = (req.finding or {}).get("status", "").strip()
                     team_uuid = await _resolve_team_uuid(self)
@@ -1042,12 +1200,22 @@ compensating-controls: <optional>"""
                     updates.append((i, _uuid(req), input_data))
 
             # Initialize batch results as success
-            batch_results: dict[int, Exception | None] = {i: None for i in range(len(batch))}
+            batch_results: dict[int, Exception | None] = {
+                i: None for i in range(len(batch))
+            }
 
             if updates:
-                var_defs = ", ".join(f"$id{j}: String!, $input{j}: IssueUpdateInput!" for j in range(len(updates)))
-                parts = [f"u{j}: issueUpdate(id: $id{j}, input: $input{j}) {{ success issue {{ id }} }}" for j in range(len(updates))]
-                mutation = f"mutation BatchUpdate({var_defs}) {{ " + " ".join(parts) + " }"
+                var_defs = ", ".join(
+                    f"$id{j}: String!, $input{j}: IssueUpdateInput!"
+                    for j in range(len(updates))
+                )
+                parts = [
+                    f"u{j}: issueUpdate(id: $id{j}, input: $input{j}) {{ success issue {{ id }} }}"
+                    for j in range(len(updates))
+                ]
+                mutation = (
+                    f"mutation BatchUpdate({var_defs}) {{ " + " ".join(parts) + " }"
+                )
                 variables = {}
                 for j, (_, uid, inp) in enumerate(updates):
                     variables[f"id{j}"] = uid
@@ -1057,7 +1225,9 @@ compensating-controls: <optional>"""
                     for j, (batch_idx, _, _) in enumerate(updates):
                         ok = (data.get(f"u{j}") or {}).get("success")
                         if not ok:
-                            batch_results[batch_idx] = RuntimeError("issueUpdate failed")
+                            batch_results[batch_idx] = RuntimeError(
+                                "issueUpdate failed"
+                            )
                 except Exception as e:
                     for batch_idx, _, _ in updates:
                         batch_results[batch_idx] = e
@@ -1071,10 +1241,19 @@ compensating-controls: <optional>"""
     _CLOSED_STATE_TYPES = frozenset({"done", "canceled"})
     _OPEN_STATE_TYPES = frozenset({"backlog", "unstarted", "started"})
     # VAT statuses that map to Linear "done" (closed); all others map to "open"
-    _VAT_CLOSED_STATUSES = frozenset({
-        "mitigated", "riskaccepted", "falsepositive", "suppressed",
-        "notapplicable", "duplicate", "resolved", "approved", "rejected",
-    })
+    _VAT_CLOSED_STATUSES = frozenset(
+        {
+            "mitigated",
+            "riskaccepted",
+            "falsepositive",
+            "suppressed",
+            "notapplicable",
+            "duplicate",
+            "resolved",
+            "approved",
+            "rejected",
+        }
+    )
 
     async def _get_open_state_id_for_team(self, team_uuid: str) -> Optional[str]:
         """Return first open workflow state ID for team (for reopen)."""
@@ -1146,7 +1325,9 @@ compensating-controls: <optional>"""
             logger.debug("Could not resolve workflow state %s: %s", state_id, e)
             return False
 
-    async def reopen_issue(self, issue_id: str, team_uuid: Optional[str] = None) -> bool:
+    async def reopen_issue(
+        self, issue_id: str, team_uuid: Optional[str] = None
+    ) -> bool:
         """
         Reopen a closed/canceled Linear issue by setting state to first open workflow state.
         Returns True if reopened, False if skipped or failed.
@@ -1171,13 +1352,17 @@ compensating-controls: <optional>"""
                     team_uuid = (issue.get("team") or {}).get("id")
             except Exception:
                 pass
-        team_uuid = team_uuid or (await _resolve_team_uuid(self) if self._team_id else None)
+        team_uuid = team_uuid or (
+            await _resolve_team_uuid(self) if self._team_id else None
+        )
         if not team_uuid:
             logger.warning("Cannot reopen: no team UUID")
             return False
         open_state_id = await self._get_open_state_id_for_team(team_uuid)
         if not open_state_id:
-            logger.warning("Cannot reopen: no open workflow state found for team %s", team_uuid)
+            logger.warning(
+                "Cannot reopen: no open workflow state found for team %s", team_uuid
+            )
             return False
         mutation = """
         mutation IssueUpdate($id: String!, $input: IssueUpdateInput!) {
@@ -1188,9 +1373,13 @@ compensating-controls: <optional>"""
         }
         """
         try:
-            result = await self._request(mutation, {"id": issue_uuid, "input": {"stateId": open_state_id}})
+            result = await self._request(
+                mutation, {"id": issue_uuid, "input": {"stateId": open_state_id}}
+            )
             if result.get("issueUpdate", {}).get("success"):
-                logger.info("Reopened Linear issue %s (VAT finding not yet handled)", issue_id)
+                logger.info(
+                    "Reopened Linear issue %s (VAT finding not yet handled)", issue_id
+                )
                 return True
         except Exception as e:
             logger.warning("Failed to reopen Linear issue %s: %s", issue_id, e)
@@ -1220,7 +1409,12 @@ compensating-controls: <optional>"""
             return None
 
         issue_obj = data_body.get("issue") or {}
-        issue_id = issue_obj.get("identifier") or issue_obj.get("id") or data_body.get("issueId") or ""
+        issue_id = (
+            issue_obj.get("identifier")
+            or issue_obj.get("id")
+            or data_body.get("issueId")
+            or ""
+        )
         comment_id = data_body.get("id") or data_body.get("commentId") or ""
 
         return VatTrackerCommentUpdate(
@@ -1259,7 +1453,9 @@ compensating-controls: <optional>"""
         nodes = comments.get("nodes") or []
         return nodes
 
-    async def get_issue_with_comments(self, issue_id: str, first: int = 100) -> dict | None:
+    async def get_issue_with_comments(
+        self, issue_id: str, first: int = 100
+    ) -> dict | None:
         """Fetch issue with comments. Returns {id, identifier, title, description, comments: {nodes: [...]}} or None."""
         resolved_id = await _resolve_issue_id(self, issue_id) if issue_id else None
         lookup_id = resolved_id or issue_id
@@ -1329,7 +1525,9 @@ compensating-controls: <optional>"""
                     nodes {{ id body createdAt }}
                 }}
             """
-        order_clause = f", orderBy: {order_by}" if order_by in ("updatedAt", "createdAt") else ""
+        order_clause = (
+            f", orderBy: {order_by}" if order_by in ("updatedAt", "createdAt") else ""
+        )
 
         team_filter = _team_filter(self._team_id)
         query = f"""
@@ -1364,7 +1562,9 @@ compensating-controls: <optional>"""
         issues_data = result.get("issues", {})
         nodes = issues_data.get("nodes", [])
         page_info = issues_data.get("pageInfo", {})
-        next_cursor = page_info.get("endCursor") if page_info.get("hasNextPage") else None
+        next_cursor = (
+            page_info.get("endCursor") if page_info.get("hasNextPage") else None
+        )
         return (nodes, next_cursor)
 
     async def list_issues_by_ids(
@@ -1385,11 +1585,15 @@ compensating-controls: <optional>"""
         # Linear API limit; batch if needed
         batch_size = 100
         all_nodes: list[dict] = []
-        comments_fragment = f"""
+        comments_fragment = (
+            f"""
             comments(first: {comments_per_issue}) {{
                 nodes {{ id body createdAt }}
             }}
-        """ if include_comments else ""
+        """
+            if include_comments
+            else ""
+        )
         for i in range(0, len(issue_uuids), batch_size):
             batch = issue_uuids[i : i + batch_size]
             query = f"""
@@ -1411,7 +1615,9 @@ compensating-controls: <optional>"""
             all_nodes.extend(nodes)
         return all_nodes
 
-    async def find_existing_issue_for_cve(self, cve_id: str, max_issues: int = 200) -> Optional[str]:
+    async def find_existing_issue_for_cve(
+        self, cve_id: str, max_issues: int = 200
+    ) -> Optional[str]:
         """
         Search Linear for an existing issue containing the given CVE ID in title or description.
         Returns the first matching issue identifier (e.g. AUT-51), or None if not found.
@@ -1426,7 +1632,9 @@ compensating-controls: <optional>"""
         fetched = 0
         while fetched < max_issues:
             first = min(100, max_issues - fetched)
-            nodes, cursor = await self.list_issues(first=first, after=cursor, include_archived=False)
+            nodes, cursor = await self.list_issues(
+                first=first, after=cursor, include_archived=False
+            )
             fetched += len(nodes)
             for node in nodes:
                 identifier = node.get("identifier") or node.get("id")
@@ -1458,7 +1666,9 @@ compensating-controls: <optional>"""
         m = LinearAdapter._VAT_GROUP_RE.search(desc)
         return m.group(1).strip() if m else None
 
-    async def find_existing_issue_for_group_key(self, group_key: str, max_issues: int = 200) -> Optional[str]:
+    async def find_existing_issue_for_group_key(
+        self, group_key: str, max_issues: int = 200
+    ) -> Optional[str]:
         """
         Search Linear for an existing issue containing [VAT-GROUP: group_key] in description.
         Returns the first matching issue identifier, or None if not found.
@@ -1471,7 +1681,9 @@ compensating-controls: <optional>"""
         fetched = 0
         while fetched < max_issues:
             first = min(100, max_issues - fetched)
-            nodes, cursor = await self.list_issues(first=first, after=cursor, include_archived=False)
+            nodes, cursor = await self.list_issues(
+                first=first, after=cursor, include_archived=False
+            )
             fetched += len(nodes)
             for node in nodes:
                 identifier = node.get("identifier") or node.get("id")
@@ -1485,7 +1697,9 @@ compensating-controls: <optional>"""
                 break
         return None
 
-    async def find_existing_issue_for_title(self, title: str, max_issues: int = 200) -> Optional[str]:
+    async def find_existing_issue_for_title(
+        self, title: str, max_issues: int = 200
+    ) -> Optional[str]:
         """
         Search Linear for an existing issue with the same (normalized) title.
         Returns the first matching issue identifier (e.g. AUT-51), or None if not found.
@@ -1501,7 +1715,9 @@ compensating-controls: <optional>"""
         fetched = 0
         while fetched < max_issues:
             first = min(100, max_issues - fetched)
-            nodes, cursor = await self.list_issues(first=first, after=cursor, include_archived=False)
+            nodes, cursor = await self.list_issues(
+                first=first, after=cursor, include_archived=False
+            )
             fetched += len(nodes)
             for node in nodes:
                 identifier = node.get("identifier") or node.get("id")
@@ -1540,8 +1756,14 @@ compensating-controls: <optional>"""
             formatted = template.format(cve_id=cve_id)
         except KeyError:
             formatted = self._REQUIRED_BLOCK.format(cve_id=cve_id)
-        if "status:" not in formatted or "justification:" not in formatted or "[VAT]" not in formatted:
-            formatted = formatted.rstrip() + "\n\n" + self._REQUIRED_BLOCK.format(cve_id=cve_id)
+        if (
+            "status:" not in formatted
+            or "justification:" not in formatted
+            or "[VAT]" not in formatted
+        ):
+            formatted = (
+                formatted.rstrip() + "\n\n" + self._REQUIRED_BLOCK.format(cve_id=cve_id)
+            )
         body = f"**VAT template injected** ({reason})\n\n{formatted}"
         from app.schemas.vat import VatTrackerPostDecisionRequest
 
@@ -1549,10 +1771,14 @@ compensating-controls: <optional>"""
             VatTrackerPostDecisionRequest(tracker_issue_id=issue_id, body=body)
         )
 
-    def format_canonical_block(self, cve_id: str, status: str, justification: str, compensating: str = "") -> str:
+    def format_canonical_block(
+        self, cve_id: str, status: str, justification: str, compensating: str = ""
+    ) -> str:
         """Return canonical [VAT] block for posting back to Linear after successful parse."""
         status_lower = status.lower().replace(" ", "-")
-        block = f"[VAT] {cve_id}\nstatus: {status_lower}\njustification: {justification}"
+        block = (
+            f"[VAT] {cve_id}\nstatus: {status_lower}\njustification: {justification}"
+        )
         if compensating:
             block += f"\ncompensating-controls: {compensating}"
         return block

@@ -114,7 +114,13 @@ export const LICENSE_RISK: Record<string, string> = {
 /** Available source integration types — maps adapter key to display info */
 export const SOURCE_TYPES: Record<
   string,
-  { label: string; adapter: string; color: string; hasSettingsPage: boolean; parser?: string }
+  {
+    label: string;
+    adapter: string;
+    color: string;
+    hasSettingsPage: boolean;
+    parser?: string;
+  }
 > = {
   aikido: {
     label: "Aikido",
@@ -149,7 +155,13 @@ export const PARSER_COLORS: Record<string, string> = {
 /** Available tracker integration types */
 export const TRACKER_TYPES: Record<
   string,
-  { label: string; type: string; color: string; icon: string; hasSettingsPage: boolean }
+  {
+    label: string;
+    type: string;
+    color: string;
+    icon: string;
+    hasSettingsPage: boolean;
+  }
 > = {
   linear: {
     label: "Linear",
@@ -175,7 +187,8 @@ export const DEFAULT_SOURCES = [
     color: "#94a3b8",
     type: "manual",
     adapter: "manual",
-    description: "Manually entered findings and push sources (Trivy, Semgrep, etc.).",
+    description:
+      "Manually entered findings and push sources (Trivy, Semgrep, etc.).",
   },
 ];
 
@@ -194,9 +207,9 @@ Post the block below as a **comment** to update this finding in VAT.
 **Copy-paste and fill in:**
 \`\`\`
 [VAT] {finding_id}
-status: 
-justification: 
-compensating-controls: 
+status:
+justification:
+compensating-controls:
 \`\`\``;
 
 export const DEFAULT_TRACKER = {
@@ -211,21 +224,124 @@ export const DEFAULT_TRACKER = {
   pushMinSeverity: "high" as const,
 };
 
-export const DEFAULT_LABELS: { id: string; name: string; color: string; description: string }[] = [];
+export const DEFAULT_LABELS: {
+  id: string;
+  name: string;
+  color: string;
+  description: string;
+}[] = [];
 
 export const SAMPLE_SBOM = [
-  { id: "sb-1", name: "log4j-core", version: "2.17.1", license: "Apache-2.0", component: "worker:v2.3", language: "Java" },
-  { id: "sb-2", name: "spring-boot", version: "3.2.1", license: "Apache-2.0", component: "api-server:latest", language: "Java" },
-  { id: "sb-3", name: "react", version: "18.2.0", license: "MIT", component: "web-frontend:v1.2", language: "JS" },
-  { id: "sb-4", name: "express", version: "4.18.2", license: "MIT", component: "web-frontend:v1.2", language: "JS" },
-  { id: "sb-5", name: "libexpat", version: "2.5.0", license: "MIT", component: "auth-service:v3.1", language: "C" },
-  { id: "sb-6", name: "openssl", version: "3.0.11", license: "Apache-2.0", component: "api-server:latest", language: "C" },
-  { id: "sb-7", name: "gpl-helper", version: "1.0.0", license: "GPL-3.0", component: "worker:v2.3", language: "Python" },
-  { id: "sb-8", name: "agpl-client", version: "2.3.1", license: "AGPL-3.0", component: "api-server:latest", language: "Python" },
-  { id: "sb-9", name: "mpllib", version: "0.9.4", license: "MPL-2.0", component: "ci-runner:ubuntu22", language: "Rust" },
-  { id: "sb-10", name: "tomcat-embed", version: "10.1.31", license: "Apache-2.0", component: "legacy-api:v1.8", language: "Java" },
-  { id: "sb-11", name: "xz-utils", version: "5.6.0", license: "LGPL-2.1", component: "base-alpine:3.19", language: "C" },
-  { id: "sb-12", name: "wget", version: "1.21.3", license: "GPL-3.0", component: "ci-runner:ubuntu22", language: "C" },
-  { id: "sb-13", name: "runc", version: "1.1.11", license: "Apache-2.0", component: "api-server:latest", language: "Go" },
-  { id: "sb-14", name: "nginx", version: "1.25.1", license: "BSD-2-Clause", component: "ingress:v1.9", language: "C" },
+  {
+    id: "sb-1",
+    name: "log4j-core",
+    version: "2.17.1",
+    license: "Apache-2.0",
+    component: "worker:v2.3",
+    language: "Java",
+  },
+  {
+    id: "sb-2",
+    name: "spring-boot",
+    version: "3.2.1",
+    license: "Apache-2.0",
+    component: "api-server:latest",
+    language: "Java",
+  },
+  {
+    id: "sb-3",
+    name: "react",
+    version: "18.2.0",
+    license: "MIT",
+    component: "web-frontend:v1.2",
+    language: "JS",
+  },
+  {
+    id: "sb-4",
+    name: "express",
+    version: "4.18.2",
+    license: "MIT",
+    component: "web-frontend:v1.2",
+    language: "JS",
+  },
+  {
+    id: "sb-5",
+    name: "libexpat",
+    version: "2.5.0",
+    license: "MIT",
+    component: "auth-service:v3.1",
+    language: "C",
+  },
+  {
+    id: "sb-6",
+    name: "openssl",
+    version: "3.0.11",
+    license: "Apache-2.0",
+    component: "api-server:latest",
+    language: "C",
+  },
+  {
+    id: "sb-7",
+    name: "gpl-helper",
+    version: "1.0.0",
+    license: "GPL-3.0",
+    component: "worker:v2.3",
+    language: "Python",
+  },
+  {
+    id: "sb-8",
+    name: "agpl-client",
+    version: "2.3.1",
+    license: "AGPL-3.0",
+    component: "api-server:latest",
+    language: "Python",
+  },
+  {
+    id: "sb-9",
+    name: "mpllib",
+    version: "0.9.4",
+    license: "MPL-2.0",
+    component: "ci-runner:ubuntu22",
+    language: "Rust",
+  },
+  {
+    id: "sb-10",
+    name: "tomcat-embed",
+    version: "10.1.31",
+    license: "Apache-2.0",
+    component: "legacy-api:v1.8",
+    language: "Java",
+  },
+  {
+    id: "sb-11",
+    name: "xz-utils",
+    version: "5.6.0",
+    license: "LGPL-2.1",
+    component: "base-alpine:3.19",
+    language: "C",
+  },
+  {
+    id: "sb-12",
+    name: "wget",
+    version: "1.21.3",
+    license: "GPL-3.0",
+    component: "ci-runner:ubuntu22",
+    language: "C",
+  },
+  {
+    id: "sb-13",
+    name: "runc",
+    version: "1.1.11",
+    license: "Apache-2.0",
+    component: "api-server:latest",
+    language: "Go",
+  },
+  {
+    id: "sb-14",
+    name: "nginx",
+    version: "1.25.1",
+    license: "BSD-2-Clause",
+    component: "ingress:v1.9",
+    language: "C",
+  },
 ];
