@@ -148,6 +148,21 @@ def _map_severity(sev: str | None) -> str:
     return "medium"
 
 
+def _normalize_finding_title(rule_title: str | None, rule_id: str | None) -> str:
+    """
+    Keep OpenSCAP finding titles concise for UI tables.
+    Some STIG titles are long prose and effectively duplicate description.
+    """
+    rid = (rule_id or "").strip()
+    t = re.sub(r"\s+", " ", (rule_title or "").strip())
+    if not t:
+        return rid or "OpenSCAP finding"
+    # Long prose titles are hard to scan in UI lists; use stable rule id instead.
+    if len(t) > 140:
+        return rid or t[:140]
+    return t
+
+
 class OpenSCAPParser(IngestParser):
     """Parse OpenSCAP XCCDF 1.1 XML to canonical format."""
 
@@ -206,13 +221,14 @@ class OpenSCAPParser(IngestParser):
                 continue
 
             idref = rr.get("idref", "")
-            title = rules.get(idref, idref)
+            raw_title = rules.get(idref, idref)
+            title = _normalize_finding_title(raw_title, idref)
             cves = _collect_cves(rr, xccdf_ns)
             refs = _collect_refs(rr, xccdf_ns)
             sev = _map_severity(rr.get("severity"))
 
             cve_id = cves[0] if cves else idref
-            desc_parts = [f"**{title}**", f"Rule: `{idref}`"]
+            desc_parts = [f"**{raw_title or title}**", f"Rule: `{idref}`"]
             if cves:
                 desc_parts.append(f"CVE(s): {', '.join(cves)}")
             if refs:

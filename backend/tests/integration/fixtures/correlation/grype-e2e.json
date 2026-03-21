@@ -1,0 +1,20 @@
+{
+  "matches": [
+    {
+      "vulnerability": {
+        "id": "CVE-CORR-E2E-001",
+        "severity": "High",
+        "description": "Reproducible correlation E2E — Grype"
+      },
+      "artifact": {
+        "name": "openssl",
+        "version": "3.0.0",
+        "language": "npm",
+        "locations": [{ "path": "/app/package-lock.json" }]
+      }
+    }
+  ],
+  "source": {
+    "target": { "userInput": "registry.example/e2e-repro/app" }
+  }
+}

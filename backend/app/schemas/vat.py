@@ -11,7 +11,9 @@ try:
     from pydantic import BaseModel, Field, field_validator, model_validator
 
     _PYDANTIC_V2 = True
-except ImportError:  # pragma: no cover - compatibility for pydantic v1 test environments
+except (
+    ImportError
+):  # pragma: no cover - compatibility for pydantic v1 test environments
     from pydantic import BaseModel, Field, root_validator, validator
 
     _PYDANTIC_V2 = False
@@ -62,6 +64,11 @@ class VatFindingSchema(BaseModel):
     image: Optional[str] = Field(default=None, max_length=256)
     branch: Optional[str] = Field(default=None, max_length=128)
     tag: Optional[str] = Field(default=None, max_length=128)
+    image_digest: Optional[str] = Field(
+        default=None,
+        max_length=128,
+        description="Manifest digest sha256:hex — same digest = same image (multi-tag)",
+    )
     file_path: Optional[str] = Field(default=None, max_length=1024)
     line: Optional[int] = Field(default=None, ge=1)
     source_file_url: Optional[str] = Field(default=None, max_length=2048)
@@ -135,11 +142,14 @@ class VatFindingSchema(BaseModel):
         return mapping.get(s, VatSeverity.MEDIUM)
 
     if _PYDANTIC_V2:
+
         @model_validator(mode="after")
         def require_asset_context(self) -> "VatFindingSchema":
             """Every finding must have asset context for grouping: at least one of image, branch, tag."""
             has_image = bool(self.image and str(self.image).strip())
-            has_branch = bool(getattr(self, "branch", None) and str(self.branch).strip())
+            has_branch = bool(
+                getattr(self, "branch", None) and str(self.branch).strip()
+            )
             has_tag = bool(getattr(self, "tag", None) and str(self.tag).strip())
             if not (has_image or has_branch or has_tag):
                 raise ValueError(
@@ -147,10 +157,13 @@ class VatFindingSchema(BaseModel):
                 )
             return self
     else:
+
         @root_validator
         def require_asset_context(cls, values):
             has_image = bool(values.get("image") and str(values.get("image")).strip())
-            has_branch = bool(values.get("branch") and str(values.get("branch")).strip())
+            has_branch = bool(
+                values.get("branch") and str(values.get("branch")).strip()
+            )
             has_tag = bool(values.get("tag") and str(values.get("tag")).strip())
             if not (has_image or has_branch or has_tag):
                 raise ValueError(

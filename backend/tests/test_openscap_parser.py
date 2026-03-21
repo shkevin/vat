@@ -88,3 +88,26 @@ def test_openscap_file_path_and_snippet():
     assert p.file_path == "/etc/ssh/sshd_config"
     assert p.component == "sshd_config"
     assert "non-compliant" in (p.snippet_masked or "")
+
+
+def test_openscap_long_rule_title_uses_rule_id_for_title():
+    """Very long STIG prose title should be normalized to concise rule id for UI."""
+    parser = OpenSCAPParser()
+    xml = b"""<?xml version="1.0" encoding="UTF-8"?>
+<Benchmark xmlns="http://checklists.nist.gov/xccdf/1.2" id="b1">
+  <Rule id="xccdf_rule_very_long">
+    <title>The operating system must implement NIST FIPS-validated cryptography for this and that and many additional words so this exceeds the UI-friendly length threshold for list rows.</title>
+  </Rule>
+  <TestResult id="tr1">
+    <target>containers/images/example</target>
+    <rule-result idref="xccdf_rule_very_long" severity="high">
+      <result>fail</result>
+    </rule-result>
+  </TestResult>
+</Benchmark>
+"""
+    payloads = parser.parse(xml)
+    assert len(payloads) == 1
+    p = payloads[0]
+    assert p.title == "xccdf_rule_very_long"
+    assert "NIST FIPS-validated cryptography" in (p.description or "")

@@ -83,7 +83,9 @@ def resolve_asset_for_payload(
         confidence = "weak"
     else:
         if strict_mode or requires_explicit_asset:
-            raise ValueError("Asset mapping failed: explicit asset required but no resolvable asset fields")
+            raise ValueError(
+                "Asset mapping failed: explicit asset required but no resolvable asset fields"
+            )
         asset_id = "unknown"
         reason = "unknown_fallback"
         confidence = "weak"
@@ -92,7 +94,11 @@ def resolve_asset_for_payload(
     # Ensure deterministic image key for asset tables/filters.
     if explicit and img != asset_id:
         payload = payload.model_copy(update={"image": asset_id})
-    elif not img and asset_id not in ("unknown",) and reason.startswith("parser_file_path"):
+    elif (
+        not img
+        and asset_id not in ("unknown",)
+        and reason.startswith("parser_file_path")
+    ):
         payload = payload.model_copy(update={"image": asset_id})
 
     return payload, AssetResolution(
@@ -102,4 +108,3 @@ def resolve_asset_for_payload(
         reason=reason,
         source=source_id,
     )
-

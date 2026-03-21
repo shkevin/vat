@@ -23,7 +23,9 @@ def init_otel() -> None:
         return
     try:
         from opentelemetry import trace
-        from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+        from opentelemetry.exporter.otlp.proto.http.trace_exporter import (
+            OTLPSpanExporter,
+        )
         from opentelemetry.sdk.resources import Resource
         from opentelemetry.sdk.trace import TracerProvider
         from opentelemetry.sdk.trace.export import BatchSpanProcessor
@@ -85,7 +87,9 @@ def mirror_audit_event_to_otel(
             if decision_name:
                 span.set_attribute("vat.audit.decision_name", decision_name)
             if decision_reason_code:
-                span.set_attribute("vat.audit.decision_reason_code", decision_reason_code)
+                span.set_attribute(
+                    "vat.audit.decision_reason_code", decision_reason_code
+                )
             if decision_confidence:
                 span.set_attribute("vat.audit.decision_confidence", decision_confidence)
             if decision_result:
@@ -93,4 +97,3 @@ def mirror_audit_event_to_otel(
         return True
     except Exception:
         return False
-

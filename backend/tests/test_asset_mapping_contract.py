@@ -15,7 +15,9 @@ def test_parser_identity_contract_covers_all_registered_parsers() -> None:
 
 
 def test_asset_resolver_prefers_explicit_override() -> None:
-    payload = VatFindingSchema(cve_id="CVE-1", severity="High", description="x", image="repo/a")
+    payload = VatFindingSchema(
+        cve_id="CVE-1", severity="High", description="x", image="repo/a"
+    )
     resolved_payload, resolution = resolve_asset_for_payload(
         payload,
         parser_id="trivy",
@@ -78,4 +80,3 @@ def test_acceptance_matrix_covers_all_supported_parsers() -> None:
     fixture_path = Path(__file__).parent / "fixtures" / "asset_mapping_matrix.json"
     matrix = json.loads(fixture_path.read_text())
     assert sorted(matrix.keys()) == sorted(PARSER_REGISTRY.keys())
-

@@ -7,7 +7,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.finding import Finding, FindingType, Severity, Status
 from app.schemas.vat import VatFindingSchema, VatFindingType, VatSeverity
+from app.core.config import get_settings
 from app.services.correlation import correlation_key_for_payload
+from app.services.correlation_linking import apply_correlation_linking
 from app.services.findings_service import _status_to_enum
 from app.services.dedup import (
     component_base,
@@ -15,6 +17,7 @@ from app.services.dedup import (
     make_fingerprint_for_source_issue,
 )
 from app.services.sla import SLA_DAYS
+from app.parsers.image_digest import effective_image_digest
 
 
 def _now() -> str:
@@ -89,6 +92,8 @@ async def ingest_finding(
     *,
     auto_sync_to_tracker: bool = True,
     aikido_source_id: str | None = None,
+    trace_id: str | None = None,
+    parser_id: str | None = None,
 ) -> tuple[Finding, bool]:
     """
     Ingest a finding from canonical payload. Deduplicates by fingerprint.
@@ -103,6 +108,10 @@ async def ingest_finding(
     image = payload.image or ""
     branch = getattr(payload, "branch", None) or ""
     tag = getattr(payload, "tag", None) or ""
+    image_digest_val = effective_image_digest(
+        getattr(payload, "image_digest", None),
+        payload.image,
+    )
     corr_key, corr_conf = correlation_key_for_payload(
         finding_type=str(payload.finding_type.value),
         image=image,
@@ -217,6 +226,8 @@ async def ingest_finding(
             existing.branch = payload.branch
         if getattr(payload, "tag", None) and not existing.tag:
             existing.tag = payload.tag
+        if image_digest_val and not getattr(existing, "image_digest", None):
+            existing.image_digest = image_digest_val
         if getattr(payload, "source_file_url", None) and not existing.source_file_url:
             existing.source_file_url = payload.source_file_url
         if getattr(payload, "file_path", None) and not existing.file_path:
@@ -293,6 +304,16 @@ async def ingest_finding(
             )
         await db.commit()
         await db.refresh(existing)
+        if get_settings().correlation_linking_enabled:
+            await apply_correlation_linking(
+                db,
+                existing,
+                trace_id,
+                source_id=source_name,
+                parser_id=parser_id,
+            )
+            await db.commit()
+            await db.refresh(existing)
         return existing, False
 
     # Create new finding
@@ -342,6 +363,7 @@ async def ingest_finding(
         image=payload.image,
         branch=getattr(payload, "branch", None),
         tag=getattr(payload, "tag", None),
+        image_digest=image_digest_val,
         title=title,
         description=description,
         source_file_url=getattr(payload, "source_file_url", None),
@@ -374,6 +396,16 @@ async def ingest_finding(
     db.add(finding)
     await db.commit()
     await db.refresh(finding)
+    if get_settings().correlation_linking_enabled:
+        await apply_correlation_linking(
+            db,
+            finding,
+            trace_id,
+            source_id=source_name,
+            parser_id=parser_id,
+        )
+        await db.commit()
+        await db.refresh(finding)
 
     if auto_sync_to_tracker:
         from app.services.sync_service import maybe_enqueue_tracker_for_new_finding

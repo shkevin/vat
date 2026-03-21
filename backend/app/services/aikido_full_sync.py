@@ -48,6 +48,11 @@ def _aikido_trace_id(source_id: str | None, issue: dict[str, Any]) -> str:
     return hashlib.sha256(seed.encode("utf-8")).hexdigest()[:32]
 
 
+def aikido_issue_trace_id(source_id: str | None, issue: dict[str, Any]) -> str:
+    """Stable trace id for Aikido issue ingest (sync, webhook, bootstrap)."""
+    return _aikido_trace_id(source_id, issue)
+
+
 def _asset_trace_id(source_id: str | None, asset_type: str, asset_id: str) -> str:
     """Create deterministic trace IDs for Aikido asset lifecycle events."""
     seed = f"aikido-asset:{source_id or 'default'}:{asset_type}:{asset_id}"
@@ -239,7 +244,9 @@ async def run_full_sync(
                     container_name_to_id=container_name_to_id,
                 )
                 trace_id = _aikido_trace_id(source_id, raw)
-                resolved_asset = (transformed.image or transformed.component or "").strip() or None
+                resolved_asset = (
+                    transformed.image or transformed.component or ""
+                ).strip() or None
                 await emit_audit_event(
                     session,
                     trace_id=trace_id,
@@ -260,6 +267,8 @@ async def run_full_sync(
                     source_name="Aikido",
                     tenant_id=None,
                     aikido_source_id=source_id,
+                    trace_id=_aikido_trace_id(source_id, raw),
+                    parser_id="aikido",
                 )
                 await emit_audit_event(
                     session,

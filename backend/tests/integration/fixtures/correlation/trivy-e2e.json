@@ -1,0 +1,19 @@
+{
+  "SchemaVersion": 2,
+  "Results": [
+    {
+      "Target": "registry.example/e2e-repro/app",
+      "Type": "npm",
+      "Vulnerabilities": [
+        {
+          "VulnerabilityID": "CVE-CORR-E2E-001",
+          "PkgName": "openssl",
+          "InstalledVersion": "3.0.0",
+          "Severity": "HIGH",
+          "Title": "CVE-CORR-E2E-001",
+          "Description": "Reproducible correlation E2E — Trivy"
+        }
+      ]
+    }
+  ]
+}

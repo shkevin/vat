@@ -23,12 +23,13 @@ class IngestParser(ABC):
         self, fields: dict, asset: str | None = None
     ) -> CanonicalFindingPayload:
         """Create a canonical payload with asset context. Injects image=asset when needed for validation."""
+        fields = dict(fields)
+        # Tag alone must not skip image injection (e.g. container image tag + Target as asset)
+        if asset and not fields.get("image") and not fields.get("branch"):
+            fields["image"] = asset
         has_asset = any(fields.get(k) for k in ("image", "branch", "tag"))
         if not has_asset:
-            if asset:
-                fields = {**fields, "image": asset}
-            else:
-                raise ValueError(
-                    "Asset context required: provide asset or set image/branch/tag in fields"
-                )
+            raise ValueError(
+                "Asset context required: provide asset or set image/branch/tag in fields"
+            )
         return CanonicalFindingPayload(**fields)

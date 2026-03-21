@@ -153,16 +153,30 @@ async def create_daily_checkpoint(
 ) -> AuditLedgerCheckpoint:
     """Create/replace deterministic daily anchor hash for audit events."""
     rows = (
-        await db.execute(
-            select(AuditEvent)
-            .where(AuditEvent.retention_class == retention_class)
-            .where(AuditEvent.created_at >= datetime.fromisoformat(f"{checkpoint_date}T00:00:00"))
-            .where(AuditEvent.created_at <= datetime.fromisoformat(f"{checkpoint_date}T23:59:59"))
-            .order_by(AuditEvent.created_at.asc(), AuditEvent.event_id.asc())
+        (
+            await db.execute(
+                select(AuditEvent)
+                .where(AuditEvent.retention_class == retention_class)
+                .where(
+                    AuditEvent.created_at
+                    >= datetime.fromisoformat(f"{checkpoint_date}T00:00:00")
+                )
+                .where(
+                    AuditEvent.created_at
+                    <= datetime.fromisoformat(f"{checkpoint_date}T23:59:59")
+                )
+                .order_by(AuditEvent.created_at.asc(), AuditEvent.event_id.asc())
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     chained = "".join(r.record_hash for r in rows)
-    anchor_hash = hashlib.sha256(chained.encode()).hexdigest() if chained else hashlib.sha256(b"").hexdigest()
+    anchor_hash = (
+        hashlib.sha256(chained.encode()).hexdigest()
+        if chained
+        else hashlib.sha256(b"").hexdigest()
+    )
 
     existing = await db.scalar(
         select(AuditLedgerCheckpoint).where(
@@ -183,4 +197,3 @@ async def create_daily_checkpoint(
     )
     db.add(cp)
     return cp
-

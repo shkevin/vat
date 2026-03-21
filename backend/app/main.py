@@ -66,6 +66,8 @@ class TraceIdMiddleware(BaseHTTPMiddleware):
         trace_id = request.headers.get("X-Trace-Id") or uuid.uuid4().hex
         request.state.trace_id = trace_id
         return await call_next(request)
+
+
 from app.services.waiver_expiry import enforce_waiver_expiry
 
 logger = logging.getLogger(__name__)

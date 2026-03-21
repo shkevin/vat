@@ -3,7 +3,39 @@
 import pytest
 
 from app.parsers.trivy import TrivyParser
+from app.parsers.utils import VAT_CONTAINER_IMAGE_KEY, VAT_CONTAINER_TAG_KEY
 from app.schemas.ingest import CanonicalFindingType, CanonicalSeverity
+
+
+def test_trivy_parser_uses_container_identity_keys():
+    """vat-local-scanner injects Aikido-style image + image tag per result."""
+    trivy = {
+        "Results": [
+            {
+                "Target": "docker.io/library/alpine:3.19",
+                "Class": "os-pkgs",
+                "Type": "alpine",
+                VAT_CONTAINER_IMAGE_KEY: "containers/images/alpine",
+                VAT_CONTAINER_TAG_KEY: "3.19",
+                "Vulnerabilities": [
+                    {
+                        "VulnerabilityID": "CVE-2024-1",
+                        "PkgName": "zlib",
+                        "InstalledVersion": "1.3",
+                        "Severity": "LOW",
+                        "Title": "zlib issue",
+                        "Description": "desc",
+                    }
+                ],
+            }
+        ]
+    }
+    parser = TrivyParser()
+    payloads = parser.parse(trivy)
+    assert len(payloads) == 1
+    assert payloads[0].cve_id == "CVE-2024-1"
+    assert payloads[0].image == "containers/images/alpine"
+    assert payloads[0].tag == "3.19"
 
 
 def test_trivy_parser_empty_results():

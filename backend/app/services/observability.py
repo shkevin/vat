@@ -53,7 +53,9 @@ class _ObservabilityState:
             ]
             for event_type, count in sorted(self.audit_events_by_type.items()):
                 safe_type = event_type.replace("\\", "\\\\").replace('"', '\\"')
-                lines.append(f'vat_audit_events_by_type_total{{event_type="{safe_type}"}} {count}')
+                lines.append(
+                    f'vat_audit_events_by_type_total{{event_type="{safe_type}"}} {count}'
+                )
             lines.extend(
                 [
                     "# HELP vat_audit_emit_failures_total Failed audit event emissions.",
@@ -89,4 +91,3 @@ class IngestLatencyTimer:
 
     def __exit__(self, exc_type, exc, tb) -> None:
         METRICS.record_ingest_latency(max(0.0, perf_counter() - self._start))
-

@@ -25,7 +25,9 @@ def upgrade() -> None:
         sa.Column("trace_id", sa.String(length=64), nullable=False),
         sa.Column("parent_event_id", sa.String(length=64), nullable=True),
         sa.Column("event_type", sa.String(length=128), nullable=False),
-        sa.Column("actor_type", sa.String(length=32), nullable=False, server_default="system"),
+        sa.Column(
+            "actor_type", sa.String(length=32), nullable=False, server_default="system"
+        ),
         sa.Column("actor_id", sa.String(length=256), nullable=True),
         sa.Column("source_id", sa.String(length=128), nullable=True),
         sa.Column("parser_id", sa.String(length=64), nullable=True),
@@ -35,24 +37,65 @@ def upgrade() -> None:
         sa.Column("decision_reason_code", sa.String(length=128), nullable=True),
         sa.Column("decision_confidence", sa.String(length=32), nullable=True),
         sa.Column("decision_result", sa.String(length=64), nullable=True),
-        sa.Column("data", postgresql.JSONB(astext_type=sa.Text()), nullable=False, server_default=sa.text("'{}'::jsonb")),
+        sa.Column(
+            "data",
+            postgresql.JSONB(astext_type=sa.Text()),
+            nullable=False,
+            server_default=sa.text("'{}'::jsonb"),
+        ),
         sa.Column("prev_record_hash", sa.String(length=128), nullable=True),
         sa.Column("record_hash", sa.String(length=128), nullable=False),
-        sa.Column("created_at", sa.DateTime(), nullable=False, server_default=sa.func.now()),
-        sa.Column("retention_class", sa.String(length=32), nullable=False, server_default="operational"),
-        sa.Column("redaction_level", sa.String(length=32), nullable=False, server_default="standard"),
-        sa.Column("sensitivity", sa.String(length=32), nullable=False, server_default="internal"),
+        sa.Column(
+            "created_at", sa.DateTime(), nullable=False, server_default=sa.func.now()
+        ),
+        sa.Column(
+            "retention_class",
+            sa.String(length=32),
+            nullable=False,
+            server_default="operational",
+        ),
+        sa.Column(
+            "redaction_level",
+            sa.String(length=32),
+            nullable=False,
+            server_default="standard",
+        ),
+        sa.Column(
+            "sensitivity",
+            sa.String(length=32),
+            nullable=False,
+            server_default="internal",
+        ),
         sa.Column("note", sa.Text(), nullable=True),
     )
 
-    op.create_index("ix_audit_events_trace_id", "audit_events", ["trace_id"], unique=False)
-    op.create_index("ix_audit_events_event_type", "audit_events", ["event_type"], unique=False)
-    op.create_index("ix_audit_events_source_id", "audit_events", ["source_id"], unique=False)
-    op.create_index("ix_audit_events_parser_id", "audit_events", ["parser_id"], unique=False)
-    op.create_index("ix_audit_events_asset_id", "audit_events", ["asset_id"], unique=False)
-    op.create_index("ix_audit_events_finding_id", "audit_events", ["finding_id"], unique=False)
-    op.create_index("ix_audit_events_created_at", "audit_events", ["created_at"], unique=False)
-    op.create_index("ix_audit_events_trace_created", "audit_events", ["trace_id", "created_at"], unique=False)
+    op.create_index(
+        "ix_audit_events_trace_id", "audit_events", ["trace_id"], unique=False
+    )
+    op.create_index(
+        "ix_audit_events_event_type", "audit_events", ["event_type"], unique=False
+    )
+    op.create_index(
+        "ix_audit_events_source_id", "audit_events", ["source_id"], unique=False
+    )
+    op.create_index(
+        "ix_audit_events_parser_id", "audit_events", ["parser_id"], unique=False
+    )
+    op.create_index(
+        "ix_audit_events_asset_id", "audit_events", ["asset_id"], unique=False
+    )
+    op.create_index(
+        "ix_audit_events_finding_id", "audit_events", ["finding_id"], unique=False
+    )
+    op.create_index(
+        "ix_audit_events_created_at", "audit_events", ["created_at"], unique=False
+    )
+    op.create_index(
+        "ix_audit_events_trace_created",
+        "audit_events",
+        ["trace_id", "created_at"],
+        unique=False,
+    )
     op.create_index(
         "ix_audit_events_source_parser_created",
         "audit_events",
@@ -63,4 +106,3 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.drop_table("audit_events")
-

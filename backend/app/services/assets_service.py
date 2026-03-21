@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.asset import Asset
 from app.models.finding import Finding
 from app.schemas.finding import FindingRead
+from app.services.asset_type_infer import infer_asset_type_from_findings
 
 SEV_ORDER = ("Critical", "High", "Medium", "Low", "Informational")
 
@@ -16,12 +17,37 @@ ORA_WEIGHTS = {"critical": 10, "high": 4, "medium": 0.5, "low": 0.25}
 ORA_CAPS = {"low": 10, "medium": 30}
 
 
+def _container_image_group_key(image: str, tag: Optional[str]) -> str:
+    """Match frontend containerImageGroupKey — one asset row per image, not per tag."""
+    img = (image or "").strip()
+    if not img:
+        return img
+    if img.startswith("containers/images/"):
+        return img.split(":")[0]
+    t = (tag or "").strip()
+    if t:
+        last_colon = img.rfind(":")
+        if last_colon > 0:
+            after = img[last_colon + 1 :]
+            if "/" not in after and after == t:
+                return img[:last_colon]
+    last_slash = img.rfind("/")
+    last_colon = img.rfind(":")
+    if last_colon > last_slash >= 0:
+        after = img[last_colon + 1 :]
+        if "/" not in after:
+            return img[:last_colon]
+    return img
+
+
 def _asset_key_from_finding(f: Finding) -> str:
-    """Match frontend assetUtils.assetKey: image or component only. Branches in dropdown."""
+    """Match frontend assetUtils.assetKey: image or component only. Branches/tags on asset page."""
     img = (f.image or "").strip()
     comp = (f.component or "").strip()
     if img:
-        return img
+        tag_val = getattr(f, "tag", None)
+        tag_s = tag_val.strip() if isinstance(tag_val, str) else None
+        return _container_image_group_key(img, tag_s)
     if comp:
         return comp
     return f"unknown-{f.id}"
@@ -75,33 +101,16 @@ def _days_left(sla_due: Optional[str]) -> Optional[int]:
         return None
 
 
-def _infer_asset_type_from_findings(findings: list[dict]) -> str:
-    """Infer repo/container/package from first finding when no Asset record."""
-    if not findings:
-        return "package"
-    d = findings[0]
+def _asset_key_from_dict(d: dict) -> str:
+    """Group findings like _asset_key_from_finding (camelCase API dicts)."""
     img = (d.get("image") or "").strip()
-    branch = (d.get("branch") or "").strip()
     comp = (d.get("component") or "").strip()
-    fp = (d.get("filePath") or d.get("file_path") or "").strip()
-    ft = (d.get("findingType") or d.get("finding_type") or "").lower()
-    code_types = {"sast", "secret", "iac"}
-    is_code = ft in code_types
-    if img and branch:
-        return "repo"
-    if img and is_code:
-        return "repo"
-    if img and ":" in img:
-        return "container"
+    tag = (d.get("tag") or "").strip() or None
     if img:
-        return "container"
-    if fp and not img and not comp:
-        return "path"
-    if fp and is_code:
-        return "repo"
+        return _container_image_group_key(img, tag)
     if comp:
-        return "package"
-    return "package"
+        return comp
+    return f"unknown-{d.get('id', '')}"
 
 
 def _build_asset_payload(
@@ -185,8 +194,11 @@ def _build_asset_payload(
         elif ":" in img:
             tag = img.split(":")[1]
 
+    # When findings exist, infer from all of them (dynamic). Asset row type only for 0-finding rows.
     resolved_type = (
-        asset_type if asset_type else _infer_asset_type_from_findings(findings)
+        infer_asset_type_from_findings(findings)
+        if findings
+        else (asset_type or "package")
     )
     return {
         "id": asset_key,
@@ -251,14 +263,7 @@ async def get_assets_with_findings(
 
     by_key: dict[str, list[dict]] = {}
     for d in findings_dicts:
-        img = (d.get("image") or "").strip()
-        comp = (d.get("component") or "").strip()
-        if img:
-            key = img
-        elif comp:
-            key = comp
-        else:
-            key = f"unknown-{d.get('id', '')}"
+        key = _asset_key_from_dict(d)
         by_key.setdefault(key, []).append(d)
 
     # Add Asset records that have no findings; build asset_id -> Asset map for type

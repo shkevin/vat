@@ -27,6 +27,30 @@ def _severity(s: str | None) -> CanonicalSeverity:
     return _SEVERITY_MAP.get((s or "").lower(), CanonicalSeverity.MEDIUM)
 
 
+def _ecosystem_from_grype_artifact(artifact: dict) -> str | None:
+    """
+    Map Syft/Grype artifact metadata to VAT ecosystem so correlation keys align with Trivy
+    (e.g. npm) when both scanners report the same package/CVE.
+    """
+    lang = artifact.get("language") or artifact.get("lang")
+    if isinstance(lang, str) and lang.strip():
+        l = lang.strip().lower()
+        if l in ("javascript", "js", "node", "nodejs"):
+            return "npm"
+        return l
+    typ = artifact.get("type")
+    if isinstance(typ, str) and typ.strip():
+        t = typ.strip().lower()
+        if "npm" in t:
+            return "npm"
+        if "python" in t or "pypi" in t:
+            return "pypi"
+        if "-" in t and t.endswith("package"):
+            return t.split("-", 1)[0]
+        return t
+    return None
+
+
 class GrypeParser(IngestParser):
     """Parse Grype JSON (grype -o json). Supports deb, rpm, apk, npm, pypi, etc."""
 
@@ -106,6 +130,7 @@ class GrypeParser(IngestParser):
             fix_versions = vuln["fix"].get("versions") or []
         if fix_versions:
             desc = f"{desc}\nFix: upgrade to {', '.join(fix_versions)}"
+        eco = _ecosystem_from_grype_artifact(artifact)
         fields = {
             "cve_id": str(vuln_id),
             "severity": _severity(vuln.get("severity")),
@@ -116,6 +141,8 @@ class GrypeParser(IngestParser):
             "finding_type": CanonicalFindingType.SCA,
             "cvss": cvss,
         }
+        if eco:
+            fields["ecosystem"] = eco
         if scan_tag:
             fields["tag"] = scan_tag
         return self._create_payload(fields, asset=asset)

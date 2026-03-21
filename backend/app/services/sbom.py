@@ -156,7 +156,8 @@ async def import_sbom(
             if not any(s.get("name") == source for s in sources):
                 sources.append(source_entry)
                 existing.sources = sources
-                existing.updated_at = datetime.now(timezone.utc)
+                # TIMESTAMP WITHOUT TIME ZONE — use naive UTC (asyncpg rejects tz-aware here)
+                existing.updated_at = datetime.utcnow()
                 updated += 1
         else:
             sp = SbomPackage(

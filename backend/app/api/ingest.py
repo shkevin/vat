@@ -15,6 +15,7 @@ from app.models.asset import Asset
 from app.parsers import PARSER_IDENTITY_POLICY, get_parser
 from app.schemas.vat import VatFindingSchema
 from app.services.asset_resolver import resolve_asset_for_payload
+from app.services.asset_aliases import resolve_canonical_asset_id
 from app.services.audit_events import emit_audit_event
 from app.services.ingest import ingest_finding
 from app.services.observability import IngestLatencyTimer
@@ -106,6 +107,26 @@ async def _ensure_asset_record(
     )
     await db.commit()
     return True
+
+
+def _remap_payload_asset_context(
+    payload: VatFindingSchema, *, old_asset_id: str, new_asset_id: str
+) -> VatFindingSchema:
+    """Rewrite payload asset fields when a manual alias override exists."""
+    old_id = (old_asset_id or "").strip()
+    new_id = (new_asset_id or "").strip()
+    if not old_id or not new_id or old_id == new_id:
+        return payload
+
+    updates: dict[str, str] = {}
+    if (payload.image or "").strip() == old_id:
+        updates["image"] = new_id
+    if (payload.component or "").strip() == old_id:
+        updates["component"] = new_id
+    # package-mode findings often use tag=asset for grouping scope
+    if (payload.tag or "").strip() == old_id:
+        updates["tag"] = new_id
+    return payload.model_copy(update=updates) if updates else payload
 
 
 def _apply_asset_type_transform(
@@ -203,6 +224,7 @@ async def _ingest_from_parser(
             or "package"
         )
         if base_asset:
+            base_asset = await resolve_canonical_asset_id(db, base_asset)
             await _ensure_asset_record(db, base_asset, source, asset_type)
         if parser_id in ("openscap", "openscap_oval"):
             logger.info(
@@ -265,6 +287,16 @@ async def _ingest_from_parser(
                 strict_mode=strict_asset_mapping,
                 requires_explicit_asset=requires_explicit_asset,
             )
+            canonical_asset_id = await resolve_canonical_asset_id(db, resolution.asset_id)
+            if canonical_asset_id and canonical_asset_id != resolution.asset_id:
+                p = _remap_payload_asset_context(
+                    p,
+                    old_asset_id=resolution.asset_id,
+                    new_asset_id=canonical_asset_id,
+                )
+                resolution.asset_id = canonical_asset_id
+                resolution.reason = "manual_asset_alias_override"
+                resolution.confidence = "explicit"
             await emit_audit_event(
                 db,
                 trace_id=trace_id,
@@ -282,8 +314,11 @@ async def _ingest_from_parser(
             )
             if asset_override:
                 p = p.model_copy(update={"image": asset_override})
+            # Prefer per-finding tag from parser (e.g. container image tag) over header when set
             if tag_override:
-                p = p.model_copy(update={"tag": tag_override})
+                existing_tag = getattr(p, "tag", None)
+                if not (existing_tag and str(existing_tag).strip()):
+                    p = p.model_copy(update={"tag": tag_override})
             # Bundle scans: source_image identifies which container (redis, metrics-server) failed
             if source_image_override and parser_id in ("openscap", "openscap_oval"):
                 comp = (p.component or "").strip()
@@ -294,7 +329,13 @@ async def _ingest_from_parser(
                 else:
                     p = p.model_copy(update={"component": source_image_override})
             p = _apply_asset_type_transform(p, asset_type)
-            finding, is_new = await ingest_finding(db, p, source_name=source)
+            finding, is_new = await ingest_finding(
+                db,
+                p,
+                source_name=source,
+                trace_id=trace_id,
+                parser_id=parser_id,
+            )
             await emit_audit_event(
                 db,
                 trace_id=trace_id,
@@ -419,9 +460,17 @@ async def post_ingest(
         auth_source, _ = ingest_auth
         asset_override = (request.headers.get("X-VAT-Asset") or "").strip() or None
         tag_override = (request.headers.get("X-VAT-Tag") or "").strip() or None
-        source_image_override = (request.headers.get("X-VAT-Source-Image") or "").strip() or None
-        trace_id = (getattr(request.state, "trace_id", "") or request.headers.get("X-Trace-Id") or "").strip() or uuid.uuid4().hex
-        strict_asset_mapping = (request.headers.get("X-VAT-Strict-Asset-Mapping") or "").strip().lower() in (
+        source_image_override = (
+            request.headers.get("X-VAT-Source-Image") or ""
+        ).strip() or None
+        trace_id = (
+            getattr(request.state, "trace_id", "")
+            or request.headers.get("X-Trace-Id")
+            or ""
+        ).strip() or uuid.uuid4().hex
+        strict_asset_mapping = (
+            request.headers.get("X-VAT-Strict-Asset-Mapping") or ""
+        ).strip().lower() in (
             "1",
             "true",
             "yes",
@@ -479,7 +528,9 @@ async def post_ingest(
                 try:
                     raw = json.loads(content)
                 except json.JSONDecodeError as e:
-                    raise HTTPException(status_code=400, detail=f"Invalid JSON in file: {e}") from e
+                    raise HTTPException(
+                        status_code=400, detail=f"Invalid JSON in file: {e}"
+                    ) from e
         elif "application/json" in content_type:
             try:
                 raw = await request.json()
@@ -504,7 +555,11 @@ async def post_ingest(
             raise HTTPException(status_code=400, detail="Empty payload")
 
         return await _ingest_from_parser(
-            db, raw, parser_id, source_id, source_config,
+            db,
+            raw,
+            parser_id,
+            source_id,
+            source_config,
             asset_override=asset_override,
             tag_override=tag_override,
             source_image_override=source_image_override,
@@ -512,6 +567,7 @@ async def post_ingest(
             actor_id=source_id,
             strict_asset_mapping=strict_asset_mapping,
         )
+
 
 @router.post("/sarif")
 async def post_ingest_sarif_body(

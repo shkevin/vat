@@ -7,7 +7,9 @@ try:
     from pydantic import BaseModel, ConfigDict
 
     _PYDANTIC_V2 = True
-except ImportError:  # pragma: no cover - compatibility for pydantic v1 test environments
+except (
+    ImportError
+):  # pragma: no cover - compatibility for pydantic v1 test environments
     from pydantic import BaseModel
 
     _PYDANTIC_V2 = False
@@ -55,6 +57,7 @@ class FindingBase(BaseModel):
     image: Optional[str] = None
     branch: Optional[str] = None
     tag: Optional[str] = None
+    image_digest: Optional[str] = None
     title: Optional[str] = None
     description: Optional[str] = None
     source: Optional[str] = None
@@ -82,6 +85,7 @@ class FindingRead(BaseModel):
     if _PYDANTIC_V2:
         model_config = ConfigDict(from_attributes=True)
     else:
+
         class Config:
             orm_mode = True
 
@@ -96,6 +100,7 @@ class FindingRead(BaseModel):
     image: Optional[str] = None
     branch: Optional[str] = None
     tag: Optional[str] = None
+    image_digest: Optional[str] = None
     title: Optional[str] = None
     description: Optional[str] = None
     source: Optional[str] = None
@@ -154,6 +159,7 @@ class FindingRead(BaseModel):
             "image": self.image,
             "branch": self.branch,
             "tag": self.tag,
+            "imageDigest": self.image_digest,
             "title": self.title,
             "description": self.description,
             "source": self.source,

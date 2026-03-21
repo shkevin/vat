@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     if _PYDANTIC_V2:
         model_config = SettingsConfigDict(env_file=".env", env_prefix="VAT_")
     else:
+
         class Config:
             env_file = ".env"
             env_prefix = "VAT_"
@@ -78,25 +79,40 @@ class Settings(BaseSettings):
     linear_poll_enabled: bool = True
 
     if _PYDANTIC_V2:
+
         @model_validator(mode="after")
         def default_poll_when_no_webhook(self) -> "Settings":
             # When webhook not configured: poll is the only way to get [VAT] updates — default True
-            if not self.linear_webhook_secret and "VAT_LINEAR_POLL_ENABLED" not in os.environ:
+            if (
+                not self.linear_webhook_secret
+                and "VAT_LINEAR_POLL_ENABLED" not in os.environ
+            ):
                 self.linear_poll_enabled = True
             # When webhook configured: webhooks are preferred; default False unless explicitly set
-            elif self.linear_webhook_secret and "VAT_LINEAR_POLL_ENABLED" not in os.environ:
+            elif (
+                self.linear_webhook_secret
+                and "VAT_LINEAR_POLL_ENABLED" not in os.environ
+            ):
                 self.linear_poll_enabled = False
             return self
     else:
+
         @root_validator
         def default_poll_when_no_webhook(cls, values):
             # When webhook not configured: poll is the only way to get [VAT] updates — default True
-            if not values.get("linear_webhook_secret") and "VAT_LINEAR_POLL_ENABLED" not in os.environ:
+            if (
+                not values.get("linear_webhook_secret")
+                and "VAT_LINEAR_POLL_ENABLED" not in os.environ
+            ):
                 values["linear_poll_enabled"] = True
             # When webhook configured: webhooks are preferred; default False unless explicitly set
-            elif values.get("linear_webhook_secret") and "VAT_LINEAR_POLL_ENABLED" not in os.environ:
+            elif (
+                values.get("linear_webhook_secret")
+                and "VAT_LINEAR_POLL_ENABLED" not in os.environ
+            ):
                 values["linear_poll_enabled"] = False
             return values
+
     linear_poll_interval_min: int = 5
     linear_poll_max_issues: int = 100
     # Reconciliation: fetch [VAT] updates via API to catch missed webhooks. Runs regardless of webhook config.
@@ -120,6 +136,13 @@ class Settings(BaseSettings):
     # Ingest API (push sources: Trivy, CI)
     require_ingest_auth: bool = False  # When True, ingest endpoints require API key
     ingest_api_key: Optional[str] = None  # Global fallback key (VAT_INGEST_API_KEY)
+
+    # Cross-source correlation linking after ingest (link-only; set VAT_CORRELATION_LINKING_ENABLED=false to disable)
+    correlation_linking_enabled: bool = True
+
+    # Audit ledger: optional Celery Beat job to anchor previous UTC day (POST /audit/checkpoints/daily remains manual)
+    audit_daily_checkpoint_enabled: bool = True
+    audit_checkpoint_retention_class: str = "operational"
 
     # Celery (sync worker) — Valkey/Redis-compatible broker
     celery_broker_url: str = "redis://localhost:6379/0"

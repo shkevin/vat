@@ -3,6 +3,7 @@
 import logging
 
 from celery import Celery
+from celery.schedules import crontab
 
 from app.core.config import get_settings
 
@@ -17,7 +18,7 @@ app = Celery(
     "vat",
     broker=settings.celery_broker_url,
     backend=settings.celery_result_backend or settings.celery_broker_url,
-    include=["app.tasks.sync_tasks"],
+    include=["app.tasks.sync_tasks", "app.tasks.audit_tasks"],
 )
 
 app.conf.update(
@@ -53,6 +54,12 @@ app.conf.beat_schedule = {
     "reconcile-linear": {
         "task": "app.tasks.sync_tasks.reconcile_linear",
         "schedule": float(_reconcile_interval),
+        "options": {"queue": "vat-sync"},
+    },
+    # Previous UTC day anchor (00:30 UTC); disable via VAT_AUDIT_DAILY_CHECKPOINT_ENABLED=false
+    "audit-daily-checkpoint": {
+        "task": "app.tasks.audit_tasks.run_daily_audit_checkpoint",
+        "schedule": crontab(hour=0, minute=30),
         "options": {"queue": "vat-sync"},
     },
 }

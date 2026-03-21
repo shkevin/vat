@@ -9,6 +9,8 @@ from sqlalchemy.pool import NullPool
 
 from app.core.config import get_settings
 from app.models.base import Base
+from app.models.asset_alias import AssetAlias  # noqa: F401
+from app.models.asset_merge_event import AssetMergeEvent  # noqa: F401
 from app.models.finding import Finding  # noqa: F401
 from app.models.openscap_scan_result import OpenSCAPScanResult  # noqa: F401
 from app.models.sbom import SbomPackage  # noqa: F401

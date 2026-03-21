@@ -7,6 +7,10 @@ VAT_SCAN_TAG_KEY = "_vat_scan_tag"
 VAT_SOURCE_IMAGE_KEY = "_vat_source_image"
 # Key for original path when scanning filesystem — use for file_path (scanner preserves before overwriting Target)
 VAT_SOURCE_PATH_KEY = "_vat_source_path"
+# vat-local-scanner: Aikido-style container asset (containers/images/<name>) + image tag
+VAT_CONTAINER_IMAGE_KEY = "_vat_container_image"
+VAT_CONTAINER_TAG_KEY = "_vat_container_tag"
+VAT_CONTAINER_DIGEST_KEY = "_vat_container_digest"
 
 
 def extract_scan_tag(raw: dict | list) -> str | None:

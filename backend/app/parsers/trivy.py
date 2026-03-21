@@ -8,9 +8,13 @@ from app.schemas.ingest import (
     CanonicalFindingType,
     CanonicalSeverity,
 )
+from app.parsers.image_digest import normalize_image_digest
 from app.parsers.utils import (
     extract_scan_tag,
     normalize_snippet,
+    VAT_CONTAINER_DIGEST_KEY,
+    VAT_CONTAINER_IMAGE_KEY,
+    VAT_CONTAINER_TAG_KEY,
     VAT_SOURCE_IMAGE_KEY,
     VAT_SOURCE_PATH_KEY,
 )
@@ -50,6 +54,22 @@ def _map_severity(s: str | None) -> CanonicalSeverity:
     if not s:
         return CanonicalSeverity.MEDIUM
     return _TRIVY_TO_VAT_SEVERITY.get(str(s).lower(), CanonicalSeverity.MEDIUM)
+
+
+def _effective_asset_for_result(res: dict, target_str: str) -> str:
+    """Prefer vat-local-scanner Aikido-style container image when injected on the result."""
+    img = res.get(VAT_CONTAINER_IMAGE_KEY)
+    if img and str(img).strip():
+        return str(img).strip()
+    return target_str
+
+
+def _effective_scan_tag_for_result(res: dict, scan_tag: str | None) -> str | None:
+    """Prefer per-container image tag over report-level scan tag when injected."""
+    ct = res.get(VAT_CONTAINER_TAG_KEY)
+    if ct and str(ct).strip():
+        return str(ct).strip()
+    return scan_tag
 
 
 def _trivy_type_to_ecosystem(t: str) -> str | None:
@@ -93,6 +113,13 @@ class TrivyParser(IngestParser):
 
     format_name = "trivy"
 
+    @staticmethod
+    def _inject_digest_from_result(res: dict, fields: dict) -> None:
+        raw = res.get(VAT_CONTAINER_DIGEST_KEY)
+        d = normalize_image_digest(str(raw).strip() if raw else None)
+        if d:
+            fields["image_digest"] = d
+
     def parse(self, raw: dict | list) -> list[CanonicalFindingPayload]:
         if isinstance(raw, list):
             # Trivy can output Results at top level in some modes
@@ -120,20 +147,23 @@ class TrivyParser(IngestParser):
             source_path = res.get(VAT_SOURCE_PATH_KEY) or ""
             source_path = str(source_path).strip() if source_path else None
 
+            eff_target = _effective_asset_for_result(res, target_str)
+            eff_scan_tag = _effective_scan_tag_for_result(res, scan_tag)
+
             for p in self._parse_vulnerabilities(
-                res, target_str, ecosystem, scan_tag, source_image, source_path
+                res, eff_target, ecosystem, eff_scan_tag, source_image, source_path
             ):
                 payloads.append(p)
             for p in self._parse_misconfigurations(
-                res, target_str, scan_tag, source_image, source_path
+                res, eff_target, eff_scan_tag, source_image, source_path
             ):
                 payloads.append(p)
             for p in self._parse_secrets(
-                res, target_str, scan_tag, source_image, source_path
+                res, eff_target, eff_scan_tag, source_image, source_path
             ):
                 payloads.append(p)
             for p in self._parse_licenses(
-                res, target_str, ecosystem, scan_tag, source_image, source_path
+                res, eff_target, ecosystem, eff_scan_tag, source_image, source_path
             ):
                 payloads.append(p)
 
@@ -196,6 +226,7 @@ class TrivyParser(IngestParser):
                 }
                 if scan_tag:
                     fields["tag"] = scan_tag
+                self._inject_digest_from_result(res, fields)
                 out.append(self._create_payload(fields, asset=target))
             except (KeyError, TypeError, ValueError) as e:
                 logger.debug("Skipping Trivy vulnerability: %s", e)
@@ -254,6 +285,7 @@ class TrivyParser(IngestParser):
                 }
                 if scan_tag:
                     fields["tag"] = scan_tag
+                self._inject_digest_from_result(res, fields)
                 out.append(self._create_payload(fields, asset=target_str))
             except (KeyError, TypeError, ValueError) as e:
                 logger.debug("Skipping Trivy misconfiguration: %s", e)
@@ -300,6 +332,7 @@ class TrivyParser(IngestParser):
                             source_image,
                             source_path,
                             secret_file_path,
+                            res,
                         )
                         if payload:
                             out.append(payload)
@@ -315,6 +348,7 @@ class TrivyParser(IngestParser):
                         source_image,
                         source_path,
                         secret_file_path,
+                        res,
                     )
                     if payload:
                         out.append(payload)
@@ -330,6 +364,7 @@ class TrivyParser(IngestParser):
         source_image: str | None,
         source_path: str | None,
         secret_file_path: str,
+        result_block: dict | None = None,
     ) -> CanonicalFindingPayload | None:
         """Build canonical payload for one secret finding with proper location."""
         rule_id = s.get("RuleID") or s.get("ruleID") or s.get("RuleId") or "unknown"
@@ -390,6 +425,8 @@ class TrivyParser(IngestParser):
             fields["line"] = line
         if scan_tag:
             fields["tag"] = scan_tag
+        if result_block is not None:
+            self._inject_digest_from_result(result_block, fields)
         return self._create_payload(fields, asset=target)
 
     def _parse_licenses(
@@ -439,6 +476,7 @@ class TrivyParser(IngestParser):
                 }
                 if scan_tag:
                     fields["tag"] = scan_tag
+                self._inject_digest_from_result(res, fields)
                 out.append(self._create_payload(fields, asset=target))
             except (KeyError, TypeError, ValueError) as e:
                 logger.debug("Skipping Trivy license: %s", e)

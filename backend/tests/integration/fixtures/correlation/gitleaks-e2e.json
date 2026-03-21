@@ -1,0 +1,12 @@
+{
+  "target": "registry.example/e2e-repro/app",
+  "findings": [
+    {
+      "RuleID": "generic-api-key",
+      "Description": "Generic API Key",
+      "File": "src/secrets.ts",
+      "StartLine": 42,
+      "Secret": "repro-e2e-not-real"
+    }
+  ]
+}

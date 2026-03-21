@@ -15,12 +15,17 @@ class AuditLedgerCheckpoint(Base):
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     checkpoint_date: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
-    retention_class: Mapped[str] = mapped_column(String(32), nullable=False, default="operational")
+    retention_class: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="operational"
+    )
     event_count: Mapped[int] = mapped_column(nullable=False, default=0)
     anchor_hash: Mapped[str] = mapped_column(String(128), nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
-
-    __table_args__ = (
-        UniqueConstraint("checkpoint_date", "retention_class", name="uq_audit_checkpoint_date_class"),
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, nullable=False
     )
 
+    __table_args__ = (
+        UniqueConstraint(
+            "checkpoint_date", "retention_class", name="uq_audit_checkpoint_date_class"
+        ),
+    )

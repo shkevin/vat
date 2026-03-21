@@ -22,12 +22,21 @@ def upgrade() -> None:
         "audit_ledger_checkpoints",
         sa.Column("id", sa.String(length=64), nullable=False),
         sa.Column("checkpoint_date", sa.String(length=16), nullable=False),
-        sa.Column("retention_class", sa.String(length=32), nullable=False, server_default="operational"),
+        sa.Column(
+            "retention_class",
+            sa.String(length=32),
+            nullable=False,
+            server_default="operational",
+        ),
         sa.Column("event_count", sa.Integer(), nullable=False, server_default="0"),
         sa.Column("anchor_hash", sa.String(length=128), nullable=False),
-        sa.Column("created_at", sa.DateTime(), nullable=False, server_default=sa.func.now()),
+        sa.Column(
+            "created_at", sa.DateTime(), nullable=False, server_default=sa.func.now()
+        ),
         sa.PrimaryKeyConstraint("id"),
-        sa.UniqueConstraint("checkpoint_date", "retention_class", name="uq_audit_checkpoint_date_class"),
+        sa.UniqueConstraint(
+            "checkpoint_date", "retention_class", name="uq_audit_checkpoint_date_class"
+        ),
     )
     op.create_index(
         "ix_audit_ledger_checkpoints_checkpoint_date",
@@ -39,4 +48,3 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.drop_table("audit_ledger_checkpoints")
-

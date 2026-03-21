@@ -15,6 +15,7 @@ from app.core.database import async_session, get_db
 from app.models.finding import Finding, Status
 from app.services.external_links_service import find_finding_by_external_id
 from app.schemas.vat import VatFindingSchema
+from app.services.aikido_full_sync import aikido_issue_trace_id
 from app.services.ingest import ingest_finding
 from app.services.webhook_idempotency import (
     compute_idempotency_key,
@@ -235,9 +236,19 @@ async def _handle_aikido_webhook(
         if not payload:
             raise
 
+    issue_for_trace = (
+        data.get("issue") if isinstance(data.get("issue"), dict) else data
+    )
+    trace_id = aikido_issue_trace_id(aikido_source_id, issue_for_trace or data)
+
     async with async_session() as session:
         finding, created = await ingest_finding(
-            session, payload, source_name="Aikido", aikido_source_id=aikido_source_id
+            session,
+            payload,
+            source_name="Aikido",
+            aikido_source_id=aikido_source_id,
+            trace_id=trace_id,
+            parser_id="aikido",
         )
         await session.refresh(finding)
         await record_webhook_processed(

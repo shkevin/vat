@@ -31,7 +31,7 @@ from app.services.aikido_dashboard_sync import (
     get_aikido_dashboard_cached,
     sync_aikido_dashboard,
 )
-from app.services.aikido_full_sync import run_full_sync
+from app.services.aikido_full_sync import aikido_issue_trace_id, run_full_sync
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -755,6 +755,8 @@ async def aikido_bootstrap(
                     source_name="Aikido",
                     tenant_id=tenant_id,
                     auto_sync_to_tracker=create_tracker_issues,
+                    trace_id=aikido_issue_trace_id(source_id, raw),
+                    parser_id="aikido",
                 )
                 if is_new:
                     created += 1

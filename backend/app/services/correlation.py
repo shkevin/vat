@@ -43,4 +43,3 @@ def correlation_key_for_payload(
             return f"{ft}:{asset}:{rid}", "low"
         return f"{ft}:{asset}:{cve}", "low"
     return f"other:{asset}:{cve}:{comp}", "low"
-

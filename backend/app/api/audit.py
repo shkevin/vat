@@ -219,4 +219,3 @@ async def create_checkpoint(
         "anchorHash": cp.anchor_hash,
         "createdAt": cp.created_at.isoformat() if cp.created_at else None,
     }
-

@@ -77,6 +77,9 @@ class Finding(Base):
     tag: Mapped[Optional[str]] = mapped_column(
         String(128), nullable=True
     )  # container image tag
+    image_digest: Mapped[Optional[str]] = mapped_column(
+        String(128), nullable=True
+    )  # manifest digest sha256:… (same digest = same image; multiple tags)
     title: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     source_file_url: Mapped[Optional[str]] = mapped_column(
@@ -137,8 +140,12 @@ class Finding(Base):
     # External links: [{adapter_key, kind, issue_id, url, created_at, ...}]. Unified for sources and trackers.
     external_links: Mapped[list] = mapped_column(JSONB, default=list, nullable=False)
     # Cross-source correlation metadata (distinct from replay dedup fingerprint).
-    correlation_key: Mapped[Optional[str]] = mapped_column(String(256), nullable=True, index=True)
-    correlation_confidence: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    correlation_key: Mapped[Optional[str]] = mapped_column(
+        String(256), nullable=True, index=True
+    )
+    correlation_confidence: Mapped[Optional[str]] = mapped_column(
+        String(32), nullable=True
+    )
     correlated_to: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
 
     @property

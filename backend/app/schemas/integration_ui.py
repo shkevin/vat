@@ -8,7 +8,9 @@ from typing import Literal, Optional
 
 try:
     from pydantic import BaseModel, Field, field_validator
-except ImportError:  # pragma: no cover - compatibility for pydantic v1 test environments
+except (
+    ImportError
+):  # pragma: no cover - compatibility for pydantic v1 test environments
     from pydantic import BaseModel, Field, validator
 
     def field_validator(*fields, mode="after", **kwargs):
