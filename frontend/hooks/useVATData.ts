@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback, useMemo } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { now, daysLeft, computeAlerts } from "@/lib/utils";
 import {
   archiveFinding,
@@ -8,6 +9,7 @@ import {
   fetchSettings,
   fetchSbomPackages,
   fetchVATData,
+  type VATDataResponse,
   overrideFindingFingerprint,
   putSettingsLabels,
   putSettingsSources,
@@ -26,6 +28,7 @@ import {
 } from "@/lib/constants";
 import {
   deriveAssets,
+  getAssetDisplayTitle,
   getAssetTypeFromAsset,
   assetIdForFinding,
 } from "@/lib/assetUtils";
@@ -51,6 +54,8 @@ import type {
   WatchedLabel,
   Alert,
 } from "@/types";
+
+const VAT_SNAPSHOT_KEY = "vat:lastFindingsSnapshot:v1";
 
 /** Map API response to Finding type */
 function toFinding(raw: Record<string, unknown>): Finding {
@@ -91,6 +96,10 @@ function toFinding(raw: Record<string, unknown>): Finding {
     sourceGroupSeverity: raw.sourceGroupSeverity
       ? String(raw.sourceGroupSeverity)
       : undefined,
+    groupKey:
+      raw.groupKey != null && String(raw.groupKey).trim()
+        ? String(raw.groupKey)
+        : undefined,
     filePath: raw.filePath ? String(raw.filePath) : undefined,
     line: typeof raw.line === "number" ? raw.line : undefined,
     snippetMasked: raw.snippetMasked ? String(raw.snippetMasked) : undefined,
@@ -130,6 +139,92 @@ function applyWaiverExpiry(findings: Finding[]): Finding[] {
       ],
     };
   });
+}
+
+function normalizeSettings(
+  settingsRes: Awaited<ReturnType<typeof fetchSettings>>,
+): {
+  sources: Source[];
+  tracker: Tracker;
+  trackers: Tracker[];
+  labels: WatchedLabel[];
+} {
+  const src = (settingsRes.sources ?? []) as unknown as Source[];
+  const trkList = (settingsRes.trackers ?? []) as unknown as Tracker[];
+  const trk =
+    settingsRes.tracker && Object.keys(settingsRes.tracker).length
+      ? (settingsRes.tracker as unknown as Tracker)
+      : trkList.length
+        ? trkList.find((t) => !t.useAikidoTracking) ?? trkList[0]
+        : ({} as unknown as Tracker);
+  const lbl = (settingsRes.labels ?? []) as unknown as WatchedLabel[];
+  return { sources: src, tracker: trk, trackers: trkList, labels: lbl };
+}
+
+function mapSbom(
+  sbomRes: Awaited<ReturnType<typeof fetchSbomPackages>>,
+): Array<{
+  id: string;
+  name: string;
+  version: string;
+  license: string;
+  component: string;
+  language: string;
+}> {
+  const apiSbom = Array.isArray(sbomRes) ? sbomRes : [];
+  if (apiSbom.length === 0) return SAMPLE_SBOM;
+  return apiSbom.map((p) => ({
+    id: p.id,
+    name: p.name,
+    version: p.version,
+    license: p.licenseId ?? "",
+    licenseRisk: p.licenseRisk,
+    component: p.component ?? "",
+    language: p.language ?? "",
+  }));
+}
+
+function loadVatSnapshot(): {
+  findings: Finding[];
+  assets: Asset[];
+  updatedAt: number;
+} | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(VAT_SNAPSHOT_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as {
+      findings?: Finding[];
+      assets?: Asset[];
+      updatedAt?: number;
+    };
+    if (!Array.isArray(parsed.findings) || !Array.isArray(parsed.assets))
+      return null;
+    if (typeof parsed.updatedAt !== "number") return null;
+    return {
+      findings: parsed.findings,
+      assets: parsed.assets,
+      updatedAt: parsed.updatedAt,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function saveVatSnapshot(findings: Finding[], assets: Asset[]) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(
+      VAT_SNAPSHOT_KEY,
+      JSON.stringify({
+        findings,
+        assets,
+        updatedAt: Date.now(),
+      }),
+    );
+  } catch {
+    // Ignore quota/serialization issues; cache is best-effort.
+  }
 }
 
 export interface UseVATDataReturn {
@@ -173,6 +268,9 @@ export interface UseVATDataReturn {
   ) => void;
   onlyFavorites: boolean;
   setOnlyFavorites: (v: boolean | ((prev: boolean) => boolean)) => void;
+  /** When true, assets with no findings appear in the list. Default false hides them. */
+  showEmptyAssets: boolean;
+  setShowEmptyAssets: (v: boolean | ((prev: boolean) => boolean)) => void;
   favoriteAssetIds: Set<string>;
   favoriteEntries: FavoriteEntry[];
   toggleFavorite: (
@@ -250,23 +348,27 @@ export interface UseVATDataReturn {
 /** Internal hook — use via VATDataContext's useVATData. */
 export function useVATDataCore(): UseVATDataReturn {
   const { token, user } = useAuth();
+  const queryClient = useQueryClient();
   const userEmail = user?.email ?? undefined;
   const auth = { token: token ?? undefined, userEmail };
-  const [findings, setFindings] = useState<Finding[]>([]);
-  const [assetsFromApi, setAssetsFromApi] = useState<Asset[] | null>(null);
+  const [snapshot] = useState(() => loadVatSnapshot());
+  const [findings, setFindings] = useState<Finding[]>(
+    () => snapshot?.findings ?? [],
+  );
+  const [assetsFromApi, setAssetsFromApi] = useState<Asset[] | null>(
+    () => snapshot?.assets ?? null,
+  );
   const [sources, setSources] = useState<Source[]>([]);
   const [tracker, setTracker] = useState<Tracker>(DEFAULT_TRACKER);
   const [trackers, setTrackers] = useState<Tracker[]>([]);
   const [labels, setLabels] = useState<WatchedLabel[]>(DEFAULT_LABELS);
   const [sbom, setSbom] = useState(SAMPLE_SBOM);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<Finding | null>(null);
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const [view, setView] = useState("findings");
   const [search, setSearch] = useState("");
   const [searchFields, setSearchFields] = useState<Set<string>>(new Set());
-  const [showArchived, setShowArchived] = useState(false);
+  const [showArchived, setShowArchived] = useState<boolean | "both">(false);
   const [needsJustification, setNeedsJustification] = useState(false);
 
   const [filterFindingStatuses, setFilterFindingStatuses] = useState<
@@ -283,6 +385,7 @@ export function useVATDataCore(): UseVATDataReturn {
     new Set(),
   );
   const [onlyFavorites, setOnlyFavorites] = useState(false);
+  const [showEmptyAssets, setShowEmptyAssets] = useState(false);
   const [favoriteEntries, setFavoriteEntries] = useState<FavoriteEntry[]>(
     () => {
       if (typeof window === "undefined") return [];
@@ -427,133 +530,127 @@ export function useVATDataCore(): UseVATDataReturn {
     setLoadouts(loadAssetLoadouts());
   }, []);
 
-  const refetch = useCallback(
-    async (opts?: { silent?: boolean }) => {
-      const silent = opts?.silent ?? false;
-      if (!silent) setLoading(true);
-      setError(null);
-      try {
-        const params: Record<string, string | string[] | number | boolean> = {
-          limit: 0,
-        }; // 0 = no limit
-        if (showArchived !== "both") params.archived = showArchived;
-        // Asset search is applied client-side to avoid refetch on every keystroke
-        const [vatRes, settingsRes, sbomRes] = await Promise.all([
-          fetchVATData(params, auth),
-          fetchSettings(auth).catch(() => null),
-          fetchSbomPackages({ limit: 5000 }, auth).catch(() => []),
-        ]);
-        const mapped = vatRes.findings.map((r) =>
-          toFinding(r as unknown as Record<string, unknown>),
-        );
-        const withExpiry = applyWaiverExpiry(mapped);
-        setFindings(withExpiry);
-        const apiAssets = (vatRes.assets ?? []).map((a) => ({
-          ...a,
-          findings: (a.findings ?? []).map((r) =>
-            toFinding(r as unknown as Record<string, unknown>),
-          ),
-        })) as Asset[];
-        setAssetsFromApi(apiAssets);
-        if (settingsRes) {
-          const src = (settingsRes.sources ?? []) as unknown as Source[];
-          const trkList = (settingsRes.trackers ?? []) as unknown as Tracker[];
-          const trk =
-            settingsRes.tracker && Object.keys(settingsRes.tracker).length
-              ? (settingsRes.tracker as unknown as Tracker)
-              : trkList.length
-                ? trkList.find((t) => !t.useAikidoTracking) ?? trkList[0]
-                : ({} as unknown as Tracker);
-          const lbl = (settingsRes.labels ?? []) as unknown as WatchedLabel[];
-          setSources(src);
-          setTracker(trk);
-          setTrackers(trkList);
-          if (lbl.length) setLabels(lbl);
-          saveToStorage({
-            sources: settingsRes.sources ?? [],
-            tracker: settingsRes.tracker ?? {},
-            labels: settingsRes.labels ?? [],
-          });
-        }
-        // SBOM: use API data when available; fallback to SAMPLE_SBOM only when API returns empty
-        const apiSbom = Array.isArray(sbomRes) ? sbomRes : [];
-        const mappedSbom =
-          apiSbom.length > 0
-            ? apiSbom.map((p) => ({
-                id: p.id,
-                name: p.name,
-                version: p.version,
-                license: p.licenseId ?? "",
-                licenseRisk: p.licenseRisk,
-                component: p.component ?? "",
-                language: p.language ?? "",
-              }))
-            : SAMPLE_SBOM;
-        setSbom(mappedSbom);
-        if (!settingsRes) {
-          const stored = loadSettingsFromStorage();
-          setSources((stored.sources ?? []) as unknown as Source[]);
-          const single =
-            stored.tracker && Object.keys(stored.tracker).length
-              ? ({
-                  ...DEFAULT_TRACKER,
-                  ...stored.tracker,
-                } as unknown as Tracker)
-              : ({} as unknown as Tracker);
-          setTracker(single);
-          setTrackers(single && single.name ? [single] : []);
-          if (stored.labels?.length)
-            setLabels(stored.labels as unknown as WatchedLabel[]);
-        }
-      } catch (e) {
-        setError(e instanceof Error ? e.message : "Failed to fetch findings");
-        setFindings([]);
-        setAssetsFromApi(null);
-      } finally {
-        if (!silent) setLoading(false);
-      }
+  const vatQuery = useQuery({
+    queryKey: [
+      "vat-data",
+      token ?? "",
+      userEmail ?? "",
+      showArchived,
+      showEmptyAssets,
+    ],
+    enabled: Boolean(token || userEmail),
+    initialData: snapshot
+      ? ({
+          findings: snapshot.findings as unknown as VATDataResponse["findings"],
+          assets: snapshot.assets as unknown as VATDataResponse["assets"],
+        } satisfies VATDataResponse)
+      : undefined,
+    initialDataUpdatedAt: snapshot?.updatedAt,
+    queryFn: async () => {
+      const params: Record<string, string | string[] | number | boolean> = {
+        full: true,
+        include_assets: true,
+        include_zero_assets: showEmptyAssets,
+      };
+      if (showArchived !== "both") params.archived = showArchived;
+      return fetchVATData(params, auth);
     },
-    [showArchived, token, user?.email],
-  );
+    refetchInterval: () =>
+      typeof document !== "undefined" && document.visibilityState === "visible"
+        ? 15_000
+        : false,
+    refetchOnReconnect: true,
+  });
 
-  /** Refetch only settings — does NOT set loading, so Settings pane stays mounted */
-  const refetchSettings = useCallback(async () => {
-    try {
-      const settingsRes = await fetchSettings(auth);
-      const trkList = (settingsRes.trackers ?? []) as unknown as Tracker[];
-      const trk =
-        settingsRes.tracker && Object.keys(settingsRes.tracker).length
-          ? (settingsRes.tracker as unknown as Tracker)
-          : trkList.length
-            ? trkList.find((t) => !t.useAikidoTracking) ?? trkList[0]
-            : ({} as unknown as Tracker);
-      setSources((settingsRes.sources ?? []) as unknown as Source[]);
-      setTracker(trk);
-      setTrackers(trkList);
-      if (settingsRes.labels?.length)
-        setLabels(settingsRes.labels as unknown as WatchedLabel[]);
-      saveToStorage({
-        sources: settingsRes.sources ?? [],
-        tracker: settingsRes.tracker ?? {},
-        labels: settingsRes.labels ?? [],
-      });
-    } catch {
-      const stored = loadSettingsFromStorage();
-      setSources((stored.sources ?? []) as unknown as Source[]);
-      const single =
-        stored.tracker && Object.keys(stored.tracker).length
-          ? ({ ...DEFAULT_TRACKER, ...stored.tracker } as unknown as Tracker)
-          : ({} as unknown as Tracker);
-      setTracker(single);
-      setTrackers(single && single.name ? [single] : []);
-      if (stored.labels?.length)
-        setLabels(stored.labels as unknown as WatchedLabel[]);
-    }
-  }, [token, user?.email]);
+  const settingsQuery = useQuery({
+    queryKey: ["vat-settings", token ?? "", userEmail ?? ""],
+    enabled: Boolean(token || userEmail),
+    queryFn: async () => fetchSettings(auth),
+    staleTime: 60_000,
+  });
+
+  const sbomQuery = useQuery({
+    queryKey: ["vat-sbom", token ?? "", userEmail ?? ""],
+    enabled: Boolean(token || userEmail),
+    queryFn: async () => fetchSbomPackages({ limit: 5000 }, auth),
+    staleTime: 5 * 60_000,
+    refetchOnWindowFocus: false,
+  });
 
   useEffect(() => {
-    refetch();
-  }, [refetch]);
+    if (!vatQuery.data) return;
+    const mapped = vatQuery.data.findings.map((r) =>
+      toFinding(r as unknown as Record<string, unknown>),
+    );
+    const withExpiry = applyWaiverExpiry(mapped);
+    setFindings(withExpiry);
+    const apiAssets = (vatQuery.data.assets ?? []).map((a) => {
+      const findings = (a.findings ?? []).map((r) =>
+        toFinding(r as unknown as Record<string, unknown>),
+      );
+      const id = String(a.id ?? "");
+      return {
+        ...a,
+        id,
+        name: getAssetDisplayTitle({
+          id,
+          name: (a.name as string | undefined) ?? id,
+          type: a.type as string | undefined,
+        }),
+        findings,
+      } as Asset;
+    });
+    setAssetsFromApi(apiAssets);
+    saveVatSnapshot(withExpiry, apiAssets);
+  }, [vatQuery.data]);
+
+  useEffect(() => {
+    if (!settingsQuery.data) return;
+    const normalized = normalizeSettings(settingsQuery.data);
+    setSources(normalized.sources);
+    setTracker(normalized.tracker);
+    setTrackers(normalized.trackers);
+    if (normalized.labels.length) setLabels(normalized.labels);
+    saveToStorage({
+      sources: settingsQuery.data.sources ?? [],
+      tracker: settingsQuery.data.tracker ?? {},
+      labels: settingsQuery.data.labels ?? [],
+    });
+  }, [settingsQuery.data]);
+
+  useEffect(() => {
+    if (!settingsQuery.error) return;
+    const stored = loadSettingsFromStorage();
+    setSources((stored.sources ?? []) as unknown as Source[]);
+    const single =
+      stored.tracker && Object.keys(stored.tracker).length
+        ? ({ ...DEFAULT_TRACKER, ...stored.tracker } as unknown as Tracker)
+        : ({} as unknown as Tracker);
+    setTracker(single);
+    setTrackers(single && single.name ? [single] : []);
+    if (stored.labels?.length)
+      setLabels(stored.labels as unknown as WatchedLabel[]);
+  }, [settingsQuery.error]);
+
+  useEffect(() => {
+    if (!sbomQuery.data) return;
+    setSbom(mapSbom(sbomQuery.data));
+  }, [sbomQuery.data]);
+
+  const refetch = useCallback(
+    async (_opts?: { silent?: boolean }) => {
+      await Promise.all([
+        vatQuery.refetch(),
+        settingsQuery.refetch(),
+        sbomQuery.refetch(),
+      ]);
+    },
+    [vatQuery, settingsQuery, sbomQuery],
+  );
+
+  const invalidateVatData = useCallback(async () => {
+    await queryClient.invalidateQueries({ queryKey: ["vat-data"] });
+  }, [queryClient]);
 
   const handleUpdate = useCallback(
     async (upd: Finding) => {
@@ -576,74 +673,71 @@ export function useVATDataCore(): UseVATDataReturn {
         );
         setSelected(mapped);
       } catch (err) {
-        await refetch();
+        await invalidateVatData();
         throw err;
       }
     },
-    [refetch, token, user?.email],
+    [invalidateVatData, token, user?.email],
   );
 
   const handleArchive = useCallback(
     async (id: string, reason: string) => {
       try {
-        await archiveFinding(id, reason, userEmail ?? undefined);
+        await archiveFinding(id, reason, auth);
         setSelected((prev) => (prev?.id === id ? null : prev));
-        await refetch();
+        await invalidateVatData();
       } catch (err) {
-        await refetch();
+        await invalidateVatData();
         throw err;
       }
     },
-    [refetch, token, user?.email],
+    [invalidateVatData, token, user?.email],
   );
 
   const handleUnarchive = useCallback(
     async (id: string) => {
       try {
-        await unarchiveFinding(id, userEmail ?? undefined);
-        await refetch();
+        await unarchiveFinding(id, auth);
+        await invalidateVatData();
       } catch {
-        await refetch();
+        await invalidateVatData();
       }
     },
-    [refetch, token, user?.email],
+    [invalidateVatData, token, user?.email],
   );
 
   const handleRevert = useCallback(
     async (id: string, reason: string) => {
       try {
-        const raw = await revertFinding(id, reason, userEmail ?? undefined);
+        const raw = await revertFinding(id, reason, auth);
         const mapped = toFinding(raw as unknown as Record<string, unknown>);
         setFindings((prev) =>
           prev.map((f) => (f.id === mapped.id ? mapped : f)),
         );
         setSelected(mapped);
       } catch (err) {
-        await refetch();
+        await invalidateVatData();
         throw err;
       }
     },
-    [refetch, token, user?.email],
+    [invalidateVatData, token, user?.email],
   );
 
   const handleOverrideFingerprint = useCallback(
     async (id: string) => {
       try {
-        const raw = await overrideFindingFingerprint(
-          id,
-          userEmail ?? undefined,
-        );
+        const raw = await overrideFindingFingerprint(id, auth);
         const mapped = toFinding(raw as unknown as Record<string, unknown>);
         setFindings((prev) =>
           prev.map((f) => (f.id === mapped.id ? mapped : f)),
         );
         setSelected(mapped);
       } catch (err) {
-        await refetch();
+        await invalidateVatData();
         throw err;
       }
     },
-    [refetch, token, user?.email],
+    [invalidateVatData, token, user?.email],
   );
 
   const handleBulk = useCallback(
@@ -651,20 +745,15 @@ export function useVATDataCore(): UseVATDataReturn {
       const ids = Array.from(checked);
       if (ids.length === 0) return;
       try {
-        await bulkUpdateFindings(
-          ids,
-          status,
-          justification,
-          userEmail ?? undefined,
-        );
+        await bulkUpdateFindings(ids, status, justification, auth);
         setChecked(new Set());
-        await refetch();
+        await invalidateVatData();
       } catch (err) {
-        await refetch();
+        await invalidateVatData();
         throw err;
       }
     },
-    [checked, refetch, token, user?.email],
+    [checked, invalidateVatData, token, user?.email],
   );
 
   const onSourcesChange = useCallback(
@@ -678,6 +767,7 @@ export function useVATDataCore(): UseVATDataReturn {
         saveToStorage({
           sources: next as unknown as Array<Record<string, unknown>>,
         });
+        await queryClient.invalidateQueries({ queryKey: ["vat-settings"] });
       } catch {
         saveToStorage({
           sources: next as unknown as Array<Record<string, unknown>>,
@@ -685,7 +775,7 @@ export function useVATDataCore(): UseVATDataReturn {
         setSources(next);
       }
     },
-    [userEmail],
+    [queryClient, token, user?.email],
   );
 
   const onTrackerChange = useCallback(
@@ -697,12 +787,13 @@ export function useVATDataCore(): UseVATDataReturn {
         );
         setTracker(next);
         saveToStorage({ tracker: next as unknown as Record<string, unknown> });
+        await queryClient.invalidateQueries({ queryKey: ["vat-settings"] });
       } catch {
         saveToStorage({ tracker: next as unknown as Record<string, unknown> });
         setTracker(next);
       }
     },
-    [userEmail],
+    [queryClient, token, user?.email],
   );
 
   const onLabelsChange = useCallback(
@@ -716,6 +807,7 @@ export function useVATDataCore(): UseVATDataReturn {
         saveToStorage({
           labels: next as unknown as Array<Record<string, unknown>>,
         });
+        await queryClient.invalidateQueries({ queryKey: ["vat-settings"] });
       } catch {
         saveToStorage({
           labels: next as unknown as Array<Record<string, unknown>>,
@@ -723,7 +815,7 @@ export function useVATDataCore(): UseVATDataReturn {
         setLabels(next);
       }
     },
-    [userEmail],
+    [queryClient, token, user?.email],
   );
 
   const toggleCheck = useCallback((id: string, val: boolean) => {
@@ -896,6 +988,10 @@ export function useVATDataCore(): UseVATDataReturn {
       );
     }
 
+    if (!showEmptyAssets) {
+      assets = assets.filter((a) => a.findings.length > 0);
+    }
+
     return assets;
   }, [
     assetsFromApi,
@@ -908,6 +1004,7 @@ export function useVATDataCore(): UseVATDataReturn {
     filterORARange,
     filterAssetTypes,
     search,
+    showEmptyAssets,
   ]);
 
   const allAssets = useMemo(() => {
@@ -942,6 +1039,9 @@ export function useVATDataCore(): UseVATDataReturn {
     return deriveAssets(active, SEV_ORDER).length;
   }, [assetsFromApi, active]);
 
+  const loading = vatQuery.isLoading && findings.length === 0;
+  const error = vatQuery.error instanceof Error ? vatQuery.error.message : null;
+
   return {
     findings,
     sources,
@@ -970,6 +1070,8 @@ export function useVATDataCore(): UseVATDataReturn {
     setFilterAssetTypes,
     onlyFavorites,
     setOnlyFavorites,
+    showEmptyAssets,
+    setShowEmptyAssets,
     favoriteAssetIds,
     favoriteEntries,
     toggleFavorite,

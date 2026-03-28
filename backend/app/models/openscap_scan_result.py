@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from sqlalchemy import DateTime, LargeBinary, String
+from sqlalchemy import Boolean, DateTime, LargeBinary, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
@@ -19,8 +19,15 @@ class OpenSCAPScanResult(Base):
 
     asset_id: Mapped[str] = mapped_column(String(256), primary_key=True)
     source_id: Mapped[str] = mapped_column(String(64), primary_key=True)
-    raw_xccdf_xml: Mapped[bytes] = mapped_column(LargeBinary(), nullable=False)
+    raw_xccdf_xml: Mapped[bytes | None] = mapped_column(LargeBinary(), nullable=True)
+    evidence_sha256: Mapped[str | None] = mapped_column(
+        String(64), nullable=True, index=True
+    )
     benchmark_id: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    benchmark_family: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    content_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    profile_scope: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    needs_family_classification: Mapped[bool] = mapped_column(Boolean, default=False)
     parser_id: Mapped[str] = mapped_column(
         String(32), nullable=False
     )  # openscap | openscap_oval

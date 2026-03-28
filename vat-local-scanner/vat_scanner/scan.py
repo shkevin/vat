@@ -6,7 +6,9 @@ import re
 import shutil
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from typing import Callable
 
 from vat_scanner.scanners.normalize import VAT_SCAN_TAG_KEY
 
@@ -93,7 +95,21 @@ def _apply_cyclonedx_container_ref(doc: dict | None, container_ref: str | None) 
     return out
 
 
-def run_scan(path: Path, config: ScannerConfig) -> dict[str, dict | list]:
+def _publish_report(
+    on_report: Callable[[str, dict | list], None] | None,
+    parser: str,
+    report: dict | list,
+) -> None:
+    if on_report is not None:
+        on_report(parser, report)
+
+
+def run_scan(
+    path: Path,
+    config: ScannerConfig,
+    *,
+    on_report: Callable[[str, dict | list], None] | None = None,
+) -> dict[str, dict | list]:
     """
     Run scanners based on config.scan_types and content detection.
     Returns dict of parser_id -> report (normalized for VAT ingest).
@@ -114,6 +130,13 @@ def run_scan(path: Path, config: ScannerConfig) -> dict[str, dict | list]:
     reports: dict[str, dict | list] = {}
     scan_totals: dict[str, float] = {}
     overall_start = time.perf_counter()
+    container_timings: dict[str, list[float]] = {
+        "trivy_container_item": [],
+        "stig_item": [],
+        "oval_cve_item": [],
+        "cyclonedx_item": [],
+    }
+    trivy_cyclonedx_modes: dict[str, int] = {}
 
     # Trivy fs: secrets, iac, license, (optionally vuln/dependencies via artifact)
     run_trivy = (
@@ -138,6 +161,7 @@ def run_scan(path: Path, config: ScannerConfig) -> dict[str, dict | list]:
             enrich_reports({"trivy": trivy_fs}, path)
             trivy_fs = normalize_trivy(trivy_fs, asset_name, scan_tag, rewrite_target=rewrite_target)
             reports["trivy"] = trivy_fs
+            _publish_report(on_report, "trivy", reports["trivy"])
             scan_totals["trivy_fs"] = time.perf_counter() - t0
             _verbose(config, f"Trivy fs completed in {_fmt_elapsed(scan_totals['trivy_fs'])}")
         except (ScannerNotFoundError, ScannerTimeoutError) as e:
@@ -153,9 +177,11 @@ def run_scan(path: Path, config: ScannerConfig) -> dict[str, dict | list]:
         or "dependencies" in scan_types
     ):
         _verbose(config, "Collecting container sources (docker-save, OCI layouts)")
+        t0 = time.perf_counter()
         container_sources, extract_dirs = collect_container_sources(
             path, temp_dir=temp_dir
         )
+        scan_totals["container_discovery"] = time.perf_counter() - t0
         if config.dev_limit > 0 and len(container_sources) > config.dev_limit:
             _verbose(config, f"Dev mode: limiting to {config.dev_limit} container(s)")
             container_sources = container_sources[: config.dev_limit]
@@ -169,13 +195,25 @@ def run_scan(path: Path, config: ScannerConfig) -> dict[str, dict | list]:
         else:
             trivy_results = []
         trivy_container_start = time.perf_counter()
-        for i, src in enumerate(container_sources, 1):
+
+        def _scan_container(src: object) -> tuple[dict | None, float]:
             t0 = time.perf_counter()
             if src.format == "docker-save":
                 img_report = run_trivy_image(src.path, timeout=trivy_timeout)
             else:
                 img_report = run_trivy_oci_layout(src.path, timeout=trivy_timeout)
-            elapsed = time.perf_counter() - t0
+            return img_report, time.perf_counter() - t0
+
+        max_workers = min(2, n_container)
+        if max_workers > 1:
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                container_results = list(executor.map(_scan_container, container_sources))
+        else:
+            container_results = [_scan_container(src) for src in container_sources]
+
+        for i, (src, result_pair) in enumerate(zip(container_sources, container_results), 1):
+            img_report, elapsed = result_pair
+            container_timings["trivy_container_item"].append(elapsed)
             if n_container > 1 or config.verbose:
                 time_suffix = f" ({_fmt_elapsed(elapsed)})" if config.verbose else ""
                 print(f"  → Trivy {i}/{n_container}: {src.label}{time_suffix}", flush=True)
@@ -187,7 +225,9 @@ def run_scan(path: Path, config: ScannerConfig) -> dict[str, dict | list]:
                     asset_name,
                     scan_tag,
                     source_image=src.label,
+                    image_ref=src.image_ref,
                     rewrite_target=rewrite_target,
+                    canonical_image_digest=getattr(src, "image_digest", None),
                 )
                 trivy_results.extend(img_report.get("Results") or [])
         scan_totals["trivy_container"] = time.perf_counter() - trivy_container_start
@@ -196,6 +236,7 @@ def run_scan(path: Path, config: ScannerConfig) -> dict[str, dict | list]:
         if trivy_results:
             reports["trivy"] = reports.get("trivy") or {}
             reports["trivy"]["Results"] = trivy_results
+            _publish_report(on_report, "trivy", reports["trivy"])
 
     # STIG: Chainguard OpenSCAP GPOS SRG for container images
     if container_sources and config.verbose and "stig" not in scan_types:
@@ -229,16 +270,20 @@ def run_scan(path: Path, config: ScannerConfig) -> dict[str, dict | list]:
             if stig_verbose and xml is None:
                 stig_verbose = False
             elapsed = time.perf_counter() - t0
+            container_timings["stig_item"].append(elapsed)
             if n_stig > 1 or config.verbose:
                 time_suffix = f" ({_fmt_elapsed(elapsed)})" if config.verbose else ""
                 print(f"  → STIG {i}/{n_stig}: {src.label}{time_suffix}", flush=True)
             if xml:
-                stig_reports.append((xml, src.label))
+                stig_reports.append(
+                    (xml, src.label, src.image_ref, getattr(src, "image_digest", None))
+                )
         scan_totals["stig"] = time.perf_counter() - stig_start
         if config.verbose:
             print(f"  STIG total: {n_stig} scan(s) in {_fmt_elapsed(scan_totals['stig'])}", flush=True)
         if stig_reports:
             reports["openscap"] = stig_reports
+            _publish_report(on_report, "openscap", reports["openscap"])
         elif container_sources:
             print(
                 "  WARN: STIG (OpenSCAP) produced no results. Ensure Docker socket is mounted "
@@ -279,6 +324,7 @@ def run_scan(path: Path, config: ScannerConfig) -> dict[str, dict | list]:
             if skip_remaining:
                 oval_skipped_non_rhel = True
                 elapsed = time.perf_counter() - t0
+                container_timings["oval_cve_item"].append(elapsed)
                 if n_oval > 1 or config.verbose:
                     time_suffix = f" ({_fmt_elapsed(elapsed)})" if config.verbose else ""
                     print(f"  → OVAL CVE {i}/{n_oval}: {src.label}{time_suffix}", flush=True)
@@ -292,16 +338,20 @@ def run_scan(path: Path, config: ScannerConfig) -> dict[str, dict | list]:
             if oval_verbose and xml is None:
                 oval_verbose = False
             elapsed = time.perf_counter() - t0
+            container_timings["oval_cve_item"].append(elapsed)
             if n_oval > 1 or config.verbose:
                 time_suffix = f" ({_fmt_elapsed(elapsed)})" if config.verbose else ""
                 print(f"  → OVAL CVE {i}/{n_oval}: {src.label}{time_suffix}", flush=True)
             if xml:
-                oval_reports.append((xml, src.label))
+                oval_reports.append(
+                    (xml, src.label, src.image_ref, getattr(src, "image_digest", None))
+                )
         scan_totals["oval_cve"] = time.perf_counter() - oval_start
         if config.verbose and not oval_skipped_non_rhel:
             print(f"  OVAL CVE total: {n_oval} scan(s) in {_fmt_elapsed(scan_totals['oval_cve'])}", flush=True)
         if oval_reports:
             reports["openscap_oval"] = oval_reports
+            _publish_report(on_report, "openscap_oval", reports["openscap_oval"])
         elif container_sources and not oval_skipped_non_rhel:
             print(
                 "  WARN: OVAL CVE (OpenSCAP) produced no results. Ensure Docker socket is mounted "
@@ -314,7 +364,7 @@ def run_scan(path: Path, config: ScannerConfig) -> dict[str, dict | list]:
     if "dependencies" in scan_types:
         # Always generate CycloneDX from Trivy so SBOM export includes packages
         # even when there are no vulnerability findings.
-        cyclonedx_docs: list[tuple[dict, str | None]] = []
+        cyclonedx_docs: list[tuple[dict, str, str | None, str | None]] = []
         t0 = time.perf_counter()
         fs_cdx = run_trivy_fs_cyclonedx(
             path,
@@ -325,26 +375,59 @@ def run_scan(path: Path, config: ScannerConfig) -> dict[str, dict | list]:
         if fs_cdx:
             doc = _apply_cyclonedx_container_ref(fs_cdx, asset_name)
             if doc:
-                cyclonedx_docs.append((doc, asset_name))
+                cyclonedx_docs.append((doc, asset_name, None, None))
         if container_sources:
             trivy_cdx_timeout = min(180, timeout_sec)
-            for src in container_sources:
+
+            def _scan_cyclonedx(src: object) -> tuple[dict | None, float, dict[str, int]]:
+                t0 = time.perf_counter()
+                local_modes: dict[str, int] = {}
                 if src.format == "docker-save":
-                    img_cdx = run_trivy_image_cyclonedx(src.path, timeout=trivy_cdx_timeout)
+                    img_cdx = run_trivy_image_cyclonedx(
+                        src.path,
+                        timeout=trivy_cdx_timeout,
+                        mode_stats=local_modes,
+                    )
                 else:
-                    img_cdx = run_trivy_oci_layout_cyclonedx(src.path, timeout=trivy_cdx_timeout)
+                    img_cdx = run_trivy_oci_layout_cyclonedx(
+                        src.path,
+                        timeout=trivy_cdx_timeout,
+                        mode_stats=local_modes,
+                    )
+                return img_cdx, time.perf_counter() - t0, local_modes
+
+            max_workers = min(2, len(container_sources))
+            if max_workers > 1:
+                with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                    cdx_results = list(executor.map(_scan_cyclonedx, container_sources))
+            else:
+                cdx_results = [_scan_cyclonedx(src) for src in container_sources]
+
+            for src, result_pair in zip(container_sources, cdx_results):
+                img_cdx, elapsed, local_modes = result_pair
+                for key, val in local_modes.items():
+                    trivy_cyclonedx_modes[key] = trivy_cyclonedx_modes.get(key, 0) + val
+                container_timings["cyclonedx_item"].append(elapsed)
                 if img_cdx:
                     container_ref = src.image_ref or src.label
                     doc = _apply_cyclonedx_container_ref(img_cdx, container_ref)
                     if doc:
-                        cyclonedx_docs.append((doc, container_ref))
+                        cyclonedx_docs.append(
+                            (
+                                doc,
+                                src.label,
+                                src.image_ref,
+                                getattr(src, "image_digest", None),
+                            )
+                        )
         total_cyclonedx_components = sum(
             len((d.get("components") or []))
-            for d, _ in cyclonedx_docs
+            for d, _, _, _ in cyclonedx_docs
             if isinstance(d, dict)
         )
         if cyclonedx_docs:
             reports["cyclonedx"] = cyclonedx_docs
+            _publish_report(on_report, "cyclonedx", reports["cyclonedx"])
         if config.verbose:
             doc_count = len(cyclonedx_docs)
             print(
@@ -367,6 +450,7 @@ def run_scan(path: Path, config: ScannerConfig) -> dict[str, dict | list]:
             if grype_report:
                 grype_report = normalize_grype(grype_report, asset_name, scan_tag)
                 reports["grype"] = grype_report
+                _publish_report(on_report, "grype", reports["grype"])
 
         if has_npm_content(path):
             _verbose(config, "npm audit")
@@ -377,6 +461,7 @@ def run_scan(path: Path, config: ScannerConfig) -> dict[str, dict | list]:
                     npm_report = dict(npm_report)
                     npm_report[VAT_SCAN_TAG_KEY] = scan_tag
                 reports["npm_audit"] = npm_report
+                _publish_report(on_report, "npm_audit", reports["npm_audit"])
             scan_totals["npm_audit"] = time.perf_counter() - t0
             _verbose(config, f"npm audit completed in {_fmt_elapsed(scan_totals['npm_audit'])}")
 
@@ -392,6 +477,7 @@ def run_scan(path: Path, config: ScannerConfig) -> dict[str, dict | list]:
                 elif isinstance(pip_report, list) and scan_tag:
                     pip_report = {VAT_SCAN_TAG_KEY: scan_tag, "dependencies": pip_report}
                 reports["pip_audit"] = pip_report
+                _publish_report(on_report, "pip_audit", reports["pip_audit"])
             scan_totals["pip_audit"] = time.perf_counter() - t0
             _verbose(config, f"pip-audit completed in {_fmt_elapsed(scan_totals['pip_audit'])}")
 
@@ -407,6 +493,7 @@ def run_scan(path: Path, config: ScannerConfig) -> dict[str, dict | list]:
                     semgrep_report = dict(semgrep_report)
                     semgrep_report[VAT_SCAN_TAG_KEY] = scan_tag
                 reports["semgrep"] = semgrep_report
+                _publish_report(on_report, "semgrep", reports["semgrep"])
         scan_totals["semgrep"] = time.perf_counter() - t0
         _verbose(config, f"Semgrep completed in {_fmt_elapsed(scan_totals['semgrep'])}")
 
@@ -422,6 +509,7 @@ def run_scan(path: Path, config: ScannerConfig) -> dict[str, dict | list]:
                 findings = gitleaks_report.get("findings") or gitleaks_report.get("Findings") or []
             if findings:
                 reports["gitleaks"] = normalize_gitleaks(gitleaks_report, asset_name, scan_tag)
+                _publish_report(on_report, "gitleaks", reports["gitleaks"])
         scan_totals["gitleaks"] = time.perf_counter() - t0
         _verbose(config, f"Gitleaks completed in {_fmt_elapsed(scan_totals['gitleaks'])}")
 
@@ -435,6 +523,16 @@ def run_scan(path: Path, config: ScannerConfig) -> dict[str, dict | list]:
         parts = [f"{k}: {_fmt_elapsed(v)}" for k, v in sorted(scan_totals.items())]
         if parts:
             print(f"  Scan totals: {', '.join(parts)}", flush=True)
+        if trivy_cyclonedx_modes:
+            mode_parts = [f"{k}={v}" for k, v in sorted(trivy_cyclonedx_modes.items())]
+            print(f"  Trivy CycloneDX mode totals: {', '.join(mode_parts)}", flush=True)
+        for metric, values in container_timings.items():
+            if values:
+                avg = sum(values) / len(values)
+                print(
+                    f"  {metric}: n={len(values)}, avg={_fmt_elapsed(avg)}, max={_fmt_elapsed(max(values))}",
+                    flush=True,
+                )
         print(f"  Total scan time: {_fmt_elapsed(overall_elapsed)}", flush=True)
 
     return reports

@@ -21,12 +21,18 @@ class Settings(BaseSettings):
     """VAT application settings."""
 
     if _PYDANTIC_V2:
-        model_config = SettingsConfigDict(env_file=".env", env_prefix="VAT_")
+        model_config = SettingsConfigDict(
+            env_file=".env",
+            env_prefix="VAT_",
+            # .env often carries shared / frontend VAT_* keys we do not model here
+            extra="ignore",
+        )
     else:
 
         class Config:
             env_file = ".env"
             env_prefix = "VAT_"
+            extra = "ignore"
 
     # Database
     database_url: str = "postgresql+asyncpg://vat:vat@localhost:5432/vat"
@@ -64,6 +70,13 @@ class Settings(BaseSettings):
     aikido_export_excel_dir: Optional[str] = (
         None  # e.g. ./data/exports — when set, each sync writes aikido_sync_YYYY-MM-DD_HHMMSS.xlsx
     )
+    # During Aikido dashboard sync: GET /containers/{id}/licenses/export per container (rate-limited).
+    aikido_container_sbom_sync: bool = True
+    # Cap SBOM fetches per sync (0 = no cap). Use on large tenants to bound sync time.
+    aikido_container_sbom_max_containers: int = 0
+    # When licenses/export is empty, use POST /containers/sbom/generate in batches instead.
+    aikido_container_sbom_bulk_generate: bool = False
+    aikido_container_sbom_bulk_batch_size: int = 20
 
     # Tracker (Linear)
     linear_api_key: Optional[str] = None
@@ -139,6 +152,13 @@ class Settings(BaseSettings):
 
     # Cross-source correlation linking after ingest (link-only; set VAT_CORRELATION_LINKING_ENABLED=false to disable)
     correlation_linking_enabled: bool = True
+    # When true, append normalized image digest to SCA/license correlation keys (stricter deployment binding)
+    correlation_include_digest: bool = False  # VAT_CORRELATION_INCLUDE_DIGEST=true
+
+    # Tenant-scoped container path equivalence (scanner vs integration naming).
+    # Semicolon-separated pairs: source_prefix=>target_prefix (lowercase paths after normalize).
+    # Example: docker.io/operators/images/=>docker.io/containers/images/
+    container_asset_path_aliases: str = ""
 
     # Audit ledger: optional Celery Beat job to anchor previous UTC day (POST /audit/checkpoints/daily remains manual)
     audit_daily_checkpoint_enabled: bool = True

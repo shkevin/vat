@@ -92,3 +92,113 @@ describe("trend stacked dropdown filters", () => {
     expect(html).not.toContain("&& !useServerCounts");
   });
 });
+
+describe("report adapter severity source of truth", () => {
+  it("uses finding.severity for container counts, not sourceGroupSeverity overrides", () => {
+    const findings: Finding[] = [
+      {
+        id: "f-low",
+        findingType: "SCA",
+        fingerprintId: "fp-low",
+        cveId: "CVE-2026-0001",
+        severity: "Low",
+        sourceGroupSeverity: "Critical",
+        status: "Open",
+        sources: [],
+        audit: [],
+        image: "containers/images/demo",
+        component: "pkg-a",
+        title: "pkg-a issue",
+      },
+    ];
+    const assets: Asset[] = [
+      {
+        id: "containers/images/demo",
+        name: "containers/images/demo",
+        type: "container",
+        findings,
+        openCount: 1,
+        inReviewCount: 0,
+        statusBreakdown: { Open: 1 },
+        worstSeverity: "Low",
+        overdueCount: 0,
+        verifiedPct: 0,
+        oraPct: 99,
+      },
+    ];
+    const data = toVATDashboardData(findings, assets, "VAT", {
+      groupFindings: true,
+    });
+    expect(data.containers).toHaveLength(1);
+    expect(data.containers[0].critical_count).toBe(0);
+    expect(data.containers[0].high_count).toBe(0);
+    expect(data.containers[0].medium_count).toBe(0);
+    expect(data.containers[0].low_count).toBe(1);
+  });
+});
+
+describe("report container risk source of truth", () => {
+  it("applies report filters before computing container risk counts", () => {
+    const findings: Finding[] = [
+      {
+        id: "f-old-critical",
+        findingType: "SCA",
+        fingerprintId: "fp-old-critical",
+        cveId: "CVE-2026-0100",
+        severity: "Critical",
+        status: "Open",
+        sources: [],
+        audit: [],
+        image: "containers/images/demo",
+        component: "pkg-critical",
+        title: "old critical",
+        firstDetectedAt: "2025-01-01T00:00:00.000Z",
+      },
+      {
+        id: "f-new-low",
+        findingType: "SCA",
+        fingerprintId: "fp-new-low",
+        cveId: "CVE-2026-0101",
+        severity: "Low",
+        status: "Open",
+        sources: [],
+        audit: [],
+        image: "containers/images/demo",
+        component: "pkg-low",
+        title: "new low",
+        firstDetectedAt: "2026-03-20T00:00:00.000Z",
+      },
+    ];
+    const assets: Asset[] = [
+      {
+        id: "containers/images/demo",
+        name: "containers/images/demo",
+        type: "container",
+        findings,
+        openCount: 2,
+        inReviewCount: 0,
+        statusBreakdown: { Open: 2 },
+        worstSeverity: "Critical",
+        overdueCount: 0,
+        verifiedPct: 0,
+        oraPct: 50,
+      },
+    ];
+    const data = toVATDashboardData(findings, assets, "VAT", {
+      groupFindings: true,
+    });
+    const ctx = computeReportContext(data, {
+      repoFilter: [],
+      branchFilter: null,
+      severityFilter: [],
+      dateFrom: "2026-03-01",
+      dateTo: "2026-03-31",
+      notes: "",
+      countMode: "instances",
+    });
+    expect(ctx.containerRisk).toHaveLength(1);
+    expect(ctx.containerRisk[0].critical).toBe(0);
+    expect(ctx.containerRisk[0].low).toBe(1);
+    expect(ctx.containerRisk[0].total).toBe(1);
+  });
+});

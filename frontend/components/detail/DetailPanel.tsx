@@ -37,7 +37,7 @@ import {
   getRepoFileUrl,
   parseFileLocation,
 } from "@/lib/repoFileUrl";
-import { getFindingGroupKey } from "@/lib/findingGroupUtils";
+import { effectiveGroupKey } from "@/lib/findingGroupUtils";
 import { SEV_ORDER } from "@/lib/constants";
 import { syncFindingToTracker } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
@@ -51,6 +51,7 @@ import {
 import type { Finding } from "@/types";
 import type { Source } from "@/types";
 import type { Tracker } from "@/types";
+import { FindingDescription } from "@/components/detail/FindingDescription";
 
 interface DetailPanelProps {
   finding: Finding;
@@ -97,6 +98,8 @@ export function DetailPanel({
   groupFindings = false,
   selectedSourceIndex,
 }: DetailPanelProps) {
+  const descriptionText =
+    (finding.description ?? "").trim() || displayTitle(finding);
   const [jus, setJus] = useState(finding.justification ?? "");
   const [comp, setComp] = useState(finding.compensatingControls ?? "");
   const [rvNote, setRvNote] = useState(finding.reviewerNote ?? "");
@@ -486,7 +489,7 @@ export function DetailPanel({
             {/* Description first — the narrative */}
             <div className="detail-panel-section">
               <H>Description</H>
-              <p className="detail-panel-prose">{finding.description || "—"}</p>
+              <FindingDescription text={descriptionText} />
             </div>
 
             {/* Context — where and what */}
@@ -569,11 +572,11 @@ export function DetailPanel({
                   ["Type", finding.findingType],
                   ...(locRow ? [locRow] : []),
                 ];
-                const groupKey = getFindingGroupKey(finding);
+                const groupKey = effectiveGroupKey(finding);
                 const sameGroup =
                   groupFindings && allFindings.length > 0
                     ? allFindings.filter(
-                        (f) => getFindingGroupKey(f) === groupKey,
+                        (f) => effectiveGroupKey(f) === groupKey,
                       )
                     : [];
                 const hasSubissues = sameGroup.length > 1;
@@ -614,9 +617,9 @@ export function DetailPanel({
               selectedSourceIndex == null &&
               allFindings.length > 0 &&
               (() => {
-                const groupKey = getFindingGroupKey(finding);
+                const groupKey = effectiveGroupKey(finding);
                 const sameGroup = allFindings.filter(
-                  (f) => getFindingGroupKey(f) === groupKey,
+                  (f) => effectiveGroupKey(f) === groupKey,
                 );
                 if (sameGroup.length <= 1) return null;
 

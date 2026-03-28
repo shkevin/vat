@@ -21,11 +21,9 @@ See [VAT-PRD.md](./VAT-PRD.md) for full product requirements.
 
 ```bash
 cd backend
-python -m venv .venv
-source .venv/bin/activate  # or .venv\Scripts\activate on Windows
-pip install -r requirements.txt
+uv sync
 cp .env.example .env      # edit as needed
-uvicorn app.main:app --reload --port 8000
+uv run uvicorn app.main:app --reload --port 8000
 ```
 
 ### Frontend
@@ -43,6 +41,29 @@ Open http://localhost:3000
 ```bash
 docker compose up -d postgres
 ```
+
+### Correlation Reversibility Gate
+
+For repeatable validation of correlation remove/restore/audit behavior:
+
+```bash
+cd backend
+make verify-correlation
+```
+
+Details: [`docs/correlation-reversibility-test-gate.md`](./docs/correlation-reversibility-test-gate.md)
+
+### Correlation And Linking Design
+
+For end-to-end documentation of how deterministic correlation, linking, asset merge review requirements, and crosswalk mapping work:
+
+[`docs/correlation-linking-architecture.md`](./docs/correlation-linking-architecture.md)
+
+### Scanner Correlation Readiness Tracker
+
+For scanner-by-scanner readiness, testing coverage, and adaptation backlog:
+
+[`docs/scanner-correlation-readiness.md`](./docs/scanner-correlation-readiness.md)
 
 ## Project Structure
 

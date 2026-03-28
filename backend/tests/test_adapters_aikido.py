@@ -2,10 +2,15 @@
 
 from app.adapters.aikido import (
     AikidoAdapter,
+    _extract_image_digest_from_issue,
     _strip_tag_from_container_name,
+    aikido_container_list_item_tags,
     fetch_aikido_issues,
     fetch_aikido_code_repositories,
 )
+
+_SHA64 = "a" * 64
+_SHA64B = "b" * 64
 from app.schemas.ingest import CanonicalSeverity
 
 
@@ -76,6 +81,30 @@ async def test_aikido_adapter_component_base_strips_version():
     assert result.component_base == "vllm"
 
 
+def test_extract_image_digest_from_issue_top_level():
+    """Explicit image_digest on issue is normalized to sha256:<hex>."""
+    assert (
+        _extract_image_digest_from_issue({"image_digest": f"sha256:{_SHA64}"}, None)
+        == f"sha256:{_SHA64}"
+    )
+
+
+def test_extract_image_digest_from_issue_nested_container():
+    """Digest may live on nested container object."""
+    assert (
+        _extract_image_digest_from_issue(
+            {"container": {"digest": f"sha256:{_SHA64}"}}, None
+        )
+        == f"sha256:{_SHA64}"
+    )
+
+
+def test_extract_image_digest_falls_back_to_image_ref():
+    """When issue has no digest fields, parse @sha256 from image reference."""
+    ref = f"docker.io/foo/bar@sha256:{_SHA64}"
+    assert _extract_image_digest_from_issue({}, ref) == f"sha256:{_SHA64}"
+
+
 def test_strip_tag_from_container_name():
     """Container asset names have :tag stripped; tag is stored separately."""
     assert (
@@ -96,6 +125,40 @@ def test_strip_tag_from_container_name():
     assert _strip_tag_from_container_name("") == ""
 
 
+async def test_aikido_adapter_populates_image_digest():
+    """Aikido issues with image_digest populate VatFindingSchema.image_digest."""
+    adapter = AikidoAdapter()
+    payload = {
+        "issue": {
+            "id": "digest-ingest",
+            "cve_id": "CVE-2024-1111",
+            "type": "vulnerability",
+            "severity": "high",
+            "container_repo_name": "containers/images/etcd",
+            "image_digest": f"sha256:{_SHA64}",
+        },
+    }
+    result = await adapter.to_vat_finding(payload)
+    assert result.image_digest == f"sha256:{_SHA64}"
+
+
+async def test_aikido_adapter_image_digest_prefers_explicit_over_ref():
+    """Explicit digest field wins over digest embedded in container_repo_name."""
+    adapter = AikidoAdapter()
+    payload = {
+        "issue": {
+            "id": "digest-pref",
+            "cve_id": "CVE-2024-2222",
+            "type": "vulnerability",
+            "severity": "medium",
+            "container_repo_name": f"containers/images/etcd@sha256:{_SHA64}",
+            "image_digest": f"sha256:{_SHA64B}",
+        },
+    }
+    result = await adapter.to_vat_finding(payload)
+    assert result.image_digest == f"sha256:{_SHA64B}"
+
+
 async def test_aikido_adapter_container_path_strips_tag():
     """Container paths with :tag have tag stripped from asset name, stored in tag field."""
     adapter = AikidoAdapter()
@@ -111,6 +174,34 @@ async def test_aikido_adapter_container_path_strips_tag():
     result = await adapter.to_vat_finding(payload)
     assert result.image == "containers/images/cert-manager-acmesolver-fips"
     assert result.tag == "latest"
+
+
+async def test_aikido_adapter_collects_tags_from_instances():
+    """Per-instance tags populate observed_container_tags for the asset UI."""
+    adapter = AikidoAdapter()
+    payload = {
+        "issue": {
+            "id": "inst-1",
+            "cve_id": "CVE-2024-7777",
+            "type": "vulnerability",
+            "severity": "high",
+            "container_repo_name": "containers/images/myapp",
+            "instances": [
+                {"type": "container_repository", "tag": "1.4.0"},
+                {"type": "container_repository", "image": "registry.io/ns/myapp:v2"},
+            ],
+        },
+    }
+    result = await adapter.to_vat_finding(payload)
+    assert result.tag == "1.4.0"
+    assert result.observed_container_tags == ["1.4.0", "v2"]
+
+    assert aikido_container_list_item_tags(
+        {
+            "name": "containers/images/foo",
+            "tags": ["1.0.0", "1.1.0"],
+        }
+    ) == ["1.0.0", "1.1.0"]
 
 
 async def test_aikido_adapter_ecosystem_inference():

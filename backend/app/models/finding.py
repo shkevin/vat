@@ -99,6 +99,17 @@ class Finding(Base):
     ecosystem: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     secret_type: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
     resource: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
+    # Phase 1 OpenSCAP identity metadata
+    stable_rule_key: Mapped[Optional[str]] = mapped_column(
+        String(256), nullable=True, index=True
+    )
+    benchmark_id: Mapped[Optional[str]] = mapped_column(String(256), nullable=True)
+    benchmark_family: Mapped[Optional[str]] = mapped_column(
+        String(128), nullable=True, index=True
+    )
+    profile_scope: Mapped[Optional[str]] = mapped_column(String(256), nullable=True)
+    content_version: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    needs_family_classification: Mapped[bool] = mapped_column(Boolean, default=False)
 
     source: Mapped[Optional[str]] = mapped_column(
         String(64), nullable=True

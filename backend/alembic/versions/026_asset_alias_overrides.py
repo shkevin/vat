@@ -39,5 +39,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_index(op.f("ix_asset_aliases_canonical_asset_id"), table_name="asset_aliases")
+    op.drop_index(
+        op.f("ix_asset_aliases_canonical_asset_id"), table_name="asset_aliases"
+    )
     op.drop_table("asset_aliases")

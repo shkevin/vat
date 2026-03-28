@@ -14,9 +14,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.finding import Finding
 from app.services.audit_events import emit_audit_event, new_trace_id
-
-# Replay dedup stays fingerprint-based; correlation links rows that share a typed key across sources.
-LINKABLE_CONFIDENCES = frozenset({"high", "medium"})
+from app.services.correlation_edges import upsert_edge
+from app.services.correlation_scoring import score_finding_pair
 
 
 def select_correlation_cluster(
@@ -44,7 +43,7 @@ async def apply_correlation_linking(
 ) -> None:
     """
     Link-only policy: set correlated_to to the oldest finding (canonical) in the same
-    tenant + correlation_key cluster when confidence is high or medium.
+    tenant + correlation_key cluster when score tier is high or medium.
 
     Emits dedup.correlation.linked or dedup.correlation.skipped for this finding only.
 
@@ -69,27 +68,6 @@ async def apply_correlation_linking(
             decision_confidence="high",
             decision_result="skipped",
             data={"finding_id": finding.id},
-        )
-        await db.flush()
-        return
-
-    if conf not in LINKABLE_CONFIDENCES:
-        await emit_audit_event(
-            db,
-            trace_id=tid,
-            event_type="dedup.correlation.skipped",
-            actor_type="system",
-            source_id=source_id,
-            parser_id=parser_id,
-            finding_id=finding.id,
-            decision_name="correlation_link",
-            decision_reason_code="confidence_below_policy",
-            decision_confidence="high",
-            decision_result="skipped",
-            data={
-                "finding_id": finding.id,
-                "correlation_confidence": finding.correlation_confidence,
-            },
         )
         await db.flush()
         return
@@ -143,12 +121,42 @@ async def apply_correlation_linking(
 
     canonical = cluster[0]
     canonical_id = canonical.id
+    action_by_id: dict[str, str] = {canonical_id: "cluster_root"}
+    score_by_id: dict[str, float] = {}
 
     for row in cluster[1:]:
-        if row.correlated_to != canonical_id:
-            row.correlated_to = canonical_id
+        decision = await score_finding_pair(db, canonical, row)
+        tier = decision["tier"]
+        score = float(decision["score"])
+        score_by_id[row.id] = score
+        if tier in {"high", "medium"}:
+            if row.correlated_to != canonical_id:
+                row.correlated_to = canonical_id
+            await upsert_edge(
+                db,
+                finding_id_left=canonical_id,
+                finding_id_right=row.id,
+                edge_type="same_correlation_key",
+                confidence=tier,
+                evidence={
+                    "correlation_key": key,
+                    "score": score,
+                    "reasons": decision["reasons"],
+                    "crosswalk_matches": decision["evidence"].get(
+                        "crosswalk_matches", []
+                    ),
+                },
+                created_by="system",
+                trace_id=tid,
+                source_id=source_id,
+                parser_id=parser_id,
+            )
+            action_by_id[row.id] = "linked"
+            continue
+        action_by_id[row.id] = "skipped_low_score"
 
     subject = next(r for r in cluster if r.id == finding.id)
+    subject_action = action_by_id.get(subject.id, "cluster_root")
     if subject.id == canonical_id:
         await emit_audit_event(
             db,
@@ -168,7 +176,30 @@ async def apply_correlation_linking(
                 "correlation_key": key,
             },
         )
+    elif subject_action == "skipped_low_score":
+        await emit_audit_event(
+            db,
+            trace_id=tid,
+            event_type="dedup.correlation.skipped",
+            actor_type="system",
+            source_id=source_id,
+            parser_id=parser_id,
+            finding_id=finding.id,
+            decision_name="correlation_link",
+            decision_reason_code="score_below_policy",
+            decision_confidence=conf or "low",
+            decision_result="skipped",
+            data={
+                "canonical_finding_id": canonical_id,
+                "correlation_key": key,
+                "score": score_by_id.get(finding.id),
+            },
+        )
     else:
+        linked_score = score_by_id.get(finding.id)
+        linked_confidence = "high"
+        if linked_score is not None and linked_score < 0.85:
+            linked_confidence = "medium"
         await emit_audit_event(
             db,
             trace_id=tid,
@@ -179,11 +210,12 @@ async def apply_correlation_linking(
             finding_id=finding.id,
             decision_name="correlation_link",
             decision_reason_code="same_correlation_key",
-            decision_confidence=conf or "medium",
+            decision_confidence=linked_confidence,
             decision_result="linked",
             data={
                 "canonical_finding_id": canonical_id,
                 "correlation_key": key,
+                "score": score_by_id.get(finding.id),
             },
         )
     await db.flush()

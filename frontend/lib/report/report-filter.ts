@@ -2,6 +2,7 @@
  * Report filter bar - shared by report-engine and report-widgets.
  */
 import type { ReportContext } from "./report-types";
+import { displaySourceName } from "@/lib/utils";
 
 /** Asset type values used in report (Code, Container, VM, Package, Other). */
 export const REPORT_ASSET_TYPES = [
@@ -17,6 +18,7 @@ export interface ReportFilterConfig {
   assetTypes: string[];
   assets: string[];
   branches: string[];
+  scanners: string[];
 }
 
 export function getReportFilterConfig(
@@ -58,11 +60,18 @@ export function getReportFilterConfig(
   for (const i of context.filteredIssues) {
     if (i.branch) branches.add(i.branch);
   }
+  const scanners = new Set<string>();
+  for (const i of context.filteredIssues) {
+    scanners.add(
+      displaySourceName(i.scanner_type) || i.scanner_type || "Unknown",
+    );
+  }
   return {
     severities,
     assetTypes,
     assets: Array.from(assets).sort(),
     branches: Array.from(branches).sort(),
+    scanners: Array.from(scanners).sort(),
   };
 }
 
@@ -135,8 +144,24 @@ export function buildReportFilterBarStructure(
   const hasAssetTypes = filterConfig.assetTypes.length > 0;
   const hasAssets = filterConfig.assets.length > 0;
   const hasBranches = filterConfig.branches.length > 0;
+  const hasScanners = filterConfig.scanners.length > 0;
   const hasSearchAssets = filterConfig.assets.length > 5;
   const hasSearchBranches = filterConfig.branches.length > 5;
+  const hasSearchScanners = filterConfig.scanners.length > 5;
+  const scannerOptions = filterConfig.scanners
+    .map(
+      (s) =>
+        `<label class="report-filter-option" data-filter="scanner" data-value="${esc(
+          s,
+        )}"><input type="checkbox" value="${esc(
+          s,
+        )}" data-filter="scanner" checked> <span class="report-filter-option-label">${esc(
+          s,
+        )}</span><span class="report-filter-count" data-count-for="${esc(
+          s,
+        )}"></span></label>`,
+    )
+    .join("");
   const idAttr = inline ? "" : ' id="report-filter-bar"';
   const chipsId = inline ? "" : ' id="report-filter-chips"';
   return `<div${idAttr} class="report-filter-bar${
@@ -196,6 +221,24 @@ export function buildReportFilterBarStructure(
         <div class="report-filter-panel-inner">
           ${branchOptions}
           <div class="report-filter-actions"><button type="button" data-select-all="branch">Select all</button><button type="button" data-clear="branch">Clear</button></div>
+        </div>
+      </div>
+    </div>`
+        : ""
+    }
+    ${
+      hasScanners
+        ? `<div class="report-filter-dd" data-dd="scanner">
+      <button type="button" class="report-filter-trigger" aria-haspopup="listbox">Scanner type <span class="report-filter-arrow">▾</span></button>
+      <div class="report-filter-panel" data-panel="scanner">
+        ${
+          hasSearchScanners
+            ? `<input type="search" class="report-filter-search" placeholder="Search scanners…" data-search="scanner" autocomplete="off">`
+            : ""
+        }
+        <div class="report-filter-panel-inner">
+          ${scannerOptions}
+          <div class="report-filter-actions"><button type="button" data-select-all="scanner">Select all</button><button type="button" data-clear="scanner">Clear</button></div>
         </div>
       </div>
     </div>`

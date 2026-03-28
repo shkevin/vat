@@ -236,9 +236,7 @@ async def _handle_aikido_webhook(
         if not payload:
             raise
 
-    issue_for_trace = (
-        data.get("issue") if isinstance(data.get("issue"), dict) else data
-    )
+    issue_for_trace = data.get("issue") if isinstance(data.get("issue"), dict) else data
     trace_id = aikido_issue_trace_id(aikido_source_id, issue_for_trace or data)
 
     async with async_session() as session:

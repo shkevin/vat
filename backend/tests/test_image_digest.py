@@ -17,10 +17,7 @@ def test_normalize_rejects_short_hex() -> None:
 
 
 def test_extract_from_image_ref() -> None:
-    d = extract_digest_from_image_ref(
-        "ghcr.io/org/app@sha256:"
-        + "a" * 64
-    )
+    d = extract_digest_from_image_ref("ghcr.io/org/app@sha256:" + "a" * 64)
     assert d == f"sha256:{'a' * 64}"
 
 

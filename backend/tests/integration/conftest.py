@@ -62,7 +62,14 @@ async def clean_integration_tables(integration_db):
     """Truncate audit + findings for isolated E2E (repeatable on empty DB)."""
     await integration_db.execute(
         text(
-            "TRUNCATE TABLE audit_events, audit_ledger_checkpoints RESTART IDENTITY CASCADE"
+            "TRUNCATE TABLE "
+            "audit_events, "
+            "audit_ledger_checkpoints, "
+            "correlation_edges, "
+            "crosswalk_runs, "
+            "crosswalk_entries, "
+            "finding_identifiers "
+            "RESTART IDENTITY CASCADE"
         )
     )
     await integration_db.execute(
@@ -72,7 +79,14 @@ async def clean_integration_tables(integration_db):
     yield integration_db
     await integration_db.execute(
         text(
-            "TRUNCATE TABLE audit_events, audit_ledger_checkpoints RESTART IDENTITY CASCADE"
+            "TRUNCATE TABLE "
+            "audit_events, "
+            "audit_ledger_checkpoints, "
+            "correlation_edges, "
+            "crosswalk_runs, "
+            "crosswalk_entries, "
+            "finding_identifiers "
+            "RESTART IDENTITY CASCADE"
         )
     )
     await integration_db.execute(

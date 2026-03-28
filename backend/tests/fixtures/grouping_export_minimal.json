@@ -1,0 +1,26 @@
+{
+  "findings": [
+    {
+      "id": "good-1",
+      "findingType": "SCA",
+      "cveId": "CVE-2024-1",
+      "component": "openssl 3",
+      "componentBase": "openssl",
+      "ecosystem": "debian",
+      "image": "containers/images/kafka",
+      "tag": "3.6.1-debian-12-r12",
+      "groupKey": "sca:debian|openssl#docker.io/containers/images/kafka||3.6.1-debian-12-r12"
+    },
+    {
+      "id": "bad-1",
+      "findingType": "SCA",
+      "cveId": "CVE-2024-2",
+      "component": "openssl 3",
+      "componentBase": "openssl",
+      "ecosystem": "debian",
+      "image": "containers/images/kafka",
+      "tag": "3.6.1-debian-12-r12",
+      "groupKey": "sca:debian|openssl#containers/images/kafka||3.6.1-debian-12-r12"
+    }
+  ]
+}

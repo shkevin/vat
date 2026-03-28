@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+from vat_scanner.cli import _ingest_headers_for_item
 from vat_scanner.config import ScannerConfig
 from vat_scanner.scan import run_scan
 
@@ -43,3 +44,28 @@ def test_multi_asset_mode_preserves_trivy_target(monkeypatch, tmp_path: Path) ->
     target = reports["trivy"]["Results"][0]["Target"]
     assert target == "original-target"
 
+
+def test_default_asset_mode_is_multi() -> None:
+    cfg = ScannerConfig()
+    assert cfg.asset_mode == "multi"
+
+
+def test_ingest_headers_bundle_keeps_source_image() -> None:
+    assert _ingest_headers_for_item("kamiwaza-bundle", "redis") == (
+        "kamiwaza-bundle",
+        "redis",
+        None,
+    )
+
+
+def test_ingest_headers_multi_uses_aikido_style_asset_and_tag() -> None:
+    assert _ingest_headers_for_item(None, "metrics-server", None) == (
+        "containers/images/metrics-server",
+        None,
+        "latest",
+    )
+    assert _ingest_headers_for_item(None, "oci-tar-label", None) == (
+        "containers/images/oci-tar-label",
+        None,
+        "latest",
+    )

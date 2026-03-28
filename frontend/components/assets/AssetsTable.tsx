@@ -14,8 +14,13 @@ import {
   SEV_ORDER,
   SEV,
 } from "@/lib/constants";
-import { getAssetTypeFromAsset } from "@/lib/assetUtils";
-import { getFindingGroupKey } from "@/lib/findingGroupUtils";
+import {
+  assetTagSortKey,
+  containerTagListForAsset,
+  getAssetTypeFromAsset,
+  pickLatestVersionTag,
+} from "@/lib/assetUtils";
+import { effectiveGroupKey } from "@/lib/findingGroupUtils";
 import { ThemedTooltip } from "@/components/ui/ThemedTooltip";
 import { mono, sans } from "@/lib/styles";
 
@@ -87,6 +92,44 @@ const STATUS_PRIORITY = [
   "Duplicate",
 ];
 
+const GROUP_STATUS_PRIORITY = [
+  "Open",
+  "Synced to Tracker",
+  "In Review",
+  "Risk Accepted",
+  "Reopened",
+  "Rejected",
+  "Resolved",
+  "False Positive",
+  "Suppressed",
+  "Not Applicable",
+  "Approved",
+  "Mitigated",
+  "Duplicate",
+] as const;
+
+function groupedStatusBreakdown(findings: Finding[]): Record<string, number> {
+  const byGroup = new Map<string, Finding[]>();
+  for (const f of findings) {
+    const key = effectiveGroupKey(f);
+    const list = byGroup.get(key) ?? [];
+    list.push(f);
+    byGroup.set(key, list);
+  }
+  const out: Record<string, number> = {};
+  for (const list of byGroup.values()) {
+    const statuses = new Set(
+      list.map((f) => (f.status ?? "").trim()).filter((s) => s.length > 0),
+    );
+    const chosen =
+      GROUP_STATUS_PRIORITY.find((s) => statuses.has(s)) ??
+      list[0]?.status ??
+      "Open";
+    out[chosen] = (out[chosen] ?? 0) + 1;
+  }
+  return out;
+}
+
 function formatStatusSummary(breakdown: Record<string, number>): string {
   // Merge legacy "Synced to Tracker" into Open — tracked is now a separate column
   const merged = { ...breakdown };
@@ -140,12 +183,103 @@ function isOpenFinding(f: Finding): boolean {
   return !CLOSED_STATUSES.has(st);
 }
 
+/** Tags is column 4 — must not use a fixed narrow width or chips truncate in the wrong column. */
+const ASSETS_TABLE_GRID_COLS =
+  "28px 1fr 90px minmax(220px, 2.4fr) 90px 90px 90px 1fr";
+
+function AssetTagsCell({ asset }: { asset: Asset }) {
+  const isContainer = getAssetTypeFromAsset(asset) === "container";
+  const baseSpanStyle = {
+    ...mono,
+    fontSize: 11,
+    color: "var(--app-fg)",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+  } as const;
+
+  if (!isContainer) {
+    return <span style={baseSpanStyle}>{asset.tag ?? "—"}</span>;
+  }
+
+  const tags = containerTagListForAsset(asset);
+  if (tags.length === 0) {
+    return <span style={baseSpanStyle}>{asset.tag ?? "—"}</span>;
+  }
+
+  const { primary, restCount } = pickLatestVersionTag(tags);
+  return (
+    <div
+      role="group"
+      aria-label="Image tags"
+      style={{
+        display: "flex",
+        flexWrap: "nowrap",
+        alignItems: "center",
+        gap: 6,
+        minWidth: 0,
+        width: "100%",
+        ...mono,
+      }}
+    >
+      {primary && (
+        <span
+          title={tags.join(", ")}
+          style={{
+            fontSize: 10,
+            color: "var(--app-fg)",
+            padding: "2px 6px",
+            borderRadius: 4,
+            border: "1px solid var(--app-border-subtle)",
+            background: "var(--app-input-bg)",
+            minWidth: 0,
+            flex: "0 1 auto",
+            maxWidth: "min(100%, 44ch)",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {primary}
+        </span>
+      )}
+      {restCount > 0 && (
+        <span
+          style={{
+            fontSize: 10,
+            color: "var(--app-muted)",
+            flexShrink: 0,
+          }}
+        >
+          +{restCount}
+        </span>
+      )}
+      {asset.digestConflictOpen && (
+        <ThemedTooltip content="Digest conflict: one or more tags map to multiple digests. Open the asset page to review.">
+          <span
+            aria-label="Digest conflict on this asset"
+            style={{
+              fontSize: 11,
+              color: "var(--app-danger)",
+              cursor: "default",
+              lineHeight: 1,
+              flexShrink: 0,
+            }}
+          >
+            ⚠
+          </span>
+        </ThemedTooltip>
+      )}
+    </div>
+  );
+}
+
 /** Sortable column config: label, sort key. Empty sortKey = not sortable. */
 const ASSET_COLUMNS: { label: string; sortKey: string }[] = [
   { label: "", sortKey: "" },
   { label: "Asset", sortKey: "name" },
   { label: "Type", sortKey: "type" },
-  { label: "Tag", sortKey: "tag" },
+  { label: "Tags", sortKey: "tag" },
   { label: "Findings Verified", sortKey: "verified" },
   { label: "ABC", sortKey: "abc" },
   { label: "ORA", sortKey: "ora" },
@@ -209,7 +343,8 @@ export function AssetsTable({
         cmp = ASSET_TYPE_LABELS[getAssetTypeFromAsset(a)].localeCompare(
           ASSET_TYPE_LABELS[getAssetTypeFromAsset(b)],
         );
-      else if (key === "tag") cmp = (a.tag ?? "—").localeCompare(b.tag ?? "—");
+      else if (key === "tag")
+        cmp = assetTagSortKey(a).localeCompare(assetTagSortKey(b));
       else if (key === "verified") cmp = a.verifiedPct - b.verifiedPct;
       else if (key === "abc")
         cmp = ABC_ORDER.indexOf(getABC(a)) - ABC_ORDER.indexOf(getABC(b));
@@ -232,13 +367,11 @@ export function AssetsTable({
       for (const asset of displayedAssets) {
         for (const f of asset.findings) {
           if (!isOpenFinding(f)) continue;
-          const gk = getFindingGroupKey(f);
+          const gk = effectiveGroupKey(f);
           const dedupeKey = `${asset.id}:${gk}`;
           if (seenGroups.has(dedupeKey)) continue;
           seenGroups.add(dedupeKey);
-          const s = normalizeSeverity(
-            f.sourceGroupSeverity ?? f.severity ?? "Informational",
-          );
+          const s = normalizeSeverity(f.severity ?? "Informational");
           const key = (SEV_ORDER as readonly string[]).includes(s)
             ? s
             : "Informational";
@@ -260,6 +393,19 @@ export function AssetsTable({
       }
     }
     return SEV_ORDER.map((sev) => ({ severity: sev, count: counts[sev] ?? 0 }));
+  }, [displayedAssets, effectiveGroupFindings]);
+
+  const statusBreakdownByAsset = useMemo(() => {
+    const out = new Map<string, Record<string, number>>();
+    for (const asset of displayedAssets) {
+      out.set(
+        asset.id,
+        effectiveGroupFindings
+          ? groupedStatusBreakdown(asset.findings)
+          : asset.statusBreakdown,
+      );
+    }
+    return out;
   }, [displayedAssets, effectiveGroupFindings]);
 
   return (
@@ -360,7 +506,7 @@ export function AssetsTable({
           style={{
             flexShrink: 0,
             display: "grid",
-            gridTemplateColumns: "28px 1fr 90px 80px 100px 90px 90px 1fr",
+            gridTemplateColumns: ASSETS_TABLE_GRID_COLS,
             gap: 8,
             padding: HEADER_PADDING[density],
             background: "var(--app-header-bg)",
@@ -501,11 +647,11 @@ export function AssetsTable({
                 onClick={() => router.push(getAssetHref(asset.id))}
                 style={{
                   display: "grid",
-                  gridTemplateColumns: "28px 1fr 90px 80px 100px 90px 90px 1fr",
+                  gridTemplateColumns: ASSETS_TABLE_GRID_COLS,
                   gap: 8,
                   padding: ROW_PADDING[density],
                   cursor: "pointer",
-                  alignItems: "center",
+                  alignItems: "start",
                   background:
                     selected && asset.findings.some((f) => f.id === selected.id)
                       ? "var(--app-input-bg)"
@@ -565,46 +711,31 @@ export function AssetsTable({
                 >
                   {ASSET_TYPE_LABELS[getAssetTypeFromAsset(asset)]}
                 </span>
-                <span
-                  style={{
-                    ...mono,
-                    fontSize: 11,
-                    color: "var(--app-fg)",
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  {asset.tag ?? "—"}
-                </span>
+                <div style={{ minWidth: 0, paddingTop: 2 }}>
+                  <AssetTagsCell asset={asset} />
+                </div>
                 <span
                   style={{ ...mono, fontSize: 11, color: "var(--app-success)" }}
                 >
                   {asset.verifiedPct}%
                 </span>
-                <ThemedTooltip content={ABC_TOOLTIP} placement="top">
-                  <span
-                    style={{
-                      ...mono,
-                      fontSize: 10,
-                      color:
-                        getABC(asset) === "Compliant"
-                          ? "var(--app-success)"
-                          : getABC(asset) === "Compliant With Warnings"
-                            ? "var(--app-warning)"
-                            : "var(--app-danger)",
-                    }}
-                  >
-                    {getABC(asset)}
-                  </span>
-                </ThemedTooltip>
-                <ThemedTooltip content={ORA_TOOLTIP} placement="top">
-                  <span
-                    style={{ ...mono, fontSize: 11, color: "var(--app-fg)" }}
-                  >
-                    {asset.oraPct}%
-                  </span>
-                </ThemedTooltip>
+                <span
+                  style={{
+                    ...mono,
+                    fontSize: 10,
+                    color:
+                      getABC(asset) === "Compliant"
+                        ? "var(--app-success)"
+                        : getABC(asset) === "Compliant With Warnings"
+                          ? "var(--app-warning)"
+                          : "var(--app-danger)",
+                  }}
+                >
+                  {getABC(asset)}
+                </span>
+                <span style={{ ...mono, fontSize: 11, color: "var(--app-fg)" }}>
+                  {asset.oraPct}%
+                </span>
                 <div
                   style={{
                     ...sans,
@@ -615,7 +746,10 @@ export function AssetsTable({
                     whiteSpace: "nowrap",
                   }}
                 >
-                  {formatStatusSummary(asset.statusBreakdown)}
+                  {formatStatusSummary(
+                    statusBreakdownByAsset.get(asset.id) ??
+                      asset.statusBreakdown,
+                  )}
                 </div>
               </div>
             ))

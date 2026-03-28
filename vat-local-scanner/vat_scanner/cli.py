@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import json
 import sys
+import uuid
 from pathlib import Path
 
 from vat_scanner import __version__
@@ -37,11 +39,33 @@ from vat_scanner.sarif_output import reports_to_sarif
 from vat_scanner.scanners import run_trivy_image_ref
 from vat_scanner.scanners.normalize import normalize_trivy
 from vat_scanner.archive import extract_archive, is_archive, remove_extracted
+from vat_scanner.container_identity import canonical_container_asset
 from vat_scanner.openscap_utils import (
     count_openscap_findings,
     count_openscap_oval_findings,
     save_openscap_xml,
 )
+
+
+def _ingest_headers_for_item(
+    bundle_asset: str | None,
+    per_item_label: str | None,
+    image_ref: str | None = None,
+) -> tuple[str | None, str | None, str | None]:
+    """
+    Map bundle vs per-asset mode to VAT ingest headers.
+
+    Returns ``(X-VAT-Asset, X-VAT-Source-Image, X-VAT-Tag)``.
+
+    - ``single`` (bundle): asset = folder/bundle; source_image = container label; tag from CLI only.
+    - ``multi``: Aikido-style ``containers/images/<name>`` + image tag from ref/label (scanner-agnostic).
+    """
+    ba = (bundle_asset or "").strip()
+    label = (per_item_label or "").strip()
+    if ba:
+        return (ba, label or None, None)
+    can_img, can_tag = canonical_container_asset(image_ref, label)
+    return (can_img, None, can_tag)
 
 
 def _push_report(
@@ -52,46 +76,115 @@ def _push_report(
     *,
     asset: str | None = None,
     tag: str | None = None,
+    scan_id: str | None = None,
+    scan_status: str | None = None,
+    idempotency_prefix: str | None = None,
 ) -> list[dict] | None:
     """Push a single report to VAT. Handles openscap/openscap_oval (list of XML) vs JSON.
-    asset/tag set X-VAT-Asset/X-VAT-Tag headers so findings group under the bundle asset.
+    asset/tag set X-VAT-Asset/X-VAT-Tag. In multi mode, each list item uses its label as X-VAT-Asset.
     Returns list of ingest responses for openscap/openscap_oval, else None."""
     responses: list[dict] = []
+
+    def _parse_tuple_item(
+        item: object,
+    ) -> tuple[object, str | None, str | None, str | None]:
+        if isinstance(item, tuple) and len(item) >= 4:
+            return item[0], item[1], item[2], item[3]
+        if isinstance(item, tuple) and len(item) >= 3:
+            return item[0], item[1], item[2], None
+        if isinstance(item, tuple) and len(item) >= 2:
+            return item[0], item[1], None, None
+        return item, None, None, None
+
     if parser == "openscap" and isinstance(report, list):
-        for item in report:
-            if isinstance(item, tuple) and len(item) >= 2:
-                xml_content, source_image = item[0], item[1]
-            else:
-                xml_content, source_image = item, None
+        for idx, item in enumerate(report):
+            xml_content, source_image, image_ref, image_digest = _parse_tuple_item(item)
             if isinstance(xml_content, str) and xml_content.strip():
+                eff_asset, eff_src, eff_tag_item = _ingest_headers_for_item(
+                    asset, source_image, image_ref
+                )
+                final_tag = eff_tag_item if eff_tag_item else tag
+                idempotency_key = (
+                    f"{idempotency_prefix}:{idx}:{source_image or ''}:{image_ref or ''}"
+                    if idempotency_prefix
+                    else None
+                )
                 resp = ingest_openscap_report(
-                    base_url, api_key, xml_content, asset=asset, tag=tag, source_image=source_image
+                    base_url,
+                    api_key,
+                    xml_content,
+                    asset=eff_asset,
+                    tag=final_tag,
+                    source_image=eff_src,
+                    image_digest=image_digest,
+                    scan_id=scan_id,
+                    scan_status=scan_status,
+                    idempotency_key=idempotency_key,
                 )
                 responses.append(resp)
     elif parser == "cyclonedx" and isinstance(report, list):
-        for item in report:
-            if isinstance(item, tuple) and len(item) >= 2:
-                doc, source_image = item[0], item[1]
-            else:
-                doc, source_image = item, None
+        for idx, item in enumerate(report):
+            doc, source_image, image_ref, image_digest = _parse_tuple_item(item)
             if isinstance(doc, dict):
+                eff_asset, eff_src, eff_tag_item = _ingest_headers_for_item(
+                    asset, source_image, image_ref
+                )
+                final_tag = eff_tag_item if eff_tag_item else tag
+                idempotency_key = (
+                    f"{idempotency_prefix}:{idx}:{source_image or ''}:{image_ref or ''}"
+                    if idempotency_prefix
+                    else None
+                )
                 resp = ingest_report(
-                    base_url, api_key, doc, asset=asset, tag=tag, source_image=source_image
+                    base_url,
+                    api_key,
+                    doc,
+                    asset=eff_asset,
+                    tag=final_tag,
+                    source_image=eff_src,
+                    image_digest=image_digest,
+                    scan_id=scan_id,
+                    scan_status=scan_status,
+                    idempotency_key=idempotency_key,
                 )
                 responses.append(resp)
     elif parser == "openscap_oval" and isinstance(report, list):
-        for item in report:
-            if isinstance(item, tuple) and len(item) >= 2:
-                xml_content, source_image = item[0], item[1]
-            else:
-                xml_content, source_image = item, None
+        for idx, item in enumerate(report):
+            xml_content, source_image, image_ref, image_digest = _parse_tuple_item(item)
             if isinstance(xml_content, str) and xml_content.strip():
+                eff_asset, eff_src, eff_tag_item = _ingest_headers_for_item(
+                    asset, source_image, image_ref
+                )
+                final_tag = eff_tag_item if eff_tag_item else tag
+                idempotency_key = (
+                    f"{idempotency_prefix}:{idx}:{source_image or ''}:{image_ref or ''}"
+                    if idempotency_prefix
+                    else None
+                )
                 resp = ingest_openscap_oval_report(
-                    base_url, api_key, xml_content, asset=asset, tag=tag, source_image=source_image
+                    base_url,
+                    api_key,
+                    xml_content,
+                    asset=eff_asset,
+                    tag=final_tag,
+                    source_image=eff_src,
+                    image_digest=image_digest,
+                    scan_id=scan_id,
+                    scan_status=scan_status,
+                    idempotency_key=idempotency_key,
                 )
                 responses.append(resp)
     else:
-        ingest_report(base_url, api_key, report, asset=asset, tag=tag)
+        ingest_report(
+            base_url,
+            api_key,
+            report,
+            asset=asset,
+            tag=tag,
+            scan_id=scan_id,
+            scan_status=scan_status,
+            idempotency_key=idempotency_prefix,
+        )
         return None
     return responses if responses else None
 
@@ -179,6 +272,7 @@ def _scan_one_path(
     path: Path,
     cfg: ScannerConfig,
     args: argparse.Namespace,
+    on_report=None,
 ) -> tuple[dict, int]:
     """Scan one path, return (reports, gating_exit_code)."""
     asset_name = cfg.asset or path.name
@@ -189,7 +283,7 @@ def _scan_one_path(
         print("Types:   ", ",".join(cfg.scan_types), flush=True)
     print(flush=True)
 
-    reports = run_scan(path, cfg)
+    reports = run_scan(path, cfg, on_report=on_report)
     parsers_run = list(reports.keys())
     for p in parsers_run:
         r = reports[p]
@@ -290,9 +384,76 @@ def cmd_scan(args: argparse.Namespace) -> int:
         cfg = ScannerConfig(asset=first_path.name)
     cfg = _merge_scan_cli(cfg, args)
 
+    def _prepare_report_for_push(parser: str, report: object, scan_root: Path, no_snippets: bool) -> object:
+        payload = copy.deepcopy(report)
+        if no_snippets:
+            payload = strip_snippets(payload)
+        report_map = {parser: payload}
+        enrich_reports(report_map, scan_root)
+        return report_map[parser]
+
     all_reports: dict[str, dict | list] = {}
     gating_exit = 0
     sarif_paths: list[tuple[dict, str]] = []
+    incremental_scan_id = uuid.uuid4().hex if (len(paths) == 1 and not args.dry_run) else None
+    source_key_cache: dict[str, str] = {}
+    incremental_latest: dict[str, object] = {}
+
+    if not args.dry_run and (not cfg.vat_url or not cfg.admin_token):
+        print("\nERROR: Set VAT_URL and VAT_ADMIN_TOKEN to push to VAT.", file=sys.stderr)
+        print("  export VAT_URL=https://your-vat.example.com")
+        print("  export VAT_ADMIN_TOKEN=<admin API key or JWT from VAT Settings>")
+        return 1
+
+    def _resolve_source_key(parser: str) -> str:
+        source_id = source_id_for_parser(parser)
+        if source_id in source_key_cache:
+            return source_key_cache[source_id]
+        asset_type = "container" if parser in ("openscap", "openscap_oval") else "package"
+        source_id, key = ensure_source(
+            cfg.vat_url,
+            cfg.admin_token,
+            parser,
+            create_key=True,
+            regenerate_key=cfg.reset_keys,
+            asset_type=asset_type,
+        )
+        if key:
+            cache_key(source_id, key)
+            source_key_cache[source_id] = key
+            return key
+        cached = get_cached_key(source_id)
+        if cached:
+            source_key_cache[source_id] = cached
+            return cached
+        raise VATClientError(f"{source_id}: no key (create in VAT Settings → Integrations)")
+
+    def _push_single_parser(
+        parser: str,
+        payload: object,
+        path_cfg: ScannerConfig,
+        path: Path,
+        *,
+        scan_status: str | None,
+    ) -> None:
+        key = _resolve_source_key(parser)
+        report_asset = (path_cfg.asset or path.name) if path_cfg.asset_mode != "multi" else None
+        idempotency_prefix = None
+        if incremental_scan_id:
+            idempotency_prefix = (
+                f"{incremental_scan_id}:{parser}:{report_asset or 'multi'}:{path_cfg.tag or ''}"
+            )
+        _push_report(
+            cfg.vat_url,
+            key,
+            parser,
+            payload,
+            asset=report_asset,
+            tag=path_cfg.tag or None,
+            scan_id=incremental_scan_id,
+            scan_status=scan_status,
+            idempotency_prefix=idempotency_prefix,
+        )
 
     for i, path in enumerate(paths):
         if len(paths) > 1:
@@ -301,9 +462,27 @@ def cmd_scan(args: argparse.Namespace) -> int:
         else:
             path_cfg = cfg
 
+        on_report = None
+        if incremental_scan_id and not args.dry_run:
+            def _on_report(parser: str, report: dict | list, *, _path_cfg=path_cfg, _path=path):
+                payload = _prepare_report_for_push(parser, report, _path, _path_cfg.no_snippets)
+                incremental_latest[parser] = payload
+                _push_single_parser(parser, payload, _path_cfg, _path, scan_status="running")
+
+            on_report = _on_report
+
         try:
-            reports, gating_exit_path = _scan_one_path(path, path_cfg, args)
+            reports, gating_exit_path = _scan_one_path(path, path_cfg, args, on_report=on_report)
+        except VATClientError as e:
+            print(f"ERROR: {e}", file=sys.stderr)
+            return 1
         except RuntimeError as e:
+            if incremental_scan_id and incremental_latest:
+                for parser, payload in incremental_latest.items():
+                    try:
+                        _push_single_parser(parser, payload, path_cfg, path, scan_status="failed")
+                    except VATClientError:
+                        pass
             print(f"ERROR: {e}", file=sys.stderr)
             return 1
 
@@ -322,9 +501,6 @@ def cmd_scan(args: argparse.Namespace) -> int:
             all_reports = reports
         else:
             # Push this path's reports immediately
-            if not cfg.vat_url or not cfg.admin_token:
-                print("\nERROR: Set VAT_URL and VAT_ADMIN_TOKEN to push to VAT.", file=sys.stderr)
-                return 1
             if path_cfg.no_snippets:
                 reports = {k: strip_snippets(v) for k, v in reports.items()}
             enrich_reports(reports, path)
@@ -334,34 +510,13 @@ def cmd_scan(args: argparse.Namespace) -> int:
                 for p in list(reports.keys()):
                     if path_cfg.verbose:
                         print(f"  → Pushing {p}", file=sys.stderr, flush=True)
-                    asset_type = "container" if p in ("openscap", "openscap_oval") else "package"
-                    source_id, key = ensure_source(
-                        cfg.vat_url,
-                        cfg.admin_token,
+                    _push_single_parser(
                         p,
-                        create_key=True,
-                        regenerate_key=cfg.reset_keys,
-                        asset_type=asset_type,
+                        reports[p],
+                        path_cfg,
+                        path,
+                        scan_status="completed" if incremental_scan_id else None,
                     )
-                    if key:
-                        cache_key(source_id, key)
-                    else:
-                        key = get_cached_key(source_id)
-                    if key and p in reports:
-                        responses = _push_report(
-                            cfg.vat_url, key, p, reports[p],
-                            asset=(path_cfg.asset or path.name) if path_cfg.asset_mode != "multi" else None,
-                            tag=path_cfg.tag or None,
-                        )
-                        if responses:
-                            if p == "cyclonedx":
-                                sbom_created = sum(r.get("sbomCreated", 0) for r in responses)
-                                sbom_updated = sum(r.get("sbomUpdated", 0) for r in responses)
-                                print(f"  {p}: pushed ({sbom_created} SBOM created, {sbom_updated} SBOM updated)")
-                            else:
-                                total_created = sum(r.get("created", 0) for r in responses)
-                                total_merged = sum(r.get("merged", 0) for r in responses)
-                                print(f"  {p}: pushed ({total_created} created, {total_merged} merged)")
                 print(f"  Pushed {asset_name}")
             except VATClientError as e:
                 print(f"ERROR: {e}", file=sys.stderr)
@@ -376,66 +531,19 @@ def cmd_scan(args: argparse.Namespace) -> int:
 
     # Single path: push (or multi-path already pushed above)
     if len(paths) == 1:
-        if not cfg.vat_url or not cfg.admin_token:
-            print("\nERROR: Set VAT_URL and VAT_ADMIN_TOKEN to push to VAT.", file=sys.stderr)
-            print("  export VAT_URL=https://your-vat.example.com")
-            print("  export VAT_ADMIN_TOKEN=<admin API key or JWT from VAT Settings>")
-            return 1
-
-        if cfg.no_snippets:
-            all_reports = {k: strip_snippets(v) for k, v in all_reports.items()}
-        enrich_reports(all_reports, paths[0])
-
-        parsers_run = list(all_reports.keys())
-        cache = {}
         try:
-            for p in parsers_run:
-                asset_type = "container" if p in ("openscap", "openscap_oval") else "package"
-                source_id, key = ensure_source(
-                    cfg.vat_url,
-                    cfg.admin_token,
-                    p,
-                    create_key=True,
-                    regenerate_key=cfg.reset_keys,
-                    asset_type=asset_type,
-                )
-                if key:
-                    cache_key(source_id, key)
-                    cache[source_id] = key
-                else:
-                    cached = get_cached_key(source_id)
-                    if cached:
-                        cache[source_id] = cached
-                    else:
-                        print(
-                            f"  {source_id}: no key (create in VAT Settings → Integrations)",
-                            file=sys.stderr,
-                        )
-                        return 1
-
             print("\nPushing to VAT...")
-            for p in parsers_run:
-                if cfg.verbose:
-                    print(f"  → Pushing {p}", file=sys.stderr, flush=True)
-                source_id = source_id_for_parser(p)
-                key = cache.get(source_id)
-                if key and p in all_reports:
-                    responses = _push_report(
-                        cfg.vat_url, key, p, all_reports[p],
-                        asset=(cfg.asset or paths[0].name) if cfg.asset_mode != "multi" else None,
-                        tag=cfg.tag or None,
-                    )
-                    if responses:
-                        if p == "cyclonedx":
-                            sbom_created = sum(r.get("sbomCreated", 0) for r in responses)
-                            sbom_updated = sum(r.get("sbomUpdated", 0) for r in responses)
-                            print(f"  {p}: pushed ({sbom_created} SBOM created, {sbom_updated} SBOM updated)")
-                        else:
-                            total_created = sum(r.get("created", 0) for r in responses)
-                            total_merged = sum(r.get("merged", 0) for r in responses)
-                            print(f"  {p}: pushed ({total_created} created, {total_merged} merged)")
-                    else:
-                        print(f"  {p}: pushed")
+            for p, report in all_reports.items():
+                payload = _prepare_report_for_push(p, report, paths[0], cfg.no_snippets)
+                _push_single_parser(
+                    p,
+                    payload,
+                    cfg,
+                    paths[0],
+                    scan_status="completed" if incremental_scan_id else None,
+                )
+                if not incremental_scan_id:
+                    print(f"  {p}: pushed")
         except VATClientError as e:
             print(f"\nERROR: {e}", file=sys.stderr)
             return 1
@@ -727,7 +835,8 @@ def main() -> int:
     sp_scan.add_argument(
         "--asset-mode",
         choices=["single", "multi"],
-        help="Asset targeting mode: single (default) forces one asset; multi preserves per-target assets",
+        help="Asset targeting: multi (default) = one VAT asset per image/container target; "
+        "single = one bundle asset (folder/--asset) with per-image labels as provenance",
     )
     sp_scan.add_argument(
         "--tag",
@@ -782,7 +891,7 @@ def main() -> int:
     sp_arch.add_argument(
         "--asset-mode",
         choices=["single", "multi"],
-        help="Asset targeting mode: single (default) forces one asset; multi preserves per-target assets",
+        help="Asset targeting: multi (default) = per image/container; single = one bundle asset",
     )
     sp_arch.add_argument(
         "--tag",

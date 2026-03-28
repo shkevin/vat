@@ -5,6 +5,12 @@ from __future__ import annotations
 import logging
 from typing import Optional
 
+from app.parsers.utils import (
+    VAT_CONTAINER_IMAGE_KEY,
+    VAT_CONTAINER_TAG_KEY,
+    VAT_SOURCE_IMAGE_KEY,
+)
+
 logger = logging.getLogger(__name__)
 
 # Map Trivy Type / Grype ecosystem to CycloneDX language
@@ -54,6 +60,24 @@ def _make_component(
     return c
 
 
+def _effective_trivy_component(res: dict, target: str) -> str:
+    """
+    Resolve stable component identity for Trivy SBOM rows.
+
+    Prefer scanner-injected container identity over Trivy Target path so OCI
+    temp extraction paths (e.g. /tmp/vat-wrap-.../*.layout) are never persisted
+    as SBOM component values.
+    """
+    img = str(res.get(VAT_CONTAINER_IMAGE_KEY) or "").strip()
+    tag = str(res.get(VAT_CONTAINER_TAG_KEY) or "").strip()
+    if img:
+        return f"{img}:{tag}" if tag else img
+    source_image = str(res.get(VAT_SOURCE_IMAGE_KEY) or "").strip()
+    if source_image:
+        return source_image
+    return target
+
+
 def extract_sbom_from_trivy(raw: dict, source: str) -> Optional[dict]:
     """
     Extract package list from Trivy JSON and build CycloneDX components.
@@ -70,6 +94,7 @@ def extract_sbom_from_trivy(raw: dict, source: str) -> Optional[dict]:
         if not isinstance(res, dict):
             continue
         target = (res.get("Target") or res.get("target") or "").strip()
+        component_ref = _effective_trivy_component(res, target)
         res_type = res.get("Type") or res.get("type") or ""
         language = _trivy_type_to_language(res_type)
 
@@ -81,7 +106,7 @@ def extract_sbom_from_trivy(raw: dict, source: str) -> Optional[dict]:
             version = (pkg.get("Version") or pkg.get("version") or "").strip()
             if not name:
                 continue
-            key = (name, version, target)
+            key = (name, version, component_ref)
             if key in seen:
                 continue
             seen.add(key)
@@ -95,7 +120,7 @@ def extract_sbom_from_trivy(raw: dict, source: str) -> Optional[dict]:
             elif licenses:
                 license_id = str(licenses[0])
             components.append(
-                _make_component(name, version, license_id, target, language)
+                _make_component(name, version, license_id, component_ref, language)
             )
 
         # 2. Vulnerabilities (packages with vulns, may not be in Packages)
@@ -108,11 +133,13 @@ def extract_sbom_from_trivy(raw: dict, source: str) -> Optional[dict]:
             ).strip()
             if not name:
                 continue
-            key = (name, version, target)
+            key = (name, version, component_ref)
             if key in seen:
                 continue
             seen.add(key)
-            components.append(_make_component(name, version, None, target, language))
+            components.append(
+                _make_component(name, version, None, component_ref, language)
+            )
 
         # 3. Licenses (packages with license info)
         for lic in res.get("Licenses") or res.get("licenses") or []:
@@ -125,14 +152,14 @@ def extract_sbom_from_trivy(raw: dict, source: str) -> Optional[dict]:
             )
             if not name:
                 continue
-            key = (name, version, target)
+            key = (name, version, component_ref)
             if key in seen:
                 # Update license on existing component
                 for c in components:
                     if (
                         c.get("name") == name
                         and c.get("version") == version
-                        and c.get("group") == (target or None)
+                        and c.get("group") == (component_ref or None)
                     ):
                         if not (c.get("licenses") or []) and license_id:
                             c["licenses"] = [{"license": {"id": license_id}}]
@@ -140,7 +167,7 @@ def extract_sbom_from_trivy(raw: dict, source: str) -> Optional[dict]:
                 continue
             seen.add(key)
             components.append(
-                _make_component(name, version, license_id, target, language)
+                _make_component(name, version, license_id, component_ref, language)
             )
 
     if not components:

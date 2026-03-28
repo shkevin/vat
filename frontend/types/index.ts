@@ -18,6 +18,8 @@ export interface Finding {
   image?: string;
   branch?: string;
   tag?: string;
+  /** Manifest digest sha256:… — same digest = same image (multi-tag). */
+  imageDigest?: string;
   cvss?: string;
   epss?: string;
   team?: string;
@@ -73,12 +75,20 @@ export interface Finding {
   cweId?: string | null;
   /** Grouping: Package ecosystem (npm, pypi, go, etc.) */
   ecosystem?: string | null;
+  /** OpenSCAP / SCAP benchmark family — used with image/tag to infer ecosystem for cross-scanner SCA grouping */
+  benchmarkFamily?: string | null;
+  benchmarkId?: string | null;
   /** Grouping: Secret category (e.g. AWS Key) */
   secretType?: string | null;
   /** Grouping: IaC resource path/ARN */
   resource?: string | null;
   /** Source-provided group severity — use for grouped display when present (matches source dashboard) */
   sourceGroupSeverity?: string | null;
+  /**
+   * Server-derived actionable group key (`get_finding_group_key`). Prefer this in UI/report
+   * over recomputing; optional on snapshots when absent.
+   */
+  groupKey?: string | null;
   audit: Array<{
     ts: string;
     user: string;
@@ -160,6 +170,20 @@ export interface Asset {
   verifiedPct: number;
   /** ORA score 0–100; higher = safer. */
   oraPct: number;
+  observedTags?: Array<{
+    tag: string;
+    firstSeenAt?: string | null;
+    lastSeenAt?: string | null;
+    observationCount?: number;
+    lastDigest?: string | null;
+  }>;
+  digestConflictOpen?: boolean;
+  digestConflicts?: Array<{
+    tag: string;
+    digests: string[];
+    firstSeenAt?: string | null;
+    lastSeenAt?: string | null;
+  }>;
 }
 
 /** Alert from computeAlerts */

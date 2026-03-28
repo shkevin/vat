@@ -27,7 +27,7 @@ def looks_like_container_image_ref(image: str | None) -> bool:
     s = (image or "").strip()
     if not s or s.startswith("path:"):
         return False
-    if s.startswith("containers/images/"):
+    if "/images/" in s:
         return True
     if "@sha256:" in s:
         return True
@@ -64,7 +64,7 @@ def infer_asset_type_from_one_finding(d: dict[str, Any]) -> str:
     if src in _CONTAINER_BIAS_SOURCES and img:
         return "container"
 
-    if img.startswith("containers/images/"):
+    if "/images/" in img:
         return "container"
 
     if img and branch:

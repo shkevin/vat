@@ -81,6 +81,7 @@ export function useDashboardFilters() {
           : undefined,
         archived: stored.archived,
         favorites: stored.favorites,
+        showEmptyAssets: stored.showEmptyAssets,
         needsJustification: stored.needsJustification,
       });
     } else {
@@ -106,6 +107,8 @@ export function useDashboardFilters() {
         updates.archived = stored.archived;
       if (!params.has("favorites") && stored.favorites != null)
         updates.favorites = stored.favorites;
+      if (!params.has("showEmptyAssets") && stored.showEmptyAssets != null)
+        updates.showEmptyAssets = stored.showEmptyAssets;
       if (
         !params.has("needsJustification") &&
         stored.needsJustification != null
@@ -131,6 +134,7 @@ export function useDashboardFilters() {
       assetTypes: mergedState.assetTypes,
       archived: mergedState.archived,
       favorites: mergedState.favorites,
+      showEmptyAssets: mergedState.showEmptyAssets,
       needsJustification: mergedState.needsJustification,
     });
   }, [isDashboard, mergedState]);

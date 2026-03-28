@@ -43,6 +43,8 @@ interface FilterSidebarProps {
   onShowArchivedToggle: () => void;
   onlyFavorites: boolean;
   onOnlyFavoritesToggle: () => void;
+  showEmptyAssets: boolean;
+  onShowEmptyAssetsToggle: () => void;
   needsJustification: boolean;
   onNeedsJustificationToggle: () => void;
   onApply?: () => void;
@@ -81,6 +83,8 @@ export function FilterSidebar({
   onShowArchivedToggle,
   onlyFavorites,
   onOnlyFavoritesToggle,
+  showEmptyAssets,
+  onShowEmptyAssetsToggle,
   needsJustification,
   onNeedsJustificationToggle,
   onApply,
@@ -271,6 +275,89 @@ export function FilterSidebar({
                   position: "absolute",
                   top: 2,
                   left: onlyFavorites ? 18 : 2,
+                  width: 16,
+                  height: 16,
+                  borderRadius: 8,
+                  background: "#fff",
+                  transition: "left 0.15s ease-out",
+                }}
+                aria-hidden
+              />
+            </button>
+          </div>
+        </div>
+
+        <div
+          style={{ marginBottom: 16 }}
+          role="group"
+          aria-labelledby="filter-empty-assets-label"
+        >
+          <span
+            id="filter-empty-assets-label"
+            style={{
+              ...mono,
+              fontSize: 10,
+              fontWeight: 600,
+              color: "var(--app-fg-group)",
+              display: "block",
+              marginBottom: 8,
+            }}
+          >
+            Assets
+          </span>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 8,
+            }}
+          >
+            <label
+              htmlFor="show-empty-assets-switch"
+              style={{
+                ...sans,
+                fontSize: 12,
+                color: "var(--app-fg-secondary)",
+                cursor: "pointer",
+                flex: 1,
+              }}
+            >
+              Show empty assets
+            </label>
+            <button
+              id="show-empty-assets-switch"
+              type="button"
+              role="switch"
+              aria-checked={showEmptyAssets}
+              aria-label="Show assets that have no findings"
+              onClick={onShowEmptyAssetsToggle}
+              onKeyDown={(e) => {
+                if (e.key === " " || e.key === "Enter") {
+                  e.preventDefault();
+                  onShowEmptyAssetsToggle();
+                }
+              }}
+              tabIndex={0}
+              style={{
+                width: 36,
+                height: 20,
+                borderRadius: 10,
+                background: showEmptyAssets
+                  ? "var(--app-accent-emerald)"
+                  : "var(--app-border)",
+                position: "relative",
+                cursor: "pointer",
+                flexShrink: 0,
+                border: "none",
+                padding: 0,
+              }}
+            >
+              <span
+                style={{
+                  position: "absolute",
+                  top: 2,
+                  left: showEmptyAssets ? 18 : 2,
                   width: 16,
                   height: 16,
                   borderRadius: 8,

@@ -3,6 +3,7 @@
 import json
 from pathlib import Path
 
+import pytest
 
 from app.parsers.npm_audit import NpmAuditParser
 

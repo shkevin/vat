@@ -32,6 +32,11 @@ export interface FindingsParams {
   search?: string;
   search_fields?: string | string[];
   limit?: number;
+  page?: number;
+  page_size?: number;
+  include_assets?: boolean;
+  include_zero_assets?: boolean;
+  full?: boolean;
 }
 
 export async function fetchFindings(
@@ -99,7 +104,28 @@ export interface VATDataResponse {
     overdueCount: number;
     verifiedPct: number;
     oraPct: number;
+    observedTags?: Array<{
+      tag: string;
+      firstSeenAt?: string | null;
+      lastSeenAt?: string | null;
+      observationCount?: number;
+      lastDigest?: string | null;
+    }>;
+    digestConflictOpen?: boolean;
+    digestConflicts?: Array<{
+      tag: string;
+      digests: string[];
+      firstSeenAt?: string | null;
+      lastSeenAt?: string | null;
+    }>;
   }>;
+  meta?: {
+    page: number;
+    pageSize: number;
+    hasMore: boolean;
+    includeAssets: boolean;
+    includeZeroAssets: boolean;
+  };
 }
 
 /** Fetch findings and assets in one call. Assets include integration-created records (e.g. Aikido repos with 0 findings). */
@@ -141,6 +167,14 @@ export async function fetchVATData(
     search.set("search_fields", v);
   }
   if (params?.limit !== undefined) search.set("limit", String(params.limit));
+  if (params?.page !== undefined) search.set("page", String(params.page));
+  if (params?.page_size !== undefined)
+    search.set("page_size", String(params.page_size));
+  if (params?.include_assets !== undefined)
+    search.set("include_assets", String(params.include_assets));
+  if (params?.include_zero_assets !== undefined)
+    search.set("include_zero_assets", String(params.include_zero_assets));
+  if (params?.full !== undefined) search.set("full", String(params.full));
 
   const url = `${API_BASE}/vat-data${search.toString() ? `?${search}` : ""}`;
   const res = await vatFetch(
@@ -1151,6 +1185,338 @@ export async function deleteAsset(assetId: string, auth?: Auth): Promise<void> {
     }
     throw new Error(msg);
   }
+}
+
+export async function groupAssetInto(
+  sourceAssetId: string,
+  targetAssetId: string,
+  auth?: Auth,
+): Promise<{
+  source_asset_id: string;
+  target_asset_id: string;
+  findings_updated: number;
+}> {
+  const res = await vatFetch(
+    `${API_BASE}/assets/${encodeURIComponent(sourceAssetId)}/group`,
+    {
+      method: "POST",
+      headers: apiHeaders(auth?.token, auth?.userEmail),
+      body: JSON.stringify({
+        target_asset_id: targetAssetId,
+        reassign_existing_findings: true,
+      }),
+    },
+    auth,
+  );
+  if (!res.ok) {
+    const text = await res.text();
+    let msg = `API error: ${res.status} ${res.statusText}`;
+    try {
+      const j = JSON.parse(text);
+      if (j.detail)
+        msg = typeof j.detail === "string" ? j.detail : String(j.detail);
+    } catch {
+      if (text) msg = text;
+    }
+    throw new Error(msg);
+  }
+  return res.json();
+}
+
+export async function fetchAssetAliases(
+  canonicalAssetId: string,
+  auth?: Auth,
+): Promise<{
+  canonical_asset_id: string;
+  aliases: Array<{
+    source_asset_id: string;
+    canonical_asset_id: string;
+    created_by?: string | null;
+    created_at?: string | null;
+  }>;
+}> {
+  const res = await vatFetch(
+    `${API_BASE}/assets/${encodeURIComponent(canonicalAssetId)}/aliases`,
+    { headers: authHeaders(auth?.token, auth?.userEmail) },
+    auth,
+  );
+  if (!res.ok) {
+    const text = await res.text();
+    let msg = `API error: ${res.status} ${res.statusText}`;
+    try {
+      const j = JSON.parse(text);
+      if (j.detail)
+        msg = typeof j.detail === "string" ? j.detail : String(j.detail);
+    } catch {
+      if (text) msg = text;
+    }
+    throw new Error(msg);
+  }
+  return res.json();
+}
+
+export async function unmergeAssetFrom(
+  canonicalAssetId: string,
+  sourceAssetId: string,
+  auth?: Auth,
+): Promise<{
+  canonical_asset_id: string;
+  source_asset_id: string;
+  alias_removed: boolean;
+  restored_findings: number;
+}> {
+  const res = await vatFetch(
+    `${API_BASE}/assets/${encodeURIComponent(canonicalAssetId)}/unmerge`,
+    {
+      method: "POST",
+      headers: apiHeaders(auth?.token, auth?.userEmail),
+      body: JSON.stringify({ source_asset_id: sourceAssetId }),
+    },
+    auth,
+  );
+  if (!res.ok) {
+    const text = await res.text();
+    let msg = `API error: ${res.status} ${res.statusText}`;
+    try {
+      const j = JSON.parse(text);
+      if (j.detail)
+        msg = typeof j.detail === "string" ? j.detail : String(j.detail);
+    } catch {
+      if (text) msg = text;
+    }
+    throw new Error(msg);
+  }
+  return res.json();
+}
+
+export interface AssetMergeSuggestion {
+  source_asset_id: string;
+  target_asset_id: string;
+  strategy: "digest" | "exact_ref" | "sbom_similarity" | "name_heuristic";
+  score: number;
+  confidence: "high" | "medium" | "low";
+  requires_review: boolean;
+  auto_merge_eligible: boolean;
+  details: Record<string, unknown>;
+  review_status?: "pending" | "approved" | "denied";
+  review_note?: string | null;
+  review_updated_at?: string | null;
+}
+
+export async function fetchAssetMergeSuggestions(
+  sourceAssetId: string,
+  auth?: Auth,
+  limit = 10,
+  includeReviewed = false,
+): Promise<{
+  source_asset_id: string;
+  count: number;
+  suggestions: AssetMergeSuggestion[];
+}> {
+  const res = await vatFetch(
+    `${API_BASE}/assets/${encodeURIComponent(
+      sourceAssetId,
+    )}/merge-suggestions?limit=${encodeURIComponent(
+      String(limit),
+    )}&include_reviewed=${includeReviewed ? "true" : "false"}`,
+    { headers: authHeaders(auth?.token, auth?.userEmail) },
+    auth,
+  );
+  if (!res.ok) {
+    const text = await res.text();
+    let msg = `API error: ${res.status} ${res.statusText}`;
+    try {
+      const j = JSON.parse(text);
+      if (j.detail)
+        msg = typeof j.detail === "string" ? j.detail : String(j.detail);
+    } catch {
+      if (text) msg = text;
+    }
+    throw new Error(msg);
+  }
+  return res.json();
+}
+
+export interface AssetMergeReviewRecord {
+  id: number;
+  source_asset_id: string;
+  target_asset_id: string;
+  status: "pending" | "approved" | "denied";
+  note?: string | null;
+  strategy?: string | null;
+  score?: number | null;
+  confidence?: "high" | "medium" | "low" | string | null;
+  details: Record<string, unknown>;
+  created_by?: string | null;
+  updated_by?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface AssetDigestConflictRecord {
+  id: number;
+  asset_id: string;
+  tag: string;
+  status: "open" | "acknowledged" | string;
+  digests: string[];
+  acknowledged_by?: string | null;
+  acknowledged_at?: string | null;
+  first_seen_at?: string | null;
+  last_seen_at?: string | null;
+}
+
+export async function fetchAssetMergeReviews(
+  sourceAssetId: string,
+  auth?: Auth,
+): Promise<{
+  source_asset_id: string;
+  count: number;
+  reviews: AssetMergeReviewRecord[];
+}> {
+  const res = await vatFetch(
+    `${API_BASE}/assets/${encodeURIComponent(sourceAssetId)}/merge-reviews`,
+    { headers: authHeaders(auth?.token, auth?.userEmail) },
+    auth,
+  );
+  if (!res.ok) {
+    const text = await res.text();
+    let msg = `API error: ${res.status} ${res.statusText}`;
+    try {
+      const j = JSON.parse(text);
+      if (j.detail)
+        msg = typeof j.detail === "string" ? j.detail : String(j.detail);
+    } catch {
+      if (text) msg = text;
+    }
+    throw new Error(msg);
+  }
+  return res.json();
+}
+
+export async function upsertAssetMergeReview(
+  sourceAssetId: string,
+  targetAssetId: string,
+  body: {
+    status: "pending" | "approved" | "denied";
+    note?: string;
+    strategy?: "digest" | "exact_ref" | "sbom_similarity" | "name_heuristic";
+    score?: number;
+    confidence?: "high" | "medium" | "low";
+    details?: Record<string, unknown>;
+  },
+  auth?: Auth,
+): Promise<AssetMergeReviewRecord> {
+  const res = await vatFetch(
+    `${API_BASE}/assets/${encodeURIComponent(
+      sourceAssetId,
+    )}/merge-reviews/${encodeURIComponent(targetAssetId)}`,
+    {
+      method: "PUT",
+      headers: apiHeaders(auth?.token, auth?.userEmail),
+      body: JSON.stringify(body),
+    },
+    auth,
+  );
+  if (!res.ok) {
+    const text = await res.text();
+    let msg = `API error: ${res.status} ${res.statusText}`;
+    try {
+      const j = JSON.parse(text);
+      if (j.detail)
+        msg = typeof j.detail === "string" ? j.detail : String(j.detail);
+    } catch {
+      if (text) msg = text;
+    }
+    throw new Error(msg);
+  }
+  return res.json();
+}
+
+export async function deleteAssetMergeReview(
+  sourceAssetId: string,
+  targetAssetId: string,
+  auth?: Auth,
+): Promise<{ deleted: boolean }> {
+  const res = await vatFetch(
+    `${API_BASE}/assets/${encodeURIComponent(
+      sourceAssetId,
+    )}/merge-reviews/${encodeURIComponent(targetAssetId)}`,
+    { method: "DELETE", headers: authHeaders(auth?.token, auth?.userEmail) },
+    auth,
+  );
+  if (!res.ok) {
+    const text = await res.text();
+    let msg = `API error: ${res.status} ${res.statusText}`;
+    try {
+      const j = JSON.parse(text);
+      if (j.detail)
+        msg = typeof j.detail === "string" ? j.detail : String(j.detail);
+    } catch {
+      if (text) msg = text;
+    }
+    throw new Error(msg);
+  }
+  return res.json();
+}
+
+export async function fetchAssetDigestConflicts(
+  assetId: string,
+  auth?: Auth,
+): Promise<{
+  asset_id: string;
+  count: number;
+  conflicts: AssetDigestConflictRecord[];
+}> {
+  const res = await vatFetch(
+    `${API_BASE}/assets/${encodeURIComponent(assetId)}/digest-conflicts`,
+    { headers: authHeaders(auth?.token, auth?.userEmail) },
+    auth,
+  );
+  if (!res.ok) {
+    const text = await res.text();
+    let msg = `API error: ${res.status} ${res.statusText}`;
+    try {
+      const j = JSON.parse(text);
+      if (j.detail)
+        msg = typeof j.detail === "string" ? j.detail : String(j.detail);
+    } catch {
+      if (text) msg = text;
+    }
+    throw new Error(msg);
+  }
+  return res.json();
+}
+
+export async function acknowledgeAssetDigestConflict(
+  assetId: string,
+  tag: string,
+  acknowledged: boolean,
+  auth?: Auth,
+): Promise<AssetDigestConflictRecord> {
+  const res = await vatFetch(
+    `${API_BASE}/assets/${encodeURIComponent(
+      assetId,
+    )}/digest-conflicts/${encodeURIComponent(tag)}/ack`,
+    {
+      method: "PUT",
+      headers: apiHeaders(auth?.token, auth?.userEmail),
+      body: JSON.stringify({ acknowledged }),
+    },
+    auth,
+  );
+  if (!res.ok) {
+    const text = await res.text();
+    let msg = `API error: ${res.status} ${res.statusText}`;
+    try {
+      const j = JSON.parse(text);
+      if (j.detail)
+        msg = typeof j.detail === "string" ? j.detail : String(j.detail);
+    } catch {
+      if (text) msg = text;
+    }
+    throw new Error(msg);
+  }
+  return res.json();
 }
 
 export async function fetchTrivyStatus(auth?: Auth): Promise<{

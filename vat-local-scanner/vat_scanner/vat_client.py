@@ -88,6 +88,10 @@ def _ingest_headers(
     asset: str | None = None,
     tag: str | None = None,
     source_image: str | None = None,
+    image_digest: str | None = None,
+    scan_id: str | None = None,
+    scan_status: str | None = None,
+    idempotency_key: str | None = None,
 ) -> dict:
     """Build ingest request headers. X-VAT-Asset, X-VAT-Tag, X-VAT-Source-Image override asset context for bundle scans."""
     h = {
@@ -100,6 +104,14 @@ def _ingest_headers(
         h["X-VAT-Tag"] = str(tag).strip()
     if source_image and str(source_image).strip():
         h["X-VAT-Source-Image"] = str(source_image).strip()
+    if image_digest and str(image_digest).strip():
+        h["X-VAT-Image-Digest"] = str(image_digest).strip()
+    if scan_id and str(scan_id).strip():
+        h["X-VAT-Scan-Id"] = str(scan_id).strip()
+    if scan_status and str(scan_status).strip():
+        h["X-VAT-Scan-Status"] = str(scan_status).strip()
+    if idempotency_key and str(idempotency_key).strip():
+        h["X-VAT-Idempotency-Key"] = str(idempotency_key).strip()
     return h
 
 
@@ -111,6 +123,10 @@ def ingest_report(
     asset: str | None = None,
     tag: str | None = None,
     source_image: str | None = None,
+    image_digest: str | None = None,
+    scan_id: str | None = None,
+    scan_status: str | None = None,
+    idempotency_key: str | None = None,
 ) -> dict:
     """
     POST report to VAT ingest.
@@ -123,7 +139,16 @@ def ingest_report(
         url,
         data=json.dumps(report).encode(),
         method="POST",
-        headers=_ingest_headers(api_key, asset, tag, source_image),
+        headers=_ingest_headers(
+            api_key,
+            asset,
+            tag,
+            source_image,
+            image_digest=image_digest,
+            scan_id=scan_id,
+            scan_status=scan_status,
+            idempotency_key=idempotency_key,
+        ),
     )
     try:
         with urllib.request.urlopen(req, timeout=60) as resp:
@@ -143,6 +168,10 @@ def ingest_openscap_report(
     asset: str | None = None,
     tag: str | None = None,
     source_image: str | None = None,
+    image_digest: str | None = None,
+    scan_id: str | None = None,
+    scan_status: str | None = None,
+    idempotency_key: str | None = None,
 ) -> dict:
     """
     POST OpenSCAP XCCDF XML to VAT ingest.
@@ -158,7 +187,16 @@ def ingest_openscap_report(
         data=data,
         method="POST",
         headers={
-            **_ingest_headers(api_key, asset, tag, source_image),
+            **_ingest_headers(
+                api_key,
+                asset,
+                tag,
+                source_image,
+                image_digest=image_digest,
+                scan_id=scan_id,
+                scan_status=scan_status,
+                idempotency_key=idempotency_key,
+            ),
             "Content-Type": "application/xml",
         },
     )
@@ -180,6 +218,10 @@ def ingest_openscap_oval_report(
     asset: str | None = None,
     tag: str | None = None,
     source_image: str | None = None,
+    image_digest: str | None = None,
+    scan_id: str | None = None,
+    scan_status: str | None = None,
+    idempotency_key: str | None = None,
 ) -> dict:
     """
     POST OpenSCAP OVAL Results XML to VAT ingest.
@@ -194,7 +236,16 @@ def ingest_openscap_oval_report(
         data=data,
         method="POST",
         headers={
-            **_ingest_headers(api_key, asset, tag, source_image),
+            **_ingest_headers(
+                api_key,
+                asset,
+                tag,
+                source_image,
+                image_digest=image_digest,
+                scan_id=scan_id,
+                scan_status=scan_status,
+                idempotency_key=idempotency_key,
+            ),
             "Content-Type": "application/xml",
         },
     )

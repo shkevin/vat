@@ -9,7 +9,12 @@ from pathlib import Path
 MASK = "***REDACTED***"
 
 
-def _read_line_at(scan_root: Path, file_path: str, line_num: int) -> str | None:
+def _read_line_at(
+    scan_root: Path,
+    file_path: str,
+    line_num: int,
+    cache: dict[tuple[str, int], str | None] | None = None,
+) -> str | None:
     """Read a single line from file_path (relative to scan_root). Returns None on failure."""
     if not file_path or line_num < 1:
         return None
@@ -17,16 +22,24 @@ def _read_line_at(scan_root: Path, file_path: str, line_num: int) -> str | None:
     if path.is_absolute():
         return None
     full_path = (scan_root / path).resolve()
+    key = (str(full_path), int(line_num))
+    if cache is not None and key in cache:
+        return cache[key]
     if not full_path.is_file():
         return None
     try:
         with open(full_path, "r", encoding="utf-8", errors="replace") as fp:
-            lines = fp.readlines()
+            for i, line in enumerate(fp, start=1):
+                if i == line_num:
+                    out = line.rstrip("\n\r")
+                    if cache is not None:
+                        cache[key] = out
+                    return out
     except OSError:
         return None
-    if line_num > len(lines):
-        return None
-    return lines[line_num - 1].rstrip("\n\r")
+    if cache is not None:
+        cache[key] = None
+    return None
 
 
 def _mask_secret_in_line(line: str, secret: str) -> str:
@@ -45,6 +58,7 @@ def _mask_secret_in_line(line: str, secret: str) -> str:
 def _enrich_finding_with_file_line(
     f: dict,
     scan_root: Path,
+    read_cache: dict[tuple[str, int], str | None] | None = None,
     *,
     path_keys: tuple[str, ...] = ("File", "file", "path"),
     line_keys: tuple[str, ...] = ("StartLine", "start_line", "line"),
@@ -76,7 +90,7 @@ def _enrich_finding_with_file_line(
         v = f.get(k)
         if v and isinstance(v, str) and len(v.strip()) > 3:
             return
-    line_content = _read_line_at(scan_root, file_path, line_num)
+    line_content = _read_line_at(scan_root, file_path, line_num, read_cache)
     if not line_content or not line_content.strip():
         return
     secret = ""
@@ -93,6 +107,7 @@ def _enrich_finding_with_file_line(
 def _enrich_result_with_secrets(
     res: dict,
     scan_root: Path,
+    read_cache: dict[tuple[str, int], str | None] | None = None,
     *,
     target_keys: tuple[str, ...] = ("Target", "target"),
     secrets_keys: tuple[str, ...] = ("Secrets", "secrets"),
@@ -134,7 +149,7 @@ def _enrich_result_with_secrets(
             continue
         if line_num < 1:
             continue
-        line_content = _read_line_at(scan_root, file_path, line_num)
+        line_content = _read_line_at(scan_root, file_path, line_num, read_cache)
         if not line_content or not line_content.strip():
             continue
         match = s.get("Match") or s.get("match") or ""
@@ -146,6 +161,7 @@ def _enrich_result_with_secrets(
 def _enrich_result_with_path_start(
     r: dict,
     scan_root: Path,
+    read_cache: dict[tuple[str, int], str | None] | None = None,
     *,
     path_key: str = "path",
     start_key: str = "start",
@@ -173,7 +189,7 @@ def _enrich_result_with_path_start(
     existing = extra.get(lines_key)
     if existing and isinstance(existing, str) and len(existing.strip()) > 3:
         return
-    line_content = _read_line_at(scan_root, path, line_num)
+    line_content = _read_line_at(scan_root, path, line_num, read_cache)
     if line_content and line_content.strip():
         if extra_key not in r:
             r[extra_key] = {}
@@ -185,6 +201,7 @@ def _enrich_report(report: dict | list | None, scan_root: Path) -> None:
     if report is None or not Path(scan_root).is_dir():
         return
     scan_root = Path(scan_root)
+    read_cache: dict[tuple[str, int], str | None] = {}
 
     # Structure: findings/Findings array (Gitleaks-style)
     findings = None
@@ -195,7 +212,7 @@ def _enrich_report(report: dict | list | None, scan_root: Path) -> None:
     if findings and isinstance(findings, list):
         for f in findings:
             if isinstance(f, dict):
-                _enrich_finding_with_file_line(f, scan_root)
+                _enrich_finding_with_file_line(f, scan_root, read_cache)
         return
 
     if not isinstance(report, dict):
@@ -206,11 +223,11 @@ def _enrich_report(report: dict | list | None, scan_root: Path) -> None:
     if results and isinstance(results, list):
         for res in results:
             if isinstance(res, dict) and (res.get("Secrets") or res.get("secrets")):
-                _enrich_result_with_secrets(res, scan_root)
+                _enrich_result_with_secrets(res, scan_root, read_cache)
                 continue
             # Structure: results with path + start (Semgrep-style)
             if isinstance(res, dict) and res.get("path") and res.get("start"):
-                _enrich_result_with_path_start(res, scan_root)
+                _enrich_result_with_path_start(res, scan_root, read_cache)
 
 
 def enrich_reports(reports: dict, scan_root: Path) -> None:

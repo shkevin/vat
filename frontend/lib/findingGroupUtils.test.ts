@@ -5,7 +5,7 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { getFindingGroupKey } from "./findingGroupUtils";
+import { effectiveGroupKey, getFindingGroupKey } from "./findingGroupUtils";
 import type { Finding } from "@/types";
 import { FINDING_TYPES } from "@/lib/constants";
 // Sync with backend/tests/fixtures/grouping_keys.json when changing grouping logic (§13.3)
@@ -28,6 +28,10 @@ function fixtureToFinding(item: (typeof fixture.fixtures)[number]): Finding {
     ruleId: item.ruleId ?? undefined,
     cweId: item.cweId ?? undefined,
     secretType: item.secretType ?? undefined,
+    image: item.image ?? undefined,
+    branch: item.branch ?? undefined,
+    tag: item.tag ?? undefined,
+    benchmarkFamily: item.benchmarkFamily ?? undefined,
   };
 }
 
@@ -47,5 +51,24 @@ describe("getFindingGroupKey fixture parity", () => {
     for (const ft of Object.keys(FINDING_TYPES)) {
       expect(fixtureTypes.has(ft.toUpperCase())).toBe(true);
     }
+  });
+});
+
+describe("effectiveGroupKey", () => {
+  it("matches getFindingGroupKey when groupKey is absent", () => {
+    const item = fixture.fixtures[0];
+    if (!item) throw new Error("fixture empty");
+    const finding = fixtureToFinding(item);
+    expect(effectiveGroupKey(finding)).toBe(getFindingGroupKey(finding));
+  });
+
+  it("prefers server-provided groupKey when set", () => {
+    const item = fixture.fixtures[0];
+    if (!item) throw new Error("fixture empty");
+    const finding = {
+      ...fixtureToFinding(item),
+      groupKey: "sca:server-authoritative|pkg#||",
+    };
+    expect(effectiveGroupKey(finding)).toBe("sca:server-authoritative|pkg#||");
   });
 });

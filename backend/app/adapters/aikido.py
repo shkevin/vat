@@ -8,19 +8,26 @@ Region: eu, us, me.
 
 API Reference: https://apidocs.aikido.dev
 - Export all issues: GET /api/public/v1/issues/export
+- Container SBOM / licenses: GET /api/public/v1/containers/{id}/licenses/export
+- Bulk container SBOM: POST /api/public/v1/containers/sbom/generate
 - Ignore issue: PUT /api/public/v1/issues/{id}/ignore
 - Unignore issue: PUT /api/public/v1/issues/{id}/unignore
 """
 
 import asyncio
+import json
+import logging
 import time
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Any, Optional, TextIO
 
 import httpx
 
+logger = logging.getLogger(__name__)
+
 from app.adapters.registry import SourceAdapterCapabilities, register_source_adapter
 from app.core.config import get_settings
+from app.parsers.image_digest import effective_image_digest
 from app.services.dedup import component_base as extract_component_base
 from app.schemas.integration_ui import IntegrationFieldSchema, IntegrationSettingsSchema
 from app.schemas.vat import (
@@ -159,6 +166,39 @@ def _extract_branch(
     return None
 
 
+def _extract_image_digest_from_issue(issue: dict, image_ref: str | None) -> str | None:
+    """Best-effort sha256 digest for container correlation (merge suggestions, digest facts)."""
+    if not isinstance(issue, dict):
+        return effective_image_digest(None, image_ref)
+
+    def _try_string(s: str) -> str | None:
+        d = effective_image_digest(s.strip(), None)
+        return d if d else None
+
+    for key in (
+        "image_digest",
+        "imageDigest",
+        "container_digest",
+        "containerDigest",
+        "manifest_digest",
+        "manifestDigest",
+    ):
+        v = issue.get(key)
+        if isinstance(v, str) and v.strip():
+            d = _try_string(v)
+            if d:
+                return d
+    for nested in (issue.get("container"), issue.get("container_image")):
+        if isinstance(nested, dict):
+            for key in ("digest", "image_digest", "imageDigest", "manifest_digest"):
+                v = nested.get(key)
+                if isinstance(v, str) and v.strip():
+                    d = _try_string(v)
+                    if d:
+                        return d
+    return effective_image_digest(None, image_ref)
+
+
 def _strip_tag_from_container_name(name: str | None) -> str | None:
     """Remove :tag from container image/repo name. e.g. containers/images/foo:latest -> containers/images/foo."""
     if not name or not isinstance(name, str):
@@ -169,32 +209,218 @@ def _strip_tag_from_container_name(name: str | None) -> str | None:
     return s
 
 
-def _extract_tag(issue: dict, asset_name: str | None) -> str | None:
-    """Extract container image tag. From image (registry/image:tag) or container_tag, etc."""
+def _tag_from_image_ref(value: str | None) -> str | None:
+    """Parse :tag from an image ref; None if digest-pinned, missing tag, or ambiguous (port)."""
+    if not value or not isinstance(value, str):
+        return None
+    s = value.strip()
+    if "@sha256:" in s.lower():
+        return None
+    if ":" not in s:
+        return None
+    tag = s.rsplit(":", 1)[-1].strip()
+    if not tag or tag.isdigit() or "/" in tag:
+        return None
+    return tag
 
-    def _s(v) -> str | None:
-        if v is None or not isinstance(v, str):
-            return None
-        t = v.strip()
-        return t if t else None
 
-    # Explicit tag field
+def _extra_tags_from_value(val: Any) -> list[str]:
+    """Extract tag-like strings from nested Aikido fields (lists/dicts of image refs)."""
+    out: list[str] = []
+    if val is None:
+        return out
+    if isinstance(val, str):
+        tt = _tag_from_image_ref(val)
+        if tt:
+            out.append(tt)
+        return out
+    if isinstance(val, list):
+        for x in val:
+            out.extend(_extra_tags_from_value(x))
+        return out
+    if isinstance(val, dict):
+        for k in (
+            "tag",
+            "image_tag",
+            "imageTag",
+            "image",
+            "name",
+            "reference",
+            "ref",
+            "docker_image",
+            "dockerImage",
+        ):
+            if k in val:
+                out.extend(_extra_tags_from_value(val[k]))
+    return out
+
+
+def _collect_container_tags_from_issue(issue: dict) -> list[str]:
+    """
+    All distinct container tags on an Aikido issue: top-level fields, nested container,
+    and locations / instances (where multi-tag deployments often appear).
+    """
+    found: list[str] = []
+    seen: set[str] = set()
+
+    def add(raw: str | None) -> None:
+        if not raw or not isinstance(raw, str):
+            return
+        t = raw.strip()
+        if not t or t in seen:
+            return
+        seen.add(t)
+        found.append(t)
+
     for key in ("container_tag", "containerTag", "tag", "image_tag", "imageTag"):
         v = issue.get(key)
-        if v and (r := _s(str(v))):
-            return r
-    # From image/container_repo_name if it contains ":"
-    img = (
-        issue.get("image")
-        or issue.get("container_repo_name")
-        or issue.get("containerRepoName")
-        or asset_name
+        if v is not None:
+            add(str(v))
+    for key in ("image", "container_repo_name", "containerRepoName"):
+        v = issue.get(key)
+        if isinstance(v, str):
+            tt = _tag_from_image_ref(v)
+            if tt:
+                add(tt)
+    for nest_key in ("container", "container_image", "containerImage"):
+        nested = issue.get(nest_key)
+        if not isinstance(nested, dict):
+            continue
+        for key in ("tag", "image_tag", "imageTag", "name", "image"):
+            v = nested.get(key)
+            if not isinstance(v, str):
+                continue
+            if key in ("name", "image"):
+                tt = _tag_from_image_ref(v)
+                if tt:
+                    add(tt)
+            else:
+                add(v)
+    locations = (
+        issue.get("locations")
+        or issue.get("instances")
+        or issue.get("locations_list")
+        or []
     )
-    if img and isinstance(img, str) and ":" in img:
-        tag_part = img.split(":")[-1]
-        if tag_part and (r := _s(tag_part)):
-            return r
+    if isinstance(locations, list):
+        for loc in locations:
+            if not isinstance(loc, dict):
+                continue
+            for arr_key in ("tags", "image_tags", "imageTags"):
+                raw_tags = loc.get(arr_key)
+                if isinstance(raw_tags, list):
+                    for x in raw_tags:
+                        if isinstance(x, str):
+                            add(x)
+            for key in (
+                "tag",
+                "image_tag",
+                "imageTag",
+                "container_tag",
+                "containerTag",
+                "scanned_tag",
+                "scannedTag",
+            ):
+                v = loc.get(key)
+                if isinstance(v, str):
+                    add(v)
+            for key in ("image", "name", "container_image", "containerImage"):
+                v = loc.get(key)
+                if isinstance(v, str):
+                    tt = _tag_from_image_ref(v)
+                    if tt:
+                        add(tt)
+            nested = loc.get("container") or loc.get("container_image")
+            if isinstance(nested, dict):
+                for key in ("tag", "image_tag", "imageTag", "image", "name"):
+                    v = nested.get(key)
+                    if isinstance(v, str):
+                        if key in ("image", "name"):
+                            tt = _tag_from_image_ref(v)
+                            if tt:
+                                add(tt)
+                        else:
+                            add(v)
+    for key in (
+        "docker_image",
+        "dockerImage",
+        "full_image",
+        "fullImage",
+        "scan_image",
+        "scanImage",
+        "affected_images",
+        "affectedImages",
+        "image_refs",
+        "imageRefs",
+        "container_images",
+        "containerImages",
+    ):
+        for t in _extra_tags_from_value(issue.get(key)):
+            add(t)
+    return found
+
+
+def _extract_tag(issue: dict, asset_name: str | None) -> str | None:
+    """Primary container tag for the finding row; prefers explicit tags over literal latest."""
+    collected = _collect_container_tags_from_issue(issue)
+    if collected:
+        non_latest = [t for t in collected if t.lower() != "latest"]
+        return non_latest[0] if non_latest else collected[0]
+    if asset_name and isinstance(asset_name, str):
+        tt = _tag_from_image_ref(asset_name)
+        if tt:
+            return tt
     return None
+
+
+def aikido_container_list_item_tags(c: dict) -> list[str]:
+    """
+    Tags from GET /containers list item: arrays (``tags``, ``image_tags``), single fields,
+    or ``:tag`` / ``@sha256`` handling on name/image.
+    """
+    found: list[str] = []
+    seen: set[str] = set()
+
+    def add(raw: str | None) -> None:
+        if not raw or not isinstance(raw, str):
+            return
+        t = raw.strip()
+        if not t or t in seen:
+            return
+        seen.add(t)
+        found.append(t)
+
+    for arr_key in ("tags", "image_tags", "imageTags"):
+        raw = c.get(arr_key)
+        if isinstance(raw, list):
+            for x in raw:
+                if isinstance(x, str):
+                    add(x)
+    for key in ("tag", "image_tag", "imageTag"):
+        v = c.get(key)
+        if isinstance(v, str):
+            add(v)
+    name = (
+        c.get("name")
+        or c.get("image")
+        or c.get("repository_name")
+        or c.get("repositoryName")
+    )
+    if isinstance(name, str):
+        tt = _tag_from_image_ref(name)
+        if tt:
+            add(tt)
+    for key in (
+        "docker_image",
+        "dockerImage",
+        "full_image",
+        "fullImage",
+        "docker_tags",
+        "dockerTags",
+    ):
+        for t in _extra_tags_from_value(c.get(key)):
+            add(t)
+    return found
 
 
 def _parse_repo_name_with_branch(name: str) -> tuple[str, str | None]:
@@ -1031,6 +1257,32 @@ class AikidoAdapter:
         elif finding_type in (VatFindingType.SCA, VatFindingType.LICENSE) and comp:
             ecosystem_val = _infer_ecosystem(issue, comp, asset_name)
 
+        ref_for_digest = ""
+        if isinstance(asset_name, str) and asset_name.strip():
+            ref_for_digest = asset_name.strip()
+        elif raw_asset and isinstance(raw_asset, str) and raw_asset.strip():
+            ref_for_digest = raw_asset.strip()
+        image_digest_val = _extract_image_digest_from_issue(
+            issue, ref_for_digest or None
+        )
+
+        observed_container_tags: list[str] | None = None
+        if is_container and asset_name:
+            collected = _collect_container_tags_from_issue(issue)
+            if collected:
+                merged: list[str] = []
+                mseen: set[str] = set()
+                if tag:
+                    mseen.add(tag)
+                    merged.append(tag)
+                for t in collected:
+                    if t not in mseen:
+                        mseen.add(t)
+                        merged.append(t)
+                observed_container_tags = merged
+            elif tag:
+                observed_container_tags = [tag]
+
         return VatFindingSchema(
             cve_id=cve_id,
             severity=sev,
@@ -1041,8 +1293,10 @@ class AikidoAdapter:
             title=str(title),
             finding_type=finding_type,
             image=asset_name,
+            image_digest=image_digest_val,
             branch=branch,
             tag=tag,
+            observed_container_tags=observed_container_tags,
             source_issue_id=source_issue_id,
             source_issue_url=source_issue_url,
             source_issue_group_id=source_issue_group_id,
@@ -1195,6 +1449,298 @@ async def _aikido_api_get(
                 resp.raise_for_status()
             resp.raise_for_status()
             return resp.json()
+
+
+async def _aikido_api_get_maybe_json(
+    path: str,
+    credentials: Optional[dict[str, Any]] = None,
+    *,
+    timeout: float = 120.0,
+) -> Any | None:
+    """
+    Authenticated GET that returns JSON/text or None on failure.
+    For some Aikido endpoints (e.g. /containers/{id}/licenses/export), successful
+    responses may be CSV text instead of JSON.
+    Uses the same OAuth and rate limiting as other Aikido calls.
+    """
+    s = get_settings()
+    creds = credentials or {}
+    client_id = creds.get("client_id") or creds.get("clientId") or s.aikido_client_id
+    client_secret = (
+        creds.get("client_secret")
+        or creds.get("clientSecret")
+        or s.aikido_client_secret
+    )
+    region = (creds.get("region") or s.aikido_region or "eu").lower()
+    if not (client_id and client_secret):
+        return None
+    try:
+        token = await _get_oauth_token(client_id, client_secret, region)
+        base_url = _get_base_url(region)
+        url = f"{base_url}/api/public/v1{path}"
+        await _acquire_rate_limit_slot()
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            resp = await client.get(
+                url,
+                headers={
+                    "Authorization": f"Bearer {token}",
+                    "Accept": "application/json",
+                },
+            )
+            if resp.status_code == 429:
+                await asyncio.sleep(int(resp.headers.get("Retry-After", 60)))
+                await _acquire_rate_limit_slot()
+                resp = await client.get(
+                    url,
+                    headers={
+                        "Authorization": f"Bearer {token}",
+                        "Accept": "application/json",
+                    },
+                )
+            if resp.status_code != 200:
+                return None
+            if not (resp.content or b"").strip():
+                return None
+            try:
+                return resp.json()
+            except Exception:
+                # Fallback to text payload for non-JSON exports (CSV)
+                text = (resp.text or "").strip()
+                return text or None
+    except Exception as e:
+        logger.debug("Aikido optional GET %s failed: %s", path, e)
+        return None
+
+
+def _normalize_aikido_container_id_list(
+    container_repo_ids: list[Any],
+) -> list[int | str]:
+    ids: list[int | str] = []
+    for x in container_repo_ids or []:
+        if isinstance(x, int):
+            ids.append(x)
+            continue
+        s = str(x).strip()
+        if s.isdigit():
+            ids.append(int(s))
+        elif s:
+            ids.append(s)
+    return ids
+
+
+def _sbom_bulk_generate_body_variants(
+    ids: list[int | str],
+    *,
+    extended: bool = False,
+) -> list[tuple[str, dict[str, Any]]]:
+    """Label + JSON body for POST /containers/sbom/generate (schema varies by API version)."""
+    core: list[tuple[str, dict[str, Any]]] = [
+        ("container_ids", {"container_ids": ids}),
+        ("containerIds", {"containerIds": ids}),
+        ("ids", {"ids": ids}),
+    ]
+    if not extended:
+        return core
+    return [
+        *core,
+        ("repository_ids", {"repository_ids": ids}),
+        ("container_repository_ids", {"container_repository_ids": ids}),
+        (
+            "containers[{id}]",
+            {"containers": [{"id": i} for i in ids]},
+        ),
+    ]
+
+
+async def _aikido_api_post_request(
+    path: str,
+    json_body: dict[str, Any],
+    credentials: Optional[dict[str, Any]] = None,
+    *,
+    timeout: float = 180.0,
+) -> tuple[int, str, str, Any | None]:
+    """
+    Authenticated POST. Returns
+    ``(status_code, content_type, body_snippet, parsed_json_or_none)``.
+    """
+    s = get_settings()
+    creds = credentials or {}
+    client_id = creds.get("client_id") or creds.get("clientId") or s.aikido_client_id
+    client_secret = (
+        creds.get("client_secret")
+        or creds.get("clientSecret")
+        or s.aikido_client_secret
+    )
+    region = (creds.get("region") or s.aikido_region or "eu").lower()
+    if not (client_id and client_secret):
+        return 0, "", "", None
+    try:
+        token = await _get_oauth_token(client_id, client_secret, region)
+        base_url = _get_base_url(region)
+        url = f"{base_url}/api/public/v1{path}"
+        await _acquire_rate_limit_slot()
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            resp = await client.post(
+                url,
+                headers={
+                    "Authorization": f"Bearer {token}",
+                    "Accept": "application/json, */*",
+                    "Content-Type": "application/json",
+                },
+                json=json_body,
+            )
+            if resp.status_code == 429:
+                await asyncio.sleep(int(resp.headers.get("Retry-After", 60)))
+                await _acquire_rate_limit_slot()
+                resp = await client.post(
+                    url,
+                    headers={
+                        "Authorization": f"Bearer {token}",
+                        "Accept": "application/json, */*",
+                        "Content-Type": "application/json",
+                    },
+                    json=json_body,
+                )
+            ct = (resp.headers.get("content-type") or "").split(";")[0].strip().lower()
+            raw_bytes = resp.content or b""
+            snippet = ""
+            if raw_bytes.strip():
+                try:
+                    snippet = (resp.text or "")[:1200]
+                except Exception:
+                    snippet = f"<non-text body, {len(raw_bytes)} bytes>"
+            parsed: Any | None = None
+            if raw_bytes.strip():
+                try:
+                    parsed = resp.json()
+                except Exception:
+                    try:
+                        parsed = json.loads(resp.text)
+                    except Exception:
+                        parsed = None
+            return resp.status_code, ct, snippet, parsed
+    except Exception as e:
+        logger.debug("Aikido POST %s failed: %s", path, e)
+        return 0, "", str(e)[:500], None
+
+
+async def diagnose_aikido_sbom_bulk_generate(
+    container_repo_ids: list[Any],
+    credentials: dict[str, Any],
+    *,
+    stream: Optional[TextIO] = None,
+) -> None:
+    """
+    Print HTTP outcomes for each request-body variant (for ``verify_aikido_sbom_live``).
+    Uses at most 5 ids to limit rate-limit noise.
+    """
+    import sys
+
+    out = stream or sys.stderr
+    ids = _normalize_aikido_container_id_list(container_repo_ids)
+    if not ids:
+        print("  diagnose: no container ids", file=out)
+        return
+    sample = ids[:5]
+    print(
+        f"  diagnose: POST .../containers/sbom/generate with {len(sample)} id(s) "
+        f"(showing body-shape attempts)",
+        file=out,
+    )
+    for label, body in _sbom_bulk_generate_body_variants(sample, extended=True):
+        status, ct, snippet, data = await _aikido_api_post_request(
+            "/containers/sbom/generate",
+            body,
+            credentials,
+            timeout=180.0,
+        )
+        keys = ""
+        if isinstance(data, dict):
+            keys = f" json_keys={sorted(data.keys())[:12]}"
+        elif data is not None:
+            keys = f" json_type={type(data).__name__}"
+        print(f"    {label}: HTTP {status} content-type={ct!r}{keys}", file=out)
+        if snippet and not isinstance(data, dict):
+            print(f"      snippet: {snippet[:500]!r}", file=out)
+        elif snippet and isinstance(data, dict) and "bomFormat" not in data:
+            print(f"      snippet: {snippet[:400]!r}", file=out)
+
+
+async def fetch_aikido_containers_sbom_bulk_generate(
+    container_repo_ids: list[Any],
+    credentials: Optional[dict[str, Any]] = None,
+) -> Any | None:
+    """
+    POST /containers/sbom/generate — bulk SBOM for the given container repo ids.
+
+    When per-container ``GET /containers/{id}/licenses/export`` returns empty, this endpoint
+    may still produce CycloneDX (see Aikido API docs).
+
+    https://apidocs.aikido.dev/reference/generatecontainersbom
+    """
+    ids = _normalize_aikido_container_id_list(container_repo_ids)
+    if not ids:
+        return None
+    for label, body in _sbom_bulk_generate_body_variants(ids, extended=False):
+        status, ct, snippet, data = await _aikido_api_post_request(
+            "/containers/sbom/generate",
+            body,
+            credentials,
+            timeout=180.0,
+        )
+        if 200 <= status < 300 and data is not None:
+            logger.debug(
+                "Aikido bulk SBOM: used body %s status=%s content-type=%s",
+                label,
+                status,
+                ct,
+            )
+            return data
+        logger.debug(
+            "Aikido bulk SBOM: body %s status=%s content-type=%s snippet=%s",
+            label,
+            status,
+            ct,
+            (snippet or "")[:200],
+        )
+    return None
+
+
+async def fetch_aikido_container_licenses_export(
+    container_repo_id: str | int,
+    credentials: Optional[dict[str, Any]] = None,
+) -> Any | None:
+    """
+    GET /containers/{container_repo_id}/licenses/export — license/SBOM payload.
+
+    Aikido supports query param ``format`` with values including:
+    - ``sbom`` (CycloneDX JSON)
+    - ``sbom_spdx`` (SPDX JSON)
+    - ``csv`` (default CSV export)
+
+    We prefer ``format=sbom`` so downstream identity parsing can read digest/tag from
+    CycloneDX metadata.
+
+    Returns parsed JSON or None. Does not raise on 404 or parse errors.
+    API: https://apidocs.aikido.dev/reference/exportcontainerrepolicenses
+    """
+    cid = str(container_repo_id).strip()
+    if not cid:
+        return None
+    # Prefer CycloneDX JSON SBOM.
+    for path in (
+        f"/containers/{cid}/licenses/export?format=sbom",
+        f"/containers/{cid}/licenses/export?format=sbom_spdx",
+        f"/containers/{cid}/licenses/export",
+    ):
+        raw = await _aikido_api_get_maybe_json(
+            path,
+            credentials,
+            timeout=120.0,
+        )
+        if raw is not None:
+            return raw
+    return None
 
 
 async def fetch_aikido_code_repositories(
@@ -1363,14 +1909,38 @@ async def fetch_aikido_issue_counts(
     data = await _aikido_api_get_safe("/issues/counts", credentials)
     if not data:
         return None
-    d = data.get("counts", data) if isinstance(data, dict) else {}
+
+    def _as_int(v: Any, default: int = 0) -> int:
+        try:
+            if v is None:
+                return default
+            return int(v)
+        except (TypeError, ValueError):
+            return default
+
+    d: dict[str, Any] = {}
+    if isinstance(data, dict):
+        # Aikido may return:
+        # 1) {"counts": {...}}
+        # 2) {"issues": {...}, "issue_groups": {...}}
+        # 3) flat {"open":..., "critical":...}
+        if isinstance(data.get("issues"), dict):
+            d = data["issues"]
+        elif isinstance(data.get("counts"), dict):
+            d = data["counts"]
+        else:
+            d = data
+
+    total = _as_int(d.get("total", d.get("nr_total", d.get("all", 0))), 0)
+    # Some payloads only expose "all" (open issue count for current workspace scope).
+    open_count = _as_int(d.get("open", d.get("nr_open", d.get("all", total))), total)
     return {
-        "total": d.get("total", d.get("nr_total", 0)),
-        "open": d.get("open", d.get("nr_open", d.get("total", 0))),
-        "critical": d.get("critical", d.get("nr_critical", 0)),
-        "high": d.get("high", d.get("nr_high", 0)),
-        "medium": d.get("medium", d.get("nr_medium", 0)),
-        "low": d.get("low", d.get("nr_low", 0)),
+        "total": total,
+        "open": open_count,
+        "critical": _as_int(d.get("critical", d.get("nr_critical", 0)), 0),
+        "high": _as_int(d.get("high", d.get("nr_high", 0)), 0),
+        "medium": _as_int(d.get("medium", d.get("nr_medium", 0)), 0),
+        "low": _as_int(d.get("low", d.get("nr_low", 0)), 0),
     }
 
 

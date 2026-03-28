@@ -6,10 +6,7 @@
 import type { Finding, Asset } from "@/types";
 import { getAssetTypeFromAsset } from "@/lib/assetUtils";
 import { displaySourceName } from "@/lib/utils";
-import {
-  getFindingGroupKey,
-  groupFindingsByKey,
-} from "@/lib/findingGroupUtils";
+import { effectiveGroupKey, groupFindingsByKey } from "@/lib/findingGroupUtils";
 
 /** VAT-compatible issue shape for report engine (matches AikidoIssue fields used by metrics/report-engine) */
 export interface VATReportIssue {
@@ -35,6 +32,8 @@ export interface VATReportIssue {
   fixed_version?: string;
   /** External source platform link for this finding (e.g. Aikido). */
   source_url?: string;
+  /** Optional source-provided group severity (Aikido issue group severity). */
+  source_group_severity?: string;
 }
 
 /** VAT-compatible issue group (for repo/container risk, top vulns) */
@@ -142,7 +141,7 @@ export function findingsToVATReportIssues(
   const result: VATReportIssue[] = [];
   let issueId = 1;
   for (const f of findings) {
-    const key = groupFindings ? getFindingGroupKey(f) : f.cveId || f.id;
+    const key = groupFindings ? effectiveGroupKey(f) : f.cveId || f.id;
     const gid = groupMap.get(key) ?? 0;
     const detected =
       f.firstDetectedAt ??
@@ -155,9 +154,8 @@ export function findingsToVATReportIssues(
     const sourceUrl =
       (f.externalLinks ?? []).find((l) => l.kind === "source" && l.url)?.url ??
       undefined;
-    // Prefer sourceGroupSeverity when available (e.g. from Aikido) for report consistency
-    const issueSeverity =
-      (f.sourceGroupSeverity?.trim() || f.severity) ?? "info";
+    // Use the persisted finding severity as the single source of truth.
+    const issueSeverity = f.severity ?? "info";
     result.push({
       issue_id: issueId++,
       issue_group_id: gid,
@@ -175,6 +173,7 @@ export function findingsToVATReportIssues(
       scanner_type: displaySourceName(f.source) || "VAT",
       closed_at: closedAt,
       source_url: sourceUrl,
+      source_group_severity: f.sourceGroupSeverity ?? undefined,
     });
   }
   return result;
@@ -193,17 +192,7 @@ export function findingsToVATReportIssueGroups(
     const worst = list.reduce((a, b) =>
       sevToScore(a.severity) >= sevToScore(b.severity) ? a : b,
     );
-    // Prefer sourceGroupSeverity when available (e.g. from Aikido) for consistency with source dashboard
-    const withSourceSev = list.filter((f) => f.sourceGroupSeverity?.trim());
-    const groupSeverity =
-      withSourceSev.length > 0
-        ? withSourceSev.reduce((a, b) =>
-            sevToScore(a.sourceGroupSeverity!) >=
-            sevToScore(b.sourceGroupSeverity!)
-              ? a
-              : b,
-          ).sourceGroupSeverity!
-        : worst.severity ?? "info";
+    const groupSeverity = worst.severity ?? "info";
     const repos = Array.from(
       new Set(
         list.map((f) => f.image ?? f.component ?? "unknown").filter(Boolean),
@@ -251,9 +240,8 @@ function isMitigated(f: Finding): boolean {
   return (f.status ?? "").toLowerCase() === "mitigated";
 }
 
-/** Use sourceGroupSeverity when available for consistency with report engine (Aikido group-level severity). */
 function severityKey(f: Finding): "critical" | "high" | "medium" | "low" {
-  const s = ((f.sourceGroupSeverity?.trim() || f.severity) ?? "").toLowerCase();
+  const s = (f.severity ?? "").toLowerCase();
   if (s === "critical") return "critical";
   if (s === "high") return "high";
   if (s === "medium" || s === "moderate") return "medium";

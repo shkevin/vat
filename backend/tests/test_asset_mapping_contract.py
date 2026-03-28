@@ -70,9 +70,9 @@ def test_typed_correlation_key_for_sca_and_sast() -> None:
         rule_id="semgrep.rule.sql-injection",
         file_path="src/api.py",
     )
-    assert sca_key.startswith("sca:")
+    assert sca_key.startswith("v1:sca:")
     assert sca_conf in ("high", "medium")
-    assert sast_key.startswith("sast:")
+    assert sast_key.startswith("v1:sast:")
     assert sast_conf in ("medium", "low")
 
 

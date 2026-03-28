@@ -169,6 +169,16 @@ function sectionFilterAttrs(ctx: ReportContext): string {
   const containers = [
     ...new Set(ctx.containerRisk.map((c) => c.repo).filter(Boolean)),
   ];
+  const scanners = [
+    ...new Set(
+      ctx.filteredIssues
+        .map(
+          (i) =>
+            displaySourceName(i.scanner_type) || i.scanner_type || "Unknown",
+        )
+        .filter(Boolean),
+    ),
+  ];
   const parts: string[] = [];
   if (sev) parts.push(`data-filter-severity="${sev}"`);
   if (repos.length > 0)
@@ -187,6 +197,12 @@ function sectionFilterAttrs(ctx: ReportContext): string {
     parts.push(
       `data-filter-container="${containers
         .map((c) => filterAttr(c))
+        .join(REPO_BRANCH_SEP)}"`,
+    );
+  if (scanners.length > 0)
+    parts.push(
+      `data-filter-scanner="${scanners
+        .map((s) => filterAttr(s))
         .join(REPO_BRANCH_SEP)}"`,
     );
   return parts.length > 0 ? " " + parts.join(" ") : "";
@@ -1150,7 +1166,7 @@ function renderRepoTable(
     })
     .join("");
   const attrs = sectionFilterAttrs(ctx);
-  return `<div class="section"><div${attrs}><h2>Repository Risk Ranking</h2><table><thead><tr><th>Repository</th><th class="text-right">Critical</th><th class="text-right">High</th><th class="text-right">Medium</th><th class="text-right">Low</th><th class="text-right">Risk Score</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
+  return `<div class="section"><div${attrs} data-report-aggregate="repo-risk" data-limit="${limit}"><h2>Repository Risk Ranking</h2><table><thead><tr><th>Repository</th><th class="text-right">Critical</th><th class="text-right">High</th><th class="text-right">Medium</th><th class="text-right">Low</th><th class="text-right">Risk Score</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
 }
 
 function renderTopVulnsTable(
@@ -1195,13 +1211,18 @@ function renderTopVulnsTable(
       const assetTypeAttr = ` data-filter-asset-type="${filterAttr(
         assetType,
       )}"`;
+      const scannerAttr = ` data-filter-scanner="${filterAttr(
+        displaySourceName(issue?.scanner_type) ||
+          issue?.scanner_type ||
+          "Unknown",
+      )}"`;
       return `<tr data-filter-severity="${filterAttr(
         v.severity?.toLowerCase(),
       )}" data-filter-repo="${filterAttr(
         v.repo,
       )}" data-filter-branch="${filterAttr(
         issue?.branch,
-      )}"${assetTypeAttr}${containerAttr}><td style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${titleCell}</td><td><span class="badge ${sev(
+      )}"${assetTypeAttr}${containerAttr}${scannerAttr}><td style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${titleCell}</td><td><span class="badge ${sev(
         v.severity,
       )}">${v.severity}</span></td><td class="mono">${
         v.cve
@@ -1251,13 +1272,18 @@ function renderTopVulnsList(
       const assetTypeAttr = ` data-filter-asset-type="${filterAttr(
         assetType,
       )}"`;
+      const scannerAttr = ` data-filter-scanner="${filterAttr(
+        displaySourceName(issue?.scanner_type) ||
+          issue?.scanner_type ||
+          "Unknown",
+      )}"`;
       return `<li data-filter-severity="${filterAttr(
         v.severity?.toLowerCase(),
       )}" data-filter-repo="${filterAttr(
         v.repo,
       )}" data-filter-branch="${filterAttr(
         issue?.branch,
-      )}"${assetTypeAttr}${containerAttr}><span class="badge ${sev(
+      )}"${assetTypeAttr}${containerAttr}${scannerAttr}><span class="badge ${sev(
         v.severity,
       )}">${v.severity}</span> ${titlePart} <span class="findings-meta">${
         v.cve !== "N/A" ? v.cve : ""
@@ -1352,13 +1378,18 @@ function renderTopVulnsAdvisory(
       const assetTypeAttr = ` data-filter-asset-type="${filterAttr(
         assetType,
       )}"`;
+      const scannerAttr = ` data-filter-scanner="${filterAttr(
+        displaySourceName(issue?.scanner_type) ||
+          issue?.scanner_type ||
+          "Unknown",
+      )}"`;
       return `<div class="advisory-card report-filterable" data-filter-severity="${filterAttr(
         v.severity?.toLowerCase(),
       )}" data-filter-repo="${filterAttr(
         v.repo,
       )}" data-filter-branch="${filterAttr(
         issue?.branch,
-      )}"${assetTypeAttr}${containerAttr}><div class="advisory-header"><span class="badge ${sev(
+      )}"${assetTypeAttr}${containerAttr}${scannerAttr}><div class="advisory-header"><span class="badge ${sev(
         v.severity,
       )}">${
         v.severity
@@ -1397,7 +1428,9 @@ function renderScannerTable(
         sevs.length > 0
           ? ` data-filter-severity="${filterAttr(sevs.join(" "))}"`
           : "";
-      return `<tr${sevAttr}><td class="mono">${
+      return `<tr${sevAttr} data-filter-scanner="${filterAttr(
+        displaySourceName(s.scanner) || s.scanner || "Unknown",
+      )}"><td class="mono">${
         displaySourceName(s.scanner) || s.scanner
       }</td><td class="text-right mono" style="font-weight:600">${
         s.count
@@ -1615,13 +1648,14 @@ function renderIssueList(
       const assetTypeAttr = ` data-filter-asset-type="${filterAttr(
         assetType,
       )}"`;
+      const scannerAttr = ` data-filter-scanner="${filterAttr(source)}"`;
       return `<tr data-filter-severity="${filterAttr(
         s,
       )}" data-filter-repo="${filterAttr(
         i.repository,
       )}" data-filter-branch="${filterAttr(
         i.branch,
-      )}" data-sort-status="${sortStatus}"${assetTypeAttr}${containerAttr}><td class="mono">${idCell}</td><td>${titleCell}</td><td><span class="badge ${sev(
+      )}" data-sort-status="${sortStatus}"${assetTypeAttr}${containerAttr}${scannerAttr}><td class="mono">${idCell}</td><td>${titleCell}</td><td><span class="badge ${sev(
         s,
       )}">${
         i.severity
@@ -1657,7 +1691,7 @@ function renderContainerTable(
   const limit = Number(config.limit) ?? 25;
   const containers = ctx.containerRisk.slice(0, limit);
   if (containers.length === 0)
-    return `<div class="section"><h2>Container Risk Ranking</h2><p class="activity-empty">No container repositories with issues.</p></div>`;
+    return `<div class="section"><div data-report-aggregate="container-risk" data-limit="${limit}"><h2>Container Risk Ranking</h2><p class="activity-empty">No container repositories with issues.</p></div></div>`;
   const rows = containers
     .map((c) => {
       const sevs: string[] = [];
@@ -1692,7 +1726,7 @@ function renderContainerTable(
     })
     .join("");
   const attrs = sectionFilterAttrs(ctx);
-  return `<div class="section"><div${attrs}><h2>Container Risk Ranking</h2><table><thead><tr><th>Container</th><th class="text-right">Critical</th><th class="text-right">High</th><th class="text-right">Medium</th><th class="text-right">Low</th><th class="text-right">Risk Score</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
+  return `<div class="section"><div${attrs} data-report-aggregate="container-risk" data-limit="${limit}"><h2>Container Risk Ranking</h2><table><thead><tr><th>Container</th><th class="text-right">Critical</th><th class="text-right">High</th><th class="text-right">Medium</th><th class="text-right">Low</th><th class="text-right">Risk Score</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
 }
 
 function renderAssetMixDonut(

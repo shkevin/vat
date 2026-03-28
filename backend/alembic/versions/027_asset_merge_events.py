@@ -24,8 +24,12 @@ def upgrade() -> None:
         sa.Column("source_asset_id", sa.String(length=512), nullable=False),
         sa.Column("target_asset_id", sa.String(length=512), nullable=False),
         sa.Column("finding_id", sa.String(length=32), nullable=False),
-        sa.Column("prev_values", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
-        sa.Column("next_values", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
+        sa.Column(
+            "prev_values", postgresql.JSONB(astext_type=sa.Text()), nullable=False
+        ),
+        sa.Column(
+            "next_values", postgresql.JSONB(astext_type=sa.Text()), nullable=False
+        ),
         sa.Column("created_by", sa.String(length=256), nullable=True),
         sa.Column("created_at", sa.DateTime(), nullable=False),
         sa.Column("reverted_at", sa.DateTime(), nullable=True),
@@ -52,7 +56,13 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_index(op.f("ix_asset_merge_events_finding_id"), table_name="asset_merge_events")
-    op.drop_index(op.f("ix_asset_merge_events_target_asset_id"), table_name="asset_merge_events")
-    op.drop_index(op.f("ix_asset_merge_events_source_asset_id"), table_name="asset_merge_events")
+    op.drop_index(
+        op.f("ix_asset_merge_events_finding_id"), table_name="asset_merge_events"
+    )
+    op.drop_index(
+        op.f("ix_asset_merge_events_target_asset_id"), table_name="asset_merge_events"
+    )
+    op.drop_index(
+        op.f("ix_asset_merge_events_source_asset_id"), table_name="asset_merge_events"
+    )
     op.drop_table("asset_merge_events")

@@ -58,10 +58,12 @@ def test_canonical_finding_payload_missing_cve_id():
         )
 
 
-def test_canonical_finding_payload_requires_asset_context():
-    """Finding must have at least one of: image, branch, tag (for asset-scoped grouping)."""
-    with pytest.raises(ValidationError, match="image, branch, tag"):
-        CanonicalFindingPayload(cve_id="CVE-1", severity="High", description="test")
+def test_canonical_finding_payload_allows_sparse_asset_context():
+    """Asset context can be filled later by backend resolver/enrichment."""
+    p = CanonicalFindingPayload(cve_id="CVE-1", severity="High", description="test")
+    assert p.image is None
+    assert p.branch is None
+    assert p.tag is None
 
 
 def test_canonical_ingest_request():

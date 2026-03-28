@@ -692,6 +692,11 @@ export function computeRepoRiskScores(
   issueGroups: VATReportIssueGroup[] = [],
   countMode: CountMode = "instances",
 ): RepoRiskScore[] {
+  const groupedSeverity = (issue: VATReportIssue) =>
+    normalizeSeverity(
+      (issue.source_group_severity ?? issue.severity) as string,
+      issue.severity_score,
+    );
   const repoMap = new Map<string, RepoRiskScore>();
   const openIssues = issues.filter(isOpen);
   const trackedOpenIssues =
@@ -727,10 +732,25 @@ export function computeRepoRiskScores(
       const gid = issue.issue_group_id ?? 0;
       if (!repoGroupSev.has(repo)) repoGroupSev.set(repo, new Map());
       const groupMap = repoGroupSev.get(repo)!;
-      if (groupMap.has(gid)) continue;
-      const sev = normalizeSeverity(issue.severity, issue.severity_score);
+      const sev = groupedSeverity(issue);
       if (sev === "info") continue;
-      groupMap.set(gid, { sev, mitigated: isMitigated(issue) });
+      const existing = groupMap.get(gid);
+      const rank = {
+        info: 0,
+        low: 1,
+        medium: 2,
+        high: 3,
+        critical: 4,
+      } as const;
+      if (!existing || rank[sev] > rank[existing.sev]) {
+        groupMap.set(gid, { sev, mitigated: isMitigated(issue) });
+      } else if (existing && rank[sev] === rank[existing.sev]) {
+        // Preserve highest severity and keep mitigated=true if any same-severity member is mitigated.
+        groupMap.set(gid, {
+          sev: existing.sev,
+          mitigated: existing.mitigated || isMitigated(issue),
+        });
+      }
     }
     for (const [repo, groupMap] of Array.from(repoGroupSev)) {
       const entry = ensureRepo(repo);
@@ -812,6 +832,11 @@ export function computeContainerRiskScores(
   countMode: CountMode = "instances",
   codeRepos: VATReportRepo[] = [],
 ): ContainerRiskScore[] {
+  const groupedSeverity = (issue: VATReportIssue) =>
+    normalizeSeverity(
+      (issue.source_group_severity ?? issue.severity) as string,
+      issue.severity_score,
+    );
   const effectiveContainers = getEffectiveContainers(
     containers,
     issues,
@@ -820,45 +845,56 @@ export function computeContainerRiskScores(
   const openIssues = issues.filter(isOpen);
   return effectiveContainers
     .map((c) => {
-      const fromApi =
-        (c.critical_count ?? 0) +
-        (c.high_count ?? 0) +
-        (c.medium_count ?? 0) +
-        (c.low_count ?? 0);
-      let critical = c.critical_count ?? 0;
-      let high = c.high_count ?? 0;
-      let medium = c.medium_count ?? 0;
-      let low = c.low_count ?? 0;
-      let mitigatedCritical = c.mitigated_critical_count ?? 0;
-      let mitigatedHigh = c.mitigated_high_count ?? 0;
-      let mitigatedMedium = c.mitigated_medium_count ?? 0;
-      let mitigatedLow = c.mitigated_low_count ?? 0;
-      if (fromApi === 0 && openIssues.length > 0) {
-        mitigatedCritical = 0;
-        mitigatedHigh = 0;
-        mitigatedMedium = 0;
-        mitigatedLow = 0;
+      let critical = 0;
+      let high = 0;
+      let medium = 0;
+      let low = 0;
+      let mitigatedCritical = 0;
+      let mitigatedHigh = 0;
+      let mitigatedMedium = 0;
+      let mitigatedLow = 0;
+      if (openIssues.length > 0) {
         if (countMode === "groups") {
-          const seenGroups = new Set<number>();
+          const groupWorst = new Map<
+            number,
+            { sev: "critical" | "high" | "medium" | "low"; mitigated: boolean }
+          >();
+          const rank = { low: 1, medium: 2, high: 3, critical: 4 } as const;
           for (const issue of openIssues) {
             const repo = issue.repository ?? "";
             if (!issueMatchesContainer(repo, c.name)) continue;
             const gid = issue.issue_group_id ?? 0;
-            if (seenGroups.has(gid)) continue;
-            seenGroups.add(gid);
-            const sev = normalizeSeverity(issue.severity, issue.severity_score);
+            const sev = groupedSeverity(issue);
+            if (
+              sev === "critical" ||
+              sev === "high" ||
+              sev === "medium" ||
+              sev === "low"
+            ) {
+              const existing = groupWorst.get(gid);
+              if (!existing || rank[sev] > rank[existing.sev]) {
+                groupWorst.set(gid, { sev, mitigated: isMitigated(issue) });
+              } else if (rank[sev] === rank[existing.sev]) {
+                groupWorst.set(gid, {
+                  sev: existing.sev,
+                  mitigated: existing.mitigated || isMitigated(issue),
+                });
+              }
+            }
+          }
+          for (const { sev, mitigated: mit } of groupWorst.values()) {
             if (sev === "critical") {
               critical++;
-              if (isMitigated(issue)) mitigatedCritical++;
+              if (mit) mitigatedCritical++;
             } else if (sev === "high") {
               high++;
-              if (isMitigated(issue)) mitigatedHigh++;
+              if (mit) mitigatedHigh++;
             } else if (sev === "medium") {
               medium++;
-              if (isMitigated(issue)) mitigatedMedium++;
+              if (mit) mitigatedMedium++;
             } else if (sev === "low") {
               low++;
-              if (isMitigated(issue)) mitigatedLow++;
+              if (mit) mitigatedLow++;
             }
           }
         } else {
@@ -883,7 +919,14 @@ export function computeContainerRiskScores(
           }
         }
       }
-      if (critical + high + medium + low === 0 && issueGroups.length > 0) {
+      // Fallback to issue groups only when issue instances are unavailable.
+      // If issues are present, groups can include closed/history rows and would
+      // re-inflate container counts that correctly resolved to zero from issues.
+      if (
+        issues.length === 0 &&
+        critical + high + medium + low === 0 &&
+        issueGroups.length > 0
+      ) {
         for (const group of issueGroups) {
           const repos = group.affected_repos ?? [];
           if (!repos.some((r) => issueMatchesContainer(r, c.name))) continue;

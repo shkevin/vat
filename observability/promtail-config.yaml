@@ -28,12 +28,3 @@ scrape_configs:
         target_label: __path__
     pipeline_stages:
       - docker: {}
-      - match:
-          selector: '{compose_service="backend"}'
-          stages:
-            - regex:
-                expression: 'audit_event_emitted trace_id=(?P<trace_id>[^ ]+) event_type=(?P<event_type>[^ ]+)'
-            - labels:
-                trace_id:
-                event_type:
-

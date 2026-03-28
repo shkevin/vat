@@ -1,6 +1,7 @@
 """Full Aikido sync: pull (bootstrap) + dashboard + backfill. Runs in background to avoid HTTP timeout."""
 
 import hashlib
+from collections import defaultdict
 import logging
 from typing import Any, Callable, Optional
 
@@ -11,6 +12,7 @@ from app.adapters.aikido import (
     _parse_repo_name_with_branch,
     _extract_branch_from_repo,
     _strip_tag_from_container_name,
+    aikido_container_list_item_tags,
     fetch_aikido_code_repositories,
     fetch_aikido_containers,
     fetch_aikido_issues,
@@ -19,6 +21,7 @@ from app.core.database import async_session
 from app.models.asset import Asset
 from app.models.finding import Finding
 from app.services.audit_events import emit_audit_event
+from app.services.container_asset_observations import ensure_container_tags_observed
 from app.services.dedup import make_fingerprint
 from app.services.ingest import _parse_iso_datetime, ingest_finding
 from app.services.aikido_dashboard_sync import sync_aikido_dashboard
@@ -71,7 +74,7 @@ async def run_full_sync(
     on_progress(step, total, label) called at each step for UI progress bar.
     """
     result: dict[str, Any] = {"pull": {}, "dashboard": {}, "backfill": {}}
-    total_steps = 17  # bootstrap(4) + dashboard(12) + backfill(1)
+    total_steps = 18  # bootstrap(4) + dashboard(13) + backfill(1)
     step_num = 0
 
     # 1. Bootstrap: create assets first (repos, then containers), then ingest issues
@@ -149,6 +152,7 @@ async def run_full_sync(
     )
     try:
         containers = await fetch_aikido_containers(credentials=creds) or []
+        tag_union_by_asset: dict[str, set[str]] = defaultdict(set)
         async with async_session() as session:
             for c in containers or []:
                 if not isinstance(c, dict):
@@ -198,6 +202,17 @@ async def run_full_sync(
                         decision_confidence="high",
                         decision_result="created",
                         data={"asset_type": "container", "tag": tag},
+                    )
+                tag_list = aikido_container_list_item_tags(c) or (
+                    [tag] if (tag or "").strip() else []
+                )
+                for t in tag_list:
+                    if (t or "").strip():
+                        tag_union_by_asset[asset_key].add(t.strip())
+            for ak, ts in tag_union_by_asset.items():
+                if ts:
+                    await ensure_container_tags_observed(
+                        session, asset_id=ak, tags=sorted(ts)
                     )
             await session.commit()
     except Exception as e:

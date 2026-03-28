@@ -92,7 +92,16 @@ def find_config_file(path: Path | None, explicit: Path | None) -> Path | None:
                 current = parent
             search_dirs.append(path)
 
+    deduped_dirs: list[Path] = []
+    seen_dirs: set[str] = set()
     for d in search_dirs:
+        key = str(d.resolve())
+        if key in seen_dirs:
+            continue
+        seen_dirs.add(key)
+        deduped_dirs.append(d)
+
+    for d in deduped_dirs:
         for name in ("vat-scanner.yaml", ".vat-scanner.yaml"):
             candidate = d / name
             if candidate.exists():
@@ -133,7 +142,7 @@ class ScannerConfig:
         api_key: str = "",
         admin_token: str = "",
         asset: str = "",
-        asset_mode: str = "single",
+        asset_mode: str = "multi",
         scan_types: list[str] | None = None,
         exclude: list[str] | None = None,
         dry_run: bool = False,
@@ -158,9 +167,9 @@ class ScannerConfig:
         self.api_key = api_key or os.environ.get("VAT_API_KEY", "").strip()
         self.admin_token = admin_token or os.environ.get("VAT_ADMIN_TOKEN", "").strip()
         self.asset = asset
-        self.asset_mode = (asset_mode or "single").strip().lower()
+        self.asset_mode = (asset_mode or "multi").strip().lower()
         if self.asset_mode not in ("single", "multi"):
-            self.asset_mode = "single"
+            self.asset_mode = "multi"
         self.scan_types = scan_types or list(DEFAULT_SCAN_TYPES)
         self.exclude = exclude or list(DEFAULT_EXCLUDES)
         self.dry_run = dry_run
@@ -205,7 +214,7 @@ class ScannerConfig:
         return cls(
             vat_url=str(raw.get("vat_url", "")),
             asset=str(raw.get("asset", scan_path.name if scan_path else "")),
-            asset_mode=str(raw.get("asset_mode", "single")),
+            asset_mode=str(raw.get("asset_mode", "multi")),
             tag=str(raw.get("tag", "")),
             dev_limit=int(raw.get("dev_limit", 0)),
             scan_types=raw.get("scan_types") or list(DEFAULT_SCAN_TYPES),

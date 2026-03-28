@@ -12,74 +12,35 @@ from app.api.settings import get_source_config
 from app.core.database import get_db
 from app.core.ingest_auth import get_ingest_source
 from app.models.asset import Asset
-from app.parsers import PARSER_IDENTITY_POLICY, get_parser
+from app.parsers import (
+    PARSER_IDENTITY_POLICY,
+    extract_asset_hint,
+    get_parser,
+    parser_accepts_input_kind,
+)
 from app.schemas.vat import VatFindingSchema
-from app.services.asset_resolver import resolve_asset_for_payload
-from app.services.asset_aliases import resolve_canonical_asset_id
+from app.services.asset_resolver import (
+    resolve_asset_for_payload,
+    resolve_ingest_stub_asset_identity,
+)
+from app.services.asset_aliases import (
+    resolve_canonical_asset_id,
+    upsert_asset_alias,
+)
 from app.services.audit_events import emit_audit_event
+from app.services.container_ref_normalization import is_safe_tag_only_alias_variant
 from app.services.ingest import ingest_finding
+from app.services.ingest_enrichment import enrich_payload_for_correlation
 from app.services.observability import IngestLatencyTimer
-from app.services.openscap_storage import store_openscap_scan_result
+from app.services.openscap_storage import (
+    compute_evidence_sha256,
+    store_openscap_scan_result,
+)
 from app.services.sbom import import_sbom
 from app.services.sbom_extract import extract_sbom_from_report
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
-
-
-def _extract_asset_from_report(
-    raw: dict | list | bytes, parser_id: str
-) -> Optional[str]:
-    """Extract asset/target from raw report for zero-finding scans. Used to create Asset record."""
-    if parser_id == "trivy" and isinstance(raw, dict):
-        results = raw.get("Results") or raw.get("results") or []
-        if results and isinstance(results[0], dict):
-            return (
-                results[0].get("Target") or results[0].get("target") or ""
-            ).strip() or None
-    if parser_id == "grype" and isinstance(raw, dict):
-        src = raw.get("source") or {}
-        if isinstance(src, dict):
-            t = src.get("target")
-            if isinstance(t, dict):
-                return (t.get("userInput") or t.get("target") or "").strip() or None
-            return str(t or "").strip() or None
-    if parser_id == "gitleaks" and isinstance(raw, dict):
-        return (raw.get("target") or raw.get("asset") or "").strip() or None
-    if parser_id == "openscap" and isinstance(raw, bytes):
-        try:
-            from defusedxml import ElementTree
-
-            root = ElementTree.fromstring(raw)
-            for ns in (
-                "{http://checklists.nist.gov/xccdf/1.1}",
-                "{http://checklists.nist.gov/xccdf/1.2}",
-            ):
-                tr = root.find(f".//{ns}TestResult")
-                if tr is not None:
-                    t = tr.find(f"{ns}target")
-                    if t is not None and t.text:
-                        return t.text.strip() or None
-                    for addr in tr.findall(f"{ns}target-address"):
-                        if addr.text:
-                            return addr.text.strip() or None
-                    break
-        except Exception:
-            pass
-    if parser_id == "openscap_oval" and isinstance(raw, bytes):
-        try:
-            from defusedxml import ElementTree
-
-            root = ElementTree.fromstring(raw)
-            for el in root.iter():
-                tag = (el.tag or "").split("}")[-1]
-                if tag == "hostname":
-                    t = "".join(el.itertext()).strip()
-                    if t:
-                        return t
-        except Exception:
-            pass
-    return None
 
 
 async def _ensure_asset_record(
@@ -164,9 +125,12 @@ async def _ingest_from_parser(
     asset_override: Optional[str] = None,
     tag_override: Optional[str] = None,
     source_image_override: Optional[str] = None,
+    image_digest_override: Optional[str] = None,
     trace_id: Optional[str] = None,
     actor_id: Optional[str] = None,
     strict_asset_mapping: bool = False,
+    scan_session_id: Optional[str] = None,
+    scanner_version: Optional[str] = None,
 ) -> dict:
     """
     Parse payload with configured parser and ingest findings.
@@ -216,7 +180,7 @@ async def _ingest_from_parser(
         base_asset = (
             asset_override
             or source_image_override
-            or _extract_asset_from_report(raw, parser_id)
+            or extract_asset_hint(parser_id, raw)
         )
         asset_type = (
             (source_config or {}).get("asset_type")
@@ -224,8 +188,14 @@ async def _ingest_from_parser(
             or "package"
         )
         if base_asset:
-            base_asset = await resolve_canonical_asset_id(db, base_asset)
-            await _ensure_asset_record(db, base_asset, source, asset_type)
+            stub_id, stub_type = await resolve_ingest_stub_asset_identity(
+                db,
+                asset_hint=base_asset,
+                parser_id=parser_id,
+                source_asset_type=asset_type,
+            )
+            if stub_id:
+                await _ensure_asset_record(db, stub_id, source, stub_type)
         if parser_id in ("openscap", "openscap_oval"):
             logger.info(
                 "OpenSCAP ingest %s: source=%s created=0 merged=0 (no fail results in XML)",
@@ -275,8 +245,12 @@ async def _ingest_from_parser(
     )
     created = 0
     merged = 0
+    raw_evidence_ref: Optional[str] = None
+    if parser_id in ("openscap", "openscap_oval") and isinstance(raw, bytes):
+        raw_evidence_ref = compute_evidence_sha256(raw)
     for p in payloads:
         try:
+            p = enrich_payload_for_correlation(p, parser_id=parser_id, source_id=source)
             policy = PARSER_IDENTITY_POLICY.get(parser_id, {})
             requires_explicit_asset = bool(policy.get("requires_explicit_asset", False))
             p, resolution = resolve_asset_for_payload(
@@ -287,7 +261,36 @@ async def _ingest_from_parser(
                 strict_mode=strict_asset_mapping,
                 requires_explicit_asset=requires_explicit_asset,
             )
-            canonical_asset_id = await resolve_canonical_asset_id(db, resolution.asset_id)
+            raw_asset_id = (resolution.raw_asset_id or "").strip()
+            if raw_asset_id and raw_asset_id != resolution.asset_id:
+                if is_safe_tag_only_alias_variant(raw_asset_id, resolution.asset_id):
+                    await upsert_asset_alias(
+                        db,
+                        source_asset_id=raw_asset_id,
+                        canonical_asset_id=resolution.asset_id,
+                        created_by="system:auto-tag-alias",
+                    )
+                    await emit_audit_event(
+                        db,
+                        trace_id=trace_id,
+                        event_type="asset.alias.auto_created",
+                        actor_type="api_client",
+                        actor_id=actor_id,
+                        source_id=source,
+                        parser_id=parser_id,
+                        asset_id=resolution.asset_id,
+                        decision_name="asset_alias_auto",
+                        decision_reason_code="tag_only_variant",
+                        decision_confidence="high",
+                        decision_result="created",
+                        data={
+                            "source_asset_id": raw_asset_id,
+                            "canonical_asset_id": resolution.asset_id,
+                        },
+                    )
+            canonical_asset_id = await resolve_canonical_asset_id(
+                db, resolution.asset_id
+            )
             if canonical_asset_id and canonical_asset_id != resolution.asset_id:
                 p = _remap_payload_asset_context(
                     p,
@@ -319,6 +322,10 @@ async def _ingest_from_parser(
                 existing_tag = getattr(p, "tag", None)
                 if not (existing_tag and str(existing_tag).strip()):
                     p = p.model_copy(update={"tag": tag_override})
+            if image_digest_override:
+                existing_dig = getattr(p, "image_digest", None)
+                if not (existing_dig and str(existing_dig).strip()):
+                    p = p.model_copy(update={"image_digest": image_digest_override})
             # Bundle scans: source_image identifies which container (redis, metrics-server) failed
             if source_image_override and parser_id in ("openscap", "openscap_oval"):
                 comp = (p.component or "").strip()
@@ -335,6 +342,9 @@ async def _ingest_from_parser(
                 source_name=source,
                 trace_id=trace_id,
                 parser_id=parser_id,
+                scan_session_id=scan_session_id,
+                scanner_version=scanner_version,
+                raw_evidence_ref=raw_evidence_ref,
             )
             await emit_audit_event(
                 db,
@@ -395,7 +405,7 @@ async def _ingest_from_parser(
             asset_override
             or source_image_override
             or (payloads[0].image if payloads else None)
-            or _extract_asset_from_report(raw, parser_id)
+            or extract_asset_hint(parser_id, raw)
         )
         # Bundle scans: one XCCDF per container; use composite key so we don't overwrite
         if base_asset and source_image_override:
@@ -453,8 +463,9 @@ async def post_ingest(
     Single ingest endpoint. Accepts JSON body or file upload.
     Auth required: Authorization: Bearer <key> or X-VAT-API-Key.
     Parser is determined by source config in Settings.
-    Optional headers: X-VAT-Asset, X-VAT-Tag, X-VAT-Source-Image — override asset context for bundle scans.
+    Optional headers: X-VAT-Asset, X-VAT-Tag, X-VAT-Source-Image, X-VAT-Image-Digest — override asset context for bundle scans.
     X-VAT-Source-Image: container label within bundle (e.g. redis, metrics-server) so component identifies which image failed.
+    X-VAT-Image-Digest: canonical ``sha256:…`` for the container artifact (same for all parsers on that image).
     """
     with IngestLatencyTimer():
         auth_source, _ = ingest_auth
@@ -462,6 +473,9 @@ async def post_ingest(
         tag_override = (request.headers.get("X-VAT-Tag") or "").strip() or None
         source_image_override = (
             request.headers.get("X-VAT-Source-Image") or ""
+        ).strip() or None
+        image_digest_override = (
+            request.headers.get("X-VAT-Image-Digest") or ""
         ).strip() or None
         trace_id = (
             getattr(request.state, "trace_id", "")
@@ -476,6 +490,12 @@ async def post_ingest(
             "yes",
             "on",
         )
+        scan_session_id = (
+            request.headers.get("X-VAT-Scan-Session-ID") or trace_id
+        ).strip()
+        scanner_version = (
+            request.headers.get("X-VAT-Scanner-Version") or ""
+        ).strip() or None
         if auth_source is None:
             await emit_audit_event(
                 db,
@@ -536,7 +556,7 @@ async def post_ingest(
                 raw = await request.json()
             except json.JSONDecodeError as e:
                 raise HTTPException(status_code=400, detail=f"Invalid JSON: {e}") from e
-        elif parser_id in ("openscap", "openscap_oval") and (
+        elif parser_accepts_input_kind(parser_id, "xml") and (
             "application/xml" in content_type or "text/xml" in content_type
         ):
             raw = await request.body()
@@ -548,7 +568,7 @@ async def post_ingest(
         else:
             raise HTTPException(
                 status_code=400,
-                detail="Send JSON body (Content-Type: application/json), XML (application/xml for OpenSCAP/OVAL), or file upload (multipart/form-data with 'file' field)",
+                detail="Send JSON body (Content-Type: application/json), XML (application/xml for XML parsers), or file upload (multipart/form-data with 'file' field)",
             )
 
         if raw is None:
@@ -563,9 +583,12 @@ async def post_ingest(
             asset_override=asset_override,
             tag_override=tag_override,
             source_image_override=source_image_override,
+            image_digest_override=image_digest_override,
             trace_id=trace_id,
             actor_id=source_id,
             strict_asset_mapping=strict_asset_mapping,
+            scan_session_id=scan_session_id,
+            scanner_version=scanner_version,
         )
 
 

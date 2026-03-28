@@ -10,7 +10,11 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from sqlalchemy import select
 
+from app.api.assets import AssetGroupRequest, group_asset_into_target
+from app.models.asset import Asset
+from app.models.asset_merge_review import AssetMergeReview
 from app.models.finding import Finding, FindingType, Severity, Status
+from app.schemas.auth import UserContext
 from app.schemas.vat import VatFindingSchema, VatFindingType, VatSeverity
 from app.services.correlation_linking import apply_correlation_linking
 from app.services.ingest import ingest_finding
@@ -119,7 +123,7 @@ async def test_same_correlation_key_different_tenants_never_cross_link(
 async def test_three_findings_repair_non_canonical_pointers(clean_integration_tables):
     """Oldest row is canonical; later rows + stale pointers are normalized to canonical."""
     db = clean_integration_tables
-    key = f"sca:repair:{uuid.uuid4().hex}"
+    key = f"v1:sca:repair:{uuid.uuid4().hex}"
     fp1 = "a" * 64
     fp2 = "b" * 64
     fp3 = "c" * 64
@@ -169,9 +173,7 @@ async def test_three_findings_repair_non_canonical_pointers(clean_integration_ta
     for f in (f1, f2, f3):
         await db.refresh(f)
 
-    await apply_correlation_linking(
-        db, f3, "trace-repair", parser_id="test"
-    )
+    await apply_correlation_linking(db, f3, "trace-repair", parser_id="test")
     await db.commit()
 
     await db.refresh(f1)
@@ -181,9 +183,9 @@ async def test_three_findings_repair_non_canonical_pointers(clean_integration_ta
     rows = (
         (
             await db.execute(
-                select(Finding).where(Finding.correlation_key == key).order_by(
-                    Finding.created_at.asc(), Finding.id.asc()
-                )
+                select(Finding)
+                .where(Finding.correlation_key == key)
+                .order_by(Finding.created_at.asc(), Finding.id.asc())
             )
         )
         .scalars()
@@ -201,7 +203,7 @@ async def test_cluster_membership_mismatch_skips_without_mutation(
 ):
     """If the subject row is not returned by the cluster query, do not link anyone."""
     db = clean_integration_tables
-    key = f"sca:mismatch:{uuid.uuid4().hex}"
+    key = f"v1:sca:mismatch:{uuid.uuid4().hex}"
     fp = "d" * 64
     cve = _unique_cve()
 
@@ -239,3 +241,152 @@ async def test_cluster_membership_mismatch_skips_without_mutation(
     assert "cluster_membership_mismatch" in reasons
     await db.refresh(orphan)
     assert orphan.correlated_to is None
+
+
+@pytest.mark.asyncio
+async def test_medium_score_links_without_review_queue(clean_integration_tables):
+    """Medium tier should auto-link deterministically and avoid review queue."""
+    db = clean_integration_tables
+    key = f"sast:medium:{uuid.uuid4().hex}"
+
+    f1 = Finding(
+        id=f"f-med-1-{uuid.uuid4().hex[:6]}",
+        finding_type=FindingType.SAST,
+        fingerprint_id="m" * 64,
+        cve_id="",
+        severity=Severity.Medium,
+        status=Status.Open,
+        correlation_key=key,
+        correlation_confidence="medium",
+        correlated_to=None,
+        image="repo/app",
+        branch="main",
+        tag="v1",
+        tenant_id=None,
+        source="test",
+    )
+    f2 = Finding(
+        id=f"f-med-2-{uuid.uuid4().hex[:6]}",
+        finding_type=FindingType.SAST,
+        fingerprint_id="n" * 64,
+        cve_id="",
+        severity=Severity.Medium,
+        status=Status.Open,
+        correlation_key=key,
+        correlation_confidence="medium",
+        correlated_to=None,
+        image="repo/app",
+        branch="main",
+        tag="v1",
+        tenant_id=None,
+        source="test",
+    )
+    db.add_all([f1, f2])
+    await db.commit()
+    await db.refresh(f1)
+    await db.refresh(f2)
+
+    await apply_correlation_linking(
+        db, f2, f"trace-{uuid.uuid4().hex}", parser_id="test"
+    )
+    await db.commit()
+    await db.refresh(f1)
+    await db.refresh(f2)
+
+    assert f2.correlated_to == f1.id
+
+
+@pytest.mark.asyncio
+async def test_manual_merge_runs_postpass_for_moved_findings_only(
+    clean_integration_tables,
+):
+    """Manual asset merge should run the same linker policy for moved findings."""
+    db = clean_integration_tables
+    src_asset = f"asset-src-{uuid.uuid4().hex[:6]}"
+    dst_asset = f"asset-dst-{uuid.uuid4().hex[:6]}"
+
+    db.add_all(
+        [
+            Asset(id=src_asset, name=src_asset, type="repo", source="test"),
+            Asset(id=dst_asset, name=dst_asset, type="repo", source="test"),
+            AssetMergeReview(
+                source_asset_id=src_asset,
+                target_asset_id=dst_asset,
+                status="approved",
+                note="approved in integration test",
+                strategy="manual",
+                score=1.0,
+                confidence="high",
+                details={},
+                created_by="reviewer@vat.local",
+                updated_by="reviewer@vat.local",
+            ),
+            Finding(
+                id=f"f-mrg-target-{uuid.uuid4().hex[:6]}",
+                finding_type=FindingType.SCA,
+                fingerprint_id=f"fp-target-{uuid.uuid4().hex}",
+                cve_id="",
+                severity=Severity.High,
+                status=Status.Open,
+                image=dst_asset,
+                branch="main",
+                tag=dst_asset,
+                component_base="pkg-target",
+                component="pkg target",
+                source="Aikido",
+                correlation_key="v1:sca:merge-int:key",
+                correlation_confidence="medium",
+            ),
+            Finding(
+                id=f"f-mrg-source-{uuid.uuid4().hex[:6]}",
+                finding_type=FindingType.SCA,
+                fingerprint_id=f"fp-source-{uuid.uuid4().hex}",
+                cve_id="",
+                severity=Severity.High,
+                status=Status.Open,
+                image=src_asset,
+                branch="main",
+                tag=src_asset,
+                component_base="pkg-source",
+                component="pkg source",
+                source="trivy",
+                correlation_key="v1:sca:merge-int:key",
+                correlation_confidence="medium",
+            ),
+        ]
+    )
+    await db.commit()
+
+    ctx = UserContext(
+        user_id="admin",
+        email="admin@vat.local",
+        tenant_id=None,
+        role="admin",
+        raw_identity="admin@vat.local",
+    )
+    out = await group_asset_into_target(
+        src_asset,
+        AssetGroupRequest(target_asset_id=dst_asset, reassign_existing_findings=True),
+        db=db,
+        ctx=ctx,
+    )
+    await db.commit()
+    assert out["findings_updated"] >= 1
+
+    moved = (
+        await db.execute(select(Finding).where(Finding.id.like("f-mrg-source-%")))
+    ).scalar_one()
+    roots = (
+        (
+            await db.execute(
+                select(Finding)
+                .where(Finding.correlation_key == "v1:sca:merge-int:key")
+                .order_by(Finding.created_at.asc(), Finding.id.asc())
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert len(roots) == 2
+    canonical = roots[0]
+    assert moved.correlated_to == canonical.id

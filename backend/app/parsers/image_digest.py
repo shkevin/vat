@@ -32,9 +32,7 @@ def extract_digest_from_image_ref(image: str | None) -> str | None:
     return f"sha256:{hex_part}"
 
 
-def effective_image_digest(
-    payload_digest: str | None, image: str | None
-) -> str | None:
+def effective_image_digest(payload_digest: str | None, image: str | None) -> str | None:
     """Prefer explicit digest; else parse from image ref."""
     d = normalize_image_digest(payload_digest)
     if d:

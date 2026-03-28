@@ -7,6 +7,7 @@ import pytest
 
 from app.parsers.sarif import SarifParser
 from app.schemas.ingest import CanonicalSeverity
+from app.schemas.vat import VatFindingType
 
 
 def test_sarif_parser_empty_results():
@@ -60,6 +61,42 @@ def test_sarif_parser_single_result():
     assert payloads[0].file_path == "package.json"
     assert payloads[0].line == 10
     assert payloads[0].cvss == "8.5"
+    assert payloads[0].finding_type == VatFindingType.SAST
+    assert payloads[0].rule_id == "CVE-2024-1234"
+
+
+def test_sarif_parser_partial_fingerprints_preserved():
+    sarif = {
+        "$schema": "https://sarif",
+        "version": "2.1.0",
+        "runs": [
+            {
+                "tool": {"driver": {"name": "Test"}},
+                "results": [
+                    {
+                        "ruleId": "R1",
+                        "message": {"text": "m"},
+                        "locations": [
+                            {
+                                "physicalLocation": {
+                                    "artifactLocation": {"uri": "f.py"},
+                                    "region": {"startLine": 5},
+                                }
+                            }
+                        ],
+                        "partialFingerprints": {
+                            "primaryLocationLineHash/v1": "deadbeef",
+                        },
+                    }
+                ],
+            }
+        ],
+    }
+    payloads = SarifParser().parse(sarif)
+    assert len(payloads) == 1
+    assert payloads[0].partial_fingerprints == {
+        "primaryLocationLineHash/v1": "deadbeef",
+    }
 
 
 def test_sarif_parser_invalid_schema():

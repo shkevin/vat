@@ -3,6 +3,7 @@
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import get_current_user_context, require_admin, require_reviewer
@@ -25,11 +26,43 @@ from app.services.findings_service import (
     unarchive_finding,
     update_finding,
 )
-from app.services.grouping import get_finding_group_key
+from app.services.grouping import (
+    finding_to_api_dict_with_group_key,
+    get_finding_group_key,
+)
+from app.services.correlation_edges import (
+    deactivate_edge,
+    list_active_edges_for_finding,
+    list_edges_by_operation_id,
+    list_edges_for_finding,
+    reactivate_edge,
+)
+from app.services.crosswalks import ingest_crosswalk_entries, resolve_crosswalk_values
 from app.services.sync_service import sync_single_finding_to_tracker
 from app.tasks.sync_tasks import trigger_sync_worker
 
 router = APIRouter()
+
+
+class CorrelationEdgeActionRequest(BaseModel):
+    reason: str = Field(default="manual action", max_length=256)
+
+
+class CrosswalkEntryRequest(BaseModel):
+    from_namespace: str = Field(..., max_length=64)
+    from_value: str = Field(..., max_length=256)
+    to_namespace: str = Field(..., max_length=64)
+    to_value: str = Field(..., max_length=256)
+    confidence: Optional[str] = Field(default="medium", max_length=16)
+    score: Optional[float] = None
+    active: Optional[bool] = True
+    metadata: Optional[dict] = None
+
+
+class CrosswalkRunRequest(BaseModel):
+    source: str = Field(..., max_length=64)
+    source_version: str = Field(..., max_length=64)
+    entries: list[CrosswalkEntryRequest]
 
 
 @router.get("")
@@ -69,7 +102,7 @@ async def get_findings(
         search_fields=search_fields,
         limit=limit,
     )
-    return [FindingRead.model_validate(f).to_api_dict() for f in findings]
+    return [finding_to_api_dict_with_group_key(f) for f in findings]
 
 
 @router.get("/groups")
@@ -125,9 +158,7 @@ async def get_findings_groups(
                 "groupKey": key,
                 "severity": max_sev.severity.value,
                 "findingCount": len(flist),
-                "findings": [
-                    FindingRead.model_validate(f).to_api_dict() for f in flist
-                ],
+                "findings": [finding_to_api_dict_with_group_key(f) for f in flist],
             }
         )
     # Sort by worst severity
@@ -174,7 +205,7 @@ async def get_finding_by_id(
         raise HTTPException(status_code=404, detail="Finding not found")
     if not finding:
         raise HTTPException(status_code=404, detail="Finding not found")
-    return FindingRead.model_validate(finding).to_api_dict()
+    return finding_to_api_dict_with_group_key(finding)
 
 
 @router.patch("/{finding_id}")
@@ -198,7 +229,7 @@ async def patch_finding(
     finding = await update_finding(db, finding_id, data, user=user)
     if not finding:
         raise HTTPException(status_code=404, detail="Finding not found")
-    return FindingRead.model_validate(finding).to_api_dict()
+    return finding_to_api_dict_with_group_key(finding)
 
 
 @router.post("/{finding_id}/archive")
@@ -221,7 +252,7 @@ async def post_archive_finding(
     finding = await archive_finding(db, finding_id, body.reason, user=user)
     if not finding:
         raise HTTPException(status_code=404, detail="Finding not found")
-    return FindingRead.model_validate(finding).to_api_dict()
+    return finding_to_api_dict_with_group_key(finding)
 
 
 @router.post("/{finding_id}/revert")
@@ -247,7 +278,7 @@ async def post_revert_finding(
             status_code=404,
             detail="Finding not found or no previous status to revert to",
         )
-    return FindingRead.model_validate(finding).to_api_dict()
+    return finding_to_api_dict_with_group_key(finding)
 
 
 @router.post("/{finding_id}/unarchive")
@@ -269,7 +300,7 @@ async def post_unarchive_finding(
     finding = await unarchive_finding(db, finding_id, user=user)
     if not finding:
         raise HTTPException(status_code=404, detail="Finding not found")
-    return FindingRead.model_validate(finding).to_api_dict()
+    return finding_to_api_dict_with_group_key(finding)
 
 
 @router.post("/{finding_id}/override-fingerprint")
@@ -291,7 +322,7 @@ async def post_override_fingerprint(
     finding = await override_fingerprint(db, finding_id, user=user)
     if not finding:
         raise HTTPException(status_code=404, detail="Finding not found")
-    return FindingRead.model_validate(finding).to_api_dict()
+    return finding_to_api_dict_with_group_key(finding)
 
 
 @router.post("/{finding_id}/sync-to-tracker")
@@ -310,3 +341,242 @@ async def post_sync_finding_to_tracker(
     if result["enqueued"]:
         trigger_sync_worker(countdown=1)
     return result
+
+
+@router.get("/{finding_id}/correlations")
+async def get_finding_correlations(
+    finding_id: str,
+    db: AsyncSession = Depends(get_db),
+    ctx: UserContext = Depends(get_current_user_context),
+):
+    """List active, undirected correlation edges for a finding."""
+    finding = await get_finding(db, finding_id)
+    if not finding:
+        raise HTTPException(status_code=404, detail="Finding not found")
+    if ctx.tenant_id and finding.tenant_id and finding.tenant_id != ctx.tenant_id:
+        raise HTTPException(status_code=404, detail="Finding not found")
+
+    edges = await list_active_edges_for_finding(db, finding_id)
+    out = []
+    for e in edges:
+        peer = e.finding_id_b if e.finding_id_a == finding_id else e.finding_id_a
+        out.append(
+            {
+                "edge_id": e.id,
+                "peer_finding_id": peer,
+                "edge_type": e.edge_type,
+                "confidence": e.confidence,
+                "evidence": e.evidence or {},
+                "created_at": e.created_at.isoformat() if e.created_at else None,
+            }
+        )
+    return {"finding_id": finding_id, "count": len(out), "edges": out}
+
+
+@router.post("/{finding_id}/correlations/{peer_finding_id}/remove")
+async def remove_finding_correlation(
+    finding_id: str,
+    peer_finding_id: str,
+    body: CorrelationEdgeActionRequest,
+    db: AsyncSession = Depends(get_db),
+    ctx: UserContext = Depends(require_reviewer),
+):
+    """Soft-deactivate a correlation edge (reversible, non-destructive)."""
+    left = await get_finding(db, finding_id)
+    right = await get_finding(db, peer_finding_id)
+    if not left or not right:
+        raise HTTPException(status_code=404, detail="Finding not found")
+    if ctx.tenant_id and (
+        (left.tenant_id and left.tenant_id != ctx.tenant_id)
+        or (right.tenant_id and right.tenant_id != ctx.tenant_id)
+    ):
+        raise HTTPException(status_code=404, detail="Finding not found")
+
+    actor = ctx.email or ctx.raw_identity or "reviewer"
+    row = await deactivate_edge(
+        db,
+        finding_id_left=finding_id,
+        finding_id_right=peer_finding_id,
+        removed_by=actor,
+        remove_reason=body.reason or "manual uncorrelate",
+    )
+    if row is None:
+        raise HTTPException(status_code=404, detail="Correlation edge not found")
+    await db.commit()
+    return {
+        "deactivated": True,
+        "finding_id": finding_id,
+        "peer_finding_id": peer_finding_id,
+        "operation_id": row.operation_id,
+    }
+
+
+@router.post("/{finding_id}/correlations/{peer_finding_id}/restore")
+async def restore_finding_correlation(
+    finding_id: str,
+    peer_finding_id: str,
+    body: CorrelationEdgeActionRequest,
+    db: AsyncSession = Depends(get_db),
+    ctx: UserContext = Depends(require_reviewer),
+):
+    """Restore a previously deactivated correlation edge."""
+    left = await get_finding(db, finding_id)
+    right = await get_finding(db, peer_finding_id)
+    if not left or not right:
+        raise HTTPException(status_code=404, detail="Finding not found")
+    if ctx.tenant_id and (
+        (left.tenant_id and left.tenant_id != ctx.tenant_id)
+        or (right.tenant_id and right.tenant_id != ctx.tenant_id)
+    ):
+        raise HTTPException(status_code=404, detail="Finding not found")
+    actor = ctx.email or ctx.raw_identity or "reviewer"
+    row = await reactivate_edge(
+        db,
+        finding_id_left=finding_id,
+        finding_id_right=peer_finding_id,
+        reactivated_by=actor,
+    )
+    if row is None:
+        raise HTTPException(status_code=404, detail="Correlation edge not found")
+    await db.commit()
+    return {
+        "restored": True,
+        "finding_id": finding_id,
+        "peer_finding_id": peer_finding_id,
+        "operation_id": row.operation_id,
+        "note": body.reason,
+    }
+
+
+@router.get("/{finding_id}/correlations/history")
+async def get_finding_correlation_history(
+    finding_id: str,
+    db: AsyncSession = Depends(get_db),
+    ctx: UserContext = Depends(get_current_user_context),
+):
+    """List active and inactive correlation edges for audit history."""
+    finding = await get_finding(db, finding_id)
+    if not finding:
+        raise HTTPException(status_code=404, detail="Finding not found")
+    if ctx.tenant_id and finding.tenant_id and finding.tenant_id != ctx.tenant_id:
+        raise HTTPException(status_code=404, detail="Finding not found")
+    edges = await list_edges_for_finding(db, finding_id, include_inactive=True)
+    out = []
+    for e in edges:
+        peer = e.finding_id_b if e.finding_id_a == finding_id else e.finding_id_a
+        out.append(
+            {
+                "edge_id": e.id,
+                "peer_finding_id": peer,
+                "edge_type": e.edge_type,
+                "confidence": e.confidence,
+                "evidence": e.evidence or {},
+                "active": e.active,
+                "operation_id": e.operation_id,
+                "created_by": e.created_by,
+                "created_at": e.created_at.isoformat() if e.created_at else None,
+                "updated_at": e.updated_at.isoformat() if e.updated_at else None,
+                "removed_by": e.removed_by,
+                "removed_at": e.removed_at.isoformat() if e.removed_at else None,
+                "remove_reason": e.remove_reason,
+            }
+        )
+    return {"finding_id": finding_id, "count": len(out), "edges": out}
+
+
+@router.get("/correlations/operations/{operation_id}")
+async def get_correlation_operation_history(
+    operation_id: str,
+    db: AsyncSession = Depends(get_db),
+    ctx: UserContext = Depends(get_current_user_context),
+):
+    """Query correlation-edge history by operation_id for audit workflows."""
+    edges = await list_edges_by_operation_id(db, operation_id)
+    if not edges:
+        return {"operation_id": operation_id, "count": 0, "edges": []}
+
+    out = []
+    for e in edges:
+        left = await get_finding(db, e.finding_id_a)
+        right = await get_finding(db, e.finding_id_b)
+        if ctx.tenant_id:
+            if (left and left.tenant_id and left.tenant_id != ctx.tenant_id) or (
+                right and right.tenant_id and right.tenant_id != ctx.tenant_id
+            ):
+                continue
+        out.append(
+            {
+                "edge_id": e.id,
+                "finding_id_a": e.finding_id_a,
+                "finding_id_b": e.finding_id_b,
+                "edge_type": e.edge_type,
+                "confidence": e.confidence,
+                "evidence": e.evidence or {},
+                "active": e.active,
+                "operation_id": e.operation_id,
+                "created_by": e.created_by,
+                "created_at": e.created_at.isoformat() if e.created_at else None,
+                "updated_at": e.updated_at.isoformat() if e.updated_at else None,
+                "removed_by": e.removed_by,
+                "removed_at": e.removed_at.isoformat() if e.removed_at else None,
+                "remove_reason": e.remove_reason,
+            }
+        )
+    return {"operation_id": operation_id, "count": len(out), "edges": out}
+
+
+@router.post("/crosswalk/runs")
+async def post_crosswalk_run(
+    body: CrosswalkRunRequest,
+    db: AsyncSession = Depends(get_db),
+    ctx: UserContext = Depends(require_admin),
+):
+    actor = ctx.email or ctx.raw_identity
+    run = await ingest_crosswalk_entries(
+        db,
+        source=body.source.strip(),
+        source_version=body.source_version.strip(),
+        entries=[e.model_dump() for e in body.entries],
+        created_by=actor,
+    )
+    await db.commit()
+    return {
+        "run_id": run.id,
+        "source": run.source,
+        "source_version": run.source_version,
+        "status": run.status,
+        "stats": run.stats,
+    }
+
+
+@router.get("/crosswalk/resolve")
+async def get_crosswalk_resolve(
+    from_namespace: str,
+    from_value: str,
+    to_namespace: Optional[str] = None,
+    db: AsyncSession = Depends(get_db),
+    _ctx: UserContext = Depends(require_reviewer),
+):
+    rows = await resolve_crosswalk_values(
+        db,
+        from_namespace=from_namespace,
+        from_value=from_value,
+        to_namespace=to_namespace,
+    )
+    return {
+        "count": len(rows),
+        "mappings": [
+            {
+                "id": r.id,
+                "from_namespace": r.from_namespace,
+                "from_value": r.from_value,
+                "to_namespace": r.to_namespace,
+                "to_value": r.to_value,
+                "confidence": r.confidence,
+                "source": r.source,
+                "source_version": r.source_version,
+                "active": r.active,
+            }
+            for r in rows
+        ],
+    }

@@ -574,7 +574,12 @@ def run_trivy_fs_cyclonedx(
         out_file.unlink(missing_ok=True)
 
 
-def run_trivy_image_cyclonedx(tar_path: Path, timeout: int = 180) -> dict | None:
+def run_trivy_image_cyclonedx(
+    tar_path: Path,
+    timeout: int = 180,
+    *,
+    mode_stats: dict[str, int] | None = None,
+) -> dict | None:
     """Run trivy image --input --format cyclonedx and return JSON SBOM."""
     def _scan_ref(image_ref: str) -> dict | None:
         try:
@@ -605,6 +610,8 @@ def run_trivy_image_cyclonedx(tar_path: Path, timeout: int = 180) -> dict | None
         result = None
     if result and result.returncode == 0 and result.stdout.strip():
         try:
+            if mode_stats is not None:
+                mode_stats["trivy_image_input_ok"] = mode_stats.get("trivy_image_input_ok", 0) + 1
             return json.loads(result.stdout)
         except json.JSONDecodeError:
             pass
@@ -614,12 +621,19 @@ def run_trivy_image_cyclonedx(tar_path: Path, timeout: int = 180) -> dict | None
     if not image_ref:
         return None
     try:
+        if mode_stats is not None:
+            mode_stats["trivy_image_docker_fallback"] = mode_stats.get("trivy_image_docker_fallback", 0) + 1
         return _scan_ref(image_ref)
     finally:
         subprocess.run(["docker", "rmi", image_ref], capture_output=True, timeout=10)
 
 
-def run_trivy_oci_layout_cyclonedx(oci_layout_dir: Path, timeout: int = 180) -> dict | None:
+def run_trivy_oci_layout_cyclonedx(
+    oci_layout_dir: Path,
+    timeout: int = 180,
+    *,
+    mode_stats: dict[str, int] | None = None,
+) -> dict | None:
     """Run trivy image --input on OCI layout in CycloneDX format."""
     def _scan_ref(image_ref: str) -> dict | None:
         try:
@@ -650,6 +664,8 @@ def run_trivy_oci_layout_cyclonedx(oci_layout_dir: Path, timeout: int = 180) -> 
         result = None
     if result and result.returncode == 0 and result.stdout.strip():
         try:
+            if mode_stats is not None:
+                mode_stats["trivy_oci_input_ok"] = mode_stats.get("trivy_oci_input_ok", 0) + 1
             return json.loads(result.stdout)
         except json.JSONDecodeError:
             pass
@@ -659,6 +675,8 @@ def run_trivy_oci_layout_cyclonedx(oci_layout_dir: Path, timeout: int = 180) -> 
     if not _skopeo_copy_oci_to_docker(oci_layout_dir, image_ref, timeout=min(300, timeout)):
         return None
     try:
+        if mode_stats is not None:
+            mode_stats["trivy_oci_skopeo_fallback"] = mode_stats.get("trivy_oci_skopeo_fallback", 0) + 1
         return _scan_ref(image_ref)
     finally:
         subprocess.run(["docker", "rmi", image_ref], capture_output=True, timeout=10)

@@ -31,6 +31,8 @@ export const dashboardParsers = {
   assetTypes: parseAsArrayOf(parseAsString).withDefault([]),
   archived: parseAsBoolean.withDefault(false),
   favorites: parseAsBoolean.withDefault(false),
+  /** When true, include assets with no findings in the list. Default false hides them. */
+  showEmptyAssets: parseAsBoolean.withDefault(false),
   needsJustification: parseAsBoolean.withDefault(false),
   finding: parseAsString.withDefault(""),
 } as const;

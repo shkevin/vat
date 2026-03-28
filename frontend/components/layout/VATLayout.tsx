@@ -44,6 +44,8 @@ interface VATLayoutProps {
   onShowArchivedToggle: () => void;
   onlyFavorites: boolean;
   onOnlyFavoritesToggle: () => void;
+  showEmptyAssets: boolean;
+  onShowEmptyAssetsToggle: () => void;
   needsJustification: boolean;
   onNeedsJustificationToggle: () => void;
   onApply?: () => void;
@@ -74,6 +76,8 @@ export function VATLayout({
   onShowArchivedToggle,
   onlyFavorites,
   onOnlyFavoritesToggle,
+  showEmptyAssets,
+  onShowEmptyAssetsToggle,
   needsJustification,
   onNeedsJustificationToggle,
   alertCount,
@@ -192,6 +196,8 @@ export function VATLayout({
             onShowArchivedToggle={onShowArchivedToggle}
             onlyFavorites={onlyFavorites}
             onOnlyFavoritesToggle={onOnlyFavoritesToggle}
+            showEmptyAssets={showEmptyAssets}
+            onShowEmptyAssetsToggle={onShowEmptyAssetsToggle}
             needsJustification={needsJustification}
             onNeedsJustificationToggle={onNeedsJustificationToggle}
             onApply={onApply}

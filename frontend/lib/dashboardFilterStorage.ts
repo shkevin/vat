@@ -17,6 +17,7 @@ export interface DashboardFilterState {
   assetTypes: string[];
   archived: boolean;
   favorites: boolean;
+  showEmptyAssets: boolean;
   needsJustification: boolean;
 }
 
@@ -48,6 +49,10 @@ export function loadDashboardFiltersFromStorage(): Partial<DashboardFilterState>
         typeof stored.archived === "boolean" ? stored.archived : undefined,
       favorites:
         typeof stored.favorites === "boolean" ? stored.favorites : undefined,
+      showEmptyAssets:
+        typeof stored.showEmptyAssets === "boolean"
+          ? stored.showEmptyAssets
+          : undefined,
       needsJustification:
         typeof stored.needsJustification === "boolean"
           ? stored.needsJustification
@@ -75,6 +80,8 @@ export function saveDashboardFiltersToStorage(
     if (state.assetTypes != null) toStore.assetTypes = state.assetTypes;
     if (state.archived != null) toStore.archived = state.archived;
     if (state.favorites != null) toStore.favorites = state.favorites;
+    if (state.showEmptyAssets != null)
+      toStore.showEmptyAssets = state.showEmptyAssets;
     if (state.needsJustification != null)
       toStore.needsJustification = state.needsJustification;
     localStorage.setItem(STORAGE_KEY, JSON.stringify(toStore));

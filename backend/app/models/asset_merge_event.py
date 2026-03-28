@@ -14,8 +14,12 @@ class AssetMergeEvent(Base):
     __tablename__ = "asset_merge_events"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    source_asset_id: Mapped[str] = mapped_column(String(512), nullable=False, index=True)
-    target_asset_id: Mapped[str] = mapped_column(String(512), nullable=False, index=True)
+    source_asset_id: Mapped[str] = mapped_column(
+        String(512), nullable=False, index=True
+    )
+    target_asset_id: Mapped[str] = mapped_column(
+        String(512), nullable=False, index=True
+    )
     finding_id: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
     prev_values: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
     next_values: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)

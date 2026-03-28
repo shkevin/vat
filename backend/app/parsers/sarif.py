@@ -6,6 +6,7 @@ from app.schemas.ingest import (
     CanonicalFindingPayload,
     CanonicalSeverity,
 )
+from app.schemas.vat import VatFindingType
 from app.parsers.base import IngestParser
 from app.parsers.utils import normalize_snippet
 
@@ -79,6 +80,13 @@ class SarifParser(IngestParser):
         region = phys.get("region", {})
         props = result.get("properties") or {}
 
+        partial_fingerprints: dict[str, str] | None = None
+        raw_pf = result.get("partialFingerprints") or result.get("fingerprints")
+        if isinstance(raw_pf, dict) and raw_pf:
+            partial_fingerprints = {
+                str(k): str(v) for k, v in raw_pf.items() if v is not None
+            }
+
         component = props.get("packageName") or props.get("PackageName")
         version = props.get("installedVersion") or props.get("InstalledVersion")
         if component and version:
@@ -100,9 +108,11 @@ class SarifParser(IngestParser):
                 "cve_id": rule_id,
                 "severity": level,
                 "description": message,
+                "finding_type": VatFindingType.SAST,
                 "component": component or None,
                 "file_path": artifact_uri or None,
                 "line": region.get("startLine"),
+                "rule_id": rule_id,
                 "title": props.get("title")
                 or rule_def.get("shortDescription", {}).get("text")
                 or rule_id,
@@ -110,6 +120,7 @@ class SarifParser(IngestParser):
                 if props.get("security-severity") is not None
                 else None,
                 "snippet_masked": snippet_masked,
+                "partial_fingerprints": partial_fingerprints,
             },
             asset=asset,
         )

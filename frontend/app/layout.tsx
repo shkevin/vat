@@ -3,6 +3,7 @@ import { IBM_Plex_Sans, JetBrains_Mono } from "next/font/google";
 import { NuqsAdapter } from "nuqs/adapters/next/app";
 import "./globals.css";
 import { AuthProvider } from "@/contexts/AuthContext";
+import { VATQueryProvider } from "@/contexts/QueryProvider";
 import { ThemeProvider } from "@/contexts/ThemeContext";
 import { UserPreferencesProvider } from "@/contexts/UserPreferencesContext";
 
@@ -48,9 +49,11 @@ export default function RootLayout({
       <body className={`${ibmPlexSans.className} antialiased`}>
         <NuqsAdapter>
           <AuthProvider>
-            <ThemeProvider>
-              <UserPreferencesProvider>{children}</UserPreferencesProvider>
-            </ThemeProvider>
+            <VATQueryProvider>
+              <ThemeProvider>
+                <UserPreferencesProvider>{children}</UserPreferencesProvider>
+              </ThemeProvider>
+            </VATQueryProvider>
           </AuthProvider>
         </NuqsAdapter>
       </body>

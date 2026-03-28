@@ -3,6 +3,7 @@
 import logging
 import uuid
 from contextlib import asynccontextmanager
+from time import perf_counter
 
 from app.core.config import get_settings
 
@@ -66,6 +67,30 @@ class TraceIdMiddleware(BaseHTTPMiddleware):
         trace_id = request.headers.get("X-Trace-Id") or uuid.uuid4().hex
         request.state.trace_id = trace_id
         return await call_next(request)
+
+
+class RequestObservabilityMiddleware(BaseHTTPMiddleware):
+    """Capture route-level latency and payload metrics for Prometheus."""
+
+    async def dispatch(self, request: Request, call_next):
+        start = perf_counter()
+        response = await call_next(request)
+        elapsed = max(0.0, perf_counter() - start)
+        route_path = getattr(getattr(request, "scope", {}).get("route"), "path", None)
+        route = route_path or request.url.path
+        content_length = response.headers.get("content-length")
+        try:
+            response_bytes = int(content_length) if content_length is not None else 0
+        except ValueError:
+            response_bytes = 0
+        METRICS.record_http_request(
+            route=route,
+            method=request.method,
+            status_code=response.status_code,
+            duration_seconds=elapsed,
+            response_bytes=response_bytes,
+        )
+        return response
 
 
 from app.services.waiver_expiry import enforce_waiver_expiry
@@ -143,6 +168,7 @@ app = FastAPI(
 )
 
 app.add_middleware(TraceIdMiddleware)
+app.add_middleware(RequestObservabilityMiddleware)
 app.add_middleware(SecurityHeadersMiddleware)
 _cors_origins = [o.strip() for o in get_settings().cors_origins.split(",") if o.strip()]
 app.add_middleware(

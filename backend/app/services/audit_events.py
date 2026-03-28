@@ -130,7 +130,7 @@ async def emit_audit_event(
     else:
         METRICS.inc_audit_otel_mirror_failure()
     METRICS.inc_audit_event(event_type)
-    logger.info(
+    logger.debug(
         "audit_event_emitted trace_id=%s event_type=%s source_id=%s parser_id=%s asset_id=%s finding_id=%s decision=%s reason=%s result=%s",
         trace_id,
         event_type,

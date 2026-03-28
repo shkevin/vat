@@ -30,6 +30,7 @@ dependencies = [
 ]
 
 [tool.pytest.ini_options]
+addopts = "--cov=app --cov-report=term-missing"
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "session"
 asyncio_default_test_loop_scope = "session"
@@ -45,4 +46,4 @@ spacy-model = [
 ]
 
 [dependency-groups]
-dev = ["pytest>=7.0", "pytest-asyncio>=0.23.0", "httpx>=0.26.0", "respx>=0.21.0"]
+dev = ["pytest>=7.0", "pytest-asyncio>=0.23.0", "pytest-cov>=4.0", "httpx>=0.26.0", "respx>=0.21.0"]

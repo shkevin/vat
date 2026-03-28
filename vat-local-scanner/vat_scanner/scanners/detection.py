@@ -7,8 +7,10 @@ import re
 import shutil
 import subprocess
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
+
+from vat_scanner.container_digest import compute_container_image_digest
 
 try:
     import yaml
@@ -93,10 +95,24 @@ class ContainerSource:
     format: str  # "docker-save" | "oci-layout"
     label: str  # For asset naming, e.g. "kamiwaza-abc123"
     image_ref: str | None = None  # Best-effort repo/name:tag from source metadata
+    # Deterministic digest from disk (see container_digest); same for all scanners on this source
+    image_digest: str | None = None
 
 
-def _tar_has_wrap_files(archive: Path) -> bool:
-    """Check if tar contains .wrap files (Helm/imgpkg bundle)."""
+def _with_computed_digest(src: ContainerSource) -> ContainerSource:
+    d = compute_container_image_digest(src.path, src.format)
+    return replace(src, image_digest=d)
+
+
+def _tar_listing(archive: Path, cache: dict[tuple[str, int, int], str]) -> str | None:
+    """List tar contents once per unique file stat."""
+    try:
+        stat = archive.stat()
+        key = (str(archive), int(stat.st_size), int(stat.st_mtime_ns))
+    except OSError:
+        return None
+    if key in cache:
+        return cache[key]
     try:
         result = subprocess.run(
             ["tar", "-tf", str(archive)],
@@ -104,31 +120,26 @@ def _tar_has_wrap_files(archive: Path) -> bool:
             text=True,
             timeout=30,
         )
-        if result.returncode != 0:
-            return False
-        return ".wrap" in result.stdout
     except (FileNotFoundError, subprocess.TimeoutExpired):
-        return False
+        return None
+    if result.returncode != 0:
+        return None
+    cache[key] = result.stdout
+    return result.stdout
 
 
-def _tar_is_docker_save(archive: Path) -> bool:
-    """Check if tar is docker save format (manifest.json at root)."""
-    try:
-        result = subprocess.run(
-            ["tar", "-tf", str(archive)],
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-        if result.returncode != 0:
-            return False
-        for line in result.stdout.strip().splitlines():
-            p = line.strip().rstrip("/")
-            if p in ("manifest.json", "./manifest.json"):
-                return True
-        return False
-    except (FileNotFoundError, subprocess.TimeoutExpired):
-        return False
+def _tar_is_docker_save(listing: str) -> bool:
+    """Check if tar listing matches docker save format."""
+    for line in listing.strip().splitlines():
+        p = line.strip().rstrip("/")
+        if p in ("manifest.json", "./manifest.json"):
+            return True
+    return False
+
+
+def _tar_has_wrap_files(listing: str) -> bool:
+    """Check if tar listing contains .wrap files (Helm/imgpkg bundle)."""
+    return ".wrap" in listing
 
 
 def _docker_save_image_ref(archive: Path) -> str | None:
@@ -313,11 +324,13 @@ def _process_wrap_sources(
                 label = f"{wrap_name}-{digest_short}"
         seen_labels.add(label)
         sources.append(
-            ContainerSource(
-                path=layout_dir,
-                format="oci-layout",
-                label=label,
-                image_ref=image_ref,
+            _with_computed_digest(
+                ContainerSource(
+                    path=layout_dir,
+                    format="oci-layout",
+                    label=label,
+                    image_ref=image_ref,
+                )
             )
         )
     return sources
@@ -337,23 +350,30 @@ def collect_container_sources(
     extract_dirs: list[Path] = []
     work = Path(temp_dir) if temp_dir else Path("/tmp")
     work.mkdir(parents=True, exist_ok=True)
+    tar_cache: dict[tuple[str, int, int], str] = {}
 
     for tar_path in folder.rglob("*.tar"):
         if not tar_path.is_file() or len(tar_path.relative_to(folder).parts) > max_depth:
             continue
 
-        if _tar_is_docker_save(tar_path):
+        tar_listing = _tar_listing(tar_path, tar_cache)
+        if not tar_listing:
+            continue
+
+        if _tar_is_docker_save(tar_listing):
             sources.append(
-                ContainerSource(
-                    path=tar_path,
-                    format="docker-save",
-                    label=tar_path.stem,
-                    image_ref=_docker_save_image_ref(tar_path),
+                _with_computed_digest(
+                    ContainerSource(
+                        path=tar_path,
+                        format="docker-save",
+                        label=tar_path.stem,
+                        image_ref=_docker_save_image_ref(tar_path),
+                    )
                 )
             )
             continue
 
-        if not _tar_has_wrap_files(tar_path):
+        if not _tar_has_wrap_files(tar_listing):
             continue
 
         # Wrap bundle: extract and process .wrap files

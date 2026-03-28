@@ -174,16 +174,22 @@ async def import_sbom(
             db.add(sp)
             created += 1
 
-            # Auto-create License finding for Critical/High risk (PRD §5.8.3)
+            # Auto-create License finding for Critical/High risk (PRD §5.8.3).
+            # Scope by component/asset occurrence so package licenses remain tied to
+            # the concrete image/repo where they were observed.
             if risk in ("Critical", "High"):
                 from app.services.dedup import make_fingerprint
 
                 cve_id = f"LICENSE-{license_id or 'unknown'}-{pkg['name']}"
-                fp = make_fingerprint(cve_id, pkg["name"])
+                occurrence_scope = f"{pkg['name']}|{comp or ''}"
+                fp = make_fingerprint(cve_id, occurrence_scope)
                 res = await db.execute(
                     select(Finding).where(Finding.fingerprint_id == fp)
                 )
                 if res.scalar_one_or_none() is None:
+                    title = f"{license_id} license in {pkg['name']}"
+                    if comp:
+                        title = f"{title} ({comp})"
                     finding = Finding(
                         id=f"f-{fp[:8]}",
                         finding_type=FindingType.License,
@@ -194,8 +200,12 @@ async def import_sbom(
                         else Severity.High,
                         status=Status.Open,
                         component=pkg["name"],
-                        title=f"{license_id} license in {pkg['name']}",
-                        description=f"SBOM import detected {risk} risk license {license_id}",
+                        image=comp,
+                        title=title[:512],
+                        description=(
+                            f"SBOM import detected {risk} risk license {license_id}"
+                            + (f" in component {comp}" if comp else "")
+                        ),
                         source=source,
                         sources=[source_entry],
                         audit=[
@@ -211,6 +221,39 @@ async def import_sbom(
 
     await db.commit()
     return created, updated
+
+
+async def import_cyclonedx_sbom_like_ingest(
+    db: AsyncSession,
+    doc: dict,
+    *,
+    source: str,
+    asset_override: str | None = None,
+    source_image_override: str | None = None,
+    tenant_id: Optional[str] = None,
+) -> tuple[int, int]:
+    """
+    Import CycloneDX the same way ``POST /api/ingest`` does when the manual source
+    parser is ``cyclonedx``: ``extract_sbom_from_report("cyclonedx", …)`` then
+    ``import_sbom`` with ``component = source_image_override or asset_override``
+    (same as ``X-VAT-Source-Image`` / ``X-VAT-Asset`` from the local scanner).
+
+    Stamps ``vat:container_ref`` on each component when a composite ref is known,
+    matching ``vat_scanner.scan._apply_cyclonedx_container_ref`` behavior.
+    """
+    from app.services.cyclonedx_identity import stamp_vat_container_ref_on_cyclonedx
+    from app.services.sbom_extract import extract_sbom_from_report
+
+    sbom_component = (source_image_override or asset_override or "").strip() or None
+    stamped = dict(doc) if isinstance(doc, dict) else doc
+    if sbom_component:
+        stamped = stamp_vat_container_ref_on_cyclonedx(stamped, sbom_component)
+    sbom_doc = extract_sbom_from_report("cyclonedx", stamped, source)
+    if not sbom_doc:
+        return 0, 0
+    return await import_sbom(
+        db, sbom_doc, source=source, component=sbom_component, tenant_id=tenant_id
+    )
 
 
 async def list_sbom_packages(

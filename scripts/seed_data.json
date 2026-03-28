@@ -1852,6 +1852,476 @@
       ],
       "created": "2024-06-15",
       "slaDue": "2024-06-29"
+    },
+    {
+      "id": "f-029",
+      "findingType": "CVE",
+      "fingerprintId": "fp-harbor-jf-11-4-2-a",
+      "cveId": "CVE-2024-55301",
+      "title": "[UI demo] JFrog platform: vuln on tag 11.4.2 (digest A)",
+      "severity": "High",
+      "status": "Open",
+      "sources": [
+        {
+          "name": "Harbor-scan",
+          "importedAt": "2025-03-01T12:00:00Z"
+        }
+      ],
+      "source": "Harbor-scan",
+      "component": "jfrog-platform 11.4.2",
+      "image": "registry.demo.io/bigbang/maintained/jfrog-platform:11.4.2",
+      "tag": "11.4.2",
+      "imageDigest": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      "cvss": "7.1",
+      "epss": "0.12",
+      "team": "Platform",
+      "owner": "demo@co.com",
+      "trackerId": "DEMO-029",
+      "controlRef": "",
+      "suppressionScope": null,
+      "attestation": null,
+      "regressionOf": [],
+      "regressionCount": 0,
+      "description": "Demo finding: same image repo as other f-03x rows; distinct digest A.",
+      "justification": "",
+      "compensatingControls": "",
+      "reviewerNote": "",
+      "trackerComment": false,
+      "archived": false,
+      "archivedReason": null,
+      "audit": [
+        {
+          "ts": "2025-03-01T12:00:00Z",
+          "user": "system",
+          "action": "Seeded: multi-tag / multi-digest sample (Harbor-style)",
+          "note": null
+        }
+      ],
+      "created": "2025-03-01",
+      "slaDue": "2025-03-15"
+    },
+    {
+      "id": "f-030",
+      "findingType": "CVE",
+      "fingerprintId": "fp-harbor-jf-11-4-0-b",
+      "cveId": "CVE-2024-55302",
+      "title": "[UI demo] JFrog platform: vuln on tag 11.4.0 (digest B)",
+      "severity": "Medium",
+      "status": "Open",
+      "sources": [
+        {
+          "name": "Harbor-scan",
+          "importedAt": "2025-03-01T12:00:00Z"
+        }
+      ],
+      "source": "Harbor-scan",
+      "component": "jfrog-platform 11.4.0",
+      "image": "registry.demo.io/bigbang/maintained/jfrog-platform:11.4.0",
+      "tag": "11.4.0",
+      "imageDigest": "sha256:1123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      "cvss": "5.5",
+      "epss": "0.08",
+      "team": "Platform",
+      "owner": "demo@co.com",
+      "trackerId": "DEMO-030",
+      "controlRef": "",
+      "suppressionScope": null,
+      "attestation": null,
+      "regressionOf": [],
+      "regressionCount": 0,
+      "description": "Demo finding: digest B (different artifact row than 11.4.2).",
+      "justification": "",
+      "compensatingControls": "",
+      "reviewerNote": "",
+      "trackerComment": false,
+      "archived": false,
+      "archivedReason": null,
+      "audit": [
+        {
+          "ts": "2025-03-01T12:00:00Z",
+          "user": "system",
+          "action": "Seeded: multi-tag / multi-digest sample (Harbor-style)",
+          "note": null
+        }
+      ],
+      "created": "2025-03-01",
+      "slaDue": "2025-03-20"
+    },
+    {
+      "id": "f-031",
+      "findingType": "CVE",
+      "fingerprintId": "fp-harbor-jf-11-3-3-c",
+      "cveId": "CVE-2024-55303",
+      "title": "[UI demo] JFrog platform: vuln on tag 11.3.3 (digest C)",
+      "severity": "Low",
+      "status": "Open",
+      "sources": [
+        {
+          "name": "Harbor-scan",
+          "importedAt": "2025-03-01T12:00:00Z"
+        }
+      ],
+      "source": "Harbor-scan",
+      "component": "jfrog-platform 11.3.3",
+      "image": "registry.demo.io/bigbang/maintained/jfrog-platform:11.3.3",
+      "tag": "11.3.3",
+      "imageDigest": "sha256:2123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      "cvss": "3.1",
+      "epss": "0.02",
+      "team": "Platform",
+      "owner": "demo@co.com",
+      "trackerId": "DEMO-031",
+      "controlRef": "",
+      "suppressionScope": null,
+      "attestation": null,
+      "regressionOf": [],
+      "regressionCount": 0,
+      "description": "Demo finding: digest C.",
+      "justification": "",
+      "compensatingControls": "",
+      "reviewerNote": "",
+      "trackerComment": false,
+      "archived": false,
+      "archivedReason": null,
+      "audit": [
+        {
+          "ts": "2025-03-01T12:00:00Z",
+          "user": "system",
+          "action": "Seeded: multi-tag / multi-digest sample (Harbor-style)",
+          "note": null
+        }
+      ],
+      "created": "2025-03-01",
+      "slaDue": "2025-03-25"
+    },
+    {
+      "id": "f-032",
+      "findingType": "CVE",
+      "fingerprintId": "fp-harbor-jf-latest-a",
+      "cveId": "CVE-2024-55304",
+      "title": "[UI demo] JFrog platform: vuln on tag latest (same digest as 11.4.2)",
+      "severity": "High",
+      "status": "Open",
+      "sources": [
+        {
+          "name": "Harbor-scan",
+          "importedAt": "2025-03-01T12:00:00Z"
+        }
+      ],
+      "source": "Harbor-scan",
+      "component": "jfrog-platform latest",
+      "image": "registry.demo.io/bigbang/maintained/jfrog-platform:latest",
+      "tag": "latest",
+      "imageDigest": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      "cvss": "7.1",
+      "epss": "0.12",
+      "team": "Platform",
+      "owner": "demo@co.com",
+      "trackerId": "DEMO-032",
+      "controlRef": "",
+      "suppressionScope": null,
+      "attestation": null,
+      "regressionOf": [],
+      "regressionCount": 0,
+      "description": "Demo: latest points to same digest as 11.4.2 (multi-tag, one digest).",
+      "justification": "",
+      "compensatingControls": "",
+      "reviewerNote": "",
+      "trackerComment": false,
+      "archived": false,
+      "archivedReason": null,
+      "audit": [
+        {
+          "ts": "2025-03-01T12:00:00Z",
+          "user": "system",
+          "action": "Seeded: multi-tag / multi-digest sample (Harbor-style)",
+          "note": null
+        }
+      ],
+      "created": "2025-03-01",
+      "slaDue": "2025-03-15"
+    },
+    {
+      "id": "f-033",
+      "findingType": "CVE",
+      "fingerprintId": "fp-harbor-jf-11-4-2-dup",
+      "cveId": "CVE-2024-55305",
+      "title": "[UI demo] JFrog platform: second CVE on tag 11.4.2 (same digest A)",
+      "severity": "Medium",
+      "status": "Open",
+      "sources": [
+        {
+          "name": "Harbor-scan",
+          "importedAt": "2025-03-01T12:00:00Z"
+        }
+      ],
+      "source": "Harbor-scan",
+      "component": "jfrog-platform 11.4.2",
+      "image": "registry.demo.io/bigbang/maintained/jfrog-platform:11.4.2",
+      "tag": "11.4.2",
+      "imageDigest": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      "cvss": "6.2",
+      "epss": "0.09",
+      "team": "Platform",
+      "owner": "demo@co.com",
+      "trackerId": "DEMO-033",
+      "controlRef": "",
+      "suppressionScope": null,
+      "attestation": null,
+      "regressionOf": [],
+      "regressionCount": 0,
+      "description": "Demo: second finding for same tag/digest pair.",
+      "justification": "",
+      "compensatingControls": "",
+      "reviewerNote": "",
+      "trackerComment": false,
+      "archived": false,
+      "archivedReason": null,
+      "audit": [
+        {
+          "ts": "2025-03-01T12:00:00Z",
+          "user": "system",
+          "action": "Seeded: multi-tag / multi-digest sample (Harbor-style)",
+          "note": null
+        }
+      ],
+      "created": "2025-03-01",
+      "slaDue": "2025-03-18"
+    },
+    {
+      "id": "f-034",
+      "findingType": "CVE",
+      "fingerprintId": "fp-ui-demo-vat-api-v1",
+      "cveId": "CVE-2025-90001",
+      "title": "[UI demo] VAT demo API: OpenSSL on v1.0.0 (digest 1)",
+      "severity": "High",
+      "status": "Open",
+      "sources": [
+        {
+          "name": "seed",
+          "importedAt": "2025-03-15T10:00:00Z"
+        }
+      ],
+      "source": "seed",
+      "component": "openssl 3.0.12",
+      "image": "registry.demo.io/compliance/vat-demo-api:v1.0.0",
+      "tag": "v1.0.0",
+      "imageDigest": "sha256:3123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      "cvss": "7.5",
+      "epss": "0.2",
+      "team": "Compliance",
+      "owner": "demo@co.com",
+      "trackerId": "DEMO-034",
+      "controlRef": "",
+      "suppressionScope": null,
+      "attestation": null,
+      "regressionOf": [],
+      "regressionCount": 0,
+      "description": "UI demo: five tags / four digests — use Assets table Tags column and asset page variant filter.",
+      "justification": "",
+      "compensatingControls": "",
+      "reviewerNote": "",
+      "trackerComment": false,
+      "archived": false,
+      "archivedReason": null,
+      "audit": [
+        {
+          "ts": "2025-03-15T10:00:00Z",
+          "user": "system",
+          "action": "UI demo seed",
+          "note": null
+        }
+      ],
+      "created": "2025-03-15",
+      "slaDue": "2025-04-01"
+    },
+    {
+      "id": "f-035",
+      "findingType": "CVE",
+      "fingerprintId": "fp-ui-demo-vat-api-v11",
+      "cveId": "CVE-2025-90002",
+      "title": "[UI demo] VAT demo API: curl on v1.1.0 (digest 2)",
+      "severity": "Medium",
+      "status": "Open",
+      "sources": [
+        {
+          "name": "seed",
+          "importedAt": "2025-03-15T10:00:00Z"
+        }
+      ],
+      "source": "seed",
+      "component": "curl 8.5.0",
+      "image": "registry.demo.io/compliance/vat-demo-api:v1.1.0",
+      "tag": "v1.1.0",
+      "imageDigest": "sha256:4123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      "cvss": "6.5",
+      "epss": "0.1",
+      "team": "Compliance",
+      "owner": "demo@co.com",
+      "trackerId": "DEMO-035",
+      "controlRef": "",
+      "suppressionScope": null,
+      "attestation": null,
+      "regressionOf": [],
+      "regressionCount": 0,
+      "description": "UI demo: second digest for same repo.",
+      "justification": "",
+      "compensatingControls": "",
+      "reviewerNote": "",
+      "trackerComment": false,
+      "archived": false,
+      "archivedReason": null,
+      "audit": [
+        {
+          "ts": "2025-03-15T10:00:00Z",
+          "user": "system",
+          "action": "UI demo seed",
+          "note": null
+        }
+      ],
+      "created": "2025-03-15",
+      "slaDue": "2025-04-05"
+    },
+    {
+      "id": "f-036",
+      "findingType": "CVE",
+      "fingerprintId": "fp-ui-demo-vat-api-v2",
+      "cveId": "CVE-2025-90003",
+      "title": "[UI demo] VAT demo API: zlib on v2.0.0 (digest 3)",
+      "severity": "Low",
+      "status": "Open",
+      "sources": [
+        {
+          "name": "seed",
+          "importedAt": "2025-03-15T10:00:00Z"
+        }
+      ],
+      "source": "seed",
+      "component": "zlib 1.3",
+      "image": "registry.demo.io/compliance/vat-demo-api:v2.0.0",
+      "tag": "v2.0.0",
+      "imageDigest": "sha256:5123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      "cvss": "3.3",
+      "epss": "0.04",
+      "team": "Compliance",
+      "owner": "demo@co.com",
+      "trackerId": "DEMO-036",
+      "controlRef": "",
+      "suppressionScope": null,
+      "attestation": null,
+      "regressionOf": [],
+      "regressionCount": 0,
+      "description": "UI demo: third digest.",
+      "justification": "",
+      "compensatingControls": "",
+      "reviewerNote": "",
+      "trackerComment": false,
+      "archived": false,
+      "archivedReason": null,
+      "audit": [
+        {
+          "ts": "2025-03-15T10:00:00Z",
+          "user": "system",
+          "action": "UI demo seed",
+          "note": null
+        }
+      ],
+      "created": "2025-03-15",
+      "slaDue": "2025-04-10"
+    },
+    {
+      "id": "f-037",
+      "findingType": "CVE",
+      "fingerprintId": "fp-ui-demo-vat-api-edge",
+      "cveId": "CVE-2025-90004",
+      "title": "[UI demo] VAT demo API: busybox on edge (digest 4)",
+      "severity": "Critical",
+      "status": "Open",
+      "sources": [
+        {
+          "name": "seed",
+          "importedAt": "2025-03-15T10:00:00Z"
+        }
+      ],
+      "source": "seed",
+      "component": "busybox 1.36",
+      "image": "registry.demo.io/compliance/vat-demo-api:edge",
+      "tag": "edge",
+      "imageDigest": "sha256:6123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      "cvss": "9.1",
+      "epss": "0.5",
+      "team": "Compliance",
+      "owner": "demo@co.com",
+      "trackerId": "DEMO-037",
+      "controlRef": "",
+      "suppressionScope": null,
+      "attestation": null,
+      "regressionOf": [],
+      "regressionCount": 0,
+      "description": "UI demo: fourth digest; try variant filter default vs All image variants.",
+      "justification": "",
+      "compensatingControls": "",
+      "reviewerNote": "",
+      "trackerComment": false,
+      "archived": false,
+      "archivedReason": null,
+      "audit": [
+        {
+          "ts": "2025-03-15T10:00:00Z",
+          "user": "system",
+          "action": "UI demo seed",
+          "note": null
+        }
+      ],
+      "created": "2025-03-15",
+      "slaDue": "2025-03-25"
+    },
+    {
+      "id": "f-038",
+      "findingType": "CVE",
+      "fingerprintId": "fp-ui-demo-vat-api-stable",
+      "cveId": "CVE-2025-90005",
+      "title": "[UI demo] VAT demo API: jq on stable (same digest as v2.0.0)",
+      "severity": "Medium",
+      "status": "Open",
+      "sources": [
+        {
+          "name": "seed",
+          "importedAt": "2025-03-15T10:00:00Z"
+        }
+      ],
+      "source": "seed",
+      "component": "jq 1.7",
+      "image": "registry.demo.io/compliance/vat-demo-api:stable",
+      "tag": "stable",
+      "imageDigest": "sha256:5123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      "cvss": "5.0",
+      "epss": "0.07",
+      "team": "Compliance",
+      "owner": "demo@co.com",
+      "trackerId": "DEMO-038",
+      "controlRef": "",
+      "suppressionScope": null,
+      "attestation": null,
+      "regressionOf": [],
+      "regressionCount": 0,
+      "description": "UI demo: stable and v2.0.0 share digest — multi-tag single artifact.",
+      "justification": "",
+      "compensatingControls": "",
+      "reviewerNote": "",
+      "trackerComment": false,
+      "archived": false,
+      "archivedReason": null,
+      "audit": [
+        {
+          "ts": "2025-03-15T10:00:00Z",
+          "user": "system",
+          "action": "UI demo seed",
+          "note": null
+        }
+      ],
+      "created": "2025-03-15",
+      "slaDue": "2025-04-08"
     }
   ],
   "sbom": [

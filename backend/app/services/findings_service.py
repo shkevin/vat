@@ -121,6 +121,7 @@ async def list_findings(
     search: Optional[str] = None,
     search_fields: Optional[str] = None,
     limit: int = 0,  # 0 = no limit
+    offset: int = 0,
 ) -> list[Finding]:
     """List findings with optional filters."""
     q = select(Finding)
@@ -194,6 +195,8 @@ async def list_findings(
         if clauses:
             q = q.where(or_(*clauses))
     q = q.order_by(Finding.created_at.desc())
+    if offset > 0:
+        q = q.offset(offset)
     if limit > 0:
         q = q.limit(limit)
     result = await db.execute(q)
@@ -578,6 +581,8 @@ async def create_findings_bulk(
             component_base=item.get("componentBase"),
             component=item.get("component"),
             image=item.get("image"),
+            tag=item.get("tag"),
+            image_digest=item.get("imageDigest") or item.get("image_digest"),
             title=item.get("title"),
             description=item.get("description"),
             source=item.get("source"),

@@ -70,6 +70,7 @@ export function MainAppShell({ config, children }: MainAppShellProps) {
       assetTypes: s.assetTypes ?? [],
       archived: s.archived,
       favorites: s.favorites,
+      showEmptyAssets: s.showEmptyAssets,
       needsJustification: s.needsJustification,
     });
     if (lastUrlStateRef.current === urlKey) return;
@@ -112,6 +113,8 @@ export function MainAppShell({ config, children }: MainAppShellProps) {
     }
     if (s.archived !== d.showArchived) d.setShowArchived(s.archived);
     if (s.favorites !== d.onlyFavorites) d.setOnlyFavorites(s.favorites);
+    if (s.showEmptyAssets !== d.showEmptyAssets)
+      d.setShowEmptyAssets(s.showEmptyAssets);
     if (s.needsJustification !== d.needsJustification)
       d.setNeedsJustification(s.needsJustification);
   }, [isAssetPage, dashboardState, data.loading]);
@@ -131,8 +134,9 @@ export function MainAppShell({ config, children }: MainAppShellProps) {
       oraMin: data.filterORARange[0],
       oraMax: data.filterORARange[1],
       assetTypes: [...data.filterAssetTypes],
-      archived: data.showArchived,
+      archived: data.showArchived === true,
       favorites: data.onlyFavorites,
+      showEmptyAssets: data.showEmptyAssets,
       needsJustification: data.needsJustification,
     });
   }, [
@@ -146,6 +150,7 @@ export function MainAppShell({ config, children }: MainAppShellProps) {
     data.filterAssetTypes,
     data.showArchived,
     data.onlyFavorites,
+    data.showEmptyAssets,
     data.needsJustification,
   ]);
 
@@ -196,6 +201,7 @@ export function MainAppShell({ config, children }: MainAppShellProps) {
           params.set("assetTypes", stored.assetTypes.join(","));
         if (stored?.archived) params.set("archived", "true");
         if (stored?.favorites) params.set("favorites", "true");
+        if (stored?.showEmptyAssets) params.set("showEmptyAssets", "true");
         if (stored?.needsJustification)
           params.set("needsJustification", "true");
         router.push(`/?${params.toString()}`);
@@ -210,7 +216,7 @@ export function MainAppShell({ config, children }: MainAppShellProps) {
   );
 
   const tabs = [
-    { id: "findings", label: "Findings" },
+    { id: "findings", label: "Assets" },
     { id: "review", label: "Review", badge: data.inRev },
     { id: "report", label: "Report" },
     { id: "dash", label: "Metrics" },

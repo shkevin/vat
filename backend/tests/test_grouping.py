@@ -1,11 +1,16 @@
 """Tests for grouping service."""
 
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 
 
 from app.models.finding import Finding, FindingType, Severity, Status
-from app.services.grouping import get_finding_group_key, normalize_package_name
+from app.services.grouping import (
+    finding_to_api_dict_with_group_key,
+    get_finding_group_key,
+    normalize_package_name,
+)
 
 
 def _mk_finding(
@@ -617,7 +622,7 @@ def test_asset_empty_produces_double_pipe():
 
 
 def test_asset_image_only():
-    """Asset: image set, branch/tag empty."""
+    """Asset: image set, branch/tag empty — container refs canonicalize (library path)."""
     f = _mk_finding(
         id="f-1",
         component="pkg 1.0",
@@ -625,7 +630,7 @@ def test_asset_image_only():
         ecosystem="npm",
         image="api-server:latest",
     )
-    assert get_finding_group_key(f).endswith("#api-server:latest||")
+    assert get_finding_group_key(f).endswith("#docker.io/library/api-server||")
 
 
 def test_asset_branch_only():
@@ -681,6 +686,30 @@ def test_asset_case_normalized():
         branch="main",
     )
     assert get_finding_group_key(f1) == get_finding_group_key(f2)
+
+
+def test_sca_same_package_same_tag_container_image_spelling_invariant():
+    """SCA: docker.io vs path-only image for same repo + tag → same groupKey suffix."""
+    f1 = _mk_finding(
+        id="f-1",
+        component="openssl 3.0",
+        component_base="openssl",
+        ecosystem="debian",
+        image="docker.io/containers/images/kafka",
+        tag="3.6.1-debian-12-r12",
+    )
+    f2 = _mk_finding(
+        id="f-2",
+        component="openssl 3.0",
+        component_base="openssl",
+        ecosystem="debian",
+        image="containers/images/kafka",
+        tag="3.6.1-debian-12-r12",
+    )
+    assert get_finding_group_key(f1) == get_finding_group_key(f2)
+    assert get_finding_group_key(f1) == (
+        "sca:debian|openssl#docker.io/containers/images/kafka||3.6.1-debian-12-r12"
+    )
 
 
 def test_asset_different_tag_same_package_different_groups():
@@ -845,6 +874,7 @@ def test_group_key_fixture_parity():
     """
     fixture_path = Path(__file__).parent / "fixtures" / "grouping_keys.json"
     data = json.loads(fixture_path.read_text())
+    _ts = datetime(2024, 1, 1, tzinfo=timezone.utc)
     for item in data["fixtures"]:
         f = Finding(
             id=item["id"],
@@ -856,6 +886,8 @@ def test_group_key_fixture_parity():
             component=item.get("component"),
             component_base=item.get("componentBase"),
             title=item.get("title"),
+            created_at=_ts,
+            updated_at=_ts,
         )
         if item.get("ecosystem") is not None:
             f.ecosystem = item["ecosystem"]
@@ -865,7 +897,22 @@ def test_group_key_fixture_parity():
             f.cwe_id = item["cweId"]
         if item.get("secretType") is not None:
             f.secret_type = item["secretType"]
+        if item.get("image") is not None:
+            f.image = item["image"]
+        if item.get("branch") is not None:
+            f.branch = item["branch"]
+        if item.get("tag") is not None:
+            f.tag = item["tag"]
+        # Defaults so FindingRead.model_validate (used by finding_to_api_dict_with_group_key) succeeds
+        f.tracker_comment = False
+        f.sources = []
+        f.audit = []
+        f.external_links = []
+        f.regression_count = 0
+        f.archived = False
         key = get_finding_group_key(f)
         assert (
             key == item["expectedKey"]
         ), f"Fixture {item['id']}: got {key}, expected {item['expectedKey']}"
+        api = finding_to_api_dict_with_group_key(f)
+        assert api["groupKey"] == key

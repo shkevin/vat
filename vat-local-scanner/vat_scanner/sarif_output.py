@@ -2,10 +2,28 @@
 
 from __future__ import annotations
 
+import hashlib
 from typing import Any
 
 SARIF_SCHEMA = "https://json.schemastore.org/sarif-2.1.0.json"
 SEVERITY_TO_LEVEL = {"critical": "error", "high": "error", "medium": "warning", "low": "note", "unknown": "note"}
+
+
+def partial_fingerprints_for_static_result(
+    rule_id: str, artifact_uri: str, start_line: int | None
+) -> dict[str, str]:
+    """
+    Emit SARIF partialFingerprints aligned with VAT backend resolution (primaryLocationLineHash/v1
+    first; see backend ``app/services/sarif_fingerprints.py``). Stable across runs for the same
+    rule + path + line so exported SARIF can be re-ingested with parser ``sarif`` without
+    identity drift.
+    """
+    u = (artifact_uri or "").strip().replace("\\", "/").lower()
+    line = int(start_line) if start_line is not None else 1
+    rid = (rule_id or "").strip()
+    material = f"{rid}|{u}|{line}"
+    fp_val = hashlib.sha256(material.encode("utf-8")).hexdigest()
+    return {"primaryLocationLineHash/v1": fp_val}
 
 
 def _level(sev: str) -> str:
@@ -44,6 +62,7 @@ def _trivy_to_sarif_results(report: dict, asset_name: str) -> tuple[list[dict], 
                         "region": {"startLine": 1},
                     }
                 }],
+                "partialFingerprints": partial_fingerprints_for_static_result(rid, target, 1),
                 "properties": {
                     "packageName": pkg,
                     "installedVersion": ver,
@@ -59,6 +78,7 @@ def _trivy_to_sarif_results(report: dict, asset_name: str) -> tuple[list[dict], 
             if isinstance(desc, dict):
                 desc = desc.get("text", str(desc))
             rules[rid] = {"id": rid, "shortDescription": {"text": str(desc)[:200]}}
+            mis_line = mis.get("StartLine") or mis.get("startLine") or 1
             sarif_results.append({
                 "ruleId": rid,
                 "message": {"text": str(desc)[:1000]},
@@ -66,15 +86,17 @@ def _trivy_to_sarif_results(report: dict, asset_name: str) -> tuple[list[dict], 
                 "locations": [{
                     "physicalLocation": {
                         "artifactLocation": {"uri": target},
-                        "region": {"startLine": mis.get("StartLine") or mis.get("startLine") or 1},
+                        "region": {"startLine": mis_line},
                     }
                 }],
+                "partialFingerprints": partial_fingerprints_for_static_result(rid, target, mis_line),
             })
         for sec in r.get("Secrets") or r.get("secrets") or []:
             if not isinstance(sec, dict):
                 continue
             rid = sec.get("RuleID") or sec.get("ruleID") or "trivy-secret"
             rules[rid] = {"id": rid, "shortDescription": {"text": "Secret detected"}}
+            sec_line = sec.get("StartLine") or 1
             sarif_results.append({
                 "ruleId": rid,
                 "message": {"text": sec.get("Title") or "Secret detected"},
@@ -82,9 +104,10 @@ def _trivy_to_sarif_results(report: dict, asset_name: str) -> tuple[list[dict], 
                 "locations": [{
                     "physicalLocation": {
                         "artifactLocation": {"uri": target},
-                        "region": {"startLine": sec.get("StartLine") or 1},
+                        "region": {"startLine": sec_line},
                     }
                 }],
+                "partialFingerprints": partial_fingerprints_for_static_result(rid, target, sec_line),
             })
 
     raw_rules = list(rules.values())
@@ -118,6 +141,7 @@ def _grype_to_sarif_results(report: dict, asset_name: str) -> tuple[list[dict], 
                     "region": {"startLine": 1},
                 }
             }],
+            "partialFingerprints": partial_fingerprints_for_static_result(rid, uri, 1),
             "properties": {"packageName": pkg, "installedVersion": ver},
         })
     return results, list(rules.values())
@@ -147,6 +171,7 @@ def _npm_to_sarif_results(report: dict, asset_name: str) -> tuple[list[dict], li
                     "region": {"startLine": 1},
                 }
             }],
+            "partialFingerprints": partial_fingerprints_for_static_result(rid, "package.json", 1),
             "properties": {"packageName": pkg_name},
         })
     return results, list(rules.values())
@@ -177,6 +202,7 @@ def _pip_to_sarif_results(report: dict | list, asset_name: str) -> tuple[list[di
                         "region": {"startLine": 1},
                     }
                 }],
+                "partialFingerprints": partial_fingerprints_for_static_result(rid, "requirements.txt", 1),
                 "properties": {"packageName": pkg},
             })
     return results, list(rules.values())
@@ -206,6 +232,7 @@ def _semgrep_to_sarif_results(report: dict, asset_name: str) -> tuple[list[dict]
                     "region": {"startLine": start},
                 }
             }],
+            "partialFingerprints": partial_fingerprints_for_static_result(rid, path, start),
         })
     return results, list(rules.values())
 
@@ -233,6 +260,7 @@ def _gitleaks_to_sarif_results(report: dict | list, asset_name: str) -> tuple[li
                     "region": {"startLine": line},
                 }
             }],
+            "partialFingerprints": partial_fingerprints_for_static_result(rid, path, line),
         })
     return results, list(rules.values())
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { useVATData } from "@/contexts/VATDataContext";
@@ -62,6 +62,7 @@ import { getGroupedFindings } from "@/lib/findingGroupUtils";
 import { SEV_ORDER } from "@/lib/constants";
 import { daysLeft } from "@/lib/utils";
 import { mono, sans } from "@/lib/styles";
+import { fetchAssetMergeSuggestions } from "@/lib/api";
 import type { AppConfig } from "@/config/app";
 
 interface VATProps {
@@ -81,12 +82,29 @@ export default function VAT({ config }: VATProps) {
   const router = useRouter();
   const pathname = usePathname();
   const data = useVATData();
-  const { user } = useAuth();
+  const { user, token } = useAuth();
   const { preferences } = useUserPreferences();
   const readOnly = user?.role === "read_only";
   const isAdmin = user?.role === "admin";
+  const canReviewAssets = user?.role === "admin" || user?.role === "reviewer";
   const groupFindings = preferences.groupFindings ?? true;
   const [dashboardState, setDashboardState] = useDashboardFilters();
+  const [mergeReviewItems, setMergeReviewItems] = useState<
+    Array<{
+      assetId: string;
+      count: number;
+      topTargetAssetId: string;
+      topStrategy:
+        | "digest"
+        | "exact_ref"
+        | "sbom_similarity"
+        | "name_heuristic";
+      topScore: number;
+      topConfidence: "high" | "medium" | "low";
+    }>
+  >([]);
+  const [mergeReviewLoading, setMergeReviewLoading] = useState(false);
+  const [mergeReviewError, setMergeReviewError] = useState<string | null>(null);
 
   const {
     loading,
@@ -131,6 +149,7 @@ export default function VAT({ config }: VATProps) {
     setShowArchived,
     onlyFavorites,
     setOnlyFavorites,
+    showEmptyAssets,
     needsJustification,
     setNeedsJustification,
     searchFields,
@@ -175,7 +194,7 @@ export default function VAT({ config }: VATProps) {
         return d !== null && d < 0;
       });
     const hasWaiverExpiring = (
-      fs: { attestation?: { expiresAt?: string } }[],
+      fs: { attestation?: { expiresAt?: string } | null }[],
     ) =>
       fs.some((f) => {
         const d = daysLeft(f.attestation?.expiresAt);
@@ -238,15 +257,109 @@ export default function VAT({ config }: VATProps) {
   }, [view, setView]);
 
   const tabs = [
-    { id: "findings", label: "Findings" },
+    { id: "findings", label: "Assets" },
     { id: "review", label: "Review", badge: inRev },
     { id: "report", label: "Report" },
     { id: "dash", label: "Metrics" },
     { id: "settings", label: "Settings" },
   ];
 
+  const strategyLabel: Record<
+    "digest" | "exact_ref" | "sbom_similarity" | "name_heuristic",
+    string
+  > = {
+    digest: "Digest",
+    exact_ref: "Exact image/ref",
+    sbom_similarity: "SBOM similarity",
+    name_heuristic: "Name heuristic",
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadMergeReviewItems() {
+      if (view !== "review" || !canReviewAssets) {
+        setMergeReviewItems([]);
+        setMergeReviewError(null);
+        return;
+      }
+      const candidateIds = reportAssets
+        .filter((a) => {
+          const id = (a.id || "").trim();
+          return id.includes("/images/") || id.startsWith("containers");
+        })
+        .sort((a, b) => (b.openCount ?? 0) - (a.openCount ?? 0))
+        .map((a) => (a.id || "").trim())
+        .filter(Boolean)
+        .slice(0, 40);
+      if (candidateIds.length === 0) {
+        setMergeReviewItems([]);
+        setMergeReviewError(null);
+        return;
+      }
+      setMergeReviewLoading(true);
+      setMergeReviewError(null);
+      try {
+        const auth = { token: token ?? undefined, userEmail: user?.email };
+        const responses = await Promise.all(
+          candidateIds.map(async (assetId) => {
+            try {
+              return await fetchAssetMergeSuggestions(assetId, auth, 1);
+            } catch {
+              return null;
+            }
+          }),
+        );
+        if (cancelled) return;
+        const rows = responses
+          .filter(
+            (
+              r,
+            ): r is {
+              source_asset_id: string;
+              count: number;
+              suggestions: Array<{
+                source_asset_id: string;
+                target_asset_id: string;
+                strategy:
+                  | "digest"
+                  | "exact_ref"
+                  | "sbom_similarity"
+                  | "name_heuristic";
+                score: number;
+                confidence: "high" | "medium" | "low";
+              }>;
+            } => Boolean(r && (r.suggestions?.length ?? 0) > 0),
+          )
+          .map((r) => ({
+            assetId: r.source_asset_id,
+            count: r.count,
+            topTargetAssetId: r.suggestions[0].target_asset_id,
+            topStrategy: r.suggestions[0].strategy,
+            topScore: r.suggestions[0].score,
+            topConfidence: r.suggestions[0].confidence,
+          }))
+          .sort((a, b) => b.count - a.count || b.topScore - a.topScore)
+          .slice(0, 25);
+        setMergeReviewItems(rows);
+      } catch (err) {
+        if (cancelled) return;
+        setMergeReviewError(
+          err instanceof Error
+            ? err.message
+            : "Failed to load asset merge reviews",
+        );
+      } finally {
+        if (!cancelled) setMergeReviewLoading(false);
+      }
+    }
+    void loadMergeReviewItems();
+    return () => {
+      cancelled = true;
+    };
+  }, [view, canReviewAssets, reportAssets, token, user?.email]);
+
   const mainContent = (() => {
-    if (loading && !error) {
+    if (loading && !error && findings.length === 0) {
       return (
         <div
           style={{
@@ -323,7 +436,7 @@ export default function VAT({ config }: VATProps) {
           sources={sources}
           selected={selected}
           checked={checked}
-          showArchived={showArchived}
+          showArchived={showArchived === true}
           archivedCount={archivedCount}
           total={totalAssets}
           filterAssetTypes={filterAssetTypes}
@@ -343,12 +456,123 @@ export default function VAT({ config }: VATProps) {
 
     if (view === "review") {
       return (
-        <ReviewQueue
-          reviewQueue={reviewQueue}
-          sources={sources}
-          tracker={tracker}
-          onSelect={setSelected}
-        />
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          {canReviewAssets && (
+            <section
+              style={{
+                background: "var(--app-card-bg)",
+                border: "1px solid var(--app-border)",
+                borderRadius: 6,
+                padding: "12px 14px",
+              }}
+            >
+              <div
+                style={{
+                  ...mono,
+                  fontSize: 10,
+                  fontWeight: 700,
+                  letterSpacing: "0.12em",
+                  textTransform: "uppercase",
+                  color: "var(--app-muted)",
+                  marginBottom: 6,
+                }}
+              >
+                Asset Merge Review Queue
+              </div>
+              {mergeReviewError && (
+                <div
+                  style={{ ...sans, fontSize: 12, color: "var(--app-danger)" }}
+                >
+                  {mergeReviewError}
+                </div>
+              )}
+              {mergeReviewLoading && !mergeReviewError && (
+                <div
+                  style={{ ...sans, fontSize: 12, color: "var(--app-muted)" }}
+                >
+                  Loading merge review items…
+                </div>
+              )}
+              {!mergeReviewLoading &&
+                !mergeReviewError &&
+                mergeReviewItems.length === 0 && (
+                  <div
+                    style={{ ...sans, fontSize: 12, color: "var(--app-muted)" }}
+                  >
+                    No pending asset merge suggestions.
+                  </div>
+                )}
+              {mergeReviewItems.length > 0 && (
+                <div
+                  style={{ display: "flex", flexDirection: "column", gap: 8 }}
+                >
+                  {mergeReviewItems.map((item) => (
+                    <div
+                      key={item.assetId}
+                      style={{
+                        border: "1px solid var(--app-border)",
+                        borderRadius: 6,
+                        padding: "9px 10px",
+                        background: "var(--app-input-bg)",
+                        display: "flex",
+                        justifyContent: "space-between",
+                        gap: 12,
+                        alignItems: "center",
+                      }}
+                    >
+                      <div style={{ minWidth: 260, flex: 1 }}>
+                        <div
+                          style={{
+                            ...mono,
+                            fontSize: 12,
+                            color: "var(--app-fg)",
+                          }}
+                        >
+                          {item.assetId}
+                        </div>
+                        <div
+                          style={{
+                            ...mono,
+                            fontSize: 10,
+                            color: "var(--app-muted)",
+                          }}
+                        >
+                          {item.count} suggestion{item.count !== 1 ? "s" : ""} ·{" "}
+                          {strategyLabel[item.topStrategy]} · confidence{" "}
+                          {item.topConfidence} · score{" "}
+                          {item.topScore.toFixed(2)}
+                        </div>
+                      </div>
+                      <a
+                        href={`/assets/${encodeURIComponent(
+                          item.assetId,
+                        )}?tab=review`}
+                        style={{
+                          ...mono,
+                          fontSize: 11,
+                          color: "var(--app-accent)",
+                          textDecoration: "none",
+                          border: "1px solid var(--app-border)",
+                          borderRadius: 6,
+                          padding: "6px 8px",
+                        }}
+                        title={`Top target: ${item.topTargetAssetId}`}
+                      >
+                        Open asset review
+                      </a>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+          )}
+          <ReviewQueue
+            reviewQueue={reviewQueue}
+            sources={sources}
+            tracker={tracker}
+            onSelect={setSelected}
+          />
+        </div>
       );
     }
 
@@ -402,13 +626,19 @@ export default function VAT({ config }: VATProps) {
         onFilterVerifiedRangeChange={handleFilterVerifiedRangeChange}
         filterORARange={filterORARange}
         onFilterORARangeChange={handleFilterORARangeChange}
-        showArchived={showArchived}
+        showArchived={showArchived === true}
         onShowArchivedToggle={() =>
           setDashboardState({ archived: !dashboardState.archived })
         }
         onlyFavorites={onlyFavorites}
         onOnlyFavoritesToggle={() =>
           setDashboardState({ favorites: !dashboardState.favorites })
+        }
+        showEmptyAssets={showEmptyAssets}
+        onShowEmptyAssetsToggle={() =>
+          setDashboardState({
+            showEmptyAssets: !dashboardState.showEmptyAssets,
+          })
         }
         needsJustification={needsJustification}
         onNeedsJustificationToggle={() =>

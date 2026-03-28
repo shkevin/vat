@@ -31,6 +31,7 @@ from app.adapters.aikido import (
 from app.services.sync_service import sync_aikido_tracker_links
 from app.models.settings_model import SettingsKV
 from app.services.aikido_export import export_aikido_sync_to_excel
+from app.services.aikido_container_sbom_sync import sync_aikido_container_sboms
 
 logger = logging.getLogger(__name__)
 
@@ -276,7 +277,7 @@ async def sync_aikido_dashboard(
     repo_id_to_name: optional {code_repo_id: name} when repo_map provided; avoids extra repos fetch.
     repos_override, containers_override: when provided (e.g. from full sync), use instead of fetching.
     """
-    total_steps = 12
+    total_steps = 13
     step_num = 0
 
     _progress(on_progress, step_num := step_num + 1, total_steps, "Issues")
@@ -329,6 +330,17 @@ async def sync_aikido_dashboard(
         containers = containers_override
     else:
         containers = await fetch_aikido_containers(credentials=creds)
+
+    _progress(on_progress, step_num := step_num + 1, total_steps, "Container SBOMs")
+    container_sbom_sync: dict = {}
+    try:
+        container_sbom_sync = await sync_aikido_container_sboms(
+            db, creds, containers or [], source_id=source_id
+        )
+    except Exception as e:
+        logger.warning("Aikido container SBOM sync failed: %s", e)
+        container_sbom_sync = {"error": str(e)[:500]}
+
     _progress(on_progress, step_num := step_num + 1, total_steps, "Virtual machines")
     vms = await fetch_aikido_virtual_machines(credentials=creds)
     _progress(on_progress, step_num := step_num + 1, total_steps, "Workspace")
@@ -360,7 +372,44 @@ async def sync_aikido_dashboard(
         "resolved",
         "ignored",
         "auto_ignored",
+        "suppressed",
     )
+
+    # Some Aikido tenants return /issues/counts in a schema we cannot rely on for open totals.
+    # If counts are missing/zero while issues exist, derive stable open counts from synced issues.
+    if isinstance(issue_counts, dict):
+        has_nonzero_counts = any(
+            int(issue_counts.get(k, 0) or 0) > 0
+            for k in ("open", "critical", "high", "medium", "low", "total")
+        )
+    else:
+        has_nonzero_counts = False
+    if issues and not has_nonzero_counts:
+        open_issues = [i for i in issues if is_open(i)]
+        sev = {"critical": 0, "high": 0, "medium": 0, "low": 0}
+        for i in open_issues:
+            s = str(i.get("severity") or "").lower()
+            if s == "critical":
+                sev["critical"] += 1
+            elif s == "high":
+                sev["high"] += 1
+            elif s in ("medium", "moderate"):
+                sev["medium"] += 1
+            elif s == "low":
+                sev["low"] += 1
+        issue_counts = {
+            "open": len(open_issues),
+            "total": len(issues),
+            "critical": sev["critical"],
+            "high": sev["high"],
+            "medium": sev["medium"],
+            "low": sev["low"],
+        }
+        logger.warning(
+            "Aikido /issues/counts missing or zero; using computed fallback from synced issues (open=%d total=%d)",
+            issue_counts["open"],
+            issue_counts["total"],
+        )
 
     _progress(on_progress, step_num := step_num + 1, total_steps, "Tasks")
     # tasks_by_group = await fetch_aikido_tasks_for_groups(top_group_ids, credentials=creds, max_groups=15)
@@ -379,6 +428,7 @@ async def sync_aikido_dashboard(
         "issueGroups": groups,
         "repos": repos_norm,
         "containers": containers_norm,
+        "containerSbomSync": container_sbom_sync,
         "vms": vms_norm,
         "workspace": workspace or {"id": "vat", "name": "VAT", "plan": "default"},
         "issueCounts": issue_counts,

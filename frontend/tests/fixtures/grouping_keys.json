@@ -1,5 +1,5 @@
 {
-  "_description": "Canonical fixture for group key parity. Backend and frontend must produce identical keys. Grouping is scoped within asset (image|branch|tag). Sync with backend/tests/fixtures/grouping_keys.json.",
+  "_description": "Canonical fixture for group key parity. Backend and frontend must produce identical keys. Sync with backend/tests/fixtures/grouping_keys.json.",
   "fixtures": [
     {
       "id": "f-1",
@@ -107,6 +107,40 @@
       "componentBase": "pkg",
       "ecosystem": "npm",
       "expectedKey": "license:npm|pkg#||"
+    },
+    {
+      "id": "f-9a",
+      "findingType": "SCA",
+      "cveId": "CVE-2024-8888",
+      "component": "openssl 3.0",
+      "componentBase": "openssl",
+      "ecosystem": "debian",
+      "image": "docker.io/containers/images/kafka",
+      "tag": "3.6.1-debian-12-r12",
+      "expectedKey": "sca:debian|openssl#docker.io/containers/images/kafka||3.6.1-debian-12-r12"
+    },
+    {
+      "id": "f-9b",
+      "findingType": "SCA",
+      "cveId": "CVE-2024-8889",
+      "component": "openssl 3.0",
+      "componentBase": "openssl",
+      "ecosystem": "debian",
+      "image": "containers/images/kafka",
+      "tag": "3.6.1-debian-12-r12",
+      "expectedKey": "sca:debian|openssl#docker.io/containers/images/kafka||3.6.1-debian-12-r12"
+    },
+    {
+      "id": "f-10",
+      "findingType": "SCA",
+      "cveId": "CVE-2024-8888",
+      "component": "ssl 3.0",
+      "componentBase": "ssl",
+      "ecosystem": null,
+      "benchmarkFamily": null,
+      "image": "docker.io/containers/images/kafka",
+      "tag": "3.6.1-debian-12-r12",
+      "expectedKey": "sca:debian|openssl#docker.io/containers/images/kafka||3.6.1-debian-12-r12"
     }
   ]
 }

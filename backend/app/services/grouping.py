@@ -2,12 +2,22 @@
 
 Grouping is computed at read time, not stored. Same key = same logical issue (actionable item).
 See docs/implementation-plan-grouping-model.md.
+
+Asset scope in each key uses the same canonical container/repo image segment as
+``assets_service._asset_key_from_dict`` when ``finding.image`` is set, so
+multi-scanner spelling differences (``docker.io/...`` vs path-only) share one
+group within a list asset.
 """
 
 import re
 
 from app.models.finding import Finding
+from app.services.assets_service import _container_image_group_key
 from app.services.dedup import component_base
+from app.services.sca_cross_scanner import (
+    effective_sca_ecosystem,
+    normalize_sca_package_for_cross_scanner,
+)
 
 
 def _normalize(s: str | None) -> str:
@@ -104,11 +114,23 @@ def _normalize_rule_title(title: str | None, *, strip_locations: bool = True) ->
 
 
 def _asset_key(f: Finding) -> str:
-    """Asset context for grouping. Grouping is within asset only — image|branch|tag."""
-    img = _normalize(f.image or "")
+    """
+    Asset context for grouping. Grouping is within asset only — image|branch|tag.
+
+    For findings with ``image`` set, the image segment uses the same canonical
+    container/repo key as ``get_assets_with_findings`` / ``_asset_key_from_dict``
+    (``_container_image_group_key``), so different scanner spellings
+    (``docker.io/foo`` vs path-only ``foo``) share one groupKey suffix. Branch and
+    tag columns stay raw-normalized (lowercase trim).
+    """
+    raw_img = (f.image or "").strip()
     br = _normalize(f.branch or "")
     tg = _normalize(f.tag or "")
-    return f"{img}|{br}|{tg}"
+    if raw_img:
+        img_key = _container_image_group_key(raw_img, None)
+        img_key = (img_key or "").strip().lower()
+        return f"{img_key}|{br}|{tg}"
+    return f"|{br}|{tg}"
 
 
 def get_finding_group_key(f: Finding) -> str:
@@ -128,8 +150,15 @@ def get_finding_group_key(f: Finding) -> str:
     # SCA: ecosystem + package (component_base), normalized per ecosystem
     if ft == "sca":
         raw_pkg = f.component_base or _extract_component_base_for_grouping(f.component)
-        eco = _normalize_ecosystem_for_grouping(getattr(f, "ecosystem", None) or "")
-        pkg = normalize_package_name(eco or None, raw_pkg) if raw_pkg else ""
+        eco = effective_sca_ecosystem(
+            getattr(f, "ecosystem", None),
+            getattr(f, "benchmark_family", None),
+            image=getattr(f, "image", None),
+            tag=getattr(f, "tag", None),
+        )
+        eco = _normalize_ecosystem_for_grouping(eco)
+        cross = normalize_sca_package_for_cross_scanner(raw_pkg) if raw_pkg else ""
+        pkg = normalize_package_name(eco or None, cross) if cross else ""
         if pkg:
             return f"sca:{eco}|{pkg}#{asset}"
         return f"cve:{cve_id}#{asset}"  # fallback when no package
@@ -168,10 +197,29 @@ def get_finding_group_key(f: Finding) -> str:
     # License: ecosystem + package, normalized per ecosystem
     if ft == "license":
         raw_pkg = f.component_base or _extract_component_base_for_grouping(f.component)
-        eco = _normalize_ecosystem_for_grouping(getattr(f, "ecosystem", None) or "")
-        pkg = normalize_package_name(eco or None, raw_pkg) if raw_pkg else ""
+        eco = effective_sca_ecosystem(
+            getattr(f, "ecosystem", None),
+            getattr(f, "benchmark_family", None),
+            image=getattr(f, "image", None),
+            tag=getattr(f, "tag", None),
+        )
+        eco = _normalize_ecosystem_for_grouping(eco)
+        cross = normalize_sca_package_for_cross_scanner(raw_pkg) if raw_pkg else ""
+        pkg = normalize_package_name(eco or None, cross) if cross else ""
         if pkg:
             return f"license:{eco}|{pkg}#{asset}"
         return f"license:{f.id}#{asset}"
 
     return f"other:{f.id}#{asset}"
+
+
+def finding_to_api_dict_with_group_key(f: Finding) -> dict:
+    """
+    API/export shape: ``FindingRead.to_api_dict()`` plus server-derived ``groupKey``.
+    Use for list/detail responses, VAT bundle, and exports so clients share one source.
+    """
+    from app.schemas.finding import FindingRead
+
+    d = FindingRead.model_validate(f).to_api_dict()
+    d["groupKey"] = get_finding_group_key(f)
+    return d

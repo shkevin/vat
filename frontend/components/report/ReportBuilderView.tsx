@@ -1114,9 +1114,14 @@ export function ReportBuilderView({
     refreshSavedReports();
   }, [refreshSavedReports]);
 
-  // Always use sidebar preference for count mode — report must match Findings tab.
+  // Preserve report definition count mode when explicitly set (for presets like
+  // "All Instances"). Fall back to sidebar preference only when count mode is
+  // missing from the current definition.
   const effectiveFilters = useMemo(
-    () => ({ ...definition.filters, countMode: defaultCountMode ?? "groups" }),
+    () => ({
+      ...definition.filters,
+      countMode: definition.filters.countMode ?? defaultCountMode ?? "groups",
+    }),
     [definition.filters, defaultCountMode],
   );
   const countMode = effectiveFilters.countMode ?? "groups";
@@ -1563,7 +1568,10 @@ export function ReportBuilderView({
         const def = clonePresetDefinition(builtIn);
         setDefinition({
           ...def,
-          filters: { ...def.filters, countMode: defaultCountMode ?? "groups" },
+          filters: {
+            ...def.filters,
+            countMode: def.filters.countMode ?? defaultCountMode ?? "groups",
+          },
         });
         const first = builtIn.definition.canvases[0];
         setSelectedCanvasId(first?.id ?? null);
@@ -1577,7 +1585,10 @@ export function ReportBuilderView({
         );
         setDefinition({
           ...def,
-          filters: { ...def.filters, countMode: defaultCountMode ?? "groups" },
+          filters: {
+            ...def.filters,
+            countMode: def.filters.countMode ?? defaultCountMode ?? "groups",
+          },
         });
         const first = def.canvases[0];
         setSelectedCanvasId(first?.id ?? null);
@@ -1616,7 +1627,10 @@ export function ReportBuilderView({
       if (def) {
         setDefinition({
           ...def,
-          filters: { ...def.filters, countMode: defaultCountMode ?? "groups" },
+          filters: {
+            ...def.filters,
+            countMode: def.filters.countMode ?? defaultCountMode ?? "groups",
+          },
         });
         const first = def.canvases[0];
         setSelectedCanvasId(first?.id ?? null);

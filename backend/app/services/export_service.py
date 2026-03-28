@@ -9,13 +9,12 @@ from typing import Optional
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.schemas.finding import FindingRead
 from app.services.assets_service import get_assets_with_findings
 from app.services.findings_service import (
     enrich_findings_with_source_group_severity,
     list_findings,
 )
-from app.services.grouping import get_finding_group_key
+from app.services.grouping import finding_to_api_dict_with_group_key
 from app.services.openscap_storage import list_openscap_scan_results
 from app.services.sbom import list_sbom_packages
 
@@ -34,6 +33,12 @@ def _safe_openscap_filename(asset_id: str) -> str:
     """Sanitize asset_id for STIG Viewer filename (e.g. container:tag)."""
     safe = "".join(c if c.isalnum() or c in "._-:" else "_" for c in (asset_id or ""))
     return safe[:200] or "openscap-scan"
+
+
+def _safe_export_filename(name: str, *, max_len: int = 200) -> str:
+    """Sanitize arbitrary labels for export file names."""
+    safe = "".join(c if c.isalnum() or c in "._-:" else "_" for c in (name or ""))
+    return (safe[:max_len] or "unknown").strip(".")
 
 
 def _language_to_purl_type(lang: str) -> str:
@@ -74,13 +79,18 @@ def _supplier_from_purl_type(pt: str) -> dict | None:
     return {"name": name} if name else None
 
 
-def _build_cyclonedx_bom(packages: list[dict]) -> dict:
+def _build_cyclonedx_bom(
+    packages: list[dict],
+    *,
+    include_component_ref: bool = False,
+    metadata_component_name: str | None = None,
+) -> dict:
     """Build CycloneDX 1.4 JSON BOM (standards-only, enterprise-friendly)."""
     now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
     serial = f"urn:uuid:{uuid.uuid4()}"
     purl_type = _language_to_purl_type
 
-    seen_purl: set[str] = set()
+    seen_keys: set[tuple[str, str | None]] = set()
     components: list[dict] = []
 
     for p in packages:
@@ -93,9 +103,11 @@ def _build_cyclonedx_bom(packages: list[dict]) -> dict:
             if pt == "generic"
             else f"pkg:{pt}/{quote(name, safe='')}@{quote(ver, safe='')}"
         )
-        if purl in seen_purl:
+        component_ref = (p.get("component") or "").strip() or None
+        dedupe_key = (purl, component_ref if include_component_ref else None)
+        if dedupe_key in seen_keys:
             continue
-        seen_purl.add(purl)
+        seen_keys.add(dedupe_key)
 
         lic = p.get("licenseId") or p.get("license_id") or ""
         comp: dict = {
@@ -111,7 +123,19 @@ def _build_cyclonedx_bom(packages: list[dict]) -> dict:
         supplier = _supplier_from_purl_type(pt)
         if supplier:
             comp["supplier"] = supplier
+        if include_component_ref and component_ref:
+            comp["properties"] = [{"name": "vat:container_ref", "value": component_ref}]
         components.append(comp)
+
+    metadata: dict = {
+        "timestamp": now,
+        "tools": [{"vendor": "Compliance", "name": "SBOM Export", "version": "1.0"}],
+    }
+    if metadata_component_name:
+        metadata["component"] = {
+            "type": "container",
+            "name": metadata_component_name,
+        }
 
     return {
         "$schema": "http://cyclonedx.org/schema/bom-1.4.schema.json",
@@ -119,12 +143,7 @@ def _build_cyclonedx_bom(packages: list[dict]) -> dict:
         "specVersion": "1.4",
         "serialNumber": serial,
         "version": 1,
-        "metadata": {
-            "timestamp": now,
-            "tools": [
-                {"vendor": "Compliance", "name": "SBOM Export", "version": "1.0"}
-            ],
-        },
+        "metadata": metadata,
         "components": components,
     }
 
@@ -304,7 +323,8 @@ async def build_export_bundle(
     """
     Build a ZIP bundle containing:
     - assets-findings.json: all assets and their findings
-    - sbom-cyclonedx.json: SBOM in CycloneDX 1.4 format
+    - sbom-cyclonedx.json: tenant rollup SBOM in CycloneDX 1.4 format
+    - sbom/by-asset/*.cdx.json: asset-scoped CycloneDX files (preserves containment)
     - executive-summary-yearly.html: Executive Summary report (365 days, instances)
     - stig/: OpenSCAP XCCDF/OVAL XML per asset for STIG Viewer and XACTA (DISA auditor format)
     """
@@ -317,9 +337,7 @@ async def build_export_bundle(
         archived=False,
         limit=0,
     )
-    rows = [FindingRead.model_validate(f).to_api_dict() for f in findings]
-    for i, f in enumerate(findings):
-        rows[i]["groupKey"] = get_finding_group_key(f)
+    rows = [finding_to_api_dict_with_group_key(f) for f in findings]
     rows = await enrich_findings_with_source_group_severity(db, rows)
     assets = await get_assets_with_findings(db, findings_dicts=rows)
 
@@ -328,6 +346,12 @@ async def build_export_bundle(
     # 2. Fetch SBOM packages and build CycloneDX BOM (standards-only)
     packages = await list_sbom_packages(db, tenant_id=tenant_id, limit=10000)
     cyclonedx = _build_cyclonedx_bom(packages)
+    per_asset_packages: dict[str, list[dict]] = {}
+    for p in packages:
+        component = (p.get("component") or "").strip()
+        if not component:
+            continue
+        per_asset_packages.setdefault(component, []).append(p)
 
     # 3. Executive Summary HTML (365 days, instances)
     now = datetime.now(timezone.utc)
@@ -351,6 +375,29 @@ async def build_export_bundle(
             f"vat-export-{date_str}/sbom-cyclonedx.json",
             json.dumps(cyclonedx, indent=2),
         )
+        # Asset-scoped SBOMs preserve package containment context.
+        sbom_asset_manifest: list[dict[str, str | int]] = []
+        for component, rows_for_component in sorted(per_asset_packages.items()):
+            asset_bom = _build_cyclonedx_bom(
+                rows_for_component,
+                include_component_ref=True,
+                metadata_component_name=component,
+            )
+            safe_component = _safe_export_filename(component)
+            rel = f"vat-export-{date_str}/sbom/by-asset/{safe_component}.cdx.json"
+            zf.writestr(rel, json.dumps(asset_bom, indent=2))
+            sbom_asset_manifest.append(
+                {
+                    "component": component,
+                    "file": f"sbom/by-asset/{safe_component}.cdx.json",
+                    "packageCount": len(rows_for_component),
+                }
+            )
+        if sbom_asset_manifest:
+            zf.writestr(
+                f"vat-export-{date_str}/sbom/by-asset/manifest.json",
+                json.dumps(sbom_asset_manifest, indent=2),
+            )
         zf.writestr(
             f"vat-export-{date_str}/executive-summary-yearly.html",
             html_report,

@@ -2,13 +2,21 @@
 
 import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useVATData } from "@/contexts/VATDataContext";
 import {
-  getAssetById,
+  deriveAssets,
   computeMetricsFromFindings,
   getFindingTag,
   getAssetTypeFromAsset,
+  getAssetDisplayTitle,
+  mergeSuggestionTargetAlreadyRepresentedOnAsset,
+  resolveAssetForPage,
+  sameAssetIdentity,
+  containerVariantKey,
+  defaultContainerVariantKey,
+  formatDigestShort,
+  getFindingImageDigest,
 } from "@/lib/assetUtils";
 import { getGroupedFindings } from "@/lib/findingGroupUtils";
 import { FINDING_TYPES, SEV_ORDER, SEV } from "@/lib/constants";
@@ -26,13 +34,33 @@ import {
 import { useUserPreferences } from "@/contexts/UserPreferencesContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { mono, sans } from "@/lib/styles";
-import { ChevronDown, ChevronUp, GitBranch, Tag } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronUp,
+  GitBranch,
+  MoreHorizontal,
+  Tag,
+} from "lucide-react";
 import { ThemedSelect } from "@/components/ui/ThemedSelect";
 import { MultiSelectFilter } from "@/components/ui/MultiSelectFilter";
 import { ABC_TOOLTIP, ORA_TOOLTIP } from "@/lib/constants";
 import { ThemedTooltip } from "@/components/ui/ThemedTooltip";
 import { useAssetFilters } from "@/hooks/useAssetFilters";
-import { deleteAsset } from "@/lib/api";
+import {
+  acknowledgeAssetDigestConflict,
+  deleteAssetMergeReview,
+  deleteAsset,
+  fetchAssetDigestConflicts,
+  fetchAssetMergeSuggestions,
+  fetchAssetMergeReviews,
+  fetchAssetAliases,
+  groupAssetInto,
+  upsertAssetMergeReview,
+  type AssetMergeReviewRecord,
+  type AssetDigestConflictRecord,
+  type AssetMergeSuggestion,
+  unmergeAssetFrom,
+} from "@/lib/api";
 
 const HEADER_PADDING = {
   compact: "4px 14px",
@@ -41,6 +69,15 @@ const HEADER_PADDING = {
 } as const;
 import type { AppConfig } from "@/config/app";
 import type { Asset, Finding, Source } from "@/types";
+import { normalizeContainerRef } from "@/lib/containerRefNormalization";
+
+function findingMatchesContainerVariant(
+  f: Finding,
+  variantFilter: string,
+): boolean {
+  if (!variantFilter) return true;
+  return containerVariantKey(f) === variantFilter;
+}
 
 const SORT_OPTS = [
   { value: "severity", label: "Severity" },
@@ -97,6 +134,7 @@ interface AssetPageProps {
 
 export function AssetPage({ config }: AssetPageProps) {
   const params = useParams();
+  const searchParams = useSearchParams();
   const router = useRouter();
   const assetId =
     typeof params.id === "string" ? decodeURIComponent(params.id) : null;
@@ -105,13 +143,53 @@ export function AssetPage({ config }: AssetPageProps) {
   const { user, token } = useAuth();
   const readOnly = user?.role === "read_only";
   const isAdmin = user?.role === "admin";
+  const canReviewAssets = user?.role === "admin" || user?.role === "reviewer";
   const density = preferences.tableDensity ?? "default";
   const [assetTab, setAssetTab] = useState<AssetTabId>("findings");
-  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [deletingAsset, setDeletingAsset] = useState(false);
+  const [unmergingAsset, setUnmergingAsset] = useState(false);
+  const [groupTargetAssetId, setGroupTargetAssetId] = useState("");
+  const [unmergeSourceAssetId, setUnmergeSourceAssetId] = useState("");
+  const [aliasSourceOptions, setAliasSourceOptions] = useState<string[]>([]);
+  const [groupingAsset, setGroupingAsset] = useState(false);
+  const [showAdminActions, setShowAdminActions] = useState(false);
+  const [mergeSuggestions, setMergeSuggestions] = useState<
+    AssetMergeSuggestion[]
+  >([]);
+  const [mergeSuggestionsLoading, setMergeSuggestionsLoading] = useState(false);
+  const [mergeSuggestionsError, setMergeSuggestionsError] = useState<
+    string | null
+  >(null);
+  const [mergeReviews, setMergeReviews] = useState<AssetMergeReviewRecord[]>(
+    [],
+  );
+  const [mergeReviewsLoading, setMergeReviewsLoading] = useState(false);
+  const [digestConflicts, setDigestConflicts] = useState<
+    AssetDigestConflictRecord[]
+  >([]);
+  const [digestConflictsLoading, setDigestConflictsLoading] = useState(false);
+  const [digestConflictActionTag, setDigestConflictActionTag] = useState<
+    string | null
+  >(null);
+  const [mergeReviewActionTargetId, setMergeReviewActionTargetId] = useState<
+    string | null
+  >(null);
+  const [approvingTargetId, setApprovingTargetId] = useState<string | null>(
+    null,
+  );
+  const [pendingAdminAction, setPendingAdminAction] = useState<
+    "group" | "unmerge" | "delete" | null
+  >(null);
+  const [actionConfirmText, setActionConfirmText] = useState("");
+  const [adminActionError, setAdminActionError] = useState<string | null>(null);
+  const [targetSearchOpen, setTargetSearchOpen] = useState(false);
   const [selectedSourceIndex, setSelectedSourceIndex] = useState<
     number | undefined
   >();
+  const adminActionsRef = useRef<HTMLDivElement | null>(null);
+  const targetSearchRef = useRef<HTMLDivElement | null>(null);
+  /** User explicitly chose "All image variants"; do not auto-scope to one digest. */
+  const containerVariantUserChoseAllRef = useRef(false);
 
   const {
     loading,
@@ -144,12 +222,71 @@ export function AssetPage({ config }: AssetPageProps) {
     setShowArchived,
   } = data;
 
+  useEffect(() => {
+    const qTab = (searchParams.get("tab") || "").toLowerCase();
+    if (qTab === "review") setAssetTab("review");
+    else if (qTab === "sbom") setAssetTab("sbom");
+    else if (qTab === "waivers") setAssetTab("waivers");
+    else if (qTab === "findings") setAssetTab("findings");
+  }, [searchParams]);
+
+  useEffect(() => {
+    containerVariantUserChoseAllRef.current = false;
+  }, [assetId]);
+
   const asset = useMemo(() => {
     if (!assetId) return null;
-    const fromReport = reportAssets.find((a) => a.id === assetId);
-    if (fromReport) return fromReport;
-    return getAssetById(findings, assetId, SEV_ORDER);
+    return resolveAssetForPage(assetId, reportAssets, findings, SEV_ORDER);
   }, [assetId, findings, reportAssets]);
+
+  /** Short title for header; full canonical ref in `asset.id` when they differ. */
+  const assetDisplayTitle = useMemo(
+    () => (asset ? getAssetDisplayTitle(asset) : ""),
+    [asset],
+  );
+
+  const targetAssetOptions = useMemo(() => {
+    const merged = new Set<string>();
+    for (const a of reportAssets) merged.add(a.id);
+    for (const a of deriveAssets(findings, SEV_ORDER)) merged.add(a.id);
+    if (asset?.id) merged.delete(asset.id);
+    return Array.from(merged).filter(Boolean).sort();
+  }, [asset?.id, findings, reportAssets]);
+  const filteredTargetAssetOptions = useMemo(() => {
+    const q = groupTargetAssetId.trim().toLowerCase();
+    if (!q) return targetAssetOptions.slice(0, 100);
+    return targetAssetOptions
+      .filter((id) => id.toLowerCase().includes(q))
+      .slice(0, 100);
+  }, [groupTargetAssetId, targetAssetOptions]);
+
+  useEffect(() => {
+    if (!showAdminActions) return;
+    const onDocClick = (e: MouseEvent) => {
+      if (
+        adminActionsRef.current &&
+        !adminActionsRef.current.contains(e.target as Node)
+      ) {
+        setShowAdminActions(false);
+      }
+    };
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
+  }, [showAdminActions]);
+
+  useEffect(() => {
+    if (!targetSearchOpen) return;
+    const onDocClick = (e: MouseEvent) => {
+      if (
+        targetSearchRef.current &&
+        !targetSearchRef.current.contains(e.target as Node)
+      ) {
+        setTargetSearchOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
+  }, [targetSearchOpen]);
 
   const assetWaivers = useMemo(
     () =>
@@ -167,14 +304,307 @@ export function AssetPage({ config }: AssetPageProps) {
     [asset, reviewQueue],
   );
 
+  const loadMergeSuggestions = useCallback(async () => {
+    if (!asset?.id || !canReviewAssets) {
+      setMergeSuggestions([]);
+      setMergeSuggestionsError(null);
+      return;
+    }
+    setMergeSuggestionsLoading(true);
+    setMergeSuggestionsError(null);
+    try {
+      const res = await fetchAssetMergeSuggestions(asset.id, {
+        token: token ?? undefined,
+        userEmail: user?.email,
+      });
+      setMergeSuggestions(res.suggestions ?? []);
+    } catch (err) {
+      setMergeSuggestionsError(
+        err instanceof Error ? err.message : "Failed to load merge suggestions",
+      );
+    } finally {
+      setMergeSuggestionsLoading(false);
+    }
+  }, [asset?.id, canReviewAssets, token, user?.email]);
+
+  const loadMergeReviews = useCallback(async () => {
+    if (!asset?.id || !canReviewAssets) {
+      setMergeReviews([]);
+      return;
+    }
+    setMergeReviewsLoading(true);
+    try {
+      const res = await fetchAssetMergeReviews(asset.id, {
+        token: token ?? undefined,
+        userEmail: user?.email,
+      });
+      setMergeReviews(res.reviews ?? []);
+    } catch (err) {
+      setMergeSuggestionsError(
+        err instanceof Error ? err.message : "Failed to load merge reviews",
+      );
+    } finally {
+      setMergeReviewsLoading(false);
+    }
+  }, [asset?.id, canReviewAssets, token, user?.email]);
+
+  const refreshMergeReviewData = useCallback(async () => {
+    await Promise.all([
+      loadMergeSuggestions(),
+      loadMergeReviews(),
+      (async () => {
+        if (!asset?.id || !canReviewAssets) {
+          setDigestConflicts([]);
+          return;
+        }
+        setDigestConflictsLoading(true);
+        try {
+          const res = await fetchAssetDigestConflicts(asset.id, {
+            token: token ?? undefined,
+            userEmail: user?.email,
+          });
+          setDigestConflicts(res.conflicts ?? []);
+        } catch (err) {
+          setMergeSuggestionsError(
+            err instanceof Error
+              ? err.message
+              : "Failed to load digest conflicts",
+          );
+        } finally {
+          setDigestConflictsLoading(false);
+        }
+      })(),
+    ]);
+  }, [
+    asset?.id,
+    canReviewAssets,
+    loadMergeReviews,
+    loadMergeSuggestions,
+    token,
+    user?.email,
+  ]);
+
+  const setDigestConflictAcknowledged = useCallback(
+    async (tag: string, acknowledged: boolean) => {
+      if (!asset?.id || !canReviewAssets || !tag) return;
+      setDigestConflictActionTag(tag);
+      setMergeSuggestionsError(null);
+      try {
+        await acknowledgeAssetDigestConflict(asset.id, tag, acknowledged, {
+          token: token ?? undefined,
+          userEmail: user?.email,
+        });
+        await refreshMergeReviewData();
+      } catch (err) {
+        setMergeSuggestionsError(
+          err instanceof Error
+            ? err.message
+            : "Failed to update digest conflict status",
+        );
+      } finally {
+        setDigestConflictActionTag(null);
+      }
+    },
+    [asset?.id, canReviewAssets, refreshMergeReviewData, token, user?.email],
+  );
+
+  useEffect(() => {
+    if (assetTab !== "review") return;
+    void refreshMergeReviewData();
+  }, [assetTab, refreshMergeReviewData]);
+
+  useEffect(() => {
+    if (!asset?.id || !canReviewAssets) return;
+    void loadMergeSuggestions();
+  }, [asset?.id, canReviewAssets, loadMergeSuggestions]);
+
+  const mergeSuggestionsVisible = useMemo(() => {
+    if (!asset) return [];
+    return mergeSuggestions.filter(
+      (s) =>
+        !mergeSuggestionTargetAlreadyRepresentedOnAsset(
+          s.target_asset_id,
+          asset,
+        ),
+    );
+  }, [mergeSuggestions, asset]);
+
+  const digestMergeBannerHints = useMemo(
+    () =>
+      mergeSuggestionsVisible.filter(
+        (s) =>
+          s.strategy === "digest" &&
+          s.confidence === "high" &&
+          s.review_status !== "approved" &&
+          s.review_status !== "denied",
+      ),
+    [mergeSuggestionsVisible],
+  );
+
+  const approveMergeSuggestion = useCallback(
+    async (targetAssetId: string) => {
+      if (!asset?.id || !isAdmin || !targetAssetId) return;
+      setApprovingTargetId(targetAssetId);
+      setMergeSuggestionsError(null);
+      try {
+        const suggestion = mergeSuggestions.find(
+          (s) => s.target_asset_id === targetAssetId,
+        );
+        // Backend enforces approved review BEFORE group merge.
+        // Keep UI flow aligned to avoid guaranteed 409 responses.
+        await upsertAssetMergeReview(
+          asset.id,
+          targetAssetId,
+          {
+            status: "approved",
+            note: "Approved from asset review",
+            strategy: suggestion?.strategy,
+            score: suggestion?.score,
+            confidence: suggestion?.confidence,
+            details: suggestion?.details,
+          },
+          {
+            token: token ?? undefined,
+            userEmail: user?.email,
+          },
+        );
+        await groupAssetInto(asset.id, targetAssetId, {
+          token: token ?? undefined,
+          userEmail: user?.email,
+        });
+        await refetch({ silent: true });
+        router.push(`/assets/${encodeURIComponent(targetAssetId)}`);
+      } catch (err) {
+        setMergeSuggestionsError(
+          err instanceof Error ? err.message : "Failed to approve merge",
+        );
+      } finally {
+        setApprovingTargetId(null);
+      }
+    },
+    [asset?.id, isAdmin, mergeSuggestions, refetch, router, token, user?.email],
+  );
+
+  const denyMergeSuggestion = useCallback(
+    async (s: AssetMergeSuggestion) => {
+      if (!asset?.id || !canReviewAssets) return;
+      setMergeReviewActionTargetId(s.target_asset_id);
+      setMergeSuggestionsError(null);
+      try {
+        await upsertAssetMergeReview(
+          asset.id,
+          s.target_asset_id,
+          {
+            status: "denied",
+            note: "Denied from asset review",
+            strategy: s.strategy,
+            score: s.score,
+            confidence: s.confidence,
+            details: s.details,
+          },
+          {
+            token: token ?? undefined,
+            userEmail: user?.email,
+          },
+        );
+        await refreshMergeReviewData();
+      } catch (err) {
+        setMergeSuggestionsError(
+          err instanceof Error
+            ? err.message
+            : "Failed to deny merge suggestion",
+        );
+      } finally {
+        setMergeReviewActionTargetId(null);
+      }
+    },
+    [asset?.id, canReviewAssets, refreshMergeReviewData, token, user?.email],
+  );
+
+  const setMergeReviewStatus = useCallback(
+    async (
+      targetAssetId: string,
+      status: "pending" | "approved" | "denied",
+      note: string,
+    ) => {
+      if (!asset?.id || !canReviewAssets) return;
+      setMergeReviewActionTargetId(targetAssetId);
+      setMergeSuggestionsError(null);
+      try {
+        await upsertAssetMergeReview(
+          asset.id,
+          targetAssetId,
+          { status, note },
+          { token: token ?? undefined, userEmail: user?.email },
+        );
+        await refreshMergeReviewData();
+      } catch (err) {
+        setMergeSuggestionsError(
+          err instanceof Error ? err.message : "Failed to update merge review",
+        );
+      } finally {
+        setMergeReviewActionTargetId(null);
+      }
+    },
+    [asset?.id, canReviewAssets, refreshMergeReviewData, token, user?.email],
+  );
+
+  const removeMergeReview = useCallback(
+    async (targetAssetId: string) => {
+      if (!asset?.id || !canReviewAssets) return;
+      setMergeReviewActionTargetId(targetAssetId);
+      setMergeSuggestionsError(null);
+      try {
+        await deleteAssetMergeReview(asset.id, targetAssetId, {
+          token: token ?? undefined,
+          userEmail: user?.email,
+        });
+        await refreshMergeReviewData();
+      } catch (err) {
+        setMergeSuggestionsError(
+          err instanceof Error ? err.message : "Failed to delete merge review",
+        );
+      } finally {
+        setMergeReviewActionTargetId(null);
+      }
+    },
+    [asset?.id, canReviewAssets, refreshMergeReviewData, token, user?.email],
+  );
+
   const assetSbom = useMemo(() => {
     if (!asset) return [];
-    const name = asset.name.toLowerCase();
-    return sbom.filter(
-      (p) =>
-        (p.component ?? "").toLowerCase().includes(name) ||
-        name.includes((p.component ?? p.name ?? "").toLowerCase()),
-    );
+    const id = (asset.id ?? "").trim();
+    const candidates = new Set<string>();
+    if (id) candidates.add(id);
+    for (const f of asset.findings ?? []) {
+      const img = (f.image ?? "").trim();
+      if (img) candidates.add(img);
+    }
+    const candidateLeaves = new Set<string>();
+    for (const c of candidates) {
+      if (!c.includes("/")) continue;
+      const canonical = normalizeContainerRef(c).canonicalAssetKey;
+      const leaf = canonical.split("/").filter(Boolean).at(-1) ?? "";
+      if (leaf) candidateLeaves.add(leaf.toLowerCase());
+    }
+    return sbom.filter((p) => {
+      const comp = (p.component ?? "").trim();
+      if (!comp) return false;
+      for (const cand of candidates) {
+        if (sameAssetIdentity(comp, cand)) return true;
+      }
+      // Fallback: handle registry-prefix drift where logical image name matches.
+      if (comp.includes("/")) {
+        const compLeaf =
+          normalizeContainerRef(comp)
+            .canonicalAssetKey.split("/")
+            .filter(Boolean)
+            .at(-1) ?? "";
+        if (compLeaf && candidateLeaves.has(compLeaf.toLowerCase()))
+          return true;
+      }
+      return false;
+    });
   }, [asset, sbom]);
 
   const filters = useAssetFilters(assetId);
@@ -249,15 +679,36 @@ export function AssetPage({ config }: AssetPageProps) {
       .filter(Boolean);
     return fromAsset;
   }, [asset, assetType]);
-  const uniqueTags = useMemo(() => {
+  /** One entry per manifest digest when known; else one per tag (legacy without digest). */
+  const containerVariantKeys = useMemo(() => {
     if (!asset || assetType !== "container") return [];
-    const fromFindings = [
-      ...new Set(asset.findings.map(getFindingTag).filter(Boolean)),
-    ] as string[];
-    if (fromFindings.length > 0) return fromFindings;
-    if (asset.tag) return [asset.tag];
-    return ["latest"];
+    const keys = new Set(asset.findings.map(containerVariantKey));
+    return Array.from(keys).sort();
   }, [asset, assetType]);
+
+  /** Dropdown labels: one row per digest (or per tag when digest unknown). */
+  const containerVariantSelectOptions = useMemo(() => {
+    if (!asset || assetType !== "container") return [];
+    return containerVariantKeys.map((key) => {
+      const group = asset.findings.filter(
+        (f) => containerVariantKey(f) === key,
+      );
+      const digest =
+        group.map(getFindingImageDigest).find((d) => Boolean(d)) ?? undefined;
+      const tags = [
+        ...new Set(
+          group
+            .map((f) => f.tag?.trim() || getFindingTag(f) || "")
+            .filter(Boolean),
+        ),
+      ].sort();
+      if (tags.length === 0) tags.push("latest");
+      const label = digest
+        ? `${formatDigestShort(digest)} — ${tags.join(", ")}`
+        : tags.join(", ");
+      return { value: key, label };
+    });
+  }, [asset, assetType, containerVariantKeys]);
 
   useEffect(() => {
     if (assetId !== prevAssetIdRef.current) {
@@ -296,30 +747,34 @@ export function AssetPage({ config }: AssetPageProps) {
     }
     if (
       assetType === "container" &&
-      uniqueTags.length > 0 &&
+      containerVariantKeys.length > 0 &&
       !hasInitializedTagRef.current
     ) {
       if (!tagFilter) {
         hasInitializedTagRef.current = true;
-        const favTag =
-          favoriteCtx?.tag && uniqueTags.includes(favoriteCtx.tag)
+        const favVariant =
+          favoriteCtx?.tag && containerVariantKeys.includes(favoriteCtx.tag)
             ? favoriteCtx.tag
             : null;
-        const defaultTag =
-          favTag ?? (uniqueTags.includes("latest") ? "latest" : uniqueTags[0]!);
-        setTagFilter(defaultTag);
+        const latestVariant =
+          defaultContainerVariantKey(
+            containerVariantKeys,
+            asset?.findings ?? [],
+          ) ?? containerVariantKeys[0]!;
+        setTagFilter(favVariant ?? latestVariant);
       } else {
         hasInitializedTagRef.current = true;
       }
-    } else if (assetType === "container" && uniqueTags.length === 0) {
+    } else if (assetType === "container" && containerVariantKeys.length === 0) {
       hasInitializedTagRef.current = true;
       if (tagFilter) setTagFilter("");
     }
   }, [
     assetId,
+    asset,
     assetType,
     uniqueBranches,
-    uniqueTags,
+    containerVariantKeys,
     branchFilter,
     tagFilter,
     hasRestored,
@@ -327,6 +782,22 @@ export function AssetPage({ config }: AssetPageProps) {
     setTagFilter,
     getFavoriteContextForAsset,
   ]);
+
+  /**
+   * VMS-style remediation: scope findings to one image digest (variant) by default.
+   * Different digests are different runnable images; mixing them obscures per-digest work.
+   * Covers the hasRestored path where init skips (tag stayed ""), and reinforces empty → first variant.
+   */
+  useEffect(() => {
+    if (!asset || assetType !== "container") return;
+    if (containerVariantKeys.length <= 1) return;
+    if (tagFilter) return;
+    if (containerVariantUserChoseAllRef.current) return;
+    const latest =
+      defaultContainerVariantKey(containerVariantKeys, asset.findings) ??
+      containerVariantKeys[0]!;
+    setTagFilter(latest);
+  }, [asset, assetType, tagFilter, containerVariantKeys, setTagFilter]);
 
   const branchTagFilteredFindings = useMemo(() => {
     if (!asset) return [];
@@ -338,10 +809,7 @@ export function AssetPage({ config }: AssetPageProps) {
       });
     }
     if (tagFilter && assetType === "container") {
-      list = list.filter((f) => {
-        const t = getFindingTag(f) ?? "";
-        return t === tagFilter || (tagFilter === "latest" && !t);
-      });
+      list = list.filter((f) => findingMatchesContainerVariant(f, tagFilter));
     }
     return list;
   }, [asset, branchFilter, tagFilter, assetType]);
@@ -575,13 +1043,8 @@ export function AssetPage({ config }: AssetPageProps) {
     }));
   }, [displayRows]);
 
-  const handleDeleteAsset = useCallback(async () => {
+  const runDeleteAsset = useCallback(async () => {
     if (!asset || deletingAsset) return;
-    const confirmed = window.confirm(
-      `Delete asset "${asset.name}" and all its findings? This cannot be undone.`,
-    );
-    if (!confirmed) return;
-    setDeleteError(null);
     setDeletingAsset(true);
     try {
       await deleteAsset(asset.id, {
@@ -592,7 +1055,7 @@ export function AssetPage({ config }: AssetPageProps) {
       await refetch({ silent: true });
       router.push("/");
     } catch (err) {
-      setDeleteError(
+      setAdminActionError(
         err instanceof Error ? err.message : "Failed to delete asset",
       );
     } finally {
@@ -600,8 +1063,150 @@ export function AssetPage({ config }: AssetPageProps) {
     }
   }, [asset, deletingAsset, refetch, router, setSelected, token, user?.email]);
 
+  const runGroupAsset = useCallback(async () => {
+    if (!asset || groupingAsset) return;
+    const target = groupTargetAssetId.trim();
+    if (!target) {
+      setAdminActionError("Enter a target asset id");
+      return;
+    }
+    if (target === asset.id) {
+      setAdminActionError("Target asset must be different from current asset");
+      return;
+    }
+    setGroupingAsset(true);
+    try {
+      const result = await groupAssetInto(asset.id, target, {
+        token: token ?? undefined,
+        userEmail: user?.email,
+      });
+      setSelected(null);
+      await refetch({ silent: true });
+      router.push(`/assets/${encodeURIComponent(result.target_asset_id)}`);
+    } catch (err) {
+      setAdminActionError(
+        err instanceof Error
+          ? err.message
+          : "Failed to group asset into target",
+      );
+    } finally {
+      setGroupingAsset(false);
+    }
+  }, [
+    asset,
+    groupTargetAssetId,
+    groupingAsset,
+    refetch,
+    router,
+    setSelected,
+    token,
+    user?.email,
+  ]);
+
+  const runUnmergeAsset = useCallback(async () => {
+    if (!asset || unmergingAsset) return;
+    const sourceId = unmergeSourceAssetId.trim();
+    if (!sourceId) {
+      setAdminActionError("Select a merged source asset to unmerge");
+      return;
+    }
+    setUnmergingAsset(true);
+    try {
+      await unmergeAssetFrom(asset.id, sourceId, {
+        token: token ?? undefined,
+        userEmail: user?.email,
+      });
+      setSelected(null);
+      await refetch({ silent: true });
+      setPendingAdminAction(null);
+    } catch (err) {
+      setAdminActionError(
+        err instanceof Error ? err.message : "Failed to unmerge asset alias",
+      );
+    } finally {
+      setUnmergingAsset(false);
+    }
+  }, [
+    asset,
+    refetch,
+    setSelected,
+    token,
+    unmergeSourceAssetId,
+    unmergingAsset,
+    user?.email,
+  ]);
+
+  const closeAdminDialog = useCallback(() => {
+    if (deletingAsset || groupingAsset || unmergingAsset) return;
+    setPendingAdminAction(null);
+    setActionConfirmText("");
+    setAdminActionError(null);
+    setTargetSearchOpen(false);
+  }, [deletingAsset, groupingAsset, unmergingAsset]);
+
+  const openAdminActionDialog = useCallback(
+    (action: "group" | "unmerge" | "delete") => {
+      if (!asset) return;
+      setShowAdminActions(false);
+      setPendingAdminAction(action);
+      setActionConfirmText("");
+      setAdminActionError(null);
+      if (action === "group") {
+        // Always start empty so user intentionally chooses a target.
+        setGroupTargetAssetId("");
+        setTargetSearchOpen(false);
+      }
+      if (action === "unmerge") {
+        setUnmergeSourceAssetId("");
+        setAliasSourceOptions([]);
+        void fetchAssetAliases(asset.id, {
+          token: token ?? undefined,
+          userEmail: user?.email,
+        })
+          .then((data) => {
+            const ids = (data.aliases || []).map((a) => a.source_asset_id);
+            setAliasSourceOptions(ids);
+          })
+          .catch((err) => {
+            setAdminActionError(
+              err instanceof Error
+                ? err.message
+                : "Failed to load merged aliases",
+            );
+          });
+      }
+    },
+    [asset, token, user?.email],
+  );
+
+  const handleConfirmAdminAction = useCallback(async () => {
+    if (!asset || !pendingAdminAction) return;
+    const expected = asset.id;
+    if (actionConfirmText.trim() !== expected) {
+      setAdminActionError(`Type "${expected}" to confirm`);
+      return;
+    }
+    setAdminActionError(null);
+    if (pendingAdminAction === "delete") {
+      await runDeleteAsset();
+      return;
+    }
+    if (pendingAdminAction === "unmerge") {
+      await runUnmergeAsset();
+      return;
+    }
+    await runGroupAsset();
+  }, [
+    actionConfirmText,
+    asset,
+    pendingAdminAction,
+    runDeleteAsset,
+    runGroupAsset,
+    runUnmergeAsset,
+  ]);
+
   const mainContent = (() => {
-    if (loading && !error) {
+    if (loading && !error && findings.length === 0) {
       return (
         <div
           style={{
@@ -692,19 +1297,662 @@ export function AssetPage({ config }: AssetPageProps) {
           sbom={assetSbom.length > 0 ? assetSbom : sbom}
           findings={asset.findings}
           onImport={(pkg) => setSbom((prev) => [...prev, ...pkg])}
-          assetId={assetId ?? asset?.name}
+          assetId={assetId ?? asset?.id}
         />
       );
     }
 
     if (assetTab === "review") {
+      const strategyLabel: Record<AssetMergeSuggestion["strategy"], string> = {
+        digest: "Digest",
+        exact_ref: "Exact image/ref",
+        sbom_similarity: "SBOM similarity",
+        name_heuristic: "Name heuristic",
+      };
+      const detailLabel: Record<string, string> = {
+        reason: "Reason",
+        sourceAssetId: "Source asset",
+        targetAssetId: "Target asset",
+        sourceName: "Source normalized name",
+        targetName: "Target normalized name",
+        nameSimilarity: "Name similarity",
+        exactNormalizedNameMatch: "Exact normalized name match",
+        sharedNameTokens: "Shared name tokens",
+        sharedRefs: "Shared refs",
+        sharedRefCount: "Shared ref count",
+        sharedDigests: "Shared digests",
+        sharedDigestCount: "Shared digest count",
+        packageJaccard: "SBOM Jaccard",
+        sourcePackageCount: "Source package count",
+        targetPackageCount: "Target package count",
+        sharedPackageCount: "Shared package count",
+        sharedPackages: "Shared packages",
+      };
       return (
-        <ReviewQueue
-          reviewQueue={assetReviewQueue}
-          sources={sources}
-          tracker={tracker}
-          onSelect={setSelected}
-        />
+        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          {canReviewAssets && (
+            <section
+              style={{
+                background: "var(--app-card-bg)",
+                border: "1px solid var(--app-border)",
+                borderRadius: 8,
+                padding: 14,
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  gap: 10,
+                }}
+              >
+                <div>
+                  <div
+                    style={{
+                      ...mono,
+                      fontSize: 10,
+                      fontWeight: 700,
+                      letterSpacing: "0.12em",
+                      textTransform: "uppercase",
+                      color: "var(--app-muted)",
+                      marginBottom: 4,
+                    }}
+                  >
+                    Asset Merge Review
+                  </div>
+                  <div
+                    style={{ ...sans, fontSize: 13, color: "var(--app-muted)" }}
+                  >
+                    Suggestions are non-destructive until you approve.
+                  </div>
+                  {asset?.digestConflictOpen && (
+                    <div
+                      style={{
+                        marginTop: 8,
+                        ...sans,
+                        fontSize: 12,
+                        color: "var(--app-danger)",
+                      }}
+                    >
+                      Digest conflict detected for one or more tags on this
+                      asset. Review tag/digest observations before approving
+                      merges.
+                    </div>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void refreshMergeReviewData()}
+                  disabled={mergeSuggestionsLoading || digestConflictsLoading}
+                  style={{
+                    ...mono,
+                    fontSize: 11,
+                    borderRadius: 6,
+                    border: "1px solid var(--app-border)",
+                    background: "transparent",
+                    color: "var(--app-accent)",
+                    padding: "6px 10px",
+                    cursor:
+                      mergeSuggestionsLoading || digestConflictsLoading
+                        ? "not-allowed"
+                        : "pointer",
+                    opacity:
+                      mergeSuggestionsLoading || digestConflictsLoading
+                        ? 0.7
+                        : 1,
+                  }}
+                >
+                  {mergeSuggestionsLoading || digestConflictsLoading
+                    ? "Refreshing…"
+                    : "Refresh"}
+                </button>
+              </div>
+
+              {mergeSuggestionsError && (
+                <div
+                  style={{
+                    marginTop: 10,
+                    border:
+                      "1px solid color-mix(in srgb, var(--app-danger) 60%, transparent)",
+                    background:
+                      "color-mix(in srgb, var(--app-danger) 10%, transparent)",
+                    color: "var(--app-danger)",
+                    borderRadius: 6,
+                    padding: "8px 10px",
+                    ...sans,
+                    fontSize: 12,
+                  }}
+                >
+                  {mergeSuggestionsError}
+                </div>
+              )}
+
+              <div
+                style={{
+                  marginTop: 12,
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
+                  gap: 10,
+                }}
+              >
+                <div
+                  style={{
+                    border: "1px solid var(--app-border)",
+                    borderRadius: 6,
+                    padding: "10px 12px",
+                    background: "var(--app-input-bg)",
+                  }}
+                >
+                  <div
+                    style={{
+                      ...mono,
+                      fontSize: 10,
+                      letterSpacing: "0.08em",
+                      textTransform: "uppercase",
+                      color: "var(--app-muted)",
+                      marginBottom: 6,
+                    }}
+                  >
+                    Observed Tags
+                  </div>
+                  {(asset?.observedTags ?? []).length === 0 ? (
+                    <div
+                      style={{
+                        ...sans,
+                        fontSize: 12,
+                        color: "var(--app-muted)",
+                      }}
+                    >
+                      No observed tags captured yet.
+                    </div>
+                  ) : (
+                    <div
+                      style={{
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: 6,
+                      }}
+                    >
+                      {(asset?.observedTags ?? []).map((t) => (
+                        <div key={t.tag} style={{ ...mono, fontSize: 11 }}>
+                          <span style={{ color: "var(--app-fg)" }}>
+                            {t.tag}
+                          </span>
+                          <span style={{ color: "var(--app-muted)" }}>
+                            {" "}
+                            · seen{" "}
+                            {Math.max(1, Number(t.observationCount ?? 0))}
+                            {t.lastSeenAt ? ` · last ${t.lastSeenAt}` : ""}
+                            {t.lastDigest ? ` · ${t.lastDigest}` : ""}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div
+                  style={{
+                    border: "1px solid var(--app-border)",
+                    borderRadius: 6,
+                    padding: "10px 12px",
+                    background: "var(--app-input-bg)",
+                  }}
+                >
+                  <div
+                    style={{
+                      ...mono,
+                      fontSize: 10,
+                      letterSpacing: "0.08em",
+                      textTransform: "uppercase",
+                      color: "var(--app-muted)",
+                      marginBottom: 6,
+                    }}
+                  >
+                    Digest Conflicts
+                  </div>
+                  {digestConflictsLoading ? (
+                    <div
+                      style={{
+                        ...sans,
+                        fontSize: 12,
+                        color: "var(--app-muted)",
+                      }}
+                    >
+                      Loading conflicts...
+                    </div>
+                  ) : digestConflicts.length === 0 ? (
+                    <div
+                      style={{
+                        ...sans,
+                        fontSize: 12,
+                        color: "var(--app-muted)",
+                      }}
+                    >
+                      No digest conflicts recorded.
+                    </div>
+                  ) : (
+                    <div
+                      style={{
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: 8,
+                      }}
+                    >
+                      {digestConflicts.map((c) => {
+                        const isOpen = c.status === "open";
+                        const busy = digestConflictActionTag === c.tag;
+                        return (
+                          <div
+                            key={`${c.tag}-${c.id}`}
+                            style={{
+                              border: "1px solid var(--app-border)",
+                              borderRadius: 6,
+                              padding: "8px 10px",
+                            }}
+                          >
+                            <div
+                              style={{
+                                ...mono,
+                                fontSize: 11,
+                                color: "var(--app-fg)",
+                              }}
+                            >
+                              tag {c.tag} · status {c.status}
+                            </div>
+                            <div
+                              style={{
+                                ...mono,
+                                fontSize: 10,
+                                color: "var(--app-muted)",
+                                marginTop: 4,
+                                lineHeight: 1.35,
+                              }}
+                            >
+                              Digests: {(c.digests ?? []).join(", ")}
+                            </div>
+                            <div
+                              style={{
+                                ...mono,
+                                fontSize: 10,
+                                color: "var(--app-muted)",
+                                marginTop: 2,
+                                lineHeight: 1.35,
+                              }}
+                            >
+                              First seen: {c.first_seen_at ?? "n/a"} · Last
+                              seen: {c.last_seen_at ?? "n/a"}
+                            </div>
+                            {canReviewAssets && (
+                              <button
+                                type="button"
+                                disabled={busy}
+                                onClick={() =>
+                                  void setDigestConflictAcknowledged(
+                                    c.tag,
+                                    isOpen,
+                                  )
+                                }
+                                style={{
+                                  ...mono,
+                                  fontSize: 10,
+                                  marginTop: 6,
+                                  borderRadius: 6,
+                                  border: "1px solid var(--app-border)",
+                                  background: "transparent",
+                                  color: "var(--app-accent)",
+                                  padding: "4px 8px",
+                                  cursor: busy ? "not-allowed" : "pointer",
+                                  opacity: busy ? 0.7 : 1,
+                                }}
+                              >
+                                {busy
+                                  ? "Updating..."
+                                  : isOpen
+                                    ? "Acknowledge"
+                                    : "Mark Open"}
+                              </button>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {!mergeSuggestionsLoading &&
+                mergeSuggestionsVisible.length === 0 && (
+                  <div
+                    style={{
+                      marginTop: 10,
+                      ...sans,
+                      fontSize: 12,
+                      color: "var(--app-muted)",
+                    }}
+                  >
+                    No merge suggestions for this asset.
+                  </div>
+                )}
+
+              {mergeSuggestionsVisible.length > 0 && (
+                <div
+                  style={{
+                    marginTop: 12,
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 8,
+                  }}
+                >
+                  {mergeSuggestionsVisible.map((s) => (
+                    <div
+                      key={`${s.source_asset_id}-${s.target_asset_id}`}
+                      style={{
+                        border: "1px solid var(--app-border)",
+                        borderRadius: 6,
+                        padding: "10px 12px",
+                        background: "var(--app-input-bg)",
+                        display: "flex",
+                        flexWrap: "wrap",
+                        alignItems: "center",
+                        gap: 10,
+                      }}
+                    >
+                      <div style={{ minWidth: 260, flex: 1 }}>
+                        <div
+                          style={{
+                            ...mono,
+                            fontSize: 12,
+                            color: "var(--app-fg)",
+                          }}
+                        >
+                          {s.target_asset_id}
+                        </div>
+                        <div
+                          style={{
+                            ...mono,
+                            fontSize: 10,
+                            color: "var(--app-muted)",
+                            marginTop: 4,
+                          }}
+                        >
+                          {strategyLabel[s.strategy]} · confidence{" "}
+                          {s.confidence} · score {s.score.toFixed(2)}
+                        </div>
+                        {Object.keys(s.details ?? {}).length > 0 && (
+                          <details style={{ marginTop: 8 }}>
+                            <summary
+                              style={{
+                                ...mono,
+                                fontSize: 10,
+                                color: "var(--app-accent)",
+                                cursor: "pointer",
+                                userSelect: "none",
+                              }}
+                            >
+                              Reason details
+                            </summary>
+                            <div
+                              style={{
+                                marginTop: 6,
+                                borderLeft: "2px solid var(--app-border)",
+                                paddingLeft: 8,
+                                display: "flex",
+                                flexDirection: "column",
+                                gap: 4,
+                              }}
+                            >
+                              {typeof s.details?.reason === "string" &&
+                                s.details.reason.trim().length > 0 && (
+                                  <div
+                                    style={{
+                                      ...sans,
+                                      fontSize: 12,
+                                      color: "var(--app-fg)",
+                                      lineHeight: 1.45,
+                                      marginBottom: 2,
+                                    }}
+                                  >
+                                    {s.details.reason.trim()}
+                                  </div>
+                                )}
+                              {Object.entries(s.details)
+                                .filter(([k]) => k !== "reason")
+                                .map(([k, v]) => (
+                                  <div
+                                    key={k}
+                                    style={{
+                                      ...mono,
+                                      fontSize: 10,
+                                      color: "var(--app-muted)",
+                                      lineHeight: 1.35,
+                                    }}
+                                  >
+                                    <span style={{ color: "var(--app-fg)" }}>
+                                      {detailLabel[k] ?? k}
+                                    </span>
+                                    :{" "}
+                                    {Array.isArray(v)
+                                      ? v.join(", ")
+                                      : typeof v === "object" && v !== null
+                                        ? JSON.stringify(v)
+                                        : String(v)}
+                                  </div>
+                                ))}
+                            </div>
+                          </details>
+                        )}
+                      </div>
+                      <div style={{ display: "flex", gap: 8 }}>
+                        <button
+                          type="button"
+                          onClick={() => void denyMergeSuggestion(s)}
+                          disabled={
+                            mergeReviewActionTargetId === s.target_asset_id ||
+                            approvingTargetId === s.target_asset_id
+                          }
+                          style={{
+                            ...mono,
+                            fontSize: 11,
+                            borderRadius: 6,
+                            border: "1px solid var(--app-danger)",
+                            background: "transparent",
+                            color: "var(--app-danger)",
+                            padding: "6px 10px",
+                            cursor:
+                              mergeReviewActionTargetId === s.target_asset_id ||
+                              approvingTargetId === s.target_asset_id
+                                ? "not-allowed"
+                                : "pointer",
+                            opacity:
+                              mergeReviewActionTargetId === s.target_asset_id ||
+                              approvingTargetId === s.target_asset_id
+                                ? 0.7
+                                : 1,
+                          }}
+                        >
+                          {mergeReviewActionTargetId === s.target_asset_id
+                            ? "Saving…"
+                            : "Deny"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            void approveMergeSuggestion(s.target_asset_id)
+                          }
+                          disabled={
+                            !isAdmin ||
+                            Boolean(approvingTargetId) ||
+                            mergeReviewActionTargetId === s.target_asset_id
+                          }
+                          style={{
+                            ...mono,
+                            fontSize: 11,
+                            borderRadius: 6,
+                            border: "1px solid var(--app-accent)",
+                            background: "transparent",
+                            color: "var(--app-accent)",
+                            padding: "6px 10px",
+                            cursor:
+                              !isAdmin ||
+                              approvingTargetId ||
+                              mergeReviewActionTargetId === s.target_asset_id
+                                ? "not-allowed"
+                                : "pointer",
+                            opacity:
+                              !isAdmin ||
+                              approvingTargetId ||
+                              mergeReviewActionTargetId === s.target_asset_id
+                                ? 0.7
+                                : 1,
+                          }}
+                          title={
+                            isAdmin
+                              ? undefined
+                              : "Admin role required to approve merge"
+                          }
+                        >
+                          {!isAdmin
+                            ? "Admin required"
+                            : approvingTargetId === s.target_asset_id
+                              ? "Approving…"
+                              : "Approve merge"}
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div style={{ marginTop: 14 }}>
+                <div
+                  style={{
+                    ...mono,
+                    fontSize: 10,
+                    fontWeight: 700,
+                    letterSpacing: "0.12em",
+                    textTransform: "uppercase",
+                    color: "var(--app-muted)",
+                    marginBottom: 8,
+                  }}
+                >
+                  Past Merge Reviews
+                </div>
+                {mergeReviewsLoading && (
+                  <div
+                    style={{ ...sans, fontSize: 12, color: "var(--app-muted)" }}
+                  >
+                    Loading history…
+                  </div>
+                )}
+                {!mergeReviewsLoading && mergeReviews.length === 0 && (
+                  <div
+                    style={{ ...sans, fontSize: 12, color: "var(--app-muted)" }}
+                  >
+                    No past merge reviews for this asset.
+                  </div>
+                )}
+                {mergeReviews.length > 0 && (
+                  <div
+                    style={{ display: "flex", flexDirection: "column", gap: 8 }}
+                  >
+                    {mergeReviews.map((r) => (
+                      <div
+                        key={`${r.source_asset_id}-${r.target_asset_id}`}
+                        style={{
+                          border: "1px solid var(--app-border)",
+                          borderRadius: 6,
+                          padding: "9px 10px",
+                          background: "var(--app-card-bg)",
+                          display: "flex",
+                          flexWrap: "wrap",
+                          alignItems: "center",
+                          gap: 10,
+                        }}
+                      >
+                        <div style={{ minWidth: 280, flex: 1 }}>
+                          <div
+                            style={{
+                              ...mono,
+                              fontSize: 12,
+                              color: "var(--app-fg)",
+                            }}
+                          >
+                            {r.target_asset_id}
+                          </div>
+                          <div
+                            style={{
+                              ...mono,
+                              fontSize: 10,
+                              color: "var(--app-muted)",
+                            }}
+                          >
+                            status {r.status}
+                            {r.updated_at ? ` · updated ${r.updated_at}` : ""}
+                            {r.note ? ` · ${r.note}` : ""}
+                          </div>
+                        </div>
+                        <div style={{ display: "flex", gap: 8 }}>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              void setMergeReviewStatus(
+                                r.target_asset_id,
+                                "pending",
+                                "Reopened for review",
+                              )
+                            }
+                            disabled={
+                              mergeReviewActionTargetId === r.target_asset_id
+                            }
+                            style={{
+                              ...mono,
+                              fontSize: 11,
+                              borderRadius: 6,
+                              border: "1px solid var(--app-border)",
+                              background: "transparent",
+                              color: "var(--app-muted)",
+                              padding: "5px 8px",
+                            }}
+                          >
+                            Reopen
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              void removeMergeReview(r.target_asset_id)
+                            }
+                            disabled={
+                              mergeReviewActionTargetId === r.target_asset_id
+                            }
+                            style={{
+                              ...mono,
+                              fontSize: 11,
+                              borderRadius: 6,
+                              border: "1px solid var(--app-border)",
+                              background: "transparent",
+                              color: "var(--app-danger)",
+                              padding: "5px 8px",
+                            }}
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </section>
+          )}
+          <ReviewQueue
+            reviewQueue={assetReviewQueue}
+            sources={sources}
+            tracker={tracker}
+            onSelect={setSelected}
+          />
+        </div>
       );
     }
 
@@ -777,7 +2025,7 @@ export function AssetPage({ config }: AssetPageProps) {
                     color: "var(--app-muted)",
                   }}
                 >
-                  {asset.name.charAt(0).toUpperCase()}
+                  {assetDisplayTitle.charAt(0).toUpperCase()}
                 </div>
                 <div style={{ minWidth: 0, flex: 1 }}>
                   <div
@@ -799,8 +2047,9 @@ export function AssetPage({ config }: AssetPageProps) {
                         textOverflow: "ellipsis",
                         whiteSpace: "nowrap",
                       }}
+                      title={asset.id}
                     >
-                      {asset.name}
+                      {assetDisplayTitle}
                     </h1>
                     <button
                       type="button"
@@ -830,31 +2079,21 @@ export function AssetPage({ config }: AssetPageProps) {
                     >
                       {favoriteAssetIds.has(asset.id) ? "♥" : "♡"}
                     </button>
-                    {isAdmin && (
-                      <button
-                        type="button"
-                        onClick={handleDeleteAsset}
-                        disabled={deletingAsset}
-                        aria-label={`Delete asset ${asset.name}`}
-                        style={{
-                          ...mono,
-                          fontSize: 11,
-                          borderRadius: 6,
-                          border: "1px solid var(--app-danger)",
-                          background: "transparent",
-                          color: "var(--app-danger)",
-                          padding: "4px 10px",
-                          cursor: deletingAsset ? "not-allowed" : "pointer",
-                          opacity: deletingAsset ? 0.7 : 1,
-                        }}
-                      >
-                        {deletingAsset ? "Deleting…" : "Delete asset"}
-                      </button>
-                    )}
                   </div>
                   <div
                     style={{ ...mono, fontSize: 11, color: "var(--app-muted)" }}
                   >
+                    {assetDisplayTitle !== asset.id && (
+                      <span
+                        style={{
+                          display: "block",
+                          marginBottom: 4,
+                          wordBreak: "break-all",
+                        }}
+                      >
+                        {asset.id}
+                      </span>
+                    )}
                     {asset.tag && `Tag: ${asset.tag} · `}
                     {displayRows.length} findings
                     {(branchFilter || tagFilter) &&
@@ -900,18 +2139,26 @@ export function AssetPage({ config }: AssetPageProps) {
                       options={[
                         {
                           value: "",
-                          label: uniqueTags.length > 0 ? "All tags" : "—",
+                          label:
+                            containerVariantKeys.length > 0
+                              ? "All image variants"
+                              : "—",
                         },
-                        ...uniqueTags.map((t) => ({ value: t, label: t })),
+                        ...containerVariantSelectOptions,
                       ]}
-                      onChange={(v) => setTagFilter(v)}
+                      onChange={(v) => {
+                        if (v === "")
+                          containerVariantUserChoseAllRef.current = true;
+                        else containerVariantUserChoseAllRef.current = false;
+                        setTagFilter(v);
+                      }}
                       icon={
                         <Tag
                           size={14}
                           style={{ color: "var(--app-muted)", flexShrink: 0 }}
                         />
                       }
-                      aria-label="Filter by tag"
+                      aria-label="Filter by tag or image digest"
                     />
                   )}
                 </div>
@@ -1013,26 +2260,52 @@ export function AssetPage({ config }: AssetPageProps) {
                   })}
                 </div>
               </div>
+              {digestMergeBannerHints.length > 0 &&
+                !mergeSuggestionsLoading && (
+                  <div
+                    role="status"
+                    style={{
+                      width: "100%",
+                      flexBasis: "100%",
+                      marginTop: 4,
+                      padding: "10px 12px",
+                      borderRadius: 6,
+                      border:
+                        "1px solid color-mix(in srgb, var(--app-accent) 45%, transparent)",
+                      background:
+                        "color-mix(in srgb, var(--app-accent) 10%, transparent)",
+                      ...sans,
+                      fontSize: 13,
+                      color: "var(--app-fg)",
+                    }}
+                  >
+                    <strong style={{ color: "var(--app-accent)" }}>
+                      Digest merge suggestion
+                    </strong>
+                    {" — "}
+                    {digestMergeBannerHints.length === 1
+                      ? `This asset likely matches another image by manifest digest (${digestMergeBannerHints[0].target_asset_id}).`
+                      : `${digestMergeBannerHints.length} high-confidence digest matches are available.`}{" "}
+                    <button
+                      type="button"
+                      onClick={() => setAssetTab("review")}
+                      style={{
+                        ...sans,
+                        marginLeft: 8,
+                        fontSize: 13,
+                        border: "none",
+                        background: "transparent",
+                        color: "var(--app-accent)",
+                        cursor: "pointer",
+                        textDecoration: "underline",
+                        padding: 0,
+                      }}
+                    >
+                      Open Asset Merge Review
+                    </button>
+                  </div>
+                )}
             </div>
-            {deleteError && (
-              <div
-                style={{
-                  marginTop: 12,
-                  border:
-                    "1px solid color-mix(in srgb, var(--app-danger) 60%, transparent)",
-                  background:
-                    "color-mix(in srgb, var(--app-danger) 10%, transparent)",
-                  color: "var(--app-danger)",
-                  borderRadius: 8,
-                  padding: "8px 12px",
-                  ...sans,
-                  fontSize: 12,
-                }}
-              >
-                {deleteError}
-              </div>
-            )}
-
             {/* Sort, multi-filter by column, search */}
             <div
               style={{
@@ -1351,8 +2624,113 @@ export function AssetPage({ config }: AssetPageProps) {
     >
       <AssetSubTabs
         config={config}
+        isAdmin={canReviewAssets}
         currentTab={assetTab}
         onTabChange={setAssetTab}
+        rightContent={
+          isAdmin ? (
+            <div ref={adminActionsRef} style={{ position: "relative" }}>
+              <button
+                type="button"
+                onClick={() => setShowAdminActions((v) => !v)}
+                aria-label="Open asset admin actions"
+                style={{
+                  ...mono,
+                  fontSize: 11,
+                  borderRadius: 6,
+                  border:
+                    "1px solid color-mix(in srgb, var(--app-accent) 50%, var(--app-border))",
+                  background:
+                    "color-mix(in srgb, var(--app-accent) 12%, var(--app-input-bg))",
+                  color: "var(--app-accent)",
+                  padding: "4px 10px",
+                  cursor: "pointer",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 6,
+                }}
+              >
+                <MoreHorizontal size={13} />
+                Asset actions
+              </button>
+              {showAdminActions && (
+                <div
+                  style={{
+                    position: "absolute",
+                    zIndex: 40,
+                    right: 0,
+                    top: "calc(100% + 6px)",
+                    minWidth: 220,
+                    borderRadius: 10,
+                    border:
+                      "1px solid color-mix(in srgb, var(--app-accent) 25%, var(--app-border))",
+                    background:
+                      "color-mix(in srgb, var(--app-card-bg) 92%, var(--app-header-bg))",
+                    boxShadow: "0 14px 36px rgba(0,0,0,0.28)",
+                    overflow: "hidden",
+                  }}
+                >
+                  <button
+                    type="button"
+                    onClick={() => openAdminActionDialog("group")}
+                    style={{
+                      width: "100%",
+                      textAlign: "left",
+                      background: "transparent",
+                      border: "none",
+                      borderBottom:
+                        "1px solid color-mix(in srgb, var(--app-border) 70%, transparent)",
+                      padding: "10px 12px",
+                      color: "var(--app-fg)",
+                      cursor: "pointer",
+                      ...sans,
+                      fontSize: 12,
+                    }}
+                  >
+                    Group / Merge asset
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => openAdminActionDialog("unmerge")}
+                    style={{
+                      width: "100%",
+                      textAlign: "left",
+                      background: "transparent",
+                      border: "none",
+                      borderBottom:
+                        "1px solid color-mix(in srgb, var(--app-border) 70%, transparent)",
+                      padding: "10px 12px",
+                      color: "var(--app-fg)",
+                      cursor: "pointer",
+                      ...sans,
+                      fontSize: 12,
+                    }}
+                  >
+                    Unmerge alias
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => openAdminActionDialog("delete")}
+                    style={{
+                      width: "100%",
+                      textAlign: "left",
+                      background: "transparent",
+                      border: "none",
+                      padding: "10px 12px",
+                      color:
+                        "color-mix(in srgb, var(--app-danger) 92%, var(--app-fg))",
+                      cursor: "pointer",
+                      ...sans,
+                      fontSize: 12,
+                    }}
+                  >
+                    Delete asset
+                  </button>
+                </div>
+              )}
+            </div>
+          ) : null
+        }
       />
       <main
         style={{
@@ -1365,6 +2743,295 @@ export function AssetPage({ config }: AssetPageProps) {
         }}
       >
         {mainContent}
+        {pendingAdminAction && asset && (
+          <div
+            role="dialog"
+            aria-modal="true"
+            onClick={closeAdminDialog}
+            style={{
+              position: "fixed",
+              inset: 0,
+              zIndex: 60,
+              background: "color-mix(in srgb, #000 62%, transparent)",
+              display: "grid",
+              placeItems: "center",
+              padding: 16,
+            }}
+          >
+            <div
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                width: "min(560px, calc(100vw - 32px))",
+                borderRadius: 10,
+                border:
+                  "1px solid color-mix(in srgb, var(--app-accent) 25%, var(--app-border))",
+                background:
+                  "color-mix(in srgb, var(--app-card-bg) 94%, var(--app-header-bg))",
+                boxShadow: "0 18px 44px rgba(0,0,0,0.32)",
+                padding: 16,
+                display: "flex",
+                flexDirection: "column",
+                gap: 12,
+              }}
+            >
+              <h3
+                style={{
+                  margin: 0,
+                  ...mono,
+                  fontSize: 14,
+                  color: "var(--app-fg)",
+                }}
+              >
+                {pendingAdminAction === "delete"
+                  ? "Delete asset"
+                  : pendingAdminAction === "unmerge"
+                    ? "Unmerge alias"
+                    : "Group / Merge asset"}
+              </h3>
+              <p
+                style={{
+                  margin: 0,
+                  ...sans,
+                  fontSize: 12,
+                  color: "var(--app-muted)",
+                  lineHeight: 1.45,
+                }}
+              >
+                {pendingAdminAction === "delete"
+                  ? "This permanently deletes the asset record and matching findings."
+                  : pendingAdminAction === "unmerge"
+                    ? "This removes an alias previously merged into this asset and restores recorded finding mappings."
+                    : "This merges the current asset into a canonical target and remaps existing + future findings."}
+              </p>
+              {pendingAdminAction === "group" && (
+                <>
+                  <label
+                    style={{ ...mono, fontSize: 11, color: "var(--app-muted)" }}
+                  >
+                    Target asset id
+                  </label>
+                  <div ref={targetSearchRef} style={{ position: "relative" }}>
+                    <input
+                      value={groupTargetAssetId}
+                      onChange={(e) => {
+                        setGroupTargetAssetId(e.target.value);
+                        setTargetSearchOpen(true);
+                      }}
+                      onFocus={() => setTargetSearchOpen(true)}
+                      placeholder="Search and select target asset…"
+                      style={{
+                        ...mono,
+                        fontSize: 12,
+                        padding: "8px 10px",
+                        borderRadius: 6,
+                        border:
+                          "1px solid color-mix(in srgb, var(--app-accent) 30%, var(--app-border))",
+                        background: "var(--app-input-bg)",
+                        color: "var(--app-fg)",
+                        width: "100%",
+                      }}
+                    />
+                    {targetSearchOpen && (
+                      <div
+                        style={{
+                          position: "absolute",
+                          top: "calc(100% + 4px)",
+                          left: 0,
+                          right: 0,
+                          zIndex: 80,
+                          maxHeight: 220,
+                          overflowY: "auto",
+                          borderRadius: 6,
+                          border:
+                            "1px solid color-mix(in srgb, var(--app-accent) 20%, var(--app-border))",
+                          background:
+                            "color-mix(in srgb, var(--app-card-bg) 96%, var(--app-header-bg))",
+                          boxShadow: "0 10px 30px rgba(0,0,0,0.25)",
+                        }}
+                      >
+                        {filteredTargetAssetOptions.length === 0 ? (
+                          <div
+                            style={{
+                              padding: "8px 10px",
+                              ...sans,
+                              fontSize: 12,
+                              color: "var(--app-muted)",
+                            }}
+                          >
+                            No matching assets
+                          </div>
+                        ) : (
+                          filteredTargetAssetOptions.map((id) => (
+                            <button
+                              key={id}
+                              type="button"
+                              onClick={() => {
+                                setGroupTargetAssetId(id);
+                                setTargetSearchOpen(false);
+                              }}
+                              style={{
+                                width: "100%",
+                                border: "none",
+                                background:
+                                  id === groupTargetAssetId
+                                    ? "color-mix(in srgb, var(--app-accent) 15%, transparent)"
+                                    : "transparent",
+                                color: "var(--app-fg)",
+                                textAlign: "left",
+                                padding: "8px 10px",
+                                cursor: "pointer",
+                                ...mono,
+                                fontSize: 12,
+                              }}
+                            >
+                              {id}
+                            </button>
+                          ))
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
+              {pendingAdminAction === "unmerge" && (
+                <>
+                  <label
+                    style={{ ...mono, fontSize: 11, color: "var(--app-muted)" }}
+                  >
+                    Source asset id to unmerge
+                  </label>
+                  <select
+                    value={unmergeSourceAssetId}
+                    onChange={(e) => setUnmergeSourceAssetId(e.target.value)}
+                    style={{
+                      ...mono,
+                      fontSize: 12,
+                      padding: "8px 10px",
+                      borderRadius: 6,
+                      border:
+                        "1px solid color-mix(in srgb, var(--app-accent) 30%, var(--app-border))",
+                      background: "var(--app-input-bg)",
+                      color: "var(--app-fg)",
+                    }}
+                  >
+                    <option value="">Select merged source…</option>
+                    {aliasSourceOptions.map((id) => (
+                      <option key={id} value={id}>
+                        {id}
+                      </option>
+                    ))}
+                  </select>
+                </>
+              )}
+              <label
+                style={{ ...mono, fontSize: 11, color: "var(--app-muted)" }}
+              >
+                Type{" "}
+                <span style={{ color: "var(--app-danger)" }}>{asset.id}</span>{" "}
+                to confirm
+              </label>
+              <input
+                value={actionConfirmText}
+                onChange={(e) => setActionConfirmText(e.target.value)}
+                placeholder={asset.id}
+                style={{
+                  ...mono,
+                  fontSize: 12,
+                  padding: "8px 10px",
+                  borderRadius: 6,
+                  border:
+                    "1px solid color-mix(in srgb, var(--app-accent) 30%, var(--app-border))",
+                  background: "var(--app-input-bg)",
+                  color: "var(--app-fg)",
+                }}
+              />
+              {adminActionError && (
+                <div
+                  style={{
+                    border:
+                      "1px solid color-mix(in srgb, var(--app-danger) 60%, transparent)",
+                    background:
+                      "color-mix(in srgb, var(--app-danger) 10%, transparent)",
+                    color: "var(--app-danger)",
+                    borderRadius: 6,
+                    padding: "8px 10px",
+                    ...sans,
+                    fontSize: 12,
+                  }}
+                >
+                  {adminActionError}
+                </div>
+              )}
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "flex-end",
+                  gap: 8,
+                  marginTop: 4,
+                }}
+              >
+                <button
+                  type="button"
+                  onClick={closeAdminDialog}
+                  disabled={deletingAsset || groupingAsset || unmergingAsset}
+                  style={{
+                    ...mono,
+                    fontSize: 11,
+                    borderRadius: 6,
+                    border: "1px solid var(--app-border)",
+                    background: "transparent",
+                    color: "var(--app-fg)",
+                    padding: "6px 10px",
+                    cursor:
+                      deletingAsset || groupingAsset || unmergingAsset
+                        ? "not-allowed"
+                        : "pointer",
+                    opacity:
+                      deletingAsset || groupingAsset || unmergingAsset
+                        ? 0.7
+                        : 1,
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmAdminAction}
+                  disabled={deletingAsset || groupingAsset || unmergingAsset}
+                  style={{
+                    ...mono,
+                    fontSize: 11,
+                    borderRadius: 6,
+                    border: "1px solid var(--app-danger)",
+                    background: "transparent",
+                    color: "var(--app-danger)",
+                    padding: "6px 10px",
+                    cursor:
+                      deletingAsset || groupingAsset || unmergingAsset
+                        ? "not-allowed"
+                        : "pointer",
+                    opacity:
+                      deletingAsset || groupingAsset || unmergingAsset
+                        ? 0.7
+                        : 1,
+                  }}
+                >
+                  {deletingAsset
+                    ? "Deleting…"
+                    : groupingAsset
+                      ? "Grouping…"
+                      : unmergingAsset
+                        ? "Unmerging…"
+                        : pendingAdminAction === "delete"
+                          ? "Delete asset"
+                          : pendingAdminAction === "unmerge"
+                            ? "Unmerge alias"
+                            : "Group asset"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </main>
     </div>
   );

@@ -83,6 +83,31 @@ def test_extract_sbom_from_trivy_empty():
     )
 
 
+def test_extract_sbom_from_trivy_prefers_container_identity_over_temp_target():
+    """When scanner injects container identity, ignore temp OCI layout paths."""
+    trivy = {
+        "Results": [
+            {
+                "Target": "/tmp/vat-wrap-abc/wrap-kamiwaza/images/deadbeef.layout (chainguard 20230214)",
+                "Type": "alpine",
+                "_vat_container_image": "containers/images/core",
+                "_vat_container_tag": "release-0.11.0",
+                "_vat_source_image": "kamiwaza-images-core-release-0.11.0",
+                "Packages": [
+                    {"Name": "wget", "Version": "1.2.3"},
+                ],
+            }
+        ]
+    }
+    out = extract_sbom_from_trivy(trivy, "container-scan")
+    assert out is not None
+    assert len(out["components"]) == 1
+    c = out["components"][0]
+    assert c["name"] == "wget"
+    assert c["group"] == "containers/images/core:release-0.11.0"
+    assert "/tmp/vat-wrap-" not in c["group"]
+
+
 def test_extract_sbom_from_grype():
     """Grype matches yield SBOM components."""
     grype = {

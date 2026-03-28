@@ -137,6 +137,8 @@ class FindingRead(BaseModel):
     ecosystem: Optional[str] = None
     secret_type: Optional[str] = None
     resource: Optional[str] = None
+    benchmark_id: Optional[str] = None
+    benchmark_family: Optional[str] = None
     correlation_key: Optional[str] = None
     correlation_confidence: Optional[str] = None
     correlated_to: Optional[str] = None
@@ -202,6 +204,8 @@ class FindingRead(BaseModel):
             "ecosystem": self.ecosystem,
             "secretType": self.secret_type,
             "resource": self.resource,
+            "benchmarkId": self.benchmark_id,
+            "benchmarkFamily": self.benchmark_family,
             "correlationKey": self.correlation_key,
             "correlationConfidence": self.correlation_confidence,
             "correlatedTo": self.correlated_to,

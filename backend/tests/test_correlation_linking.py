@@ -12,11 +12,20 @@ from app.services.correlation_linking import apply_correlation_linking
 async def test_apply_correlation_linked_when_not_canonical():
     canonical = MagicMock()
     canonical.id = "f-old"
+    canonical.correlation_key = "v1:sca:asset:eco:comp:cve"
+    canonical.image = "repo/app"
+    canonical.branch = "main"
+    canonical.tag = "v1"
+    canonical.cve_id = "CVE-1"
     subject = MagicMock()
     subject.id = "f-new"
-    subject.correlation_key = "sca:asset:eco:comp:cve"
+    subject.correlation_key = "v1:sca:asset:eco:comp:cve"
     subject.correlation_confidence = "high"
     subject.tenant_id = None
+    subject.image = "repo/app"
+    subject.branch = "main"
+    subject.tag = "v1"
+    subject.cve_id = "CVE-1"
 
     mock_result = MagicMock()
     mock_result.scalars.return_value.all.return_value = [canonical, subject]
@@ -39,14 +48,23 @@ async def test_apply_correlation_linked_when_not_canonical():
 
 
 @pytest.mark.asyncio
-async def test_apply_correlation_medium_confidence_links():
+async def test_apply_correlation_medium_confidence_links_deterministically():
     canonical = MagicMock()
     canonical.id = "f-a"
+    canonical.correlation_key = "k"
+    canonical.image = "repo/app"
+    canonical.branch = "main"
+    canonical.tag = "v1"
+    canonical.cve_id = None
     subject = MagicMock()
     subject.id = "f-b"
     subject.correlation_key = "k"
     subject.correlation_confidence = "medium"
     subject.tenant_id = None
+    subject.image = "repo/app"
+    subject.branch = "main"
+    subject.tag = "v1"
+    subject.cve_id = None
 
     mock_result = MagicMock()
     mock_result.scalars.return_value.all.return_value = [canonical, subject]
@@ -60,17 +78,26 @@ async def test_apply_correlation_medium_confidence_links():
     ) as emit:
         await apply_correlation_linking(db, subject, "t1")
         assert emit.await_args.kwargs["event_type"] == "dedup.correlation.linked"
+    assert subject.correlated_to == "f-a"
 
 
 @pytest.mark.asyncio
-async def test_apply_correlation_skipped_low_confidence():
+async def test_apply_correlation_skipped_no_peer_for_singleton_cluster():
     subject = MagicMock()
     subject.id = "f-1"
     subject.correlation_key = "k"
     subject.correlation_confidence = "low"
     subject.tenant_id = None
+    subject.image = "repo/app"
+    subject.branch = "main"
+    subject.tag = "v1"
+    subject.cve_id = "CVE-1"
+
+    mock_result = MagicMock()
+    mock_result.scalars.return_value.all.return_value = [subject]
 
     db = AsyncMock()
+    db.execute = AsyncMock(return_value=mock_result)
     db.flush = AsyncMock()
 
     with patch(
@@ -79,9 +106,7 @@ async def test_apply_correlation_skipped_low_confidence():
         await apply_correlation_linking(db, subject, "trace-1")
         emit.assert_awaited_once()
         assert emit.await_args.kwargs["event_type"] == "dedup.correlation.skipped"
-        assert (
-            emit.await_args.kwargs["decision_reason_code"] == "confidence_below_policy"
-        )
+        assert emit.await_args.kwargs["decision_reason_code"] == "no_peer"
 
 
 @pytest.mark.asyncio
@@ -91,9 +116,18 @@ async def test_apply_correlation_confidence_normalized_uppercase():
     subject.correlation_key = "k"
     subject.correlation_confidence = "HIGH"
     subject.tenant_id = None
+    subject.image = "repo/app"
+    subject.branch = "main"
+    subject.tag = "v1"
+    subject.cve_id = "CVE-1"
 
     canonical = MagicMock()
     canonical.id = "c1"
+    canonical.correlation_key = "k"
+    canonical.image = "repo/app"
+    canonical.branch = "main"
+    canonical.tag = "v1"
+    canonical.cve_id = "CVE-1"
     mock_result = MagicMock()
     mock_result.scalars.return_value.all.return_value = [canonical, subject]
 
@@ -134,6 +168,10 @@ async def test_apply_correlation_skipped_single_cluster_member():
     subject.correlation_key = "k"
     subject.correlation_confidence = "high"
     subject.tenant_id = None
+    subject.image = "repo/app"
+    subject.branch = "main"
+    subject.tag = "v1"
+    subject.cve_id = "CVE-1"
 
     mock_result = MagicMock()
     mock_result.scalars.return_value.all.return_value = [subject]
@@ -158,8 +196,16 @@ async def test_apply_correlation_skipped_canonical_root():
     canonical.correlation_key = "k"
     canonical.correlation_confidence = "high"
     canonical.tenant_id = None
+    canonical.image = "repo/app"
+    canonical.branch = "main"
+    canonical.tag = "v1"
+    canonical.cve_id = "CVE-1"
     other = MagicMock()
     other.id = "f-other"
+    other.image = "repo/app"
+    other.branch = "main"
+    other.tag = "v1"
+    other.cve_id = "CVE-1"
 
     mock_result = MagicMock()
     mock_result.scalars.return_value.all.return_value = [canonical, other]
@@ -181,14 +227,28 @@ async def test_apply_correlation_skipped_canonical_root():
 async def test_apply_correlation_three_node_cluster_repairs_stale_pointer():
     root = MagicMock()
     root.id = "f-1"
+    root.correlation_key = "k"
+    root.image = "repo/app"
+    root.branch = "main"
+    root.tag = "v1"
+    root.cve_id = "CVE-1"
     mid = MagicMock()
     mid.id = "f-2"
+    mid.correlation_key = "k"
     mid.correlated_to = "bogus"
+    mid.image = "repo/app"
+    mid.branch = "main"
+    mid.tag = "v1"
+    mid.cve_id = "CVE-1"
     leaf = MagicMock()
     leaf.id = "f-3"
     leaf.correlation_key = "k"
     leaf.correlation_confidence = "high"
     leaf.tenant_id = None
+    leaf.image = "repo/app"
+    leaf.branch = "main"
+    leaf.tag = "v1"
+    leaf.cve_id = "CVE-1"
 
     mock_result = MagicMock()
     mock_result.scalars.return_value.all.return_value = [root, mid, leaf]
@@ -213,6 +273,9 @@ async def test_apply_correlation_membership_mismatch_emits_and_returns():
     subject.correlation_key = "k"
     subject.correlation_confidence = "high"
     subject.tenant_id = None
+    subject.image = "repo/app"
+    subject.branch = "main"
+    subject.tag = "v1"
 
     other = MagicMock()
     other.id = "f-other-only"
@@ -227,7 +290,10 @@ async def test_apply_correlation_membership_mismatch_emits_and_returns():
         "app.services.correlation_linking.emit_audit_event", new_callable=AsyncMock
     ) as emit:
         await apply_correlation_linking(db, subject, "t1")
-        assert emit.await_args.kwargs["decision_reason_code"] == "cluster_membership_mismatch"
+        assert (
+            emit.await_args.kwargs["decision_reason_code"]
+            == "cluster_membership_mismatch"
+        )
 
 
 @pytest.mark.asyncio
@@ -238,9 +304,18 @@ async def test_apply_correlation_tenant_scoped_execute_called_once():
     subject.correlation_key = "same-key"
     subject.correlation_confidence = "high"
     subject.tenant_id = "tenant-1"
+    subject.image = "repo/app"
+    subject.branch = "main"
+    subject.tag = "v1"
+    subject.cve_id = "CVE-1"
 
     peer = MagicMock()
     peer.id = "f-b"
+    peer.correlation_key = "same-key"
+    peer.image = "repo/app"
+    peer.branch = "main"
+    peer.tag = "v1"
+    peer.cve_id = "CVE-1"
     mock_result = MagicMock()
     mock_result.scalars.return_value.all.return_value = [peer, subject]
 
@@ -253,8 +328,8 @@ async def test_apply_correlation_tenant_scoped_execute_called_once():
     ):
         await apply_correlation_linking(db, subject, "t1")
 
-    db.execute.assert_awaited_once()
-    call_stmt = db.execute.await_args[0][0]
+    assert db.execute.await_count >= 1
+    call_stmt = db.execute.await_args_list[0].args[0]
     compiled = str(call_stmt.compile(dialect=postgresql.dialect())).lower()
     assert "findings.tenant_id" in compiled
     assert "tenant_id_1" in compiled or "%(tenant_id" in compiled

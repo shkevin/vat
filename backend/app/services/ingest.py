@@ -6,18 +6,59 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.finding import Finding, FindingType, Severity, Status
+from app.models.finding_observation import FindingObservation
 from app.schemas.vat import VatFindingSchema, VatFindingType, VatSeverity
 from app.core.config import get_settings
 from app.services.correlation import correlation_key_for_payload
 from app.services.correlation_linking import apply_correlation_linking
+from app.services.ingest_identity import compute_ingest_fingerprint
+from app.services.sarif_fingerprints import resolve_partial_fingerprints
 from app.services.findings_service import _status_to_enum
-from app.services.dedup import (
-    component_base,
-    make_fingerprint,
-    make_fingerprint_for_source_issue,
+from app.services.finding_identifiers import upsert_identifier_facts_for_finding
+from app.parsers import PARSER_IDENTITY_POLICY
+from app.services.asset_resolver import (
+    correlation_asset_image_for_ingest,
+    resolve_asset_for_payload,
 )
+from app.services.container_asset_observations import (
+    record_container_asset_observation,
+)
+from app.services.dedup import component_base
 from app.services.sla import SLA_DAYS
 from app.parsers.image_digest import effective_image_digest
+
+
+async def _record_container_asset_observations(
+    db: AsyncSession,
+    payload: VatFindingSchema,
+    scan_session_id: str | None,
+) -> None:
+    """Record tag observations; uses ``observed_container_tags`` when set (e.g. Aikido)."""
+    observed = getattr(payload, "observed_container_tags", None)
+    if observed is None:
+        await record_container_asset_observation(
+            db, payload=payload, scan_session_id=scan_session_id
+        )
+        return
+    tags: list[str] = []
+    seen: set[str] = set()
+    for t in observed:
+        s = str(t).strip()
+        if s and s not in seen:
+            seen.add(s)
+            tags.append(s)
+    ptag = (getattr(payload, "tag", None) or "").strip()
+    if ptag and ptag not in seen:
+        tags.insert(0, ptag)
+    elif not tags and ptag:
+        tags = [ptag]
+    if not tags:
+        return
+    for t in tags:
+        sub = payload.model_copy(update={"tag": t})
+        await record_container_asset_observation(
+            db, payload=sub, scan_session_id=scan_session_id
+        )
 
 
 def _now() -> str:
@@ -84,6 +125,60 @@ def _compute_sla_due(finding_type: FindingType, severity: Severity) -> str:
     return due.strftime("%Y-%m-%d")
 
 
+def _infer_result_state(payload: VatFindingSchema) -> str:
+    """Best-effort observation result state."""
+    explicit = (getattr(payload, "result_state", None) or "").strip().lower()
+    if explicit:
+        return explicit
+    status = (getattr(payload, "status", None) or "").strip().lower()
+    if status in ("pass", "fail", "error", "unknown", "notapplicable", "notchecked"):
+        return status
+    return "fail"
+
+
+async def _upsert_observation(
+    db: AsyncSession,
+    *,
+    finding_id: str,
+    scan_session_id: str | None,
+    source_name: str,
+    payload: VatFindingSchema,
+    scanner_version: str | None,
+    raw_evidence_ref: str | None,
+) -> None:
+    """Insert or update per-session finding observation."""
+    if not scan_session_id:
+        return
+    result = await db.execute(
+        select(FindingObservation).where(
+            FindingObservation.finding_id == finding_id,
+            FindingObservation.scan_session_id == scan_session_id,
+            FindingObservation.source_name == source_name,
+        )
+    )
+    row = result.scalar_one_or_none()
+    data = {
+        "finding_id": finding_id,
+        "scan_session_id": scan_session_id,
+        "source_name": source_name,
+        "scanner_version": scanner_version,
+        "content_version": getattr(payload, "content_version", None),
+        "benchmark_id": getattr(payload, "benchmark_id", None),
+        "benchmark_family": getattr(payload, "benchmark_family", None),
+        "profile_scope": getattr(payload, "profile_scope", None),
+        "stable_rule_key": getattr(payload, "stable_rule_key", None),
+        "result_state": _infer_result_state(payload),
+        "raw_evidence_ref": raw_evidence_ref,
+    }
+    if row is None:
+        db.add(FindingObservation(**data))
+        return
+    for k, v in data.items():
+        if k in ("finding_id", "scan_session_id", "source_name"):
+            continue
+        setattr(row, k, v)
+
+
 async def ingest_finding(
     db: AsyncSession,
     payload: VatFindingSchema,
@@ -94,12 +189,26 @@ async def ingest_finding(
     aikido_source_id: str | None = None,
     trace_id: str | None = None,
     parser_id: str | None = None,
+    scan_session_id: str | None = None,
+    scanner_version: str | None = None,
+    raw_evidence_ref: str | None = None,
 ) -> tuple[Finding, bool]:
     """
     Ingest a finding from canonical payload. Deduplicates by fingerprint.
     Returns (finding, created) where created=True if new, False if merged.
     When created and auto_sync_to_tracker=True, enqueues tracker create_issue (source-agnostic).
     """
+    policy = PARSER_IDENTITY_POLICY.get(parser_id or "", {})
+    requires_explicit = bool(policy.get("requires_explicit_asset", False))
+    payload, _ = resolve_asset_for_payload(
+        payload,
+        parser_id=parser_id or "unknown",
+        source_id=source_name,
+        asset_override=None,
+        strict_mode=False,
+        requires_explicit_asset=requires_explicit,
+    )
+
     cve_id = payload.cve_id
     component = payload.component or payload.component_base or ""
     comp_base = payload.component_base or (
@@ -112,9 +221,22 @@ async def ingest_finding(
         getattr(payload, "image_digest", None),
         payload.image,
     )
+    corr_image = await correlation_asset_image_for_ingest(
+        db, image=image, parser_id=parser_id
+    )
+    ft_val = str(payload.finding_type.value)
+    ft_lower = ft_val.lower()
+    pfp_for_corr: str | None = None
+    raw_pfp = getattr(payload, "partial_fingerprints", None)
+    if isinstance(raw_pfp, dict) and raw_pfp and ft_lower in ("sast", "iac", "secret"):
+        pfp_for_corr, _ = resolve_partial_fingerprints(
+            {str(k): str(v) for k, v in raw_pfp.items()}
+        )
+
+    _settings = get_settings()
     corr_key, corr_conf = correlation_key_for_payload(
-        finding_type=str(payload.finding_type.value),
-        image=image,
+        finding_type=ft_val,
+        image=corr_image,
         branch=branch,
         tag=tag,
         cve_id=cve_id,
@@ -122,25 +244,13 @@ async def ingest_finding(
         ecosystem=getattr(payload, "ecosystem", None),
         rule_id=getattr(payload, "rule_id", None),
         file_path=getattr(payload, "file_path", None),
+        sast_partial_fingerprint_hash=pfp_for_corr,
+        image_digest=image_digest_val,
+        include_digest_in_correlation=_settings.correlation_include_digest,
+        benchmark_family=getattr(payload, "benchmark_family", None),
     )
-    # When source provides source_issue_id, use 1:1 fingerprint so VAT count matches source (e.g. Aikido).
-    # Otherwise use CVE+component+image+branch+tag for cross-source dedup.
-    sid = getattr(payload, "source_issue_id", None)
-    if sid and str(sid).strip():
-        fp = make_fingerprint_for_source_issue(
-            source_name, str(sid).strip(), image=image, branch=branch, tag=tag
-        )
-    else:
-        # Include source_name so findings from different parsers (e.g. vat-local-gitleaks vs
-        # vat-local-trivy) remain separate — enables "Group findings" toggle to show instances.
-        fp = make_fingerprint(
-            cve_id,
-            component,
-            image=image,
-            branch=branch,
-            tag=tag,
-            source_name=source_name,
-        )
+
+    fp = compute_ingest_fingerprint(payload, source_name, parser_id=parser_id)
 
     finding_type = _vat_type_to_model(payload.finding_type)
     severity = _vat_severity_to_model(payload.severity)
@@ -161,6 +271,7 @@ async def ingest_finding(
 
     # Migration: when using source_issue_id fp, existing findings may have old CVE+component fp.
     # Fall back to lookup by external_links so we update them and migrate fingerprint.
+    sid = getattr(payload, "source_issue_id", None)
     if not existing and sid and str(sid).strip():
         from app.services.external_links_service import find_finding_by_external_id
 
@@ -239,6 +350,20 @@ async def ingest_finding(
         if corr_key and not existing.correlation_key:
             existing.correlation_key = corr_key
             existing.correlation_confidence = corr_conf
+        if getattr(payload, "stable_rule_key", None) and not existing.stable_rule_key:
+            existing.stable_rule_key = payload.stable_rule_key
+        if getattr(payload, "benchmark_id", None) and not existing.benchmark_id:
+            existing.benchmark_id = payload.benchmark_id
+        if getattr(payload, "benchmark_family", None) and not existing.benchmark_family:
+            existing.benchmark_family = payload.benchmark_family
+        if getattr(payload, "profile_scope", None) and not existing.profile_scope:
+            existing.profile_scope = payload.profile_scope
+        if getattr(payload, "content_version", None) and not existing.content_version:
+            existing.content_version = payload.content_version
+        if getattr(payload, "needs_family_classification", None):
+            existing.needs_family_classification = bool(
+                payload.needs_family_classification
+            )
         # Backfill grouping fields when existing has none
         for attr in ("rule_id", "cwe_id", "ecosystem", "secret_type", "resource"):
             pv = getattr(payload, attr, None)
@@ -302,8 +427,24 @@ async def ingest_finding(
                     "note": "Scanner re-detected previously resolved finding",
                 }
             )
+        await _record_container_asset_observations(
+            db, payload, scan_session_id=scan_session_id
+        )
         await db.commit()
         await db.refresh(existing)
+        await _upsert_observation(
+            db,
+            finding_id=existing.id,
+            scan_session_id=scan_session_id,
+            source_name=source_name,
+            payload=payload,
+            scanner_version=scanner_version,
+            raw_evidence_ref=raw_evidence_ref,
+        )
+        await upsert_identifier_facts_for_finding(
+            db, finding=existing, source=source_name
+        )
+        await db.commit()
         if get_settings().correlation_linking_enabled:
             await apply_correlation_linking(
                 db,
@@ -392,10 +533,32 @@ async def ingest_finding(
         correlation_key=corr_key,
         correlation_confidence=corr_conf,
         correlated_to=None,
+        stable_rule_key=getattr(payload, "stable_rule_key", None),
+        benchmark_id=getattr(payload, "benchmark_id", None),
+        benchmark_family=getattr(payload, "benchmark_family", None),
+        profile_scope=getattr(payload, "profile_scope", None),
+        content_version=getattr(payload, "content_version", None),
+        needs_family_classification=bool(
+            getattr(payload, "needs_family_classification", False)
+        ),
     )
     db.add(finding)
+    await _record_container_asset_observations(
+        db, payload, scan_session_id=scan_session_id
+    )
     await db.commit()
     await db.refresh(finding)
+    await _upsert_observation(
+        db,
+        finding_id=finding.id,
+        scan_session_id=scan_session_id,
+        source_name=source_name,
+        payload=payload,
+        scanner_version=scanner_version,
+        raw_evidence_ref=raw_evidence_ref,
+    )
+    await upsert_identifier_facts_for_finding(db, finding=finding, source=source_name)
+    await db.commit()
     if get_settings().correlation_linking_enabled:
         await apply_correlation_linking(
             db,

@@ -6,9 +6,16 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.asset import Asset
+from app.models.asset_digest_conflict import AssetDigestConflict
+from app.models.asset_observed_tag import AssetObservedTag
 from app.models.finding import Finding
 from app.schemas.finding import FindingRead
+from app.services.asset_resolver import infer_asset_kind
 from app.services.asset_type_infer import infer_asset_type_from_findings
+from app.services.container_ref_normalization import (
+    apply_container_asset_path_aliases,
+    normalize_container_ref,
+)
 
 SEV_ORDER = ("Critical", "High", "Medium", "Low", "Informational")
 
@@ -17,27 +24,71 @@ ORA_WEIGHTS = {"critical": 10, "high": 4, "medium": 0.5, "low": 0.25}
 ORA_CAPS = {"low": 10, "medium": 30}
 
 
-def _container_image_group_key(image: str, tag: Optional[str]) -> str:
-    """Match frontend containerImageGroupKey — one asset row per image, not per tag."""
+def _container_image_group_key(image: str, _tag: Optional[str]) -> str:
+    """Match frontend containerImageGroupKey — canonical registry path (correlation-aligned)."""
     img = (image or "").strip()
     if not img:
         return img
-    if img.startswith("containers/images/"):
-        return img.split(":")[0]
-    t = (tag or "").strip()
-    if t:
-        last_colon = img.rfind(":")
-        if last_colon > 0:
-            after = img[last_colon + 1 :]
-            if "/" not in after and after == t:
-                return img[:last_colon]
-    last_slash = img.rfind("/")
-    last_colon = img.rfind(":")
-    if last_colon > last_slash >= 0:
-        after = img[last_colon + 1 :]
-        if "/" not in after:
-            return img[:last_colon]
+    kind = infer_asset_kind(img, "")
+    if kind == "container":
+        return apply_container_asset_path_aliases(
+            normalize_container_ref(img).canonical_asset_key
+        )
+    if kind == "repo":
+        return normalize_container_ref(img).canonical_asset_key
     return img
+
+
+def container_merge_group_key(source_asset_id: str) -> str | None:
+    """
+    Grouping key for a merge *source* when it is container-like.
+    Matches get_assets_with_findings / frontend container list grouping.
+    """
+    src = (source_asset_id or "").strip()
+    if not src or infer_asset_kind(src, "") != "container":
+        return None
+    return _container_image_group_key(src, None)
+
+
+def merge_candidate_image_like_prefixes(source_asset_id: str) -> list[str]:
+    """
+    Distinct repo prefixes (no tag) to find findings.image/component rows that differ
+    only by registry prefix or tag/digest suffix from the merge source.
+    """
+    s = (source_asset_id or "").strip()
+    if not s:
+        return []
+    out: set[str] = {s}
+    if infer_asset_kind(s, "") != "container":
+        return sorted(out, key=len, reverse=True)
+    n = normalize_container_ref(s)
+    k = apply_container_asset_path_aliases(n.canonical_asset_key)
+    out.add(k)
+    out.add(n.canonical_asset_key)
+    low = k.lower()
+    if low.startswith("docker.io/"):
+        out.add(k[len("docker.io/") :])
+    return sorted({x for x in out if x}, key=len, reverse=True)
+
+
+def finding_value_matches_merge_source(
+    field_value: str | None,
+    source_asset_id: str,
+    *,
+    source_container_key: str | None,
+) -> bool:
+    """Whether this finding column should be rewritten to the merge target."""
+    val = (field_value or "").strip()
+    src = (source_asset_id or "").strip()
+    if not val or not src:
+        return False
+    if val == src:
+        return True
+    if source_container_key is None:
+        return False
+    if infer_asset_kind(val, "") != "container":
+        return False
+    return _container_image_group_key(val, None) == source_container_key
 
 
 def _asset_key_from_finding(f: Finding) -> str:
@@ -231,6 +282,7 @@ async def get_assets_with_findings(
     search: Optional[str] = None,
     search_fields: Optional[str] = None,
     limit: int = 0,
+    include_zero_assets: bool = True,
 ) -> list[dict[str, Any]]:
     """
     Return assets (Asset records + findings-derived) with findings.
@@ -266,15 +318,17 @@ async def get_assets_with_findings(
         key = _asset_key_from_dict(d)
         by_key.setdefault(key, []).append(d)
 
-    # Add Asset records that have no findings; build asset_id -> Asset map for type
-    result = await db.execute(select(Asset))
-    asset_records: dict[str, Asset] = {a.id: a for a in result.scalars().all()}
-    for aid in asset_records:
-        if aid not in by_key:
-            by_key[aid] = []
+    # Add Asset records that have no findings when requested.
+    asset_records: dict[str, Asset] = {}
+    if include_zero_assets:
+        result = await db.execute(select(Asset))
+        asset_records = {a.id: a for a in result.scalars().all()}
+        for aid in asset_records:
+            if aid not in by_key:
+                by_key[aid] = []
 
     # Build asset payloads (include type and branch from Asset record when available)
-    return [
+    payloads = [
         _build_asset_payload(
             k,
             flist,
@@ -283,3 +337,69 @@ async def get_assets_with_findings(
         )
         for k, flist in by_key.items()
     ]
+    asset_ids = [p["id"] for p in payloads]
+    if not asset_ids:
+        return payloads
+
+    observed_rows = (
+        (
+            await db.execute(
+                select(AssetObservedTag).where(AssetObservedTag.asset_id.in_(asset_ids))
+            )
+        )
+        .scalars()
+        .all()
+    )
+    observed_by_asset: dict[str, list[dict[str, Any]]] = {}
+    for row in observed_rows:
+        observed_by_asset.setdefault(row.asset_id, []).append(
+            {
+                "tag": row.tag,
+                "firstSeenAt": row.first_seen_at.isoformat()
+                if row.first_seen_at
+                else None,
+                "lastSeenAt": row.last_seen_at.isoformat()
+                if row.last_seen_at
+                else None,
+                "observationCount": int(row.observation_count or 0),
+                "lastDigest": row.last_digest,
+            }
+        )
+
+    conflict_rows = (
+        (
+            await db.execute(
+                select(AssetDigestConflict).where(
+                    AssetDigestConflict.asset_id.in_(asset_ids),
+                    AssetDigestConflict.status == "open",
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    open_conflicts: dict[str, list[dict[str, Any]]] = {}
+    for row in conflict_rows:
+        open_conflicts.setdefault(row.asset_id, []).append(
+            {
+                "tag": row.tag,
+                "digests": list(row.digests or []),
+                "firstSeenAt": row.first_seen_at.isoformat()
+                if row.first_seen_at
+                else None,
+                "lastSeenAt": row.last_seen_at.isoformat()
+                if row.last_seen_at
+                else None,
+            }
+        )
+
+    for payload in payloads:
+        aid = payload["id"]
+        tags = observed_by_asset.get(aid, [])
+        tags.sort(key=lambda t: (t.get("tag") or ""))
+        payload["observedTags"] = tags
+        conflicts = open_conflicts.get(aid, [])
+        payload["digestConflictOpen"] = len(conflicts) > 0
+        payload["digestConflicts"] = conflicts
+
+    return payloads

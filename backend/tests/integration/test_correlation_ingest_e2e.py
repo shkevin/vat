@@ -53,11 +53,7 @@ async def test_trivy_then_grype_link_second_to_canonical(clean_integration_table
     assert r2.get("created", 0) >= 1
 
     rows = (
-        (
-            await db.execute(
-                select(Finding).where(Finding.cve_id == "CVE-CORR-E2E-001")
-            )
-        )
+        (await db.execute(select(Finding).where(Finding.cve_id == "CVE-CORR-E2E-001")))
         .scalars()
         .all()
     )

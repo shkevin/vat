@@ -24,6 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import async_session
 from app.models.finding import Finding
+from app.services.grouping import get_finding_group_key
 
 ASSET = "kamiwaza"
 BRANCH = "develop"
@@ -42,21 +43,6 @@ def _status_display(s) -> str:
         return ""
     val = s.value if hasattr(s, "value") else str(s)
     return str(val)
-
-
-def _get_group_key(f) -> str:
-    """Mirror frontend getFindingGroupKey logic for Aikido findings."""
-    if f.source == "Aikido" and (f.source_issue_group_id or "").strip():
-        return f"aikido:{f.source_issue_group_id.strip()}"
-    ft = f.finding_type
-    t = (ft.value if hasattr(ft, "value") else str(ft or "")).lower()
-    title = (f.title or f.cve_id or f.id or "").lower().strip()
-    # SAST/Secret/IaC: include location when available
-    path = (f.file_path or "").replace("\\", "/").lstrip("/").lower().strip()
-    if path:
-        loc = f"{path}@{f.line}" if f.line else path
-        return f"n:{t}|{title}|{loc}"
-    return f"n:{t}|{title}"
 
 
 async def query_medium_findings(session: AsyncSession) -> list:
@@ -153,10 +139,10 @@ async def main():
         print("\n1. VAT DB: kamiwaza (develop) MEDIUM findings")
         print(f"   Total: {len(mediums)}, Open: {len(open_mediums)}")
 
-        # Group open mediums by getFindingGroupKey (same as frontend)
+        # Group open mediums by backend get_finding_group_key (same as API/UI effectiveGroupKey)
         groups: dict[str, list] = {}
         for f in open_mediums:
-            key = _get_group_key(f)
+            key = get_finding_group_key(f)
             groups.setdefault(key, []).append(f)
         print(f"   Unique groups (VAT display count): {len(groups)}")
         print("\n   Open mediums by group (title | image | component | status):")

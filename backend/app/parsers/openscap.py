@@ -9,6 +9,12 @@ from defusedxml import ElementTree
 
 from app.parsers.base import IngestParser
 from app.schemas.ingest import CanonicalFindingPayload
+from app.services.openscap_identity import (
+    extract_content_version,
+    normalize_benchmark_family,
+    normalize_profile_scope,
+    stable_rule_key,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -188,6 +194,11 @@ class OpenSCAPParser(IngestParser):
             raise ValueError("OpenSCAP input must be XCCDF 1.1 or 1.2 Benchmark XML")
 
         xccdf_ns = _detect_xccdf_ns(root)
+        benchmark_id = (root.get("id") or "").strip() or None
+        benchmark_family, needs_family_classification = normalize_benchmark_family(
+            benchmark_id
+        )
+        content_version = extract_content_version(benchmark_id)
 
         rules: dict[str, str] = {}
         rule_elements: dict[str, Any] = {}
@@ -201,6 +212,7 @@ class OpenSCAPParser(IngestParser):
         test_result = root.find(f".//{_ns('TestResult', xccdf_ns)}")
         if test_result is None:
             return []
+        profile_scope = normalize_profile_scope(test_result.get("profile"))
 
         targets: list[str] = []
         target_el = test_result.find(_ns("target", xccdf_ns))
@@ -226,6 +238,11 @@ class OpenSCAPParser(IngestParser):
             cves = _collect_cves(rr, xccdf_ns)
             refs = _collect_refs(rr, xccdf_ns)
             sev = _map_severity(rr.get("severity"))
+            finding_stable_rule_key = stable_rule_key(
+                rule_id=idref,
+                cve_id=cves[0] if cves else None,
+                reference_tokens=refs,
+            )
 
             cve_id = cves[0] if cves else idref
             desc_parts = [f"**{raw_title or title}**", f"Rule: `{idref}`"]
@@ -261,6 +278,13 @@ class OpenSCAPParser(IngestParser):
                 "title": title,
                 "references": refs[:20] if refs else None,
                 "component": component,
+                "benchmark_id": benchmark_id,
+                "benchmark_family": benchmark_family,
+                "content_version": content_version,
+                "profile_scope": profile_scope or None,
+                "stable_rule_key": finding_stable_rule_key,
+                "result_state": result_text or "fail",
+                "needs_family_classification": needs_family_classification,
             }
             if file_path:
                 fields["file_path"] = file_path

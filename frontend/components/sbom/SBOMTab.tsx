@@ -249,6 +249,16 @@ export function SBOMTab({ sbom, findings, onImport, assetId }: SBOMTabProps) {
   const [downloadLoading, setDownloadLoading] = useState(false);
   const [sortKey, setSortKey] = useState<SortKey>("risk");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
+  const [searchText, setSearchText] = useState("");
+  const [riskFilter, setRiskFilter] = useState<string>("all");
+  const [licenseFilter, setLicenseFilter] = useState<string>("all");
+  const [componentFilter, setComponentFilter] = useState<string>("all");
+  const [findingsFilter, setFindingsFilter] = useState<
+    "all" | "with" | "without"
+  >("all");
+  const [viewMode, setViewMode] = useState<"package" | "component" | "license">(
+    "package",
+  );
 
   const packages = sbom.length > 0 ? sbom : SAMPLE_SBOM;
 
@@ -306,8 +316,58 @@ export function SBOMTab({ sbom, findings, onImport, assetId }: SBOMTabProps) {
     return acc;
   }, [packages]);
 
+  const distinctLicenses = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          packages
+            .map((p) => p.license?.trim())
+            .filter((v): v is string => Boolean(v)),
+        ),
+      ).sort((a, b) => a.localeCompare(b)),
+    [packages],
+  );
+
+  const distinctComponents = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          packages
+            .map((p) => p.component?.trim())
+            .filter((v): v is string => Boolean(v)),
+        ),
+      ).sort((a, b) => a.localeCompare(b)),
+    [packages],
+  );
+
+  const filteredPackages = useMemo(() => {
+    const q = searchText.trim().toLowerCase();
+    return packages.filter((p) => {
+      const risk = getLicenseRisk(p.license);
+      const findingCount = findingCountByComponent.get(p.id) ?? 0;
+      if (riskFilter !== "all" && risk !== riskFilter) return false;
+      if (licenseFilter !== "all" && p.license !== licenseFilter) return false;
+      if (componentFilter !== "all" && p.component !== componentFilter)
+        return false;
+      if (findingsFilter === "with" && findingCount <= 0) return false;
+      if (findingsFilter === "without" && findingCount > 0) return false;
+      if (!q) return true;
+      const hay =
+        `${p.name} ${p.version} ${p.license} ${p.component} ${p.language}`.toLowerCase();
+      return hay.includes(q);
+    });
+  }, [
+    packages,
+    searchText,
+    riskFilter,
+    licenseFilter,
+    componentFilter,
+    findingsFilter,
+    findingCountByComponent,
+  ]);
+
   const sortedPackages = useMemo(() => {
-    const arr = [...packages];
+    const arr = [...filteredPackages];
     arr.sort((a, b) => {
       let cmp = 0;
       if (sortKey === "risk") {
@@ -333,7 +393,62 @@ export function SBOMTab({ sbom, findings, onImport, assetId }: SBOMTabProps) {
       return sortDir === "asc" ? cmp : -cmp;
     });
     return arr;
-  }, [packages, sortKey, sortDir, findingCountByComponent]);
+  }, [filteredPackages, sortKey, sortDir, findingCountByComponent]);
+
+  const groupedRows = useMemo(() => {
+    if (viewMode === "package") return [];
+    const groups = new Map<
+      string,
+      {
+        key: string;
+        packages: SBOMPackage[];
+        findings: number;
+        worstRiskIndex: number;
+      }
+    >();
+    for (const p of sortedPackages) {
+      const key =
+        viewMode === "component" ? p.component || "—" : p.license || "Unknown";
+      const existing = groups.get(key) ?? {
+        key,
+        packages: [],
+        findings: 0,
+        worstRiskIndex: 99,
+      };
+      existing.packages.push(p);
+      existing.findings += findingCountByComponent.get(p.id) ?? 0;
+      existing.worstRiskIndex = Math.min(
+        existing.worstRiskIndex,
+        RISK_SORT_INDEX[getLicenseRisk(p.license)] ?? 99,
+      );
+      groups.set(key, existing);
+    }
+    return Array.from(groups.values()).sort((a, b) => {
+      if (a.worstRiskIndex !== b.worstRiskIndex) {
+        return a.worstRiskIndex - b.worstRiskIndex;
+      }
+      return b.findings - a.findings || b.packages.length - a.packages.length;
+    });
+  }, [sortedPackages, viewMode, findingCountByComponent]);
+
+  const summary = useMemo(() => {
+    const criticalOrHigh = sortedPackages.filter((p) => {
+      const risk = getLicenseRisk(p.license);
+      return risk === "Critical" || risk === "High";
+    }).length;
+    const withFindings = sortedPackages.filter(
+      (p) => (findingCountByComponent.get(p.id) ?? 0) > 0,
+    ).length;
+    return {
+      total: sortedPackages.length,
+      uniqueLicenses: new Set(sortedPackages.map((p) => p.license || "Unknown"))
+        .size,
+      uniqueComponents: new Set(sortedPackages.map((p) => p.component || "—"))
+        .size,
+      criticalOrHigh,
+      withFindings,
+    };
+  }, [sortedPackages, findingCountByComponent]);
 
   const handleSort = (key: SortKey) => {
     if (sortKey === key) {
@@ -408,7 +523,7 @@ export function SBOMTab({ sbom, findings, onImport, assetId }: SBOMTabProps) {
             textTransform: "uppercase",
           }}
         >
-          SBOM / Licenses — {packages.length} packages
+          SBOM / Licenses
         </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
           <button
@@ -460,6 +575,185 @@ export function SBOMTab({ sbom, findings, onImport, assetId }: SBOMTabProps) {
             {pasteOpen ? "Cancel" : "Paste CycloneDX JSON"}
           </button>
         </div>
+      </div>
+
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
+          gap: 10,
+          marginBottom: 14,
+        }}
+      >
+        {[
+          { label: "Displayed Packages", value: String(summary.total) },
+          { label: "Unique Licenses", value: String(summary.uniqueLicenses) },
+          { label: "Components", value: String(summary.uniqueComponents) },
+          { label: "Critical/High", value: String(summary.criticalOrHigh) },
+          { label: "With Findings", value: String(summary.withFindings) },
+        ].map((card) => (
+          <div
+            key={card.label}
+            style={{
+              border: "1px solid var(--app-border)",
+              background:
+                "color-mix(in srgb, var(--app-input-bg) 86%, transparent)",
+              borderRadius: 8,
+              padding: "10px 12px",
+            }}
+          >
+            <div
+              style={{
+                ...mono,
+                fontSize: 9,
+                textTransform: "uppercase",
+                color: "var(--app-muted)",
+                marginBottom: 4,
+              }}
+            >
+              {card.label}
+            </div>
+            <div style={{ ...mono, fontSize: 18, fontWeight: 700 }}>
+              {card.value}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "1.6fr repeat(4, minmax(120px, 1fr))",
+          gap: 8,
+          marginBottom: 12,
+        }}
+      >
+        <input
+          value={searchText}
+          onChange={(e) => setSearchText(e.target.value)}
+          placeholder="Search package, version, license, component..."
+          style={{
+            ...mono,
+            background: "var(--app-input-bg)",
+            border: "1px solid var(--app-border)",
+            borderRadius: 6,
+            padding: "8px 10px",
+            color: "var(--app-fg)",
+            fontSize: 12,
+          }}
+        />
+        <select
+          value={riskFilter}
+          onChange={(e) => setRiskFilter(e.target.value)}
+          style={{
+            ...mono,
+            background: "var(--app-input-bg)",
+            border: "1px solid var(--app-border)",
+            borderRadius: 6,
+            padding: "8px 10px",
+            color: "var(--app-fg)",
+            fontSize: 12,
+          }}
+        >
+          <option value="all">All Risk</option>
+          {RISK_ORDER.map((r) => (
+            <option key={r} value={r}>
+              {r}
+            </option>
+          ))}
+        </select>
+        <select
+          value={licenseFilter}
+          onChange={(e) => setLicenseFilter(e.target.value)}
+          style={{
+            ...mono,
+            background: "var(--app-input-bg)",
+            border: "1px solid var(--app-border)",
+            borderRadius: 6,
+            padding: "8px 10px",
+            color: "var(--app-fg)",
+            fontSize: 12,
+          }}
+        >
+          <option value="all">All Licenses</option>
+          {distinctLicenses.map((l) => (
+            <option key={l} value={l}>
+              {l}
+            </option>
+          ))}
+        </select>
+        <select
+          value={componentFilter}
+          onChange={(e) => setComponentFilter(e.target.value)}
+          style={{
+            ...mono,
+            background: "var(--app-input-bg)",
+            border: "1px solid var(--app-border)",
+            borderRadius: 6,
+            padding: "8px 10px",
+            color: "var(--app-fg)",
+            fontSize: 12,
+          }}
+        >
+          <option value="all">All Components</option>
+          {distinctComponents.map((c) => (
+            <option key={c} value={c}>
+              {c}
+            </option>
+          ))}
+        </select>
+        <select
+          value={findingsFilter}
+          onChange={(e) =>
+            setFindingsFilter(e.target.value as "all" | "with" | "without")
+          }
+          style={{
+            ...mono,
+            background: "var(--app-input-bg)",
+            border: "1px solid var(--app-border)",
+            borderRadius: 6,
+            padding: "8px 10px",
+            color: "var(--app-fg)",
+            fontSize: 12,
+          }}
+        >
+          <option value="all">All Findings</option>
+          <option value="with">With Findings</option>
+          <option value="without">No Findings</option>
+        </select>
+      </div>
+
+      <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+        {(["package", "component", "license"] as const).map((m) => {
+          const active = viewMode === m;
+          return (
+            <button
+              key={m}
+              type="button"
+              onClick={() => setViewMode(m)}
+              style={{
+                ...mono,
+                fontSize: 11,
+                borderRadius: 20,
+                padding: "6px 12px",
+                border: active
+                  ? "1px solid var(--app-accent)"
+                  : "1px solid var(--app-border)",
+                background: active
+                  ? "color-mix(in srgb, var(--app-accent) 18%, transparent)"
+                  : "var(--app-input-bg)",
+                color: active ? "var(--app-accent)" : "var(--app-muted)",
+                cursor: "pointer",
+              }}
+            >
+              {m === "package"
+                ? "By Package"
+                : m === "component"
+                  ? "By Component"
+                  : "By License"}
+            </button>
+          );
+        })}
       </div>
 
       {pasteOpen && (
@@ -532,7 +826,10 @@ export function SBOMTab({ sbom, findings, onImport, assetId }: SBOMTabProps) {
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "1fr 80px 100px 1fr 80px 60px",
+            gridTemplateColumns:
+              viewMode === "package"
+                ? "1fr 90px 120px 1fr 80px 70px"
+                : "1fr 110px 90px 80px",
             gap: 12,
             padding: "10px 14px",
             background: "var(--app-header-bg)",
@@ -543,59 +840,134 @@ export function SBOMTab({ sbom, findings, onImport, assetId }: SBOMTabProps) {
             textTransform: "uppercase",
           }}
         >
-          <SortableHeader label="Package" colKey="name" />
-          <SortableHeader label="Version" colKey="version" />
-          <SortableHeader label="License" colKey="license" />
-          <SortableHeader label="Component" colKey="component" />
-          <SortableHeader label="Risk" colKey="risk" />
-          <SortableHeader label="Findings" colKey="findings" />
+          {viewMode === "package" ? (
+            <>
+              <SortableHeader label="Package" colKey="name" />
+              <SortableHeader label="Version" colKey="version" />
+              <SortableHeader label="License" colKey="license" />
+              <SortableHeader label="Component" colKey="component" />
+              <SortableHeader label="Risk" colKey="risk" />
+              <SortableHeader label="Findings" colKey="findings" />
+            </>
+          ) : (
+            <>
+              <span>{viewMode === "component" ? "Component" : "License"}</span>
+              <span>Packages</span>
+              <span>Risk</span>
+              <span>Findings</span>
+            </>
+          )}
         </div>
-        {sortedPackages.map((pkg) => {
-          const risk = getLicenseRisk(pkg.license);
-          const findingCount = findingCountByComponent.get(pkg.id) ?? 0;
-          return (
-            <div
-              key={pkg.id}
-              style={{
-                display: "grid",
-                gridTemplateColumns: "1fr 80px 100px 1fr 80px 60px",
-                gap: 12,
-                padding: "10px 14px",
-                borderTop: "1px solid var(--app-border)",
-                ...mono,
-                fontSize: 12,
-                color: "var(--app-fg)",
-              }}
-            >
-              <span>{pkg.name}</span>
-              <span style={{ color: "var(--app-muted)" }}>{pkg.version}</span>
-              <span>{pkg.license}</span>
-              <span style={{ color: "var(--app-muted)" }}>{pkg.component}</span>
-              <span
-                style={{
-                  color:
-                    risk === "Critical"
-                      ? "var(--app-danger)"
-                      : risk === "High"
-                        ? "var(--app-warning)"
-                        : risk === "Medium"
-                          ? "var(--app-warning)"
-                          : "var(--app-success)",
-                }}
-              >
-                {risk}
-              </span>
-              <span
-                style={{
-                  color:
-                    findingCount > 0 ? "var(--app-danger)" : "var(--app-muted)",
-                }}
-              >
-                {findingCount}
-              </span>
-            </div>
-          );
-        })}
+        {viewMode === "package"
+          ? sortedPackages.map((pkg, idx) => {
+              const risk = getLicenseRisk(pkg.license);
+              const findingCount = findingCountByComponent.get(pkg.id) ?? 0;
+              return (
+                <div
+                  key={pkg.id}
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "1fr 90px 120px 1fr 80px 70px",
+                    gap: 12,
+                    padding: "10px 14px",
+                    borderTop: "1px solid var(--app-border)",
+                    background:
+                      idx % 2 === 0
+                        ? "transparent"
+                        : "color-mix(in srgb, var(--app-input-bg) 68%, transparent)",
+                    ...mono,
+                    fontSize: 12,
+                    color: "var(--app-fg)",
+                  }}
+                >
+                  <span>{pkg.name}</span>
+                  <span style={{ color: "var(--app-muted)" }}>
+                    {pkg.version}
+                  </span>
+                  <span>{pkg.license || "Unknown"}</span>
+                  <span style={{ color: "var(--app-muted)" }}>
+                    {pkg.component || "—"}
+                  </span>
+                  <span
+                    style={{
+                      color:
+                        risk === "Critical"
+                          ? "var(--app-danger)"
+                          : risk === "High"
+                            ? "var(--app-warning)"
+                            : risk === "Medium"
+                              ? "var(--app-warning)"
+                              : "var(--app-success)",
+                    }}
+                  >
+                    {risk}
+                  </span>
+                  <span
+                    style={{
+                      color:
+                        findingCount > 0
+                          ? "var(--app-danger)"
+                          : "var(--app-muted)",
+                    }}
+                  >
+                    {findingCount}
+                  </span>
+                </div>
+              );
+            })
+          : groupedRows.map((row, idx) => {
+              const risk =
+                RISK_ORDER[row.worstRiskIndex] ??
+                (row.worstRiskIndex === 99 ? "Unknown" : "Low");
+              return (
+                <div
+                  key={row.key}
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "1fr 110px 90px 80px",
+                    gap: 12,
+                    padding: "10px 14px",
+                    borderTop: "1px solid var(--app-border)",
+                    background:
+                      idx % 2 === 0
+                        ? "transparent"
+                        : "color-mix(in srgb, var(--app-input-bg) 68%, transparent)",
+                    ...mono,
+                    fontSize: 12,
+                    color: "var(--app-fg)",
+                  }}
+                >
+                  <span>{row.key || "—"}</span>
+                  <span style={{ color: "var(--app-muted)" }}>
+                    {row.packages.length}
+                  </span>
+                  <span
+                    style={{
+                      color:
+                        risk === "Critical"
+                          ? "var(--app-danger)"
+                          : risk === "High"
+                            ? "var(--app-warning)"
+                            : risk === "Medium"
+                              ? "var(--app-warning)"
+                              : "var(--app-success)",
+                    }}
+                  >
+                    {risk}
+                  </span>
+                  <span
+                    style={{
+                      color:
+                        row.findings > 0
+                          ? "var(--app-danger)"
+                          : "var(--app-muted)",
+                    }}
+                  >
+                    {row.findings}
+                  </span>
+                </div>
+              );
+            })}
       </div>
     </div>
   );

@@ -33,4 +33,3 @@ datasources:
         datasourceUid: loki
       serviceMap:
         datasourceUid: prometheus
-

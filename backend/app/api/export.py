@@ -22,7 +22,8 @@ async def get_export_bundle(
     """
     Download a ZIP bundle containing:
     - assets-findings.json: all assets and their findings
-    - sbom-cyclonedx.json: SBOM in CycloneDX 1.4 format
+    - sbom-cyclonedx.json: tenant rollup SBOM in CycloneDX 1.4 format
+    - sbom/by-asset/*.cdx.json: asset-scoped CycloneDX files
     - executive-summary-yearly.html: Executive Summary - Yearly (All Instances) report
     - stig/: OpenSCAP XCCDF/OVAL results (one file per asset) for STIG Viewer and XACTA import
     """

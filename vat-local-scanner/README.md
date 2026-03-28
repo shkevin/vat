@@ -26,6 +26,10 @@ vat-scan scan-archive repo.zip project.tar.gz --dry-run
 vat-scan scan-archive /workspace/artifacts/bundle.tar.gz --asset my-bundle
 ```
 
+## Backend correlation / ingest regression
+
+VAT’s backend includes **reproducible** integration tests that exercise the same parsers (Trivy, Grype, Gitleaks) and source naming patterns as this CLI (`vat-local-trivy`, `vat-local-grype`, …). See `../backend/tests/integration/README.md` and golden fixtures under `../backend/tests/integration/fixtures/correlation/`.
+
 ## Commands
 
 | Command | Description |
@@ -118,6 +122,36 @@ vat-scan scan . --gating-mode pr --fail-on high \
 
 Exit code 1 when any finding >= `--fail-on` (low|medium|high|critical). PR mode filters to findings in changed files only.
 
+## Performance Baseline
+
+Use repeatable dry-run timings before/after changes:
+
+```bash
+# Small repo
+time vat-scan scan /workspace/small-repo --dry-run --scan-types dependencies,secrets
+
+# Medium repo with container artifacts
+time vat-scan scan /workspace/medium-repo --dry-run --scan-types container,dependencies,secrets --verbose
+
+# Large repo (full profile)
+time vat-scan scan /workspace/large-repo --dry-run --scan-types code,dependencies,secrets,iac,license,container --verbose
+```
+
+With `--verbose`, scanner phase totals include:
+- container discovery duration
+- per-phase totals (`trivy_fs`, `trivy_container`, `trivy_cyclonedx`, etc.)
+- per-item timing summaries for container phases
+- Trivy CycloneDX mode counters (`--input` success vs fallback paths)
+
+## Incremental Ingest Sessions
+
+Single-path scans now push parser outputs incrementally while scanning and attach session metadata headers:
+- `X-VAT-Scan-Id`
+- `X-VAT-Scan-Status` (`running`, `completed`, `failed`)
+- `X-VAT-Idempotency-Key`
+
+This enables progressive visibility in VAT and idempotent retries for long-running scans.
+
 ## SARIF Output
 
 Write findings to SARIF 2.1.0 format for downstream tooling (GitHub Code Scanning, VS Code, etc.):
@@ -126,6 +160,8 @@ Write findings to SARIF 2.1.0 format for downstream tooling (GitHub Code Scannin
 vat-scan scan . --sarif-output results.sarif.json
 vat-scan scan-image myimage:v1 --sarif-output image-results.sarif.json
 ```
+
+Each result includes **`partialFingerprints`** with `primaryLocationLineHash/v1` (deterministic from rule id + artifact URI + line) so the file aligns with VAT’s SARIF ingest and fingerprint precedence if you re-upload it to VAT with the `sarif` parser. Normal VAT ingest from this CLI still uses native scanner JSON/XML, not this export.
 
 ## CI Templates
 

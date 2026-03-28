@@ -2,6 +2,9 @@
  * Finding grouping — groups same vulnerability within asset (image|branch|tag).
  * Aligns with backend grouping service (app/services/grouping.py).
  *
+ * Prefer `finding.groupKey` from the API when present (single runtime source of truth);
+ * fall back to `getFindingGroupKey` for snapshots and offline paths.
+ *
  * Grouping is scoped within asset — findings in different repos/branches/tags do not group.
  * - SCA/CVE: ecosystem + package (componentBase) — one group per package per asset
  * - SAST: ruleId or cweId or normalized title — per asset
@@ -11,6 +14,7 @@
  */
 
 import type { Finding } from "@/types";
+import { containerImageGroupKey } from "@/lib/assetUtils";
 import { parseFileLocation } from "@/lib/repoFileUrl";
 
 function componentBase(comp: string | undefined): string {
@@ -24,6 +28,94 @@ function normalizeEcosystemForGrouping(eco: string | null | undefined): string {
   const e = (eco ?? "").toLowerCase().trim();
   if (e === "npm" || e === "yarn" || e === "pnpm") return "npm";
   return e;
+}
+
+const _SCA_PACKAGE_ALIASES: Record<string, string> = {
+  ssl: "openssl",
+  libssl: "openssl",
+  libssl3: "openssl",
+  "libssl1.1": "openssl",
+  "libssl1.0.0": "openssl",
+  openssl: "openssl",
+};
+
+/** CPE-style names → distro SCA package names (matches backend sca_cross_scanner). */
+function normalizeScaPackageForCrossScanner(name: string): string {
+  const n = name.trim().toLowerCase();
+  if (!n) return "";
+  if (_SCA_PACKAGE_ALIASES[n]) return _SCA_PACKAGE_ALIASES[n];
+  if (n.startsWith("libssl")) return "openssl";
+  return n;
+}
+
+function inferScaEcosystemFromBenchmarkFamily(
+  benchmarkFamily: string | null | undefined,
+): string {
+  const bf = (benchmarkFamily ?? "").toLowerCase();
+  if (!bf) return "";
+  if (/rhel|red_hat|centos|rocky|alma|fedora|(^|_)ol(_|$)/.test(bf)) {
+    return "rpm";
+  }
+  if (
+    bf.includes("ubuntu") ||
+    bf.includes("debian") ||
+    bf.includes("u_ubuntu")
+  ) {
+    return "debian";
+  }
+  return "";
+}
+
+function inferScaEcosystemFromContainerRef(
+  image: string | null | undefined,
+  tag: string | null | undefined,
+): string {
+  const blob = `${image ?? ""} ${tag ?? ""}`.toLowerCase();
+  if (!blob.trim()) return "";
+  if (
+    [
+      "debian",
+      "ubuntu",
+      "-deb",
+      "deb12",
+      "deb11",
+      "bookworm",
+      "bullseye",
+      "jammy",
+      "focal",
+    ].some((x) => blob.includes(x))
+  ) {
+    return "debian";
+  }
+  if (
+    [
+      "rhel",
+      "ubi",
+      "alma",
+      "rocky",
+      "centos",
+      "fedora",
+      "amzn",
+      "amazonlinux",
+    ].some((x) => blob.includes(x))
+  ) {
+    return "rpm";
+  }
+  return "";
+}
+
+/** Matches backend effective_sca_ecosystem (explicit → benchmark → image/tag). */
+function effectiveScaEcosystem(
+  ecosystem: string | null | undefined,
+  benchmarkFamily: string | null | undefined,
+  image: string | null | undefined,
+  tag: string | null | undefined,
+): string {
+  let eco = normalizeEcosystemForGrouping(ecosystem);
+  if (eco) return eco;
+  eco = inferScaEcosystemFromBenchmarkFamily(benchmarkFamily);
+  if (eco) return eco;
+  return inferScaEcosystemFromContainerRef(image, tag);
 }
 
 /** Extract package from component when componentBase is missing. Handles "name version" format. */
@@ -118,12 +210,19 @@ function normalizeRuleTitleForGrouping(
   return t.trim().toLowerCase();
 }
 
-/** Asset key for grouping — image|branch|tag. Grouping is within asset only. */
+/**
+ * Asset key for grouping — canonicalImage|branch|tag (matches backend grouping._asset_key).
+ * Container image refs use the same canonical key as the asset list / assetUtils.assetIdForFinding.
+ */
 function assetKey(f: Finding): string {
-  const img = (f.image ?? "").toLowerCase().trim();
+  const rawImg = f.image?.trim() ?? "";
   const br = (f.branch ?? "").toLowerCase().trim();
   const tg = (f.tag ?? "").toLowerCase().trim();
-  return `${img}|${br}|${tg}`;
+  if (rawImg) {
+    const canonImg = containerImageGroupKey(rawImg, f.tag).toLowerCase().trim();
+    return `${canonImg}|${br}|${tg}`;
+  }
+  return `|${br}|${tg}`;
 }
 
 /**
@@ -138,8 +237,11 @@ export function getFindingGroupKey(f: Finding): string {
   const title = normalizeRuleTitleForGrouping(rawTitle, true);
   const rawPkg =
     f.componentBase ?? extractComponentBaseForGrouping(f.component);
-  const eco = normalizeEcosystemForGrouping(f.ecosystem);
-  const pkg = rawPkg ? normalizePackageName(eco || null, rawPkg) : "";
+  const ecoGrouped = normalizeEcosystemForGrouping(
+    effectiveScaEcosystem(f.ecosystem, f.benchmarkFamily, f.image, f.tag),
+  );
+  const cross = rawPkg ? normalizeScaPackageForCrossScanner(rawPkg) : "";
+  const pkg = cross ? normalizePackageName(ecoGrouped || null, cross) : "";
   const rid = (f.ruleId ?? "").toLowerCase().trim();
   const cwe = (f.cweId ?? "").toLowerCase().trim();
   const st = (f.secretType ?? "").toLowerCase().trim();
@@ -147,7 +249,7 @@ export function getFindingGroupKey(f: Finding): string {
 
   // SCA: ecosystem + package — one group per package per asset
   if (t === "sca") {
-    if (pkg) return `sca:${eco}|${pkg}#${asset}`;
+    if (pkg) return `sca:${ecoGrouped}|${pkg}#${asset}`;
     return `cve:${cveId}#${asset}`;
   }
 
@@ -178,11 +280,22 @@ export function getFindingGroupKey(f: Finding): string {
 
   // License: ecosystem + package
   if (t === "license") {
-    if (pkg) return `license:${eco}|${pkg}#${asset}`;
+    if (pkg) return `license:${ecoGrouped}|${pkg}#${asset}`;
     return `license:${f.id}#${asset}`;
   }
 
   return `other:${f.id}#${asset}`;
+}
+
+/**
+ * Stable group key for UI/report: use server-computed `groupKey` when the API
+ * provided it; otherwise derive with `getFindingGroupKey` (parity-tested with
+ * backend `get_finding_group_key`).
+ */
+export function effectiveGroupKey(f: Finding): string {
+  const g = f.groupKey?.trim();
+  if (g) return g;
+  return getFindingGroupKey(f);
 }
 
 /**
@@ -193,7 +306,7 @@ export function groupFindingsByKey(
 ): Map<string, Finding[]> {
   const map = new Map<string, Finding[]>();
   for (const f of findings) {
-    const key = getFindingGroupKey(f);
+    const key = effectiveGroupKey(f);
     const list = map.get(key) ?? [];
     list.push(f);
     map.set(key, list);

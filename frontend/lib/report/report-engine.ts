@@ -18,10 +18,11 @@ import {
   computeTrendMetrics,
   computePeriodOverPeriodChange,
   countTotalIssues,
+  computeSeverityCounts,
   isOpen,
   getIssuesForRepos,
   getIssuesForAssets,
-  resolveOpenCounts,
+  normalizeSeverity,
   issueMatchesContainer,
   getEffectiveContainers,
   getAssetTypeForIssue,
@@ -370,6 +371,55 @@ export interface ComputeReportContextOptions {
   allIssuesForPeriodComparison?: VATReportIssue[];
 }
 
+function issueAssetScopeKey(
+  issue: VATReportIssue,
+  data: VATDashboardData,
+): string {
+  const repo = (issue.repository ?? "").trim();
+  if (!repo) return "unknown";
+  const container = (data.containers ?? []).find((c) =>
+    issueMatchesContainer(repo, c.name),
+  );
+  if (container) return `container:${container.name.toLowerCase()}`;
+  const vm = (data.vms ?? []).find((v) => {
+    const a = repo.toLowerCase();
+    const b = (v.name ?? "").toLowerCase();
+    return a === b || a.endsWith(`/${b}`) || b.endsWith(`/${a}`);
+  });
+  if (vm) return `vm:${(vm.name ?? "").toLowerCase()}`;
+  return `repo:${repo.toLowerCase()}`;
+}
+
+function resolveOpenCountsMainParity(
+  openIssues: VATReportIssue[],
+  data: VATDashboardData,
+  countMode: "groups" | "instances",
+): { totalOpen: number; counts: SeverityCounts } {
+  if (countMode === "instances") {
+    return {
+      totalOpen: openIssues.length,
+      counts: computeSeverityCounts(openIssues),
+    };
+  }
+  const counts: SeverityCounts = {
+    critical: 0,
+    high: 0,
+    medium: 0,
+    low: 0,
+    info: 0,
+  };
+  const seen = new Set<string>();
+  for (const issue of openIssues) {
+    const gid = issue.issue_group_id ?? issue.issue_id;
+    const key = `${issueAssetScopeKey(issue, data)}:${gid}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const sev = normalizeSeverity(issue.severity, issue.severity_score);
+    counts[sev]++;
+  }
+  return { totalOpen: seen.size, counts };
+}
+
 export function computeReportContext(
   data: VATDashboardData,
   filters: ReportFilters,
@@ -457,18 +507,11 @@ export function computeReportContext(
   }
 
   const openIssues = issues.filter(isOpen);
-  const hasFilters =
-    filters.repoFilter.length > 0 ||
-    !!filters.branchFilter ||
-    filters.severityFilter.length > 0 ||
-    !!dateFrom ||
-    !!dateTo;
-  const { totalOpen, counts } = resolveOpenCounts(openIssues, {
+  const { totalOpen, counts } = resolveOpenCountsMainParity(
+    openIssues,
+    data,
     countMode,
-    issueCounts: data.issueCounts ?? undefined,
-    issueGroups: data.issueGroups,
-    hasFilters,
-  });
+  );
   const riskScore = computeReportRiskScore(counts);
   const mttr = computeMTTR(issues, countMode);
   const assetFilter = new Set(filters.repoFilter);
@@ -488,7 +531,7 @@ export function computeReportContext(
   ).slice(0, REPORT_CONTEXT_MAX_REPOS);
   const containerRisk = computeContainerRiskScores(
     containersForRisk,
-    data.issues ?? [],
+    issues,
     data.issueGroups ?? [],
     countMode,
     data.repos ?? [],
@@ -663,6 +706,8 @@ function buildReportBodyFromDefinition(
 /** Minimal issue shape for client-side filter re-computation. */
 interface ReportDataIssue {
   s: string;
+  /** Optional source-provided group severity (used in grouped mode parity). */
+  sg?: string;
   sc: number;
   r: string;
   b: string;
@@ -698,6 +743,7 @@ function buildReportDataPayload(
     low: number;
     info: number;
   };
+  serverCountsMode?: string;
   totalOpen?: number;
   serverTrendMetrics?: {
     openOneWeekAgo: number;
@@ -729,6 +775,7 @@ function buildReportDataPayload(
       );
       return {
         s: i.severity ?? "",
+        sg: i.source_group_severity ?? undefined,
         sc: i.severity_score ?? 0,
         r: i.repository ?? "",
         b: i.branch ?? "",
@@ -770,6 +817,7 @@ function buildReportDataPayload(
     // Always include server-computed counts so client uses authoritative values when no filters.
     // Fixes instances-mode showing wrong count (e.g. 2 instead of 3) due to client-side recomputation.
     serverCounts: context.counts,
+    serverCountsMode: countMode,
     totalOpen: context.openIssues,
   };
   if (truncated) {
@@ -798,6 +846,7 @@ function buildReportFilterBar(
     assetTypes: string[];
     assets: string[];
     branches: string[];
+    scanners: string[];
   },
   borderColor: string,
   mutedColor: string,
@@ -809,6 +858,7 @@ function buildReportFilterBar(
     dateTo: string | null;
     primaryColor: string;
     countMode?: string;
+    serverCountsMode?: string;
     containers?: string[];
     vmNames?: string[];
   } | null,
@@ -829,15 +879,16 @@ function buildReportFilterBar(
   var reportData = ${payload ? jsonForScript(payload) : "null"};
   var bars = Array.prototype.slice.call(document.querySelectorAll(".report-filter-bar"));
   if (bars.length === 0) return;
-  var cfgKey = { severity: "severities", assetType: "assetTypes", asset: "assets", branch: "branches" };
+  var cfgKey = { severity: "severities", assetType: "assetTypes", asset: "assets", branch: "branches", scanner: "scanners" };
   var state = {
     severity: new Set(cfg.severities || []),
     assetType: new Set(cfg.assetTypes || []),  // all selected = no filter
     asset: new Set(cfg.assets || []),
-    branch: new Set(cfg.branches || [])
+    branch: new Set(cfg.branches || []),
+    scanner: new Set(cfg.scanners || [])
   };
-  var labels = { severity: "Severity", assetType: "Asset type", asset: "Asset", branch: "Branch" };
-  var filterableSelector = "[data-filter-severity],[data-filter-asset-type],[data-filter-repo],[data-filter-branch],[data-filter-container]";
+  var labels = { severity: "Severity", assetType: "Asset type", asset: "Asset", branch: "Branch", scanner: "Scanner" };
+  var filterableSelector = "[data-filter-severity],[data-filter-asset-type],[data-filter-repo],[data-filter-branch],[data-filter-container],[data-filter-scanner]";
   function repoMatchesRepo(issueRepo, repoName) {
     if (!issueRepo || !repoName) return false;
     var a = (issueRepo + "").trim().toLowerCase();
@@ -906,20 +957,13 @@ function buildReportFilterBar(
     if (a === b) return true;
     if (b.endsWith("/" + a)) return true;
     if (a.endsWith("/" + b)) return true;
-    if (b.endsWith(a) && (b.length === a.length || b[b.length - a.length - 1] === "/")) return true;
-    if (a.endsWith(b) && (a.length === b.length || a[a.length - b.length - 1] === "/")) return true;
-    var aNorm = a.replace(/\\/images?\\//g, "/img/");
-    var bNorm = b.replace(/\\/images?\\//g, "/img/");
-    if (aNorm === bNorm) return true;
-    if (bNorm.endsWith("/" + aNorm)) return true;
-    if (aNorm.endsWith("/" + bNorm)) return true;
     return false;
   }
   function getCountsFromData() {
     if (!reportData || !reportData.issues.length) return null;
     var assets = cfg.assets || [];
     if (reportData.truncated && reportData.serverCounts) {
-      var base = { severity: reportData.serverCounts, assetType: {}, asset: {}, branch: {} };
+      var base = { severity: reportData.serverCounts, assetType: {}, asset: {}, branch: {}, scanner: {} };
       var containers = (reportData.containers && reportData.containers.length) ? reportData.containers : [];
       var vmNames = (reportData.vmNames && reportData.vmNames.length) ? reportData.vmNames : [];
       function isContainerOrVm(repo) {
@@ -933,6 +977,8 @@ function buildReportFilterBar(
         if (i.at) base.assetType[i.at] = (base.assetType[i.at] || 0) + 1;
         if (i.r) { assets.forEach(function(a) { if (repoMatchesRepo(i.r, a) || repoMatchesContainer(i.r, a)) base.asset[a] = (base.asset[a] || 0) + 1; }); }
         if (i.b) base.branch[i.b] = (base.branch[i.b] || 0) + 1;
+        var scanner = (i.scanner || "Unknown");
+        base.scanner[scanner] = (base.scanner[scanner] || 0) + 1;
       });
       return base;
     }
@@ -947,17 +993,17 @@ function buildReportFilterBar(
       return false;
     }
     var openIssues = reportData.issues.filter(function(i) { return isOpenStatus(i.st); });
-    var counts = { severity: {}, assetType: {}, asset: {}, branch: {} };
+    var counts = { severity: {}, assetType: {}, asset: {}, branch: {}, scanner: {} };
     var list = countMode === "groups" ? (function() {
-      var byGroup = {};
-      function sevRank(sev) { return (sev === "critical" ? 5 : sev === "high" ? 4 : sev === "medium" ? 3 : sev === "low" ? 2 : 1); }
-      openIssues.forEach(function(i) {
+      var seen = {};
+      return openIssues.filter(function(i) {
         var gid = i.g != null ? i.g : (i.r + "|" + i.d + "|" + (i.s||""));
-        var sev = normSev(i);
-        var r = sevRank(sev);
-        if (!byGroup[gid] || r > (byGroup[gid].r || 0)) byGroup[gid] = { i: i, r: r };
+        var repo = (i.r || "").trim();
+        var key = (isContainerOrVm(repo) ? normContainerName(repo) : repo.toLowerCase()) + "|" + gid;
+        if (seen[key]) return false;
+        seen[key] = true;
+        return true;
       });
-      return Object.keys(byGroup).map(function(k) { return byGroup[k].i; });
     })() : openIssues;
     list.forEach(function(i) {
       var sev = normSev(i);
@@ -967,6 +1013,8 @@ function buildReportFilterBar(
         assets.forEach(function(a) { if (repoMatchesRepo(i.r, a) || repoMatchesContainer(i.r, a)) counts.asset[a] = (counts.asset[a] || 0) + 1; });
       }
       if (i.b) counts.branch[i.b] = (counts.branch[i.b] || 0) + 1;
+      var scanner = (i.scanner || "Unknown");
+      counts.scanner[scanner] = (counts.scanner[scanner] || 0) + 1;
     });
     return counts;
   }
@@ -974,7 +1022,7 @@ function buildReportFilterBar(
     var fromData = getCountsFromData();
     if (fromData) return fromData;
     var els = getEls();
-    var counts = { severity: {}, assetType: {}, asset: {}, branch: {} };
+    var counts = { severity: {}, assetType: {}, asset: {}, branch: {}, scanner: {} };
     var assets = cfg.assets || [];
     els.forEach(function(el) {
       var s = (el.getAttribute("data-filter-severity") || "").toLowerCase();
@@ -982,9 +1030,11 @@ function buildReportFilterBar(
       var r = (el.getAttribute("data-filter-repo") || "").split(REPO_BRANCH_SEP).filter(Boolean);
       var b = (el.getAttribute("data-filter-branch") || "").split(REPO_BRANCH_SEP).filter(Boolean);
       var c = (el.getAttribute("data-filter-container") || "").split(REPO_BRANCH_SEP).filter(Boolean);
+      var sc = (el.getAttribute("data-filter-scanner") || "").split(REPO_BRANCH_SEP).filter(Boolean);
       if (s) { var sevList = s.split(/\s+/).filter(Boolean); sevList.forEach(function(v){ counts.severity[v] = (counts.severity[v] || 0) + 1; }); }
       at.forEach(function(v){ counts.assetType[v] = (counts.assetType[v] || 0) + 1; });
       b.forEach(function(v){ counts.branch[v] = (counts.branch[v] || 0) + 1; });
+      sc.forEach(function(v){ counts.scanner[v] = (counts.scanner[v] || 0) + 1; });
       var allAssetVals = r.concat(c);
       assets.forEach(function(a) {
         if (allAssetVals.some(function(v) { return repoMatchesRepo(v, a) || repoMatchesContainer(v, a); })) {
@@ -1040,10 +1090,37 @@ function buildReportFilterBar(
     var allAssetType = (cfg.assetTypes || []).length;
     var allAsset = (cfg.assets || []).length;
     var allBranch = (cfg.branches || []).length;
+    var allScanner = (cfg.scanners || []).length;
     var noSevFilter = allSev === 0 || state.severity.size === 0 || state.severity.size === allSev;
     var noAssetTypeFilter = allAssetType === 0 || state.assetType.size === 0 || state.assetType.size === allAssetType;
     var noAssetFilter = allAsset === 0 || state.asset.size === 0 || state.asset.size === allAsset;
     var noBranchFilter = allBranch === 0 || state.branch.size === 0 || state.branch.size === allBranch;
+    // Scanner filter semantics:
+    // - all selected => no filter
+    // - none selected => show no rows/issues
+    var noScannerFilter = allScanner === 0 || state.scanner.size === allScanner;
+    function inferScannerMatchForElement(sevList, assetTypeRaw, repoList, branchList, containerList) {
+      if (!reportData || !reportData.issues || reportData.issues.length === 0) return true;
+      return reportData.issues.some(function(i) {
+        var scanner = (i.scanner || "Unknown");
+        if (!state.scanner.has(scanner)) return false;
+        var sev = normSev(i);
+        if (sevList.length > 0 && sevList.indexOf(sev) < 0) return false;
+        if (assetTypeRaw.length > 0) {
+          if (!i.at || assetTypeRaw.indexOf(i.at) < 0) return false;
+        }
+        if (repoList.length > 0) {
+          if (!i.r || !repoList.some(function(r) { return repoMatchesRepo(i.r, r); })) return false;
+        }
+        if (containerList.length > 0) {
+          if (!i.r || !containerList.some(function(c) { return repoMatchesContainer(i.r, c); })) return false;
+        }
+        if (branchList.length > 0) {
+          if (!i.b || branchList.indexOf(i.b) < 0) return false;
+        }
+        return true;
+      });
+    }
     els.forEach(function(el) {
       var visible;
       if (parentSet.has(el)) {
@@ -1054,20 +1131,35 @@ function buildReportFilterBar(
         var hasRepo = el.hasAttribute("data-filter-repo");
         var hasBranch = el.hasAttribute("data-filter-branch");
         var hasContainer = el.hasAttribute("data-filter-container");
+        var hasScanner = el.hasAttribute("data-filter-scanner");
         var sevRaw = (el.getAttribute("data-filter-severity") || "").toLowerCase();
         var sevList = sevRaw ? sevRaw.split(/\s+/).filter(Boolean) : [];
         var assetTypeRaw = (el.getAttribute("data-filter-asset-type") || "").split(REPO_BRANCH_SEP).filter(Boolean);
         var repoRaw = el.getAttribute("data-filter-repo") || "";
         var branchRaw = el.getAttribute("data-filter-branch") || "";
         var containerRaw = el.getAttribute("data-filter-container") || "";
+        var scannerRaw = el.getAttribute("data-filter-scanner") || "";
         var repoList = repoRaw ? repoRaw.split(REPO_BRANCH_SEP).filter(Boolean) : [];
         var branchList = branchRaw ? branchRaw.split(REPO_BRANCH_SEP).filter(Boolean) : [];
         var containerList = containerRaw ? containerRaw.split(REPO_BRANCH_SEP).filter(Boolean) : [];
+        var scannerList = scannerRaw ? scannerRaw.split(REPO_BRANCH_SEP).filter(Boolean) : [];
         var matchSev = !hasSev || noSevFilter || sevList.some(function(s) { return state.severity.has(s); });
         var matchAssetType = !hasAssetType || noAssetTypeFilter || assetTypeRaw.length === 0 || assetTypeRaw.some(function(t) { return state.assetType.has(t); });
         var matchAsset = noAssetFilter || (repoList.length === 0 && containerList.length === 0) || repoList.some(function(r) { return elMatchesSelectedAsset(r); }) || containerList.some(function(c) { return elMatchesSelectedAsset(c); });
         var matchBranch = !hasBranch || noBranchFilter || (branchList.length === 0 ? (state.branch.has("main") || state.branch.has("master")) : branchList.some(function(b) { return state.branch.has(b); }));
-        visible = matchSev && matchAssetType && matchAsset && matchBranch;
+        var matchScanner;
+        if (state.scanner.size === 0) {
+          matchScanner = false;
+        } else if (noScannerFilter) {
+          matchScanner = true;
+        } else if (hasScanner) {
+          matchScanner = scannerList.length === 0 || scannerList.some(function(sc) { return state.scanner.has(sc); });
+        } else {
+          // Fallback for legacy/static rows that don't emit data-filter-scanner:
+          // infer scanner compatibility from reportData issue attributes.
+          matchScanner = inferScannerMatchForElement(sevList, assetTypeRaw, repoList, branchList, containerList);
+        }
+        visible = matchSev && matchAssetType && matchAsset && matchBranch && matchScanner;
       }
       if (visibilityCache.get(el) === visible) return;
       visibilityCache.set(el, visible);
@@ -1119,18 +1211,33 @@ function buildReportFilterBar(
       if (sc >= 0.1) return "low";
       return "info";
     }
-    function sevRank(sev) { return (sev === "critical" ? 5 : sev === "high" ? 4 : sev === "medium" ? 3 : sev === "low" ? 2 : 1); }
+    function issueAssetKey(i) {
+      if (!i || !i.r) return "unknown";
+      var repo = (i.r || "").trim();
+      if (isContainerOrVm(repo)) {
+        var c = containers.find(function(name) { return repoMatchesContainer(repo, name); });
+        if (c) return "container:" + c.toLowerCase();
+        var r = repo.toLowerCase().trim();
+        var vm = vmNames.find(function(v) {
+          var vn = (v || "").toLowerCase().trim();
+          return r === vn || r.endsWith("/" + vn) || vn.endsWith("/" + r);
+        });
+        if (vm) return "vm:" + vm.toLowerCase();
+      }
+      return "repo:" + repo.toLowerCase();
+    }
     function countBySeverity(issues) {
       var c = { critical: 0, high: 0, medium: 0, low: 0, info: 0 };
       if (countMode === "groups") {
-        var byGroup = {};
+        var seen = {};
         issues.forEach(function(i) {
           var gid = i.g != null ? i.g : (i.r + "|" + i.d + "|" + (i.s||""));
+          var key = issueAssetKey(i) + "|" + gid;
+          if (seen[key]) return;
+          seen[key] = true;
           var sev = normSev(i);
-          var r = sevRank(sev);
-          if (!byGroup[gid] || r > (byGroup[gid].r || 0)) byGroup[gid] = { sev: sev, r: r };
+          c[sev]++;
         });
-        Object.keys(byGroup).forEach(function(k) { c[byGroup[k].sev]++; });
       } else {
         issues.forEach(function(i) { c[normSev(i)]++; });
       }
@@ -1141,21 +1248,91 @@ function buildReportFilterBar(
         var seen = {};
         return issues.filter(function(i) {
           var gid = i.g != null ? i.g : (i.r + "|" + i.d + "|" + (i.s||""));
-          if (seen[gid]) return false;
-          seen[gid] = true;
+          var key = issueAssetKey(i) + "|" + gid;
+          if (seen[key]) return false;
+          seen[key] = true;
           return true;
         }).length;
       }
       return issues.length;
     }
+    function escHtml(v) {
+      return String(v == null ? "" : v)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+    }
+    function escAttr(v) {
+      return escHtml(v).replace(/"/g, "&quot;");
+    }
+    function blankCounts() {
+      return { critical: 0, high: 0, medium: 0, low: 0 };
+    }
+    function scoreCounts(c) {
+      return toReportRisk(c);
+    }
+    function renderRiskCell(n, cls) {
+      return n > 0 ? '<td class="text-right mono ' + cls + '">' + n + '</td>' : '<td class="text-right mono">-</td>';
+    }
+    function countsForRepoName(repoName) {
+      var c = blankCounts();
+      if (countMode === "groups") {
+        var byGroup = {};
+        openIssues.forEach(function(i) {
+          if (!i.r || isContainerOrVm(i.r) || !repoMatchesRepo(i.r, repoName)) return;
+          var gid = i.g != null ? i.g : (i.r + "|" + i.d + "|" + (i.s || ""));
+          var sev = normSev(i);
+          if (byGroup[gid]) return;
+          byGroup[gid] = { sev: sev };
+        });
+        Object.keys(byGroup).forEach(function(k) {
+          c[byGroup[k].sev] = (c[byGroup[k].sev] || 0) + 1;
+        });
+      } else {
+        openIssues.forEach(function(i) {
+          if (!i.r || isContainerOrVm(i.r) || !repoMatchesRepo(i.r, repoName)) return;
+          var sev = normSev(i);
+          c[sev] = (c[sev] || 0) + 1;
+        });
+      }
+      return c;
+    }
+    function countsForContainerName(containerName) {
+      var c = blankCounts();
+      if (countMode === "groups") {
+        var byGroup = {};
+        openIssues.forEach(function(i) {
+          if (!i.r || !repoMatchesContainer(i.r, containerName)) return;
+          var gid = i.g != null ? i.g : (i.r + "|" + i.d + "|" + (i.s || ""));
+          var sev = normSev(i);
+          if (byGroup[gid]) return;
+          byGroup[gid] = { sev: sev };
+        });
+        Object.keys(byGroup).forEach(function(k) {
+          c[byGroup[k].sev] = (c[byGroup[k].sev] || 0) + 1;
+        });
+      } else {
+        openIssues.forEach(function(i) {
+          if (!i.r || !repoMatchesContainer(i.r, containerName)) return;
+          var sev = normSev(i);
+          c[sev] = (c[sev] || 0) + 1;
+        });
+      }
+      return c;
+    }
     var allSev = (cfg.severities || []).length;
     var allAssetType = (cfg.assetTypes || []).length;
     var allAsset = (cfg.assets || []).length;
     var allBranch = (cfg.branches || []).length;
+    var allScanner = (cfg.scanners || []).length;
     var noSevFilter = allSev === 0 || state.severity.size === 0 || state.severity.size === allSev;
     var noAssetTypeFilter = allAssetType === 0 || state.assetType.size === 0 || state.assetType.size === allAssetType;
     var noAssetFilter = allAsset === 0 || state.asset.size === 0 || state.asset.size === allAsset;
     var noBranchFilter = allBranch === 0 || state.branch.size === 0 || state.branch.size === allBranch;
+    // Scanner filter semantics:
+    // - all selected => no filter
+    // - none selected => show no issues
+    var noScannerFilter = allScanner === 0 || state.scanner.size === allScanner;
     var containers = ((reportData.containers && reportData.containers.length) ? reportData.containers : []).slice();
     var vmNames = ((reportData.vmNames && reportData.vmNames.length) ? reportData.vmNames : []).slice();
     function normContainerName(n) {
@@ -1173,13 +1350,6 @@ function buildReportFilterBar(
       if (a === b) return true;
       if (b.endsWith("/" + a)) return true;
       if (a.endsWith("/" + b)) return true;
-      if (b.endsWith(a) && (b.length === a.length || b[b.length - a.length - 1] === "/")) return true;
-      if (a.endsWith(b) && (a.length === b.length || a[a.length - b.length - 1] === "/")) return true;
-      var aNorm = a.replace(new RegExp("/images?/", "g"), "/img/");
-      var bNorm = b.replace(new RegExp("/images?/", "g"), "/img/");
-      if (aNorm === bNorm) return true;
-      if (bNorm.endsWith("/" + aNorm)) return true;
-      if (aNorm.endsWith("/" + bNorm)) return true;
       return false;
     }
     function isContainerOrVm(repo) {
@@ -1202,22 +1372,28 @@ function buildReportFilterBar(
       if (i.b) return state.branch.has(i.b);
       return state.branch.has("main") || state.branch.has("master");
     }
+    function matchScannerForIssue(i) {
+      if (state.scanner.size === 0) return false;
+      if (noScannerFilter) return true;
+      var scanner = (i.scanner || "Unknown");
+      return state.scanner.has(scanner);
+    }
     var filtered = reportData.issues.filter(function(i) {
       var sev = normSev(i);
       var matchSev = noSevFilter || state.severity.has(sev);
       var matchBranch = matchBranchForIssue(i);
-      return matchSev && matchAssetTypeForIssue(i) && matchAssetForIssue(i) && matchBranch;
+      return matchSev && matchAssetTypeForIssue(i) && matchAssetForIssue(i) && matchBranch && matchScannerForIssue(i);
     });
     var trendFiltered = trendBase.filter(function(i) {
       var sev = normSev(i);
       var matchSev = noSevFilter || state.severity.has(sev);
       var matchBranch = matchBranchForIssue(i);
-      return matchSev && matchAssetTypeForIssue(i) && matchAssetForIssue(i) && matchBranch;
+      return matchSev && matchAssetTypeForIssue(i) && matchAssetForIssue(i) && matchBranch && matchScannerForIssue(i);
     });
     var openIssues = filtered.filter(function(i) { return isOpenStatus(i.st); });
-    var noFilters = noSevFilter && noAssetTypeFilter && noAssetFilter && noBranchFilter;
+    var noFilters = noSevFilter && noAssetTypeFilter && noAssetFilter && noBranchFilter && noScannerFilter;
     // Use server counts when available — authoritative for countMode (groups vs instances).
-    var useServerCounts = reportData.serverCounts != null && reportData.totalOpen != null && noFilters;
+    var useServerCounts = reportData.serverCounts != null && reportData.totalOpen != null && noFilters && (reportData.serverCountsMode || countMode) === countMode;
     var counts = useServerCounts ? reportData.serverCounts : countBySeverity(openIssues);
     function oraPenalty(c) { var p = (c.critical||0)*10 + (c.high||0)*4; p += Math.min((c.medium||0)*0.5, 30); p += Math.min((c.low||0)*0.25, 10); return p; }
     function toReportRisk(c) { return Math.max(0, Math.min(100, Math.round(oraPenalty(c)))); }
@@ -1316,6 +1492,56 @@ function buildReportFilterBar(
       var detail2 = grid.querySelector(".kpi-card:nth-child(2) .kpi-detail"); if (detail2) detail2.textContent = counts.critical + " critical";
       var detail4 = grid.querySelector(".kpi-card:nth-child(4) .kpi-detail"); if (detail4) detail4.textContent = avgMttr !== undefined ? "days" : "No data";
     });
+    document.querySelectorAll("[data-report-aggregate=repo-risk]").forEach(function(section) {
+      var tbody = section.querySelector("table tbody");
+      if (!tbody) return;
+      var names = Array.prototype.map.call(tbody.querySelectorAll("tr td:first-child"), function(td) { return (td.textContent || "").trim(); }).filter(Boolean);
+      if (!names.length) return;
+      var rows = names.map(function(repoName) {
+        var c = countsForRepoName(repoName);
+        var score = scoreCounts(c);
+        var sevAttr = [];
+        if (c.critical > 0) sevAttr.push("critical");
+        if (c.high > 0) sevAttr.push("high");
+        if (c.medium > 0) sevAttr.push("medium");
+        if (c.low > 0) sevAttr.push("low");
+        var sevData = sevAttr.length ? ' data-filter-severity="' + escAttr(sevAttr.join(" ")) + '"' : "";
+        return '<tr data-filter-repo="' + escAttr(repoName) + '" data-filter-asset-type="Code"' + sevData + '>' +
+          '<td class="mono">' + escHtml(repoName) + '</td>' +
+          renderRiskCell(c.critical, "critical-val") +
+          renderRiskCell(c.high, "high-val") +
+          renderRiskCell(c.medium, "medium-val") +
+          renderRiskCell(c.low, "low-val") +
+          '<td class="text-right mono" style="font-weight:600">' + score + '</td>' +
+          '</tr>';
+      }).join("");
+      tbody.innerHTML = rows;
+    });
+    document.querySelectorAll("[data-report-aggregate=container-risk]").forEach(function(section) {
+      var tbody = section.querySelector("table tbody");
+      if (!tbody) return;
+      var names = Array.prototype.map.call(tbody.querySelectorAll("tr td:first-child"), function(td) { return (td.textContent || "").trim(); }).filter(Boolean);
+      if (!names.length) return;
+      var rows = names.map(function(containerName) {
+        var c = countsForContainerName(containerName);
+        var score = scoreCounts(c);
+        var sevAttr = [];
+        if (c.critical > 0) sevAttr.push("critical");
+        if (c.high > 0) sevAttr.push("high");
+        if (c.medium > 0) sevAttr.push("medium");
+        if (c.low > 0) sevAttr.push("low");
+        var sevData = sevAttr.length ? ' data-filter-severity="' + escAttr(sevAttr.join(" ")) + '"' : "";
+        return '<tr data-filter-repo="' + escAttr(containerName) + '" data-filter-asset-type="Container" data-filter-container="' + escAttr(containerName) + '"' + sevData + '>' +
+          '<td class="mono">' + escHtml(containerName) + '</td>' +
+          renderRiskCell(c.critical, "critical-val") +
+          renderRiskCell(c.high, "high-val") +
+          renderRiskCell(c.medium, "medium-val") +
+          renderRiskCell(c.low, "low-val") +
+          '<td class="text-right mono" style="font-weight:600">' + score + '</td>' +
+          '</tr>';
+      }).join("");
+      tbody.innerHTML = rows;
+    });
     document.querySelectorAll("[data-report-aggregate=trend-stacked]").forEach(function(trendSection) {
       if (trendBase.length === 0) return;
       var trendCountMode = (trendSection.getAttribute("data-trend-count-mode") || countMode) === "instances" ? "instances" : "groups";
@@ -1340,19 +1566,19 @@ function buildReportFilterBar(
         return trendSevSet.has(normSev(i));
       }
       var trendFilteredScoped = trendFiltered.filter(function(i){ return matchTrendSeverity(i) && matchTrendTypes(i); });
-      function countBySeverityTrend(issues) {
+    function countBySeverityTrend(issues) {
         var c = { critical: 0, high: 0, medium: 0, low: 0, info: 0 };
         if (trendCountMode === "groups") {
           var byGroup = {};
           issues.forEach(function(i) {
             var gid = i.g != null ? i.g : (i.r + "|" + i.d + "|" + (i.s||""));
-            if (byGroup[gid]) return;
-            byGroup[gid] = true;
-            var sev = normSev(i);
-            c[sev]++;
+            var key = issueAssetKey(i) + "|" + gid;
+            if (byGroup[key]) return;
+            byGroup[key] = { sev: normSev(i) };
           });
+        Object.keys(byGroup).forEach(function(k) { c[byGroup[k].sev]++; });
         } else {
-          issues.forEach(function(i) { c[normSev(i)]++; });
+        issues.forEach(function(i) { c[normSev(i)]++; });
         }
         return c;
       }
@@ -1372,7 +1598,7 @@ function buildReportFilterBar(
       var thisEndTs = currentWindowEnd.getTime();
       var lastStartTs = previousWindowStart.getTime();
       var lastEndTs = previousWindowEnd.getTime();
-      var countTotalTrend = function(issues) { return trendCountMode === "groups" ? (function() { var seen = {}; return issues.filter(function(i) { var gid = i.g != null ? i.g : (i.r + "|" + i.d + "|" + (i.s||"")); if (seen[gid]) return false; seen[gid] = true; return true; }).length; })() : issues.length; };
+      var countTotalTrend = function(issues) { return trendCountMode === "groups" ? (function() { var seen = {}; return issues.filter(function(i) { var gid = i.g != null ? i.g : (i.r + "|" + i.d + "|" + (i.s||"")); var key = issueAssetKey(i) + "|" + gid; if (seen[key]) return false; seen[key] = true; return true; }).length; })() : issues.length; };
       var isResolvedStatus = function(st) { return ["resolved","closed"].indexOf((st||"").toLowerCase()) >= 0; };
       var resolvedThisWeek = 0, resolvedLastWeek = 0, newThisWeek = 0, newLastWeek = 0;
       trendFilteredScoped.forEach(function(i) {
@@ -1647,7 +1873,7 @@ function buildReportFilterBar(
   var CHIP_COLLAPSE_THRESHOLD = 6;
   function renderChips() {
     var parts = [];
-    ["severity","assetType","asset","branch"].forEach(function(dim) {
+    ["severity","assetType","asset","branch","scanner"].forEach(function(dim) {
       if (!state[dim] || state[dim].size === 0) return;
       var opts = cfg[cfgKey[dim]] || [];
       if (state[dim].size >= opts.length) return;
@@ -1760,6 +1986,7 @@ function buildReportFilterBar(
       state.assetType = new Set(cfg.assetTypes || []);
       state.asset = new Set(cfg.assets || []);
       state.branch = new Set(cfg.branches || []);
+      state.scanner = new Set(cfg.scanners || []);
       syncCheckboxes();
       applyFilter();
     });
@@ -1786,6 +2013,14 @@ function buildReportFilterBar(
           if (dim === "issues") section.dataset.trendCountMode = val === "Individual Issues" ? "instances" : "groups";
           if (dim === "daterange") section.dataset.trendPeriodDays = val === "Last 7 days" ? "7" : val === "Last 30 days" ? "30" : val === "Last 90 days" ? "90" : val === "Last 180 days" ? "180" : "365";
           if (dim === "granularity") section.dataset.trendGranularity = (val || "Weekly").toLowerCase();
+        }
+        if (dim === "issues" && reportData) {
+          var nextMode = val === "Individual Issues" ? "instances" : "groups";
+          reportData.countMode = nextMode;
+          document.querySelectorAll('.trend-filter-pill[data-trend-dim="issues"] .trend-filter-pill-trigger').forEach(function(t) {
+            t.innerHTML = val + ' <span class="trend-filter-arrow">▾</span>';
+          });
+          updateCounts();
         }
         pill.classList.remove("open");
         if (reportData) updateAggregateWidgets();
@@ -1845,6 +2080,7 @@ function buildReportDocumentShell(
     assetTypes: string[];
     assets: string[];
     branches: string[];
+    scanners: string[];
   } | null,
   reportData?: {
     issues: ReportDataIssue[];
@@ -1853,6 +2089,7 @@ function buildReportDocumentShell(
     dateTo: string | null;
     primaryColor: string;
     countMode?: string;
+    serverCountsMode?: string;
     containers?: string[];
     vmNames?: string[];
   } | null,
@@ -2553,7 +2790,7 @@ export const REPORT_PRESETS: ReportPreset[] = [
     id: "executive",
     name: "Executive Summary",
     description:
-      "High-level risk posture for leadership. 30-day window with KPIs, severity, aging, MTTR, and top vulns.",
+      "High-level risk posture for leadership. 30-day window with KPIs, severity, aging, MTTR, and top vulnerabilities.",
     definition: {
       title: "Executive Summary",
       filters: {
@@ -2584,65 +2821,12 @@ export const REPORT_PRESETS: ReportPreset[] = [
     },
   },
   {
-    id: "executive-detailed",
-    name: "Executive Summary (Detailed)",
-    description:
-      "Executive overview with risk gauge, severity trends, and full risk rankings plus vulnerabilities for all repos and containers.",
-    definition: {
-      title: "Executive Summary - Detailed",
-      filters: {
-        repoFilter: [],
-        branchFilter: null,
-        severityFilter: [],
-        dateRangePreset: 90,
-        dateFrom: null,
-        dateTo: null,
-        notes: "",
-        external: false,
-        countMode: "groups",
-      },
-      canvases: [
-        withSingleColumnLayout({
-          id: "c-exec-det",
-          name: "Summary",
-          widgets: [
-            {
-              id: "w-exec-det-1",
-              type: "summary",
-              config: { variant: "default" },
-            },
-            {
-              id: "w-exec-det-2",
-              type: "trendStacked",
-              config: { periodDays: 90 },
-            },
-            { id: "w-exec-det-3", type: "severityBar", config: {} },
-            { id: "w-exec-det-4", type: "assetMixDonut", config: {} },
-            { id: "w-exec-det-5", type: "agingTable", config: {} },
-            { id: "w-exec-det-6", type: "mttrTable", config: {} },
-            { id: "w-exec-det-7", type: "repoTable", config: { limit: 100 } },
-            {
-              id: "w-exec-det-8",
-              type: "containerTable",
-              config: { limit: 100 },
-            },
-            {
-              id: "w-exec-det-9",
-              type: "issueList",
-              config: { limit: 100000 },
-            },
-          ],
-        }),
-      ],
-    },
-  },
-  {
     id: "executive-detailed-yearly-instances",
-    name: "Executive Summary - Yearly (All Instances)",
+    name: "Executive Summary - Yearly (All Findings)",
     description:
-      "Copy of Executive Summary - Detailed with full year (365 days) and individual issue counts rather than grouped.",
+      "Executive summary over a full year (365 days) using individual finding counts.",
     definition: {
-      title: "Executive Summary - Detailed (Yearly, All Instances)",
+      title: "Executive Summary (Yearly, All Findings)",
       filters: {
         repoFilter: [],
         branchFilter: null,
@@ -2691,237 +2875,6 @@ export const REPORT_PRESETS: ReportPreset[] = [
     },
   },
   {
-    id: "executive-summary2",
-    name: "Executive Summary v2",
-    description:
-      "Trend-focused executive report with severity trends, reachability, and asset mix.",
-    definition: {
-      title: "Executive Summary",
-      filters: {
-        repoFilter: [],
-        branchFilter: null,
-        severityFilter: [],
-        dateRangePreset: 90,
-        dateFrom: null,
-        dateTo: null,
-        notes: "",
-        external: false,
-        countMode: "groups",
-      },
-      canvases: [
-        withSingleColumnLayout({
-          id: "c-exec2",
-          name: "Summary",
-          widgets: [
-            {
-              id: "w-exec2-1",
-              type: "summary",
-              config: { variant: "default" },
-            },
-            {
-              id: "w-exec2-2",
-              type: "trendStacked",
-              config: { periodDays: 90 },
-            },
-            { id: "w-exec2-3", type: "severityBar", config: {} },
-            { id: "w-exec2-4", type: "reachabilityMatrix", config: {} },
-            { id: "w-exec2-5", type: "assetMixDonut", config: {} },
-            { id: "w-exec2-6", type: "mttrTable", config: {} },
-            { id: "w-exec2-7", type: "repoTable", config: { limit: 10 } },
-            { id: "w-exec2-8", type: "topVulnsTable", config: { limit: 10 } },
-          ],
-        }),
-      ],
-    },
-  },
-  {
-    id: "board",
-    name: "Board One-Pager",
-    description:
-      "Single-page snapshot for board meetings. Risk gauge, severity pills, and top 5 findings.",
-    definition: {
-      title: "Board One-Pager",
-      filters: {
-        repoFilter: [],
-        branchFilter: null,
-        severityFilter: [],
-        dateRangePreset: 30,
-        dateFrom: null,
-        dateTo: null,
-        notes: "",
-        external: false,
-        countMode: "groups",
-      },
-      canvases: [
-        withSingleColumnLayout({
-          id: "c-board",
-          name: "Risk at a glance",
-          widgets: [
-            { id: "w-board-1", type: "riskGauge", config: {} },
-            { id: "w-board-2", type: "summary", config: { variant: "board" } },
-            { id: "w-board-3", type: "severityPills", config: {} },
-            { id: "w-board-4", type: "topVulnsList", config: { limit: 5 } },
-          ],
-        }),
-      ],
-    },
-  },
-  {
-    id: "engineering",
-    name: "Engineering Detail",
-    description:
-      "Full technical report with scanners, aging, MTTR, repo risk, and full issue inventory.",
-    definition: {
-      title: "Engineering Detail",
-      filters: {
-        repoFilter: [],
-        branchFilter: null,
-        severityFilter: [],
-        dateRangePreset: 30,
-        dateFrom: null,
-        dateTo: null,
-        notes: "",
-        external: false,
-        countMode: "groups",
-      },
-      canvases: [
-        withSingleColumnLayout({
-          id: "c-eng",
-          name: "Overview",
-          widgets: [
-            { id: "w-eng-1", type: "summary", config: { variant: "default" } },
-            { id: "w-eng-2", type: "severityDonut", config: {} },
-            { id: "w-eng-3", type: "severityBar", config: {} },
-            { id: "w-eng-4", type: "scannerTable", config: {} },
-            { id: "w-eng-5", type: "agingBars", config: {} },
-            { id: "w-eng-6", type: "agingTable", config: {} },
-            { id: "w-eng-7", type: "mttrBars", config: {} },
-            { id: "w-eng-8", type: "mttrTable", config: {} },
-            { id: "w-eng-9", type: "repoBars", config: {} },
-            { id: "w-eng-10", type: "repoTable", config: { limit: 25 } },
-            { id: "w-eng-11", type: "topVulnsTable", config: { limit: 25 } },
-            { id: "w-eng-12", type: "issueList", config: { limit: 100 } },
-          ],
-        }),
-      ],
-    },
-  },
-  {
-    id: "compliance-all-frameworks",
-    name: "Compliance (All Frameworks)",
-    description:
-      "SOC2, NIS2, and ISO 27001 side by side. Audit-ready multi-framework view.",
-    definition: {
-      title: "Compliance - All Frameworks",
-      filters: {
-        repoFilter: [],
-        branchFilter: null,
-        severityFilter: [],
-        dateRangePreset: 30,
-        dateFrom: null,
-        dateTo: null,
-        notes: "",
-        external: false,
-        countMode: "groups",
-      },
-      canvases: [
-        {
-          id: "c-comp-all",
-          name: "Compliance",
-          widgets: [
-            {
-              id: "w-comp-all-1",
-              type: "summary",
-              config: { variant: "compliance" },
-              layout: widgetLayoutForSingleColumn(0),
-            },
-            {
-              id: "w-comp-all-2",
-              type: "complianceScoreCard",
-              config: { framework: "soc2" },
-              layout: { row: 1, col: 0, width: 4, height: 1 },
-            },
-            {
-              id: "w-comp-all-3",
-              type: "complianceScoreCard",
-              config: { framework: "nis2" },
-              layout: { row: 1, col: 4, width: 4, height: 1 },
-            },
-            {
-              id: "w-comp-all-4",
-              type: "complianceScoreCard",
-              config: { framework: "iso27001" },
-              layout: { row: 1, col: 8, width: 4, height: 1 },
-            },
-            {
-              id: "w-comp-all-5",
-              type: "reachabilityMatrix",
-              config: {},
-              layout: widgetLayoutForSingleColumn(2),
-            },
-            {
-              id: "w-comp-all-6",
-              type: "severityBar",
-              config: {},
-              layout: widgetLayoutForSingleColumn(3),
-            },
-            {
-              id: "w-comp-all-7",
-              type: "repoTable",
-              config: { limit: 25 },
-              layout: widgetLayoutForSingleColumn(4),
-            },
-          ],
-        },
-      ],
-    },
-  },
-  {
-    id: "compliance",
-    name: "Compliance Report",
-    description:
-      "Audit-ready with SOC2/NIS2/ISO, reachability, and full inventory.",
-    definition: {
-      title: "Compliance Report",
-      filters: {
-        repoFilter: [],
-        branchFilter: null,
-        severityFilter: [],
-        dateRangePreset: 30,
-        dateFrom: null,
-        dateTo: null,
-        notes: "",
-        external: false,
-        countMode: "groups",
-      },
-      canvases: [
-        withSingleColumnLayout({
-          id: "c-compliance",
-          name: "Compliance",
-          widgets: [
-            {
-              id: "w-comp-1",
-              type: "summary",
-              config: { variant: "compliance" },
-            },
-            { id: "w-comp-2", type: "complianceScoreCard", config: {} },
-            { id: "w-comp-3", type: "reachabilityMatrix", config: {} },
-            { id: "w-comp-4", type: "assetMixDonut", config: {} },
-            { id: "w-comp-5", type: "severityBar", config: {} },
-            { id: "w-comp-6", type: "trendSparkline", config: {} },
-            { id: "w-comp-7", type: "trendTable", config: {} },
-            { id: "w-comp-8", type: "agingTable", config: {} },
-            { id: "w-comp-9", type: "mttrTable", config: {} },
-            { id: "w-comp-10", type: "repoTable", config: { limit: 50 } },
-            { id: "w-comp-11", type: "containerTable", config: {} },
-            { id: "w-comp-12", type: "topVulnsTable", config: { limit: 50 } },
-            { id: "w-comp-13", type: "issueList", config: { limit: 500 } },
-          ],
-        }),
-      ],
-    },
-  },
-  {
     id: "weekly",
     name: "Weekly Digest",
     description:
@@ -2954,47 +2907,6 @@ export const REPORT_PRESETS: ReportPreset[] = [
             { id: "w-weekly-4", type: "trendTable", config: {} },
             { id: "w-weekly-5", type: "mttrTable", config: {} },
             { id: "w-weekly-6", type: "topVulnsTable", config: { limit: 15 } },
-          ],
-        }),
-      ],
-    },
-  },
-  {
-    id: "vendor",
-    name: "Vendor Disclosure",
-    description:
-      "Advisory-style findings for coordination. Summary, repo table, and advisory cards.",
-    definition: {
-      title: "Vendor Disclosure",
-      filters: {
-        repoFilter: [],
-        branchFilter: null,
-        severityFilter: [],
-        dateRangePreset: 30,
-        dateFrom: null,
-        dateTo: null,
-        notes: "",
-        external: false,
-        countMode: "groups",
-      },
-      canvases: [
-        withSingleColumnLayout({
-          id: "c-vendor",
-          name: "Findings",
-          widgets: [
-            {
-              id: "w-vendor-1",
-              type: "summary",
-              config: { variant: "default" },
-            },
-            { id: "w-vendor-2", type: "severityBar", config: {} },
-            { id: "w-vendor-3", type: "repoTable", config: { limit: 20 } },
-            {
-              id: "w-vendor-4",
-              type: "topVulnsAdvisory",
-              config: { limit: 30 },
-            },
-            { id: "w-vendor-5", type: "issueList", config: { limit: 200 } },
           ],
         }),
       ],

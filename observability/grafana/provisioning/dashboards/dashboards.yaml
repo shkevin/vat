@@ -11,4 +11,3 @@ providers:
     updateIntervalSeconds: 15
     options:
       path: /etc/grafana/provisioning/dashboards/json
-

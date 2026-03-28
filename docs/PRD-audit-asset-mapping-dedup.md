@@ -9,7 +9,7 @@ This PRD defines the production pattern for:
 - Separation of replay deduplication, cross-source correlation, and grouping
 - Operational observability required to validate behavior end-to-end
 
-This document is intended to be the canonical reference for implementation, validation, and audit evidence preparation.
+This document is intended to be the canonical reference for implementation, validation, and audit evidence preparation. Operational handoff steps: [audit-evidence-handoff-runbook.md](./audit-evidence-handoff-runbook.md).
 
 ## 2. Problem Statement
 
@@ -190,11 +190,9 @@ Expected live signals:
 
 ### Remaining (High Priority)
 
-1. Implement correlation linking engine (link-only policy):
-   - set `correlated_to` when correlation confidence/policy allows
-   - emit `dedup.correlation.linked|skipped` events
-2. Add scheduled daily checkpoint automation (if required operationally)
-3. Produce formal evidence runbook/export template for audit handoff
+1. ~~Implement correlation linking engine (link-only policy)~~ — **Done:** canonical finding is oldest in `(tenant_id, correlation_key)` cluster; links when confidence is `high` or `medium`; emits `dedup.correlation.linked` / `dedup.correlation.skipped`.
+2. ~~Add scheduled daily checkpoint automation~~ — **Done:** Celery Beat `audit-daily-checkpoint` at 00:30 UTC (`VAT_AUDIT_DAILY_CHECKPOINT_ENABLED`); manual `POST /audit/checkpoints/daily` unchanged.
+3. ~~Produce formal evidence runbook/export template~~ — **Done:** [audit-evidence-handoff-runbook.md](./audit-evidence-handoff-runbook.md) (API export + checkpoints + correlation evidence).
 
 ## 13. Risks and Controls
 
@@ -213,6 +211,8 @@ Expected live signals:
 - `backend/app/parsers/__init__.py`
 - `backend/app/services/ingest.py`
 - `backend/app/services/correlation.py`
+- `backend/app/services/correlation_linking.py`
+- `backend/app/tasks/audit_tasks.py`
 - `backend/app/services/audit_events.py`
 - `backend/app/services/aikido_full_sync.py`
 - `backend/app/api/audit.py`
@@ -222,4 +222,3 @@ Expected live signals:
 - `observability/grafana/provisioning/dashboards/json/vat-asset-mapping-dedup-validation.json`
 - `observability/grafana/provisioning/dashboards/json/vat-observability-pipeline.json`
 - `observability/grafana/provisioning/dashboards/json/vat-platform-health.json`
-

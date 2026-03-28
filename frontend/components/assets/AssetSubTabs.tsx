@@ -14,16 +14,20 @@ const TABS: { id: AssetTabId; label: string; adminOnly?: boolean }[] = [
 
 interface AssetSubTabsProps {
   config: AppConfig;
+  isAdmin?: boolean;
   currentTab: AssetTabId;
   onTabChange: (tab: AssetTabId) => void;
+  rightContent?: React.ReactNode;
 }
 
 export function AssetSubTabs({
   config,
+  isAdmin: isAdminOverride,
   currentTab,
   onTabChange,
+  rightContent,
 }: AssetSubTabsProps) {
-  const isAdmin = config.isAdmin ?? false;
+  const isAdmin = isAdminOverride ?? config.isAdmin ?? false;
 
   return (
     <nav
@@ -65,6 +69,13 @@ export function AssetSubTabs({
           </button>
         );
       })}
+      {rightContent && (
+        <div
+          style={{ marginLeft: "auto", display: "flex", alignItems: "center" }}
+        >
+          {rightContent}
+        </div>
+      )}
     </nav>
   );
 }

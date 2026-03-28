@@ -64,6 +64,13 @@ class VatFindingSchema(BaseModel):
     image: Optional[str] = Field(default=None, max_length=256)
     branch: Optional[str] = Field(default=None, max_length=128)
     tag: Optional[str] = Field(default=None, max_length=128)
+    observed_container_tags: Optional[list[str]] = Field(
+        default=None,
+        description=(
+            "Distinct image tags for this issue (e.g. Aikido instances/locations). "
+            "Used at ingest to populate asset_observed_tags for the UI; not part of fingerprint."
+        ),
+    )
     image_digest: Optional[str] = Field(
         default=None,
         max_length=128,
@@ -120,6 +127,30 @@ class VatFindingSchema(BaseModel):
     owner: Optional[str] = Field(default=None, max_length=256)
     references: Optional[list[str]] = Field(default=None, max_length=50)
 
+    # Optional — scan/session and identity metadata (Phase 1 identity model)
+    scan_session_id: Optional[str] = Field(default=None, max_length=64)
+    scanner_version: Optional[str] = Field(default=None, max_length=64)
+    content_version: Optional[str] = Field(default=None, max_length=64)
+    benchmark_id: Optional[str] = Field(default=None, max_length=256)
+    benchmark_family: Optional[str] = Field(default=None, max_length=128)
+    profile_scope: Optional[str] = Field(default=None, max_length=256)
+    stable_rule_key: Optional[str] = Field(default=None, max_length=256)
+    result_state: Optional[str] = Field(default=None, max_length=32)
+    needs_family_classification: Optional[bool] = Field(default=None)
+    # Backend-owned enrichment/provenance metadata (optional, internal-first).
+    provided_identifiers: Optional[dict] = Field(default=None)
+    derived_identifiers: Optional[dict] = Field(default=None)
+    enrichment_meta: Optional[dict] = Field(default=None)
+    partial_fingerprints: Optional[dict[str, str]] = Field(
+        default=None,
+        description="SARIF result.partialFingerprints for stable static dedup/correlation",
+    )
+    scanner_identity: Optional[str] = Field(
+        default=None,
+        max_length=256,
+        description="Opaque stable id from the scanner when not using SARIF fingerprints",
+    )
+
     @field_validator("cve_id")
     @classmethod
     def normalize_cve_id(cls, v: str) -> str:
@@ -141,35 +172,8 @@ class VatFindingSchema(BaseModel):
         }
         return mapping.get(s, VatSeverity.MEDIUM)
 
-    if _PYDANTIC_V2:
-
-        @model_validator(mode="after")
-        def require_asset_context(self) -> "VatFindingSchema":
-            """Every finding must have asset context for grouping: at least one of image, branch, tag."""
-            has_image = bool(self.image and str(self.image).strip())
-            has_branch = bool(
-                getattr(self, "branch", None) and str(self.branch).strip()
-            )
-            has_tag = bool(getattr(self, "tag", None) and str(self.tag).strip())
-            if not (has_image or has_branch or has_tag):
-                raise ValueError(
-                    "Finding must have at least one of: image, branch, tag (required for asset-scoped grouping)"
-                )
-            return self
-    else:
-
-        @root_validator
-        def require_asset_context(cls, values):
-            has_image = bool(values.get("image") and str(values.get("image")).strip())
-            has_branch = bool(
-                values.get("branch") and str(values.get("branch")).strip()
-            )
-            has_tag = bool(values.get("tag") and str(values.get("tag")).strip())
-            if not (has_image or has_branch or has_tag):
-                raise ValueError(
-                    "Finding must have at least one of: image, branch, tag (required for asset-scoped grouping)"
-                )
-            return values
+    # Asset context can be sparse at ingest time; backend enrichment and resolver
+    # now own deriving canonical asset identity for correlation.
 
 
 class VatTrackerCommentUpdate(BaseModel):

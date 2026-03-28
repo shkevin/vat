@@ -165,7 +165,7 @@ function toFinding(raw: Record<string, unknown>): Finding {
 /** Build and download the full export bundle using the report engine's Executive Summary template. */
 export async function buildAndDownloadExportBundle(auth?: Auth): Promise<void> {
   const [vatRes, sbomRes] = await Promise.all([
-    fetchVATData({ limit: 0 }, auth),
+    fetchVATData({ limit: 0, full: true, include_zero_assets: true }, auth),
     fetchSbomPackages({ limit: 10000 }, auth),
   ]);
 

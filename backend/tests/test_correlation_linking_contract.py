@@ -14,7 +14,7 @@ def _compile(stmt) -> str:
 
 
 def test_select_correlation_cluster_null_tenant_filters_is_null() -> None:
-    stmt = select_correlation_cluster(correlation_key="sca:asset:x", tenant_id=None)
+    stmt = select_correlation_cluster(correlation_key="v1:sca:asset:x", tenant_id=None)
     sql = _compile(stmt)
     assert "correlation_key" in sql
     assert "tenant_id" in sql
@@ -22,7 +22,9 @@ def test_select_correlation_cluster_null_tenant_filters_is_null() -> None:
 
 
 def test_select_correlation_cluster_value_tenant_filters_equality() -> None:
-    stmt = select_correlation_cluster(correlation_key="sca:asset:x", tenant_id="tenant-a")
+    stmt = select_correlation_cluster(
+        correlation_key="v1:sca:asset:x", tenant_id="tenant-a"
+    )
     sql = _compile(stmt)
     assert "correlation_key" in sql
     assert "findings.tenant_id" in sql

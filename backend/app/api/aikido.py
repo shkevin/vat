@@ -531,6 +531,7 @@ async def aikido_sync_dashboard(
         "containers": len(data.get("containers", [])),
         "vms": len(data.get("vms", [])),
         "fetchedAt": data.get("fetchedAt"),
+        "containerSbomSync": data.get("containerSbomSync"),
     }
 
 
