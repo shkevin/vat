@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from io import BytesIO
 from typing import Optional
 from zipfile import ZIP_DEFLATED, ZipFile
@@ -14,10 +15,11 @@ from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import require_admin
+from app.core.version import get_vat_backend_version
 from app.core.database import get_db
 from app.models.audit_event import AuditEvent
 from app.schemas.auth import UserContext
-from app.services.audit_events import create_daily_checkpoint, emit_audit_event
+from app.services.audit_events import create_daily_checkpoint, emit_audit_event, new_trace_id
 
 router = APIRouter()
 
@@ -155,9 +157,14 @@ async def export_audit_events(
         }
         for r in rows
     ]
+    audit_json_bytes = json.dumps(events, indent=2).encode("utf-8")
+    audit_sha256 = hashlib.sha256(audit_json_bytes).hexdigest()
+    generated_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
     manifest = {
-        "schemaVersion": "v1",
-        "generatedAt": datetime.utcnow().isoformat(),
+        "schemaVersion": "v2",
+        "packageType": "vat-audit-events-bundle",
+        "generatedAt": generated_at,
+        "vatBackendVersion": get_vat_backend_version(),
         "count": len(events),
         "filters": {
             "traceId": trace_id,
@@ -170,26 +177,32 @@ async def export_audit_events(
             "dateTo": date_to,
             "limit": limit,
         },
+        "files": [
+            {
+                "path": "audit-events.json",
+                "sha256": audit_sha256,
+                "sizeBytes": len(audit_json_bytes),
+            }
+        ],
     }
     buf = BytesIO()
     with ZipFile(buf, "w", ZIP_DEFLATED) as zf:
         zf.writestr("manifest.json", json.dumps(manifest, indent=2))
-        zf.writestr("audit-events.json", json.dumps(events, indent=2))
-    if rows:
-        await emit_audit_event(
-            db,
-            trace_id=rows[0].trace_id,
-            event_type="export.audit_bundle.generated",
-            actor_type="user",
-            actor_id=_ctx.email or _ctx.user_id,
-            decision_name="audit_export",
-            decision_reason_code="manual_export",
-            decision_confidence="high",
-            decision_result="generated",
-            data={"count": len(events)},
-            retention_class="compliance",
-        )
-        await db.commit()
+        zf.writestr("audit-events.json", audit_json_bytes)
+    await emit_audit_event(
+        db,
+        trace_id=rows[0].trace_id if rows else new_trace_id(),
+        event_type="export.audit_bundle.generated",
+        actor_type="user",
+        actor_id=_ctx.email or _ctx.user_id,
+        decision_name="audit_export",
+        decision_reason_code="manual_export",
+        decision_confidence="high",
+        decision_result="generated",
+        data={"count": len(events)},
+        retention_class="compliance",
+    )
+    await db.commit()
     buf.seek(0)
     return StreamingResponse(
         buf,

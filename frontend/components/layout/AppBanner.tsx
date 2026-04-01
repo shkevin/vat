@@ -290,10 +290,17 @@ export function AppBanner({
         )}
         {exportError && (
           <span
-            style={{ fontSize: 11, color: "var(--app-danger)" }}
+            style={{
+              fontSize: 11,
+              color: "var(--app-danger)",
+              maxWidth: 320,
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+            }}
             title={exportError}
           >
-            Export failed
+            {exportError}
           </span>
         )}
         {config.envLabel && (

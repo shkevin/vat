@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.auth import require_admin
 from app.core.database import get_db
 from app.schemas.auth import UserContext
+from app.services.audit_events import emit_audit_event, new_trace_id
 from app.services.findings_service import create_findings_bulk
 from app.services.sbom import import_sbom
 
@@ -103,6 +104,21 @@ async def seed_all(
                 result["users"] += 1
         if body.users:
             await db.commit()
+
+        await emit_audit_event(
+            db,
+            trace_id=new_trace_id(),
+            event_type="seed.dataset.loaded",
+            actor_type="user",
+            actor_id=_ctx.email or _ctx.user_id,
+            decision_name="seed_data",
+            decision_reason_code="manual_seed",
+            decision_confidence="high",
+            decision_result="loaded",
+            data=result,
+            retention_class="operational",
+        )
+        await db.commit()
 
         return {
             **result,

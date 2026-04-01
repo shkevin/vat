@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.finding import Finding, FindingType, Severity, Status
 from app.models.finding_observation import FindingObservation
+from app.models.sbom import license_risk_tier
 from app.schemas.vat import VatFindingSchema, VatFindingType, VatSeverity
 from app.core.config import get_settings
 from app.services.correlation import correlation_key_for_payload
@@ -86,6 +87,34 @@ def _parse_iso_datetime(s: str | None) -> datetime | None:
 def _vat_severity_to_model(sev: VatSeverity) -> Severity:
     """Map VAT severity to model enum."""
     return Severity(sev.value)
+
+
+def _license_expression_from_payload(payload: VatFindingSchema) -> str:
+    """Extract the best license identifier/expression candidate from payload."""
+    candidates = [
+        getattr(payload, "rule_id", None),
+        getattr(payload, "cve_id", None),
+        getattr(payload, "title", None),
+    ]
+    for raw in candidates:
+        value = str(raw).strip() if raw is not None else ""
+        if not value:
+            continue
+        lowered = value.lower()
+        if lowered.startswith("license:"):
+            return value.split(":", 1)[1].strip()
+        return value
+    return ""
+
+
+def _license_risk_to_model_severity(risk: str) -> Severity | None:
+    mapping = {
+        "Critical": Severity.Critical,
+        "High": Severity.High,
+        "Medium": Severity.Medium,
+        "Low": Severity.Low,
+    }
+    return mapping.get((risk or "").strip())
 
 
 _SEVERITY_ORDER = (
@@ -192,6 +221,7 @@ async def ingest_finding(
     scan_session_id: str | None = None,
     scanner_version: str | None = None,
     raw_evidence_ref: str | None = None,
+    force_tag_override: bool = False,
 ) -> tuple[Finding, bool]:
     """
     Ingest a finding from canonical payload. Deduplicates by fingerprint.
@@ -254,6 +284,11 @@ async def ingest_finding(
 
     finding_type = _vat_type_to_model(payload.finding_type)
     severity = _vat_severity_to_model(payload.severity)
+    if finding_type == FindingType.License:
+        risk = license_risk_tier(_license_expression_from_payload(payload))
+        standardized = _license_risk_to_model_severity(risk)
+        if standardized is not None:
+            severity = standardized
     title = payload.title or cve_id
     description = payload.description or ""
 
@@ -335,7 +370,9 @@ async def ingest_finding(
             existing.component = payload.component
         if getattr(payload, "branch", None) and not existing.branch:
             existing.branch = payload.branch
-        if getattr(payload, "tag", None) and not existing.tag:
+        if getattr(payload, "tag", None) and (
+            force_tag_override or not existing.tag
+        ):
             existing.tag = payload.tag
         if image_digest_val and not getattr(existing, "image_digest", None):
             existing.image_digest = image_digest_val

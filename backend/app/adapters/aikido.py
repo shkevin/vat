@@ -1034,8 +1034,6 @@ class AikidoAdapter:
                 is_container = "container" in str(locs[0].get("type", "")).lower()
         if not branch and not is_container:
             branch = "main"
-        if not tag and is_container:
-            tag = "latest"
         if not asset_name:
             fallback = (
                 _get_nested(issue, "image")

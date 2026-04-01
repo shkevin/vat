@@ -31,6 +31,7 @@ from app.services.audit_events import emit_audit_event
 from app.services.container_ref_normalization import is_safe_tag_only_alias_variant
 from app.services.ingest import ingest_finding
 from app.services.ingest_enrichment import enrich_payload_for_correlation
+from app.services.ingest_tag_policy import IngestTagPolicy
 from app.services.observability import IngestLatencyTimer
 from app.services.openscap_storage import (
     compute_evidence_sha256,
@@ -108,9 +109,11 @@ def _apply_asset_type_transform(
     asset_val = img or comp
     if not asset_val:
         return payload
-    # Move asset to component; set tag for schema validation; clear image
+    # Move asset to component; preserve explicit tag (e.g. X-VAT-Tag override).
+    # Only fall back to asset tag when caller did not provide any tag.
+    tag_value = (payload.tag or "").strip() or asset_val
     return payload.model_copy(
-        update={"image": None, "component": asset_val, "tag": asset_val},
+        update={"image": None, "component": asset_val, "tag": tag_value},
         deep=True,
     )
 
@@ -174,6 +177,10 @@ async def _ingest_from_parser(
     sbom_created = 0
     sbom_updated = 0
     sbom_component = source_image_override or asset_override
+    tag_policy = IngestTagPolicy.from_headers(
+        asset_override=asset_override,
+        tag_override=tag_override,
+    )
 
     if not payloads:
         # Ensure Asset record so zero-finding scans appear in frontend
@@ -219,7 +226,12 @@ async def _ingest_from_parser(
         if sbom_doc:
             try:
                 sbom_created, sbom_updated = await import_sbom(
-                    db, sbom_doc, source=source, component=sbom_component
+                    db,
+                    sbom_doc,
+                    source=source,
+                    component=sbom_component,
+                    finding_tag=tag_policy.sbom_tag,
+                    force_finding_tag_override=tag_policy.force_override,
                 )
                 if sbom_created or sbom_updated:
                     logger.info(
@@ -317,11 +329,7 @@ async def _ingest_from_parser(
             )
             if asset_override:
                 p = p.model_copy(update={"image": asset_override})
-            # Prefer per-finding tag from parser (e.g. container image tag) over header when set
-            if tag_override:
-                existing_tag = getattr(p, "tag", None)
-                if not (existing_tag and str(existing_tag).strip()):
-                    p = p.model_copy(update={"tag": tag_override})
+            p = tag_policy.apply_to_payload(p)
             if image_digest_override:
                 existing_dig = getattr(p, "image_digest", None)
                 if not (existing_dig and str(existing_dig).strip()):
@@ -345,6 +353,7 @@ async def _ingest_from_parser(
                 scan_session_id=scan_session_id,
                 scanner_version=scanner_version,
                 raw_evidence_ref=raw_evidence_ref,
+                force_tag_override=tag_policy.force_override,
             )
             await emit_audit_event(
                 db,
@@ -388,7 +397,12 @@ async def _ingest_from_parser(
     if sbom_doc:
         try:
             sbom_created, sbom_updated = await import_sbom(
-                db, sbom_doc, source=source, component=sbom_component
+                db,
+                sbom_doc,
+                source=source,
+                component=sbom_component,
+                finding_tag=tag_policy.sbom_tag,
+                force_finding_tag_override=tag_policy.force_override,
             )
             if sbom_created or sbom_updated:
                 logger.info(
@@ -420,11 +434,22 @@ async def _ingest_from_parser(
             except Exception as e:
                 logger.warning("Failed to store OpenSCAP scan result: %s", e)
 
+    normalized_tag_updates = 0
+    if tag_policy.force_override and asset_override:
+        normalized_tag_updates = await tag_policy.normalize_existing_source_asset_tags(
+            db,
+            source_name=source,
+            asset_id=asset_override,
+        )
+        if normalized_tag_updates:
+            await db.commit()
+
     result = {
         "created": created,
         "merged": merged,
         "sbomCreated": sbom_created,
         "sbomUpdated": sbom_updated,
+        "normalizedTagUpdates": normalized_tag_updates,
         "source": source,
         "traceId": trace_id,
         "message": f"Ingested {created} new, {merged} merged findings",

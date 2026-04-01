@@ -3,6 +3,11 @@
  */
 
 import { triggerUnauthorized } from "@/lib/onUnauthorized";
+import type {
+  FeedRecordsResponse,
+  FeedRunsResponse,
+  FeedSummaryResponse,
+} from "@/types/feeds";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "/api";
 
@@ -128,6 +133,31 @@ export interface VATDataResponse {
   };
 }
 
+export interface AuditEventsParams {
+  limit?: number;
+  eventType?: string;
+  dateFrom?: string;
+  dateTo?: string;
+}
+
+export interface ApiAuditEvent {
+  eventId: string;
+  traceId: string;
+  eventType: string;
+  createdAt: string | null;
+  sourceId?: string | null;
+  parserId?: string | null;
+  assetId?: string | null;
+  findingId?: string | null;
+  decisionName?: string | null;
+  decisionReasonCode?: string | null;
+  decisionConfidence?: string | null;
+  decisionResult?: string | null;
+  recordHash?: string | null;
+  prevRecordHash?: string | null;
+  data?: Record<string, unknown>;
+}
+
 /** Fetch findings and assets in one call. Assets include integration-created records (e.g. Aikido repos with 0 findings). */
 export async function fetchVATData(
   params?: FindingsParams,
@@ -184,6 +214,120 @@ export async function fetchVATData(
   );
   if (!res.ok) {
     throw new Error(`API error: ${res.status} ${res.statusText}`);
+  }
+  return res.json();
+}
+
+/** Fetch system audit events. Endpoint requires admin permissions. */
+export async function fetchAuditEvents(
+  params?: AuditEventsParams,
+  auth?: Auth,
+): Promise<{
+  count: number;
+  events: ApiAuditEvent[];
+}> {
+  const search = new URLSearchParams();
+  if (params?.limit != null) search.set("limit", String(params.limit));
+  if (params?.eventType) search.set("event_type", params.eventType);
+  if (params?.dateFrom) search.set("date_from", params.dateFrom);
+  if (params?.dateTo) search.set("date_to", params.dateTo);
+  const url = `${API_BASE}/audit/events${search.toString() ? `?${search}` : ""}`;
+  const res = await vatFetch(
+    url,
+    { headers: authHeaders(auth?.token, auth?.userEmail) },
+    auth,
+  );
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(text || `API error: ${res.status} ${res.statusText}`);
+  }
+  return res.json();
+}
+
+export async function fetchVulnFeedSummary(
+  auth?: Auth,
+): Promise<FeedSummaryResponse> {
+  const res = await vatFetch(
+    `${API_BASE}/vuln-feeds/summary`,
+    { headers: authHeaders(auth?.token, auth?.userEmail) },
+    auth,
+  );
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(text || `API error: ${res.status} ${res.statusText}`);
+  }
+  return res.json();
+}
+
+export async function fetchVulnFeedRuns(
+  params?: { source?: string; limit?: number },
+  auth?: Auth,
+): Promise<FeedRunsResponse> {
+  const search = new URLSearchParams();
+  if (params?.source) search.set("source", params.source);
+  if (params?.limit != null) search.set("limit", String(params.limit));
+  const url = `${API_BASE}/vuln-feeds/runs${search.toString() ? `?${search}` : ""}`;
+  const res = await vatFetch(
+    url,
+    { headers: authHeaders(auth?.token, auth?.userEmail) },
+    auth,
+  );
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(text || `API error: ${res.status} ${res.statusText}`);
+  }
+  return res.json();
+}
+
+export async function fetchVulnFeedRecords(
+  params?: {
+    source?: string;
+    severity?: string;
+    search?: string;
+    limit?: number;
+    offset?: number;
+  },
+  auth?: Auth,
+): Promise<FeedRecordsResponse> {
+  const search = new URLSearchParams();
+  if (params?.source) search.set("source", params.source);
+  if (params?.severity) search.set("severity", params.severity);
+  if (params?.search) search.set("search", params.search);
+  if (params?.limit != null) search.set("limit", String(params.limit));
+  if (params?.offset != null) search.set("offset", String(params.offset));
+  const url = `${API_BASE}/vuln-feeds/records${search.toString() ? `?${search}` : ""}`;
+  const res = await vatFetch(
+    url,
+    { headers: authHeaders(auth?.token, auth?.userEmail) },
+    auth,
+  );
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(text || `API error: ${res.status} ${res.statusText}`);
+  }
+  return res.json();
+}
+
+export async function triggerVulnFeedRefresh(
+  options?: { use_celery?: boolean },
+  auth?: Auth,
+): Promise<{ dispatched: boolean; message?: string }> {
+  const search = new URLSearchParams();
+  if (options?.use_celery != null) {
+    search.set("use_celery", options.use_celery ? "true" : "false");
+  }
+  const url = `${API_BASE}/vuln-feeds/refresh${search.toString() ? `?${search}` : ""}`;
+  const res = await vatFetch(
+    url,
+    {
+      method: "POST",
+      headers: authHeaders(auth?.token, auth?.userEmail),
+    },
+    auth,
+  );
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(text || `API error: ${res.status} ${res.statusText}`);
   }
   return res.json();
 }
@@ -850,14 +994,52 @@ export async function revokeAdminKey(
 }
 
 /** Download full export bundle (assets, findings, SBOM, Executive Summary). Triggers browser download. */
-export async function downloadExportBundle(auth?: Auth): Promise<void> {
-  const url = `${API_BASE}/export/bundle`;
+export async function downloadExportBundle(
+  auth?: Auth,
+  options?: { includeAuditEvents?: boolean },
+): Promise<void> {
+  const params = new URLSearchParams();
+  if (options?.includeAuditEvents === false) {
+    params.set("include_audit_events", "false");
+  }
+  const qs = params.toString();
+  const url = `${API_BASE}/export/bundle${qs ? `?${qs}` : ""}`;
   const res = await vatFetch(
     url,
-    { headers: authHeaders(auth?.token, auth?.userEmail) },
+    {
+      headers: authHeaders(auth?.token, auth?.userEmail),
+      signal:
+        typeof AbortSignal !== "undefined" &&
+        typeof AbortSignal.timeout === "function"
+          ? AbortSignal.timeout(300_000)
+          : undefined,
+    },
     auth,
   );
-  if (!res.ok) throw new Error(`Export failed: ${res.status}`);
+  if (!res.ok) {
+    let detail = `${res.status} ${res.statusText}`;
+    const ct = res.headers.get("content-type") || "";
+    try {
+      if (ct.includes("application/json")) {
+        const j = (await res.json()) as {
+          detail?: string | Array<{ msg?: string; loc?: unknown }>;
+        };
+        if (typeof j.detail === "string") {
+          detail = j.detail;
+        } else if (Array.isArray(j.detail)) {
+          detail = j.detail
+            .map((d) => (typeof d === "object" && d && "msg" in d ? String(d.msg) : String(d)))
+            .join("; ");
+        }
+      } else {
+        const t = await res.text();
+        if (t) detail = t.slice(0, 400);
+      }
+    } catch {
+      /* keep detail */
+    }
+    throw new Error(`Export failed: ${detail}`);
+  }
   const disposition = res.headers.get("Content-Disposition");
   const match = disposition?.match(/filename="?([^";\n]+)"?/);
   const filename =

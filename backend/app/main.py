@@ -40,6 +40,7 @@ from app.api import (
     tenants,
     users,
     vat_data,
+    vuln_feeds,
 )
 from app.api.webhooks import router as webhooks_router
 from app.services.otel import init_otel
@@ -196,6 +197,7 @@ app.include_router(oauth.router, prefix="/api/oauth", tags=["oauth"])
 app.include_router(webhooks_router, prefix="/webhook", tags=["webhooks"])
 app.include_router(aikido.router, prefix="/api/aikido", tags=["aikido"])
 app.include_router(sync_worker.router, prefix="/api/sync", tags=["sync"])
+app.include_router(vuln_feeds.router, prefix="/api/vuln-feeds", tags=["vuln-feeds"])
 
 
 @app.get("/metrics", tags=["observability"])

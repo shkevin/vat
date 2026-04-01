@@ -117,19 +117,39 @@ def load_config_file(config_path: Path) -> dict[str, Any]:
     return _expand_env_in_dict(raw)
 
 
-def load_ignore_file(repo_root: Path) -> list[str]:
-    """Load .vatignore or .vat-scanner-ignore patterns from repo root."""
-    for name in (".vatignore", ".vat-scanner-ignore"):
+def load_ignore_file(repo_root: Path, *, include_gitignore: bool = False) -> list[str]:
+    """Load ignore patterns from repo root.
+
+    Order:
+    - .vatignore
+    - .vat-scanner-ignore
+    - .gitignore (optional)
+
+    Notes:
+    - Comments and blank lines are ignored.
+    - Negated gitignore patterns (``!foo``) are ignored for scanner excludes.
+    """
+    patterns: list[str] = []
+    files = [".vatignore", ".vat-scanner-ignore"]
+    if include_gitignore:
+        files.append(".gitignore")
+
+    for name in files:
         path = repo_root / name
-        if path.exists():
-            patterns = []
-            with open(path) as f:
-                for line in f:
-                    line = line.strip()
-                    if line and not line.startswith("#"):
-                        patterns.append(line)
-            return patterns
-    return []
+        if not path.exists():
+            continue
+        with open(path) as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                if name == ".gitignore" and line.startswith("!"):
+                    # Scanner excludes are deny-only; negation cannot be represented safely.
+                    continue
+                patterns.append(line)
+
+    # Preserve order while deduping.
+    return list(dict.fromkeys(patterns))
 
 
 class ScannerConfig:
@@ -205,11 +225,11 @@ class ScannerConfig:
         else:
             exclude = list(DEFAULT_EXCLUDES)
 
-        # Merge .vatignore if present
+        # Merge scanner ignore files (and .gitignore) if present.
         if scan_path and scan_path.is_dir():
-            ignore_patterns = load_ignore_file(scan_path)
+            ignore_patterns = load_ignore_file(scan_path, include_gitignore=True)
             if ignore_patterns:
-                exclude = list(set(exclude) | set(ignore_patterns))
+                exclude = list(dict.fromkeys([*exclude, *ignore_patterns]))
 
         return cls(
             vat_url=str(raw.get("vat_url", "")),

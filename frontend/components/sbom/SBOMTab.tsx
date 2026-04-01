@@ -158,7 +158,7 @@ function downloadDisplayedSbom(
         escape(p.name),
         escape(p.version),
         escape(p.license),
-        escape(getLicenseRisk(p.license)),
+        escape(getLicenseRisk(p)),
         escape(p.component),
         escape(p.language),
         String(findingCountByComponent.get(p.id) ?? 0),
@@ -182,6 +182,7 @@ interface SBOMPackage {
   name: string;
   version: string;
   license: string;
+  licenseRisk?: string;
   component: string;
   language: string;
 }
@@ -199,8 +200,14 @@ const RISK_SORT_INDEX: Record<string, number> = Object.fromEntries(
   RISK_ORDER.map((r, i) => [r, i]),
 );
 
-function getLicenseRisk(license: string): string {
-  return LICENSE_RISK[license] ?? "Low";
+function getLicenseRisk(pkg: Pick<SBOMPackage, "license" | "licenseRisk">): string {
+  const backendRisk = (pkg.licenseRisk ?? "").trim();
+  if (backendRisk === "Critical") return "Critical";
+  if (backendRisk === "High") return "High";
+  if (backendRisk === "Medium") return "Medium";
+  if (backendRisk === "Low") return "Low";
+  if (backendRisk === "Unknown") return "Unknown";
+  return LICENSE_RISK[pkg.license] ?? "Unknown";
 }
 
 type SortKey =
@@ -310,7 +317,7 @@ export function SBOMTab({ sbom, findings, onImport, assetId }: SBOMTabProps) {
       Low: [],
     };
     for (const p of packages) {
-      const r = getLicenseRisk(p.license);
+      const r = getLicenseRisk(p);
       if (acc[r]) acc[r].push(p);
     }
     return acc;
@@ -343,7 +350,7 @@ export function SBOMTab({ sbom, findings, onImport, assetId }: SBOMTabProps) {
   const filteredPackages = useMemo(() => {
     const q = searchText.trim().toLowerCase();
     return packages.filter((p) => {
-      const risk = getLicenseRisk(p.license);
+      const risk = getLicenseRisk(p);
       const findingCount = findingCountByComponent.get(p.id) ?? 0;
       if (riskFilter !== "all" && risk !== riskFilter) return false;
       if (licenseFilter !== "all" && p.license !== licenseFilter) return false;
@@ -371,8 +378,8 @@ export function SBOMTab({ sbom, findings, onImport, assetId }: SBOMTabProps) {
     arr.sort((a, b) => {
       let cmp = 0;
       if (sortKey === "risk") {
-        const ra = getLicenseRisk(a.license);
-        const rb = getLicenseRisk(b.license);
+        const ra = getLicenseRisk(a);
+        const rb = getLicenseRisk(b);
         cmp = (RISK_SORT_INDEX[ra] ?? 99) - (RISK_SORT_INDEX[rb] ?? 99);
         // Lower index = higher severity. desc = highest first = return cmp; asc = lowest first = return -cmp
         return sortDir === "desc" ? cmp : -cmp;
@@ -419,7 +426,7 @@ export function SBOMTab({ sbom, findings, onImport, assetId }: SBOMTabProps) {
       existing.findings += findingCountByComponent.get(p.id) ?? 0;
       existing.worstRiskIndex = Math.min(
         existing.worstRiskIndex,
-        RISK_SORT_INDEX[getLicenseRisk(p.license)] ?? 99,
+        RISK_SORT_INDEX[getLicenseRisk(p)] ?? 99,
       );
       groups.set(key, existing);
     }
@@ -433,7 +440,7 @@ export function SBOMTab({ sbom, findings, onImport, assetId }: SBOMTabProps) {
 
   const summary = useMemo(() => {
     const criticalOrHigh = sortedPackages.filter((p) => {
-      const risk = getLicenseRisk(p.license);
+      const risk = getLicenseRisk(p);
       return risk === "Critical" || risk === "High";
     }).length;
     const withFindings = sortedPackages.filter(
@@ -860,7 +867,7 @@ export function SBOMTab({ sbom, findings, onImport, assetId }: SBOMTabProps) {
         </div>
         {viewMode === "package"
           ? sortedPackages.map((pkg, idx) => {
-              const risk = getLicenseRisk(pkg.license);
+              const risk = getLicenseRisk(pkg);
               const findingCount = findingCountByComponent.get(pkg.id) ?? 0;
               return (
                 <div
@@ -896,7 +903,7 @@ export function SBOMTab({ sbom, findings, onImport, assetId }: SBOMTabProps) {
                           : risk === "High"
                             ? "var(--app-warning)"
                             : risk === "Medium"
-                              ? "var(--app-warning)"
+                              ? "var(--app-accent)"
                               : "var(--app-success)",
                     }}
                   >
@@ -949,7 +956,7 @@ export function SBOMTab({ sbom, findings, onImport, assetId }: SBOMTabProps) {
                           : risk === "High"
                             ? "var(--app-warning)"
                             : risk === "Medium"
-                              ? "var(--app-warning)"
+                              ? "var(--app-accent)"
                               : "var(--app-success)",
                     }}
                   >

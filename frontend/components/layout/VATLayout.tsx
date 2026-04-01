@@ -52,6 +52,7 @@ interface VATLayoutProps {
   applyLabel?: string;
   alertCount: number;
   waiverExpiringCount?: number;
+  activityFeed?: React.ReactNode;
   children: React.ReactNode;
 }
 
@@ -82,6 +83,7 @@ export function VATLayout({
   onNeedsJustificationToggle,
   alertCount,
   waiverExpiringCount = 0,
+  activityFeed,
   onApply,
   applyLabel,
   children,
@@ -219,6 +221,7 @@ export function VATLayout({
         >
           {children}
         </main>
+        {activityFeed}
       </div>
       {shell && config.footer.classification && (
         <AppFooter

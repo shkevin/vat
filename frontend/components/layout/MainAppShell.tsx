@@ -26,6 +26,7 @@ const VALID_TABS = [
   "review",
   "report",
   "dash",
+  "feeds",
   "settings",
 ] as const;
 
@@ -208,7 +209,13 @@ export function MainAppShell({ config, children }: MainAppShellProps) {
       } else {
         data.setView(tabId);
         setDashboardState({
-          tab: tabId as "findings" | "review" | "report" | "dash" | "settings",
+          tab: tabId as
+            | "findings"
+            | "review"
+            | "report"
+            | "dash"
+            | "feeds"
+            | "settings",
         });
       }
     },
@@ -220,6 +227,7 @@ export function MainAppShell({ config, children }: MainAppShellProps) {
     { id: "review", label: "Review", badge: data.inRev },
     { id: "report", label: "Report" },
     { id: "dash", label: "Metrics" },
+    { id: "feeds", label: "Vuln Feeds" },
     { id: "settings", label: "Settings" },
   ];
 

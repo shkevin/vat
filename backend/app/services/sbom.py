@@ -127,6 +127,8 @@ async def import_sbom(
     doc: dict,
     source: str = "manual",
     component: Optional[str] = None,
+    finding_tag: Optional[str] = None,
+    force_finding_tag_override: bool = False,
     tenant_id: Optional[str] = None,
 ) -> tuple[int, int]:
     """
@@ -174,50 +176,55 @@ async def import_sbom(
             db.add(sp)
             created += 1
 
-            # Auto-create License finding for Critical/High risk (PRD §5.8.3).
-            # Scope by component/asset occurrence so package licenses remain tied to
-            # the concrete image/repo where they were observed.
-            if risk in ("Critical", "High"):
-                from app.services.dedup import make_fingerprint
+        # Auto-create License finding for Critical/High risk (PRD §5.8.3).
+        # Scope by component/asset occurrence so package licenses remain tied to
+        # the concrete image/repo where they were observed.
+        if risk in ("Critical", "High"):
+            from app.services.dedup import make_fingerprint
 
-                cve_id = f"LICENSE-{license_id or 'unknown'}-{pkg['name']}"
-                occurrence_scope = f"{pkg['name']}|{comp or ''}"
-                fp = make_fingerprint(cve_id, occurrence_scope)
-                res = await db.execute(
-                    select(Finding).where(Finding.fingerprint_id == fp)
+            cve_id = f"LICENSE-{license_id or 'unknown'}-{pkg['name']}"
+            occurrence_scope = f"{pkg['name']}|{comp or ''}"
+            fp = make_fingerprint(cve_id, occurrence_scope)
+            res = await db.execute(select(Finding).where(Finding.fingerprint_id == fp))
+            existing_finding = res.scalar_one_or_none()
+            if existing_finding is None:
+                title = f"{license_id} license in {pkg['name']}"
+                if comp:
+                    title = f"{title} ({comp})"
+                finding = Finding(
+                    id=f"f-{fp[:8]}",
+                    finding_type=FindingType.License,
+                    fingerprint_id=fp,
+                    cve_id=cve_id,
+                    severity=Severity.Critical if risk == "Critical" else Severity.High,
+                    status=Status.Open,
+                    component=pkg["name"],
+                    image=comp,
+                    tag=_clip(finding_tag, 256),
+                    title=title[:512],
+                    description=(
+                        f"SBOM import detected {risk} risk license {license_id}"
+                        + (f" in component {comp}" if comp else "")
+                    ),
+                    source=source,
+                    sources=[source_entry],
+                    audit=[
+                        {
+                            "ts": _now(),
+                            "user": "system",
+                            "action": "License finding from SBOM",
+                            "note": None,
+                        }
+                    ],
                 )
-                if res.scalar_one_or_none() is None:
-                    title = f"{license_id} license in {pkg['name']}"
-                    if comp:
-                        title = f"{title} ({comp})"
-                    finding = Finding(
-                        id=f"f-{fp[:8]}",
-                        finding_type=FindingType.License,
-                        fingerprint_id=fp,
-                        cve_id=cve_id,
-                        severity=Severity.Critical
-                        if risk == "Critical"
-                        else Severity.High,
-                        status=Status.Open,
-                        component=pkg["name"],
-                        image=comp,
-                        title=title[:512],
-                        description=(
-                            f"SBOM import detected {risk} risk license {license_id}"
-                            + (f" in component {comp}" if comp else "")
-                        ),
-                        source=source,
-                        sources=[source_entry],
-                        audit=[
-                            {
-                                "ts": _now(),
-                                "user": "system",
-                                "action": "License finding from SBOM",
-                                "note": None,
-                            }
-                        ],
-                    )
-                    db.add(finding)
+                db.add(finding)
+            else:
+                normalized_tag = _clip(finding_tag, 256)
+                if normalized_tag and (
+                    force_finding_tag_override
+                    or not (existing_finding.tag and str(existing_finding.tag).strip())
+                ):
+                    existing_finding.tag = normalized_tag
 
     await db.commit()
     return created, updated
@@ -229,6 +236,8 @@ async def import_cyclonedx_sbom_like_ingest(
     *,
     source: str,
     asset_override: str | None = None,
+    tag_override: str | None = None,
+    force_tag_override: bool = False,
     source_image_override: str | None = None,
     tenant_id: Optional[str] = None,
 ) -> tuple[int, int]:
@@ -252,7 +261,13 @@ async def import_cyclonedx_sbom_like_ingest(
     if not sbom_doc:
         return 0, 0
     return await import_sbom(
-        db, sbom_doc, source=source, component=sbom_component, tenant_id=tenant_id
+        db,
+        sbom_doc,
+        source=source,
+        component=sbom_component,
+        finding_tag=tag_override,
+        force_finding_tag_override=force_tag_override,
+        tenant_id=tenant_id,
     )
 
 

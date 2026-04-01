@@ -25,6 +25,38 @@ except (
 # --- Enums (VAT canonical) ---
 
 
+def _sanitize_untrusted_text(value: str) -> str:
+    """Remove control chars that break DB/storage and logs.
+
+    PostgreSQL text/json cannot store NUL bytes, so strip ``\\x00``.
+    Keep common whitespace (tab/newline/carriage return), drop other C0 controls.
+    """
+    if not isinstance(value, str):
+        return value
+    if not value:
+        return value
+    cleaned = value.replace("\x00", "")
+    # Preserve readability while removing non-printable control chars.
+    return "".join(
+        ch for ch in cleaned if ch in ("\t", "\n", "\r") or ord(ch) >= 32
+    )
+
+
+def _sanitize_untrusted_value(value):
+    """Recursively sanitize string-like payload content."""
+    if isinstance(value, str):
+        return _sanitize_untrusted_text(value)
+    if isinstance(value, list):
+        return [_sanitize_untrusted_value(v) for v in value]
+    if isinstance(value, dict):
+        sanitized: dict = {}
+        for k, v in value.items():
+            sk = _sanitize_untrusted_text(k) if isinstance(k, str) else k
+            sanitized[sk] = _sanitize_untrusted_value(v)
+        return sanitized
+    return value
+
+
 class VatSeverity(str, Enum):
     """Severity levels for VAT findings."""
 
@@ -150,6 +182,11 @@ class VatFindingSchema(BaseModel):
         max_length=256,
         description="Opaque stable id from the scanner when not using SARIF fingerprints",
     )
+
+    @field_validator("*", mode="before")
+    @classmethod
+    def sanitize_untrusted_inputs(cls, v):
+        return _sanitize_untrusted_value(v)
 
     @field_validator("cve_id")
     @classmethod

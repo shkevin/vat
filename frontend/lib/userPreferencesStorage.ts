@@ -24,6 +24,10 @@ export interface UserPreferences {
   themeId?: ThemeId;
   /** Group findings like Aikido (same CVE+package across sources). When false, show flat list. */
   groupFindings?: boolean;
+  /** Activity feed dock collapsed/expanded. */
+  activityFeedCollapsed?: boolean;
+  /** Activity feed source filter selection. */
+  activityFeedSourceFilter?: "all" | "finding" | "system";
 }
 
 const DEFAULTS: UserPreferences = {
@@ -31,6 +35,8 @@ const DEFAULTS: UserPreferences = {
   collapsedSections: [],
   themeId: "default",
   groupFindings: true,
+  activityFeedCollapsed: false,
+  activityFeedSourceFilter: "all",
 };
 
 function loadFromStorage(): UserPreferences | null {
@@ -63,6 +69,16 @@ function loadFromStorage(): UserPreferences | null {
           typeof parsed.groupFindings === "boolean"
             ? parsed.groupFindings
             : DEFAULTS.groupFindings,
+        activityFeedCollapsed:
+          typeof parsed.activityFeedCollapsed === "boolean"
+            ? parsed.activityFeedCollapsed
+            : DEFAULTS.activityFeedCollapsed,
+        activityFeedSourceFilter:
+          parsed.activityFeedSourceFilter === "finding" ||
+          parsed.activityFeedSourceFilter === "system" ||
+          parsed.activityFeedSourceFilter === "all"
+            ? parsed.activityFeedSourceFilter
+            : DEFAULTS.activityFeedSourceFilter,
         themeId: (() => {
           const raw = String(parsed.themeId ?? "");
           if (raw === "kamiwaza") return "default"; /* migrate from kamiwaza */
@@ -95,6 +111,14 @@ export function saveUserPreferences(prefs: Partial<UserPreferences>): void {
         DEFAULTS.collapsedSections,
       groupFindings:
         prefs.groupFindings ?? current.groupFindings ?? DEFAULTS.groupFindings,
+      activityFeedCollapsed:
+        prefs.activityFeedCollapsed ??
+        current.activityFeedCollapsed ??
+        DEFAULTS.activityFeedCollapsed,
+      activityFeedSourceFilter:
+        prefs.activityFeedSourceFilter ??
+        current.activityFeedSourceFilter ??
+        DEFAULTS.activityFeedSourceFilter,
       themeId: prefs.themeId ?? current.themeId ?? DEFAULTS.themeId,
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));

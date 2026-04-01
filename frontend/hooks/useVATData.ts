@@ -168,6 +168,7 @@ function mapSbom(
   name: string;
   version: string;
   license: string;
+  licenseRisk?: string;
   component: string;
   language: string;
 }> {
@@ -238,6 +239,7 @@ export interface UseVATDataReturn {
     name: string;
     version: string;
     license: string;
+    licenseRisk?: string;
     component: string;
     language: string;
   }>;

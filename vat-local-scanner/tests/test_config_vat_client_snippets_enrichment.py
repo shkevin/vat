@@ -45,7 +45,12 @@ def test_config_ignore_and_scanner_config(monkeypatch, tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()
     (repo / ".vatignore").write_text("#c\nnode_modules/**\n", encoding="utf-8")
+    (repo / ".gitignore").write_text("artifacts/\n!keep-me/\n", encoding="utf-8")
     assert config.load_ignore_file(repo) == ["node_modules/**"]
+    assert config.load_ignore_file(repo, include_gitignore=True) == [
+        "node_modules/**",
+        "artifacts/",
+    ]
 
     cfg_path = repo / "vat-scanner.yaml"
     cfg_path.write_text(

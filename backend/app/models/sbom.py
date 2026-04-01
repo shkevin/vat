@@ -1,5 +1,6 @@
 """SBOM package model — CycloneDX import, license risk. PRD §5.8."""
 
+import re
 from datetime import datetime
 from typing import Optional
 
@@ -24,19 +25,65 @@ LICENSE_RISK_LOW = {
     "CC0-1.0",
 }
 
+_LICENSE_RISK_ORDER = ["Critical", "High", "Medium", "Low", "Unknown"]
+_LICENSE_RISK_RANK = {name: idx for idx, name in enumerate(_LICENSE_RISK_ORDER)}
+
+_LICENSE_RISK_BY_ID: dict[str, str] = {}
+for _license_id in LICENSE_RISK_CRITICAL:
+    _LICENSE_RISK_BY_ID[_license_id.lower()] = "Critical"
+for _license_id in LICENSE_RISK_HIGH:
+    _LICENSE_RISK_BY_ID[_license_id.lower()] = "High"
+for _license_id in LICENSE_RISK_MEDIUM:
+    _LICENSE_RISK_BY_ID[_license_id.lower()] = "Medium"
+for _license_id in LICENSE_RISK_LOW:
+    _LICENSE_RISK_BY_ID[_license_id.lower()] = "Low"
+
+_SPDX_TOKEN_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9.+-]*")
+_SPDX_OPERATORS = {"AND", "OR", "WITH"}
+_SPDX_SUFFIXES = ("-or-later", "-only")
+
+
+def _normalize_spdx_token(token: str) -> str:
+    normalized = (token or "").strip()
+    if not normalized:
+        return ""
+    if normalized.upper() in _SPDX_OPERATORS:
+        return ""
+    if normalized.endswith("+"):
+        normalized = normalized[:-1]
+    lower = normalized.lower()
+    for suffix in _SPDX_SUFFIXES:
+        if lower.endswith(suffix):
+            normalized = normalized[: -len(suffix)]
+            break
+    return normalized.strip()
+
+
+def _iter_license_ids(license_expression: str) -> list[str]:
+    expression = (license_expression or "").strip()
+    if not expression:
+        return []
+    tokens = [_normalize_spdx_token(tok) for tok in _SPDX_TOKEN_RE.findall(expression)]
+    tokens = [tok for tok in tokens if tok]
+    if tokens:
+        return tokens
+    fallback = _normalize_spdx_token(expression)
+    return [fallback] if fallback else []
+
 
 def license_risk_tier(license_id: str) -> str:
-    """Classify license into risk tier."""
-    lid = (license_id or "").strip()
-    if lid in LICENSE_RISK_CRITICAL:
-        return "Critical"
-    if lid in LICENSE_RISK_HIGH:
-        return "High"
-    if lid in LICENSE_RISK_MEDIUM:
-        return "Medium"
-    if lid in LICENSE_RISK_LOW:
-        return "Low"
-    return "Unknown"
+    """Classify a SPDX id/expression into a single risk tier."""
+    candidates = _iter_license_ids(license_id)
+    if not candidates:
+        return "Unknown"
+    best = "Unknown"
+    for candidate in candidates:
+        tier = _LICENSE_RISK_BY_ID.get(candidate.lower())
+        if not tier:
+            continue
+        if _LICENSE_RISK_RANK[tier] < _LICENSE_RISK_RANK[best]:
+            best = tier
+    return best
 
 
 class SbomPackage(Base):

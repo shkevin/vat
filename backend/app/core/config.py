@@ -172,6 +172,21 @@ class Settings(BaseSettings):
     # Worker concurrency: number of parallel tasks per worker (default 4 for sync throughput)
     celery_worker_concurrency: int = 4
 
+    # Public vulnerability feed ingestion (keyless HTTP)
+    vuln_feeds_enabled: bool = True
+    vuln_feed_refresh_interval_hours: int = 6
+    vuln_feed_request_timeout_sec: int = 30
+    vuln_feed_max_records_per_source: int = 1000
+    vuln_feed_osv_max_queries: int = 500
+    vuln_feed_user_agent: str = "VAT-VulnFeeds/1.0"
+    vuln_feed_osv_enabled: bool = True
+    vuln_feed_cisa_enabled: bool = True
+    vuln_feed_redhat_enabled: bool = True
+    vuln_feed_debian_enabled: bool = True
+    vuln_feed_ubuntu_enabled: bool = True
+    vuln_feed_alpine_enabled: bool = True
+    vuln_feed_almalinux_enabled: bool = True
+
     # Security: X-VAT-User header allows impersonation — only enable for dev/testing
     allow_dev_headers: bool = False  # VAT_ALLOW_DEV_HEADERS=true for local dev only
 

@@ -18,7 +18,11 @@ app = Celery(
     "vat",
     broker=settings.celery_broker_url,
     backend=settings.celery_result_backend or settings.celery_broker_url,
-    include=["app.tasks.sync_tasks", "app.tasks.audit_tasks"],
+    include=[
+        "app.tasks.sync_tasks",
+        "app.tasks.audit_tasks",
+        "app.tasks.vuln_feed_tasks",
+    ],
 )
 
 app.conf.update(
@@ -39,6 +43,7 @@ _reconcile_hours = get_settings().linear_reconcile_interval_hours
 _reconcile_interval = max(1, _reconcile_hours) * 60 * 60
 _process_limit = get_settings().linear_sync_process_limit
 _backfill_limit = get_settings().linear_sync_backfill_limit
+_vuln_feed_interval_hours = max(1, get_settings().vuln_feed_refresh_interval_hours)
 app.conf.beat_schedule = {
     "process-sync-queue": {
         "task": "app.tasks.sync_tasks.process_sync_queue",
@@ -62,7 +67,16 @@ app.conf.beat_schedule = {
         "schedule": crontab(hour=0, minute=30),
         "options": {"queue": "vat-sync"},
     },
+    "refresh-vuln-feeds": {
+        "task": "app.tasks.vuln_feed_tasks.run_vuln_feed_refresh",
+        "schedule": crontab(minute=0, hour=f"*/{_vuln_feed_interval_hours}"),
+        "options": {"queue": "vat-sync"},
+    },
 }
 
 app.conf.task_default_queue = "vat-sync"
-app.conf.task_routes = {"app.tasks.sync_tasks.*": {"queue": "vat-sync"}}
+app.conf.task_routes = {
+    "app.tasks.sync_tasks.*": {"queue": "vat-sync"},
+    "app.tasks.audit_tasks.*": {"queue": "vat-sync"},
+    "app.tasks.vuln_feed_tasks.*": {"queue": "vat-sync"},
+}

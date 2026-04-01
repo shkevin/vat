@@ -170,6 +170,7 @@ def _build_asset_payload(
     sev_order: tuple[str, ...] = SEV_ORDER,
     asset_type: str | None = None,
     asset_branch: str | None = None,
+    asset_tag: str | None = None,
 ) -> dict[str, Any]:
     """Build asset dict matching frontend Asset shape."""
     status_breakdown: dict[str, int] = {}
@@ -233,24 +234,40 @@ def _build_asset_payload(
             counts[k] += 1
     ora_pct = _compute_ora_score(counts) if open_findings else 100
 
-    tag = None
-    if findings:
-        c = findings[0].get("component") or ""
-        img = findings[0].get("image") or ""
-        import re
-
-        ver_match = re.search(r"\d+\.\d+(\.\d+)?", c)
-        if ver_match:
-            tag = ver_match.group(0)
-        elif ":" in img:
-            tag = img.split(":")[1]
-
     # When findings exist, infer from all of them (dynamic). Asset row type only for 0-finding rows.
     resolved_type = (
         infer_asset_type_from_findings(findings)
         if findings
         else (asset_type or "package")
     )
+    # ``tag`` is a variant identifier (container tag / branch-like value), not an asset id.
+    # Do not derive it heuristically from package versions or image ref strings.
+    # For container assets, select the most frequent explicit finding tag, then stable sort.
+    tag = None
+    if resolved_type == "container":
+        tag_counts: dict[str, int] = {}
+        for d in findings:
+            raw = d.get("tag")
+            if not isinstance(raw, str):
+                continue
+            t = raw.strip()
+            if not t:
+                continue
+            lower = t.lower()
+            if (
+                t == asset_key
+                or "/images/" in lower
+                or lower.startswith("docker.io/")
+                or lower.startswith("ghcr.io/")
+            ):
+                continue
+            tag_counts[t] = int(tag_counts.get(t, 0)) + 1
+        if tag_counts:
+            tag = sorted(tag_counts.items(), key=lambda kv: (-kv[1], kv[0]))[0][0]
+        elif isinstance(asset_tag, str) and asset_tag.strip():
+            tag = asset_tag.strip()
+    elif isinstance(asset_tag, str) and asset_tag.strip():
+        tag = asset_tag.strip()
     return {
         "id": asset_key,
         "name": asset_key,
@@ -334,6 +351,7 @@ async def get_assets_with_findings(
             flist,
             asset_type=getattr(asset_records.get(k), "type", None),
             asset_branch=getattr(asset_records.get(k), "branch", None),
+            asset_tag=getattr(asset_records.get(k), "tag", None),
         )
         for k, flist in by_key.items()
     ]

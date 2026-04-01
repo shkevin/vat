@@ -69,6 +69,7 @@ export function useDashboardFilters() {
             | "review"
             | "report"
             | "dash"
+            | "feeds"
             | "settings") ?? undefined,
         status: Array.isArray(stored.status) ? stored.status : undefined,
         abc: Array.isArray(stored.abc) ? stored.abc : undefined,

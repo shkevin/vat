@@ -16,6 +16,7 @@ const VALID_TABS = [
   "review",
   "report",
   "dash",
+  "feeds",
   "settings",
 ] as const;
 

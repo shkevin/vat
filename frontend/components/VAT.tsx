@@ -9,6 +9,9 @@ import { MetricsDashboard } from "@/components/metrics/MetricsDashboard";
 import { AssetsTable } from "@/components/assets/AssetsTable";
 import { ReviewQueue } from "@/components/review/ReviewQueue";
 import { DetailPanel } from "@/components/detail/DetailPanel";
+import { ActivityFeedPanel } from "@/components/activity/ActivityFeedPanel";
+import { useActivityFeed } from "@/components/activity/useActivityFeed";
+import { VulnerabilityFeedsTab } from "@/components/feeds/VulnerabilityFeedsTab";
 
 // Lazy-load heavy tabs: SettingsTab pulls in @xyflow/react (~200KB+), ReportTab pulls in report engine + regression + many icons
 const ReportTab = dynamic(
@@ -74,6 +77,7 @@ const VALID_TABS = [
   "review",
   "report",
   "dash",
+  "feeds",
   "settings",
 ] as const;
 
@@ -83,7 +87,7 @@ export default function VAT({ config }: VATProps) {
   const pathname = usePathname();
   const data = useVATData();
   const { user, token } = useAuth();
-  const { preferences } = useUserPreferences();
+  const { preferences, setPreferences } = useUserPreferences();
   const readOnly = user?.role === "read_only";
   const isAdmin = user?.role === "admin";
   const canReviewAssets = user?.role === "admin" || user?.role === "reviewer";
@@ -105,6 +109,9 @@ export default function VAT({ config }: VATProps) {
   >([]);
   const [mergeReviewLoading, setMergeReviewLoading] = useState(false);
   const [mergeReviewError, setMergeReviewError] = useState<string | null>(null);
+
+  const activityFeedCollapsed = preferences.activityFeedCollapsed ?? false;
+  const activityFeedSourceFilter = preferences.activityFeedSourceFilter ?? "all";
 
   const {
     loading,
@@ -160,6 +167,14 @@ export default function VAT({ config }: VATProps) {
     error,
     refetch,
   } = data;
+
+  const activityFeed = useActivityFeed({
+    findings,
+    auth: { token, userEmail: user?.email },
+    isAdmin,
+    sourceFilter: activityFeedSourceFilter,
+    enabled: view !== "report",
+  });
 
   // Counts that respect groupFindings — same logic as Findings tab and report.
   const {
@@ -261,6 +276,7 @@ export default function VAT({ config }: VATProps) {
     { id: "review", label: "Review", badge: inRev },
     { id: "report", label: "Report" },
     { id: "dash", label: "Metrics" },
+    { id: "feeds", label: "Vuln Feeds" },
     { id: "settings", label: "Settings" },
   ];
 
@@ -604,6 +620,10 @@ export default function VAT({ config }: VATProps) {
       );
     }
 
+    if (view === "feeds") {
+      return <VulnerabilityFeedsTab />;
+    }
+
     return null;
   })();
 
@@ -650,6 +670,25 @@ export default function VAT({ config }: VATProps) {
         onApply={refetch}
         applyLabel="Apply"
         waiverExpiringCount={waiverExpiring}
+        activityFeed={
+          view === "report" ? null : (
+            <ActivityFeedPanel
+              events={activityFeed.events}
+              loadingSystem={activityFeed.loadingSystem}
+              systemError={activityFeed.systemError}
+              canViewSystem={activityFeed.canViewSystem}
+              collapsed={activityFeedCollapsed}
+              onCollapsedChange={(next) =>
+                setPreferences({ activityFeedCollapsed: next })
+              }
+              sourceFilter={activityFeedSourceFilter}
+              onSourceFilterChange={(next) =>
+                setPreferences({ activityFeedSourceFilter: next })
+              }
+              onNavigateToFinding={navigateToFinding}
+            />
+          )
+        }
       >
         {mainContent}
       </VATLayout>

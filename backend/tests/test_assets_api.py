@@ -207,7 +207,8 @@ async def test_group_asset_merges_existing_findings_and_alias(
         text("SELECT tag FROM findings WHERE id = 'asset-merge-f1'")
     )
     assert updated_component == "asset-target"
-    assert updated_tag == "asset-target"
+    # Asset merge updates asset identity fields, not variant tags.
+    assert updated_tag == "asset-delete-test"
 
     source_asset_count = await db.scalar(
         text("SELECT COUNT(*) FROM assets WHERE id = 'asset-delete-test'")

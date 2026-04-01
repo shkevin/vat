@@ -501,7 +501,6 @@ async def group_asset_into_target(
         match_ors = [
             Finding.image == source_asset_id,
             Finding.component == source_asset_id,
-            Finding.tag == source_asset_id,
         ]
         if src_container_key:
             for prefix in merge_candidate_image_like_prefixes(source_asset_id):
@@ -562,21 +561,6 @@ async def group_asset_into_target(
                 finding.component = canonical_target
                 next_values["component"] = canonical_target
                 changed = True
-            if finding_value_matches_merge_source(
-                finding.tag,
-                source_asset_id,
-                source_container_key=src_container_key,
-            ):
-                prev_values["tag"] = finding.tag
-                finding.tag = canonical_target
-                next_values["tag"] = canonical_target
-                changed = True
-            # Keep tag aligned with canonical asset for reassigned findings, even
-            # when the original row had a blank tag (common for older rows).
-            if changed and (finding.tag is None or not str(finding.tag).strip()):
-                prev_values.setdefault("tag", finding.tag)
-                finding.tag = canonical_target
-                next_values["tag"] = canonical_target
             if changed:
                 findings_updated += 1
                 _append_finding_audit(

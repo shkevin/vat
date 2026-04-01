@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import fnmatch
 import re
 import shutil
 import subprocess
@@ -179,6 +180,35 @@ def _find_oci_layouts(root: Path) -> list[Path]:
     return layouts
 
 
+def _is_excluded(rel_path: Path, exclude: list[str] | None) -> bool:
+    """Return True when relative path matches any exclude pattern."""
+    if not exclude:
+        return False
+    rel = rel_path.as_posix().strip("/")
+    if not rel:
+        return False
+    for raw in exclude:
+        p = (raw or "").strip()
+        if not p:
+            continue
+        p = p.replace("\\", "/").lstrip("./")
+        candidates = [p]
+        if p.endswith("/"):
+            candidates.append(f"{p}**")
+        if not p.startswith("**/"):
+            candidates.append(f"**/{p}")
+            if p.endswith("/**"):
+                candidates.append(f"**/{p}")
+        if p.startswith("**/"):
+            candidates.append(p[3:])
+        if p.endswith("/**") and not p.endswith("**/**"):
+            candidates.append(p[:-3])
+        for pat in candidates:
+            if fnmatch.fnmatch(rel, pat):
+                return True
+    return False
+
+
 def _get_imgpkg_images_lock(wrap_extract: Path) -> dict[str, str]:
     """
     Parse .imgpkg/images.yml (imgpkg ImagesLock) and return digest -> image_ref mapping.
@@ -341,6 +371,7 @@ def collect_container_sources(
     *,
     temp_dir: Path | None = None,
     max_depth: int = 3,
+    exclude: list[str] | None = None,
 ) -> tuple[list[ContainerSource], list[Path]]:
     """
     Discover container images: direct docker-save tars and OCI layouts inside .wrap bundles.
@@ -354,6 +385,9 @@ def collect_container_sources(
 
     for tar_path in folder.rglob("*.tar"):
         if not tar_path.is_file() or len(tar_path.relative_to(folder).parts) > max_depth:
+            continue
+        rel_tar = tar_path.relative_to(folder)
+        if _is_excluded(rel_tar, exclude):
             continue
 
         tar_listing = _tar_listing(tar_path, tar_cache)

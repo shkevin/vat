@@ -20,6 +20,9 @@ from app.models.openscap_scan_result import OpenSCAPScanResult
 from app.models.sbom import SbomPackage
 from app.models.sync_event import SyncEvent
 from app.models.user import Tenant, User
+from app.models.vuln_feed_record import VulnFeedRecord
+from app.models.vuln_feed_run import VulnFeedRun
+from app.models.vuln_feed_source import VulnFeedSource
 from app.models.webhook_event import WebhookEvent
 
 __all__ = [
@@ -44,5 +47,8 @@ __all__ = [
     "SyncEvent",
     "Tenant",
     "User",
+    "VulnFeedRecord",
+    "VulnFeedRun",
+    "VulnFeedSource",
     "WebhookEvent",
 ]

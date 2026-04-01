@@ -8,6 +8,7 @@ from app.schemas.ingest import (
     CanonicalFindingType,
     CanonicalSeverity,
 )
+from app.models.sbom import license_risk_tier
 from app.parsers.image_digest import normalize_image_digest
 from app.parsers.utils import (
     extract_scan_tag,
@@ -49,11 +50,25 @@ _TRIVY_TO_VAT_SEVERITY = {
     "unknown": CanonicalSeverity.INFORMATIONAL,
 }
 
+_LICENSE_RISK_TO_VAT_SEVERITY = {
+    "Critical": CanonicalSeverity.CRITICAL,
+    "High": CanonicalSeverity.HIGH,
+    "Medium": CanonicalSeverity.MEDIUM,
+    "Low": CanonicalSeverity.LOW,
+}
+
 
 def _map_severity(s: str | None) -> CanonicalSeverity:
     if not s:
         return CanonicalSeverity.MEDIUM
     return _TRIVY_TO_VAT_SEVERITY.get(str(s).lower(), CanonicalSeverity.MEDIUM)
+
+
+def _license_policy_severity(
+    license_expression: str | None, fallback: CanonicalSeverity
+) -> CanonicalSeverity:
+    tier = license_risk_tier(license_expression or "")
+    return _LICENSE_RISK_TO_VAT_SEVERITY.get(tier, fallback)
 
 
 def _effective_asset_for_result(res: dict, target_str: str) -> str:
@@ -451,7 +466,10 @@ class TrivyParser(IngestParser):
                 name = lic.get("Name") or lic.get("name") or lic.get("ID") or "unknown"
                 rule_id = f"license:{name}" if name else "license:unknown"
                 desc = f"{name} ({cat})" if cat else str(name)
-                sev = _map_severity(lic.get("Severity") or lic.get("severity"))
+                sev = _license_policy_severity(
+                    str(name) if name is not None else None,
+                    _map_severity(lic.get("Severity") or lic.get("severity")),
+                )
                 component = (
                     f"{pkg} {lic.get('Version', '')}".strip()
                     if pkg

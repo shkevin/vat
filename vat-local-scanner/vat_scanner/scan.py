@@ -179,7 +179,7 @@ def run_scan(
         _verbose(config, "Collecting container sources (docker-save, OCI layouts)")
         t0 = time.perf_counter()
         container_sources, extract_dirs = collect_container_sources(
-            path, temp_dir=temp_dir
+            path, temp_dir=temp_dir, exclude=config.exclude
         )
         scan_totals["container_discovery"] = time.perf_counter() - t0
         if config.dev_limit > 0 and len(container_sources) > config.dev_limit:

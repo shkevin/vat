@@ -1,14 +1,21 @@
 """Export service — full bundle of assets, findings, SBOM, and Executive Summary report."""
 
+import csv
+import hashlib
 import io
 import json
+import logging
 import uuid
+from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta, timezone
 from urllib.parse import quote
-from typing import Optional
+from typing import Any, Optional
 
+from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.version import get_vat_backend_version
+from app.models.audit_event import AuditEvent
 from app.services.assets_service import get_assets_with_findings
 from app.services.findings_service import (
     enrich_findings_with_source_group_severity,
@@ -17,6 +24,8 @@ from app.services.findings_service import (
 from app.services.grouping import finding_to_api_dict_with_group_key
 from app.services.openscap_storage import list_openscap_scan_results
 from app.services.sbom import list_sbom_packages
+
+logger = logging.getLogger(__name__)
 
 SEV_ORDER = ("Critical", "High", "Medium", "Low", "Informational")
 ASSET_CLOSED = {
@@ -180,6 +189,319 @@ def _parse_dt(s: Optional[str]) -> Optional[datetime]:
         return None
 
 
+@dataclass
+class ExportBundleOptions:
+    """Options for compliance-oriented export bundles (PRD evidence package)."""
+
+    include_archived: bool = False
+    finding_date_from: Optional[str] = None
+    finding_date_to: Optional[str] = None
+    include_audit_events: bool = True
+    audit_date_from: Optional[str] = None
+    audit_date_to: Optional[str] = None
+    audit_limit: int = 20000
+
+
+def _finding_reference_dt(row: dict) -> Optional[datetime]:
+    return _parse_dt(row.get("firstDetectedAt") or row.get("created"))
+
+
+def _filter_findings_by_date_range(
+    rows: list[dict],
+    *,
+    date_from: Optional[datetime],
+    date_to: Optional[datetime],
+) -> list[dict]:
+    """When either bound is set, keep rows whose reference time falls in [from, to]."""
+    if date_from is None and date_to is None:
+        return rows
+    out: list[dict] = []
+    for r in rows:
+        ref = _finding_reference_dt(r)
+        if ref is None:
+            out.append(r)
+            continue
+        if date_from is not None and ref < date_from:
+            continue
+        if date_to is not None and ref > date_to:
+            continue
+        out.append(r)
+    return out
+
+
+def _flat_str(v: Any) -> str:
+    if v is None:
+        return ""
+    if isinstance(v, (dict, list)):
+        return json.dumps(v, default=str)[:8000]
+    return str(v)
+
+
+def _finding_csv_row(f: dict) -> dict[str, str]:
+    att = f.get("attestation") if isinstance(f.get("attestation"), dict) else {}
+    return {
+        "id": _flat_str(f.get("id")),
+        "fingerprintId": _flat_str(f.get("fingerprintId")),
+        "cveId": _flat_str(f.get("cveId")),
+        "title": _flat_str(f.get("title")),
+        "findingType": _flat_str(f.get("findingType")),
+        "severity": _flat_str(f.get("severity")),
+        "status": _flat_str(f.get("status")),
+        "source": _flat_str(f.get("source")),
+        "component": _flat_str(f.get("component")),
+        "image": _flat_str(f.get("image")),
+        "team": _flat_str(f.get("team")),
+        "owner": _flat_str(f.get("owner")),
+        "controlRef": _flat_str(f.get("controlRef")),
+        "suppressionScope": _flat_str(f.get("suppressionScope")),
+        "archived": _flat_str(f.get("archived")),
+        "firstDetectedAt": _flat_str(f.get("firstDetectedAt")),
+        "created": _flat_str(f.get("created")),
+        "closedAt": _flat_str(f.get("closedAt")),
+        "waiverRef": _flat_str(att.get("waiverRef")),
+        "approver": _flat_str(att.get("approver")),
+        "approverTitle": _flat_str(att.get("approverTitle")),
+        "approvedAt": _flat_str(att.get("approvedAt")),
+        "expiresAt": _flat_str(att.get("expiresAt")),
+        "justification": _flat_str(f.get("justification")),
+    }
+
+
+def _findings_csv_bytes(rows: list[dict]) -> bytes:
+    buf = io.StringIO()
+    fieldnames = list(_finding_csv_row({}).keys())
+    w = csv.DictWriter(buf, fieldnames=fieldnames, extrasaction="ignore")
+    w.writeheader()
+    for f in rows:
+        w.writerow(_finding_csv_row(f))
+    return buf.getvalue().encode("utf-8")
+
+
+def _build_waiver_records(rows: list[dict]) -> list[dict]:
+    out: list[dict] = []
+    for f in rows:
+        if (f.get("status") or "") != "Risk Accepted":
+            continue
+        att = f.get("attestation") if isinstance(f.get("attestation"), dict) else {}
+        out.append(
+            {
+                "findingId": f.get("id"),
+                "cveId": f.get("cveId"),
+                "title": f.get("title"),
+                "severity": f.get("severity"),
+                "component": f.get("component"),
+                "image": f.get("image"),
+                "waiverRef": att.get("waiverRef"),
+                "approver": att.get("approver"),
+                "approverTitle": att.get("approverTitle"),
+                "approvedAt": att.get("approvedAt"),
+                "expiresAt": att.get("expiresAt"),
+                "controlRef": f.get("controlRef"),
+            }
+        )
+    return out
+
+
+def _waivers_csv_bytes(records: list[dict]) -> bytes:
+    buf = io.StringIO()
+    cols = [
+        "findingId",
+        "cveId",
+        "title",
+        "severity",
+        "component",
+        "image",
+        "waiverRef",
+        "approver",
+        "approverTitle",
+        "approvedAt",
+        "expiresAt",
+        "controlRef",
+    ]
+    w = csv.DictWriter(buf, fieldnames=cols, extrasaction="ignore")
+    w.writeheader()
+    for r in records:
+        w.writerow({k: _flat_str(r.get(k)) for k in cols})
+    return buf.getvalue().encode("utf-8")
+
+
+def _pdf_safe(text: str, max_len: int = 118) -> str:
+    s = str(text).replace("\r", " ").replace("\n", " ")
+    return s.encode("ascii", "replace").decode("ascii")[:max_len]
+
+
+def _build_compliance_pdf_bytes(
+    rows: list[dict],
+    *,
+    summary_from: datetime,
+    summary_to: datetime,
+    generated_at: datetime,
+    backend_version: str,
+    tenant_id: Optional[str],
+    waiver_records: list[dict],
+) -> bytes:
+    from fpdf import FPDF
+
+    in_range: list[dict] = []
+    for f in rows:
+        dt = _finding_reference_dt(f)
+        if dt and summary_from <= dt <= summary_to:
+            in_range.append(f)
+    open_ct = sum(1 for f in in_range if _is_open(f.get("status") or ""))
+    fp_ct = sum(
+        1 for f in in_range if (f.get("status") or "") == "False Positive"
+    )
+    sup_ct = sum(1 for f in in_range if (f.get("status") or "") == "Suppressed")
+
+    pdf = FPDF()
+    pdf.set_auto_page_break(auto=True, margin=14)
+    pdf.add_page()
+    pdf.set_font("Helvetica", "B", 14)
+    pdf.cell(0, 8, "VAT compliance evidence summary", new_x="LMARGIN", new_y="NEXT")
+    pdf.set_font("Helvetica", size=9)
+    pdf.cell(
+        0,
+        5,
+        _pdf_safe(f"Generated (UTC): {generated_at.strftime('%Y-%m-%d %H:%M:%S')}"),
+        new_x="LMARGIN",
+        new_y="NEXT",
+    )
+    pdf.cell(
+        0,
+        5,
+        _pdf_safe(f"Backend version: {backend_version}"),
+        new_x="LMARGIN",
+        new_y="NEXT",
+    )
+    pdf.cell(
+        0,
+        5,
+        _pdf_safe(f"Tenant: {tenant_id or '(global / unset)'}"),
+        new_x="LMARGIN",
+        new_y="NEXT",
+    )
+    pdf.cell(
+        0,
+        5,
+        _pdf_safe(
+            f"Summary window: {summary_from.date().isoformat()} .. {summary_to.date().isoformat()}"
+        ),
+        new_x="LMARGIN",
+        new_y="NEXT",
+    )
+    pdf.ln(4)
+    pdf.set_font("Helvetica", "B", 11)
+    pdf.cell(0, 6, "Aggregate counts (findings in summary window)", new_x="LMARGIN", new_y="NEXT")
+    pdf.set_font("Helvetica", size=9)
+    pdf.cell(0, 5, _pdf_safe(f"Instances in window: {len(in_range)}"), new_x="LMARGIN", new_y="NEXT")
+    pdf.cell(0, 5, _pdf_safe(f"Open (non-terminal): {open_ct}"), new_x="LMARGIN", new_y="NEXT")
+    pdf.cell(0, 5, _pdf_safe(f"False positive closures: {fp_ct}"), new_x="LMARGIN", new_y="NEXT")
+    pdf.cell(0, 5, _pdf_safe(f"Suppressed closures: {sup_ct}"), new_x="LMARGIN", new_y="NEXT")
+    pdf.cell(
+        0,
+        5,
+        _pdf_safe(f"Active waiver records (export scope): {len(waiver_records)}"),
+        new_x="LMARGIN",
+        new_y="NEXT",
+    )
+    pdf.ln(4)
+    pdf.set_font("Helvetica", "B", 11)
+    pdf.cell(0, 6, "Waiver registry (first 40)", new_x="LMARGIN", new_y="NEXT")
+    pdf.set_font("Helvetica", size=8)
+    for rec in waiver_records[:40]:
+        line = (
+            f"{rec.get('findingId')} | {rec.get('waiverRef')} | "
+            f"{rec.get('approver')} | exp {rec.get('expiresAt')}"
+        )
+        pdf.cell(0, 4, _pdf_safe(line, 130), new_x="LMARGIN", new_y="NEXT")
+    if len(waiver_records) > 40:
+        pdf.cell(0, 4, _pdf_safe(f"... and {len(waiver_records) - 40} more (see waivers.csv)"), new_x="LMARGIN", new_y="NEXT")
+    pdf.ln(4)
+    pdf.set_font("Helvetica", "I", 8)
+    pdf.multi_cell(
+        0,
+        4,
+        _pdf_safe(
+            "Full machine-readable data: assets-findings.json, findings.csv, waivers.json. "
+            "System audit stream: audit-events.json (when included). "
+            "SBOM: sbom-cyclonedx.json. OpenSCAP: stig/."
+        ),
+    )
+    out = pdf.output()
+    return out if isinstance(out, (bytes, bytearray)) else str(out).encode("latin-1")
+
+
+def _audit_event_to_dict(r: AuditEvent) -> dict:
+    return {
+        "event_id": r.event_id,
+        "trace_id": r.trace_id,
+        "event_type": r.event_type,
+        "created_at": r.created_at.isoformat() if r.created_at else None,
+        "source_id": r.source_id,
+        "parser_id": r.parser_id,
+        "asset_id": r.asset_id,
+        "finding_id": r.finding_id,
+        "decision_name": r.decision_name,
+        "decision_reason_code": r.decision_reason_code,
+        "decision_confidence": r.decision_confidence,
+        "decision_result": r.decision_result,
+        "record_hash": r.record_hash,
+        "prev_record_hash": r.prev_record_hash,
+        "data": r.data or {},
+    }
+
+
+def _as_naive_utc(dt: datetime) -> datetime:
+    if dt.tzinfo is None:
+        return dt
+    return dt.astimezone(timezone.utc).replace(tzinfo=None)
+
+
+async def load_audit_events_for_export(
+    db: AsyncSession,
+    *,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    limit: int = 20000,
+) -> list[dict]:
+    q = select(AuditEvent)
+    clauses = []
+    df = _parse_dt(date_from) if date_from else None
+    dt = _parse_dt(date_to) if date_to else None
+    if df is not None:
+        clauses.append(AuditEvent.created_at >= _as_naive_utc(df))
+    if dt is not None:
+        clauses.append(AuditEvent.created_at <= _as_naive_utc(dt))
+    if clauses:
+        q = q.where(and_(*clauses))
+    q = q.order_by(AuditEvent.created_at.asc()).limit(min(limit, 50000))
+    rows = (await db.execute(q)).scalars().all()
+    return [_audit_event_to_dict(r) for r in rows]
+
+
+def _build_evidence_manifest(
+    *,
+    generated_at: datetime,
+    backend_version: str,
+    tenant_id: Optional[str],
+    options: ExportBundleOptions,
+    file_entries: list[dict[str, Any]],
+    warnings: Optional[list[str]] = None,
+) -> dict:
+    body: dict[str, Any] = {
+        "schemaVersion": "evidence-v2",
+        "packageType": "vat-compliance-bundle",
+        "generatedAt": generated_at.isoformat().replace("+00:00", "Z"),
+        "vatBackendVersion": backend_version,
+        "tenantId": tenant_id,
+        "exportOptions": {k: v for k, v in asdict(options).items()},
+        "files": file_entries,
+    }
+    if warnings:
+        body["warnings"] = warnings
+    return body
+
+
 def _escape(s: str) -> str:
     """Escape HTML special chars."""
     return (
@@ -319,31 +641,45 @@ def _build_executive_summary_html(
 async def build_export_bundle(
     db: AsyncSession,
     tenant_id: Optional[str] = None,
+    options: Optional[ExportBundleOptions] = None,
 ) -> bytes:
     """
     Build a ZIP bundle containing:
-    - assets-findings.json: all assets and their findings
-    - sbom-cyclonedx.json: tenant rollup SBOM in CycloneDX 1.4 format
-    - sbom/by-asset/*.cdx.json: asset-scoped CycloneDX files (preserves containment)
-    - executive-summary-yearly.html: Executive Summary report (365 days, instances)
-    - stig/: OpenSCAP XCCDF/OVAL XML per asset for STIG Viewer and XACTA (DISA auditor format)
+    - evidence-manifest.json: scope, backend version, SHA-256 per payload file
+    - assets-findings.json: assets and findings (optional date filter)
+    - findings.csv, waivers.json, waivers.csv: tabular / waiver registry
+    - compliance-summary.pdf: printable evidence summary
+    - executive-summary-yearly.html: Executive Summary report
+    - audit-events.json: system audit stream (optional)
+    - auditor-workbook.xlsx: multi-sheet auditor package (findings, waivers, STIG tables)
+    - stig/: OpenSCAP XCCDF/OVAL XML per asset, README-STIG-Viewer.txt, manifest.json
+    - sbom-cyclonedx.json, sbom/by-asset/*.cdx.json
     """
     import zipfile
 
-    # 1. Fetch all findings and assets (no limit)
+    opts = options or ExportBundleOptions()
+    now = datetime.now(timezone.utc)
+    date_str = now.strftime("%Y-%m-%d")
+    root = f"vat-export-{date_str}"
+    backend_version = get_vat_backend_version()
+
+    archived_filter: Optional[bool] = None if opts.include_archived else False
     findings = await list_findings(
         db,
         tenant_id=tenant_id,
-        archived=False,
+        archived=archived_filter,
         limit=0,
     )
     rows = [finding_to_api_dict_with_group_key(f) for f in findings]
     rows = await enrich_findings_with_source_group_severity(db, rows)
-    assets = await get_assets_with_findings(db, findings_dicts=rows)
 
+    slice_from = _parse_dt(opts.finding_date_from)
+    slice_to = _parse_dt(opts.finding_date_to)
+    rows = _filter_findings_by_date_range(rows, date_from=slice_from, date_to=slice_to)
+
+    assets = await get_assets_with_findings(db, findings_dicts=rows)
     vat_data = {"findings": rows, "assets": assets}
 
-    # 2. Fetch SBOM packages and build CycloneDX BOM (standards-only)
     packages = await list_sbom_packages(db, tenant_id=tenant_id, limit=10000)
     cyclonedx = _build_cyclonedx_bom(packages)
     per_asset_packages: dict[str, list[dict]] = {}
@@ -353,81 +689,191 @@ async def build_export_bundle(
             continue
         per_asset_packages.setdefault(component, []).append(p)
 
-    # 3. Executive Summary HTML (365 days, instances)
-    now = datetime.now(timezone.utc)
-    date_to = now
-    date_from = now - timedelta(days=365)
-    html_report = _build_executive_summary_html(rows, assets, date_from, date_to)
+    summary_to = slice_to or now
+    summary_from = slice_from or (summary_to - timedelta(days=365))
+    html_report = _build_executive_summary_html(rows, assets, summary_from, summary_to)
 
-    # 4. OpenSCAP STIG export (raw XCCDF/OVAL XML per asset)
+    waiver_records = _build_waiver_records(rows)
+    export_warnings: list[str] = []
+    try:
+        pdf_bytes = _build_compliance_pdf_bytes(
+            rows,
+            summary_from=summary_from,
+            summary_to=summary_to,
+            generated_at=now,
+            backend_version=backend_version,
+            tenant_id=tenant_id,
+            waiver_records=waiver_records,
+        )
+    except Exception as exc:
+        logger.exception("compliance PDF generation failed")
+        export_warnings.append(f"pdf_generation_failed: {exc!s}")
+        pdf_bytes = _build_compliance_pdf_bytes(
+            [],
+            summary_from=summary_from,
+            summary_to=summary_to,
+            generated_at=now,
+            backend_version=backend_version,
+            tenant_id=tenant_id,
+            waiver_records=[],
+        )
+
+    bundle: dict[str, bytes] = {}
+
+    def put(rel: str, content: str | bytes) -> None:
+        if isinstance(content, str):
+            content = content.encode("utf-8")
+        bundle[f"{root}/{rel}"] = content
+
+    put("assets-findings.json", json.dumps(vat_data, indent=2, default=str))
+    put("findings.csv", _findings_csv_bytes(rows))
+    put("waivers.json", json.dumps(waiver_records, indent=2, default=str))
+    put("waivers.csv", _waivers_csv_bytes(waiver_records))
+    put("executive-summary-yearly.html", html_report)
+    put("compliance-summary.pdf", pdf_bytes)
+    put("sbom-cyclonedx.json", json.dumps(cyclonedx, indent=2))
+
+    sbom_asset_manifest: list[dict[str, str | int]] = []
+    for component, rows_for_component in sorted(per_asset_packages.items()):
+        asset_bom = _build_cyclonedx_bom(
+            rows_for_component,
+            include_component_ref=True,
+            metadata_component_name=component,
+        )
+        safe_component = _safe_export_filename(component)
+        rel = f"sbom/by-asset/{safe_component}.cdx.json"
+        put(rel, json.dumps(asset_bom, indent=2))
+        sbom_asset_manifest.append(
+            {
+                "component": component,
+                "file": rel,
+                "packageCount": len(rows_for_component),
+            }
+        )
+    if sbom_asset_manifest:
+        put("sbom/by-asset/manifest.json", json.dumps(sbom_asset_manifest, indent=2))
+
+    from app.services.audit_workbook_export import (
+        STIG_RULE_ROWS_CAP,
+        STIG_VIEWER_README,
+        build_auditor_workbook_bytes,
+        extract_xccdf_rule_results,
+    )
+
     openscap_results = await list_openscap_scan_results(db, tenant_id=tenant_id)
     stig_manifest: list[dict] = []
-
-    # 5. Build ZIP
-    buf = io.BytesIO()
-    date_str = now.strftime("%Y-%m-%d")
-    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        zf.writestr(
-            f"vat-export-{date_str}/assets-findings.json",
-            json.dumps(vat_data, indent=2, default=str),
-        )
-        zf.writestr(
-            f"vat-export-{date_str}/sbom-cyclonedx.json",
-            json.dumps(cyclonedx, indent=2),
-        )
-        # Asset-scoped SBOMs preserve package containment context.
-        sbom_asset_manifest: list[dict[str, str | int]] = []
-        for component, rows_for_component in sorted(per_asset_packages.items()):
-            asset_bom = _build_cyclonedx_bom(
-                rows_for_component,
-                include_component_ref=True,
-                metadata_component_name=component,
-            )
-            safe_component = _safe_export_filename(component)
-            rel = f"vat-export-{date_str}/sbom/by-asset/{safe_component}.cdx.json"
-            zf.writestr(rel, json.dumps(asset_bom, indent=2))
-            sbom_asset_manifest.append(
+    stig_rule_rows: list[dict[str, Any]] = []
+    for row in openscap_results:
+        ext = "xccdf.xml" if row.parser_id == "openscap" else "oval-results.xml"
+        safe_asset = _safe_openscap_filename(row.asset_id)
+        safe_source = _safe_openscap_filename(row.source_id)
+        base_name = f"{safe_asset}_{safe_source}" if safe_source else safe_asset
+        rel = f"stig/{base_name}.{ext}"
+        try:
+            raw_xml = row.raw_xccdf_xml
+            if not raw_xml:
+                continue
+            xml_str = raw_xml.decode("utf-8", errors="replace")
+            put(rel, xml_str)
+            stig_manifest.append(
                 {
-                    "component": component,
-                    "file": f"sbom/by-asset/{safe_component}.cdx.json",
-                    "packageCount": len(rows_for_component),
+                    "assetId": row.asset_id,
+                    "sourceId": row.source_id,
+                    "filename": f"{base_name}.{ext}",
+                    "parserId": row.parser_id,
+                    "createdAt": row.created_at.isoformat() if row.created_at else None,
+                    "benchmarkId": row.benchmark_id,
+                    "benchmarkFamily": row.benchmark_family,
+                    "profileScope": row.profile_scope,
+                    "contentVersion": row.content_version,
+                    "evidenceSha256": row.evidence_sha256,
                 }
             )
-        if sbom_asset_manifest:
-            zf.writestr(
-                f"vat-export-{date_str}/sbom/by-asset/manifest.json",
-                json.dumps(sbom_asset_manifest, indent=2),
-            )
-        zf.writestr(
-            f"vat-export-{date_str}/executive-summary-yearly.html",
-            html_report,
-        )
-        for row in openscap_results:
-            ext = "xccdf.xml" if row.parser_id == "openscap" else "oval-results.xml"
-            safe_asset = _safe_openscap_filename(row.asset_id)
-            safe_source = _safe_openscap_filename(row.source_id)
-            base_name = f"{safe_asset}_{safe_source}" if safe_source else safe_asset
-            filename = f"vat-export-{date_str}/stig/{base_name}.{ext}"
-            try:
-                xml_str = row.raw_xccdf_xml.decode("utf-8", errors="replace")
-                zf.writestr(filename, xml_str)
-                stig_manifest.append(
-                    {
-                        "assetId": row.asset_id,
-                        "sourceId": row.source_id,
-                        "filename": f"{base_name}.{ext}",
-                        "parserId": row.parser_id,
-                        "createdAt": row.created_at.isoformat()
-                        if row.created_at
-                        else None,
-                    }
-                )
-            except Exception:
-                pass
-        if stig_manifest:
-            zf.writestr(
-                f"vat-export-{date_str}/stig/manifest.json",
-                json.dumps(stig_manifest, indent=2, default=str),
-            )
+            if row.parser_id == "openscap":
+                for r in extract_xccdf_rule_results(raw_xml):
+                    if len(stig_rule_rows) >= STIG_RULE_ROWS_CAP:
+                        break
+                    stig_rule_rows.append(
+                        {
+                            "assetId": row.asset_id,
+                            "sourceId": row.source_id,
+                            "parserId": row.parser_id,
+                            "benchmarkId": row.benchmark_id or "",
+                            "ruleId": r.get("ruleId", ""),
+                            "result": r.get("result", ""),
+                            "severity": r.get("severity", ""),
+                        }
+                    )
+        except Exception:
+            pass
+    put("stig/README-STIG-Viewer.txt", STIG_VIEWER_README)
+    if stig_manifest:
+        put("stig/manifest.json", json.dumps(stig_manifest, indent=2, default=str))
 
+    audit_events_for_workbook: list[dict] | None = None
+    if opts.include_audit_events:
+        try:
+            audit_events_for_workbook = await load_audit_events_for_export(
+                db,
+                date_from=opts.audit_date_from,
+                date_to=opts.audit_date_to,
+                limit=opts.audit_limit,
+            )
+        except Exception as exc:
+            logger.exception("embedding audit events in export bundle failed")
+            export_warnings.append(f"audit_embed_failed: {exc!s}")
+            audit_events_for_workbook = []
+        put(
+            "audit-events.json",
+            json.dumps(audit_events_for_workbook, indent=2, default=str),
+        )
+
+    try:
+        workbook_bytes = build_auditor_workbook_bytes(
+            findings=rows,
+            waiver_records=waiver_records,
+            stig_file_manifest=stig_manifest,
+            stig_rule_rows=stig_rule_rows,
+            audit_events=audit_events_for_workbook,
+            generated_at=now,
+            tenant_id=tenant_id,
+            backend_version=backend_version,
+            export_options={k: v for k, v in asdict(opts).items()},
+        )
+        put("auditor-workbook.xlsx", workbook_bytes)
+    except Exception as exc:
+        logger.exception("auditor workbook generation failed")
+        export_warnings.append(f"auditor_workbook_failed: {exc!s}")
+
+    inner_prefix = f"{root}/"
+    file_entries: list[dict[str, Any]] = []
+    for path in sorted(bundle.keys()):
+        if not path.startswith(inner_prefix):
+            continue
+        rel = path[len(inner_prefix) :]
+        if rel == "evidence-manifest.json":
+            continue
+        content = bundle[path]
+        file_entries.append(
+            {
+                "path": rel,
+                "sha256": hashlib.sha256(content).hexdigest(),
+                "sizeBytes": len(content),
+            }
+        )
+
+    manifest_body = _build_evidence_manifest(
+        generated_at=now,
+        backend_version=backend_version,
+        tenant_id=tenant_id,
+        options=opts,
+        file_entries=file_entries,
+        warnings=export_warnings or None,
+    )
+    put("evidence-manifest.json", json.dumps(manifest_body, indent=2, default=str))
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for path in sorted(bundle.keys()):
+            zf.writestr(path, bundle[path])
     return buf.getvalue()

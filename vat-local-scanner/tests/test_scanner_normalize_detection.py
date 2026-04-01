@@ -204,6 +204,39 @@ def test_collect_container_sources_handles_wrap_extract_failure(monkeypatch, tmp
     assert len(extract_dirs) == 1
 
 
+def test_collect_container_sources_respects_exclude(monkeypatch, tmp_path: Path) -> None:
+    artifact_dir = tmp_path / "artifacts"
+    keep_dir = tmp_path / "keep"
+    artifact_dir.mkdir(parents=True)
+    keep_dir.mkdir(parents=True)
+    tar_skip = artifact_dir / "skip.tar"
+    tar_keep = keep_dir / "keep.tar"
+    tar_skip.write_text("x", encoding="utf-8")
+    tar_keep.write_text("x", encoding="utf-8")
+
+    class _Completed:
+        def __init__(self, returncode: int, stdout: str = "") -> None:
+            self.returncode = returncode
+            self.stdout = stdout
+
+    def _fake_run(cmd, capture_output=True, text=True, timeout=30, check=False):
+        if cmd[:2] == ["tar", "-tf"]:
+            # Both tar files look like docker-save images.
+            return _Completed(0, "manifest.json\n")
+        raise AssertionError(f"unexpected command: {cmd}")
+
+    monkeypatch.setattr(detection.subprocess, "run", _fake_run)
+    monkeypatch.setattr(detection, "_docker_save_image_ref", lambda *args, **kwargs: None)
+    monkeypatch.setattr(detection, "_with_computed_digest", lambda src: src)
+    sources, _extract_dirs = detection.collect_container_sources(
+        tmp_path,
+        temp_dir=tmp_path,
+        exclude=["**/artifacts/**"],
+    )
+    assert len(sources) == 1
+    assert sources[0].path == tar_keep
+
+
 def test_get_oci_image_ref_name_invalid_json(tmp_path: Path) -> None:
     layout = tmp_path / "oci"
     layout.mkdir()

@@ -12,8 +12,10 @@ from pathlib import Path
 from vat_scanner import __version__
 from vat_scanner.config import (
     ALL_SCAN_TYPES,
+    DEFAULT_EXCLUDES,
     ScannerConfig,
     find_config_file,
+    load_ignore_file,
     load_config_file,
 )
 from vat_scanner.gating import (
@@ -381,7 +383,9 @@ def cmd_scan(args: argparse.Namespace) -> int:
     if config_path:
         cfg = ScannerConfig.from_file(config_path, first_path)
     else:
-        cfg = ScannerConfig(asset=first_path.name)
+        runtime_excludes = list(DEFAULT_EXCLUDES)
+        runtime_excludes.extend(load_ignore_file(first_path, include_gitignore=True))
+        cfg = ScannerConfig(asset=first_path.name, exclude=list(dict.fromkeys(runtime_excludes)))
     cfg = _merge_scan_cli(cfg, args)
 
     def _prepare_report_for_push(parser: str, report: object, scan_root: Path, no_snippets: bool) -> object:
@@ -579,7 +583,9 @@ def cmd_scan_archive(args: argparse.Namespace) -> int:
     if config_path:
         cfg = ScannerConfig.from_file(config_path, first_parent)
     else:
-        cfg = ScannerConfig(asset=archive_paths[0].stem)
+        runtime_excludes = list(DEFAULT_EXCLUDES)
+        runtime_excludes.extend(load_ignore_file(first_parent, include_gitignore=True))
+        cfg = ScannerConfig(asset=archive_paths[0].stem, exclude=list(dict.fromkeys(runtime_excludes)))
     cfg = _merge_scan_cli(cfg, args)
 
     temp_base = Path(cfg.temp_dir)
