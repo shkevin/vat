@@ -1,0 +1,15 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vat-backend
+  namespace: vat
+spec:
+  replicas: 1
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vat-frontend
+  namespace: vat
+spec:
+  replicas: 1

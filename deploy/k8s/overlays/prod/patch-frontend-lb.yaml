@@ -1,0 +1,10 @@
+# Prod VAT frontend VIP. Point vat.kamiprod.automatedhass.com at 10.0.40.174 externally.
+apiVersion: v1
+kind: Service
+metadata:
+  name: vat-frontend
+  namespace: vat
+spec:
+  type: LoadBalancer
+  loadBalancerIP: "10.0.40.174"
+  externalTrafficPolicy: Local

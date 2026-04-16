@@ -46,3 +46,7 @@ htmlcov/
 AGENTS.md
 artifacts
 backend/data
+
+# SOPS: never commit plaintext secret material or the age key
+*.plain.yaml
+age.key

@@ -1,0 +1,13 @@
+# Expose vat-frontend directly via a MetalLB VIP (same pattern as Grafana and Argo CD in this
+# cluster). Traefik is scoped to the `kamiwaza` namespace, so crossing into it would leak VAT
+# into the platform control plane; a dedicated LoadBalancer keeps the app isolated in `vat`.
+# Point vat.kamidev.automatedhass.com at 10.0.40.173 externally.
+apiVersion: v1
+kind: Service
+metadata:
+  name: vat-frontend
+  namespace: vat
+spec:
+  type: LoadBalancer
+  loadBalancerIP: "10.0.40.173"
+  externalTrafficPolicy: Local

@@ -1,0 +1,22 @@
+# Per-environment runtime secret for VAT. Copy to the VAT repo root as vat-runtime.plain.yaml
+# (gitignored), fill stringData, then encrypt in-place per environment:
+#   export SOPS_AGE_KEY_FILE=<path-to-age.key>   # same key as kamiwaza-argocd cluster
+#   sops -e vat-runtime.plain.yaml > deploy/k8s/overlays/dev/vat-runtime.enc.yaml
+#   sops -e vat-runtime.plain.yaml > deploy/k8s/overlays/prod/vat-runtime.enc.yaml
+# Commit only *.enc.yaml. NEVER commit *.plain.yaml or age.key.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: vat-runtime
+  namespace: vat
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+type: Opaque
+stringData:
+  POSTGRES_PASSWORD: ""
+  VAT_DATABASE_URL: ""
+  VAT_CELERY_BROKER_URL: redis://valkey:6379/0
+  VAT_SECRET_KEY: ""
+  VAT_PUBLIC_URL: ""
+  VAT_FRONTEND_URL: ""
+  VAT_CORS_ORIGINS: ""

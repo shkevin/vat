@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vat-frontend
+  namespace: vat
+data:
+  HOSTNAME: "0.0.0.0"
+  PORT: "3000"
+  APP_NAME: "VAT"
+  APP_LOGO: "/vat-logo-dark.svg"
+  CLASSIFICATION: "UNCLASSIFIED"
+  SEARCH_PLACEHOLDER: "Find by CVE, component, team…"
+  SHOW_THEME_TOGGLE: "false"
+  ENV_LABEL: ""
+  FOOTER_CLASSIFICATION: "UNCLASSIFIED"
+  FOOTER_SUFFIX: ""

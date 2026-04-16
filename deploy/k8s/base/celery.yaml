@@ -1,0 +1,144 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vat-celery-worker-sync
+  namespace: vat
+  labels:
+    app.kubernetes.io/name: vat-celery-worker-sync
+    app.kubernetes.io/component: celery
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: vat-celery-worker-sync
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: vat-celery-worker-sync
+    spec:
+      imagePullSecrets:
+        - name: harbor-creds
+      containers:
+        - name: worker
+          image: vat-backend
+          imagePullPolicy: IfNotPresent
+          command:
+            - uv
+            - run
+            - celery
+            - -A
+            - app.celery_app
+            - worker
+            - -Q
+            - vat-sync,vat-maintenance
+            - -l
+            - info
+          envFrom:
+            - secretRef:
+                name: vat-runtime
+          env:
+            - name: VAT_ENV
+              value: production
+          resources:
+            requests:
+              cpu: 100m
+              memory: 512Mi
+            limits:
+              cpu: "2"
+              memory: 2Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vat-celery-worker-feeds
+  namespace: vat
+  labels:
+    app.kubernetes.io/name: vat-celery-worker-feeds
+    app.kubernetes.io/component: celery
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: vat-celery-worker-feeds
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: vat-celery-worker-feeds
+    spec:
+      imagePullSecrets:
+        - name: harbor-creds
+      containers:
+        - name: worker
+          image: vat-backend
+          imagePullPolicy: IfNotPresent
+          command:
+            - uv
+            - run
+            - celery
+            - -A
+            - app.celery_app
+            - worker
+            - -Q
+            - vat-feeds
+            - -l
+            - info
+          envFrom:
+            - secretRef:
+                name: vat-runtime
+          env:
+            - name: VAT_ENV
+              value: production
+          resources:
+            requests:
+              cpu: 100m
+              memory: 512Mi
+            limits:
+              cpu: "2"
+              memory: 2Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vat-celery-beat
+  namespace: vat
+  labels:
+    app.kubernetes.io/name: vat-celery-beat
+    app.kubernetes.io/component: celery
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: vat-celery-beat
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: vat-celery-beat
+    spec:
+      imagePullSecrets:
+        - name: harbor-creds
+      containers:
+        - name: beat
+          image: vat-backend
+          imagePullPolicy: IfNotPresent
+          command:
+            - uv
+            - run
+            - celery
+            - -A
+            - app.celery_app
+            - beat
+            - -l
+            - info
+          envFrom:
+            - secretRef:
+                name: vat-runtime
+          env:
+            - name: VAT_ENV
+              value: production
+          resources:
+            requests:
+              cpu: 50m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi

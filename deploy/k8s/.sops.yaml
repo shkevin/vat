@@ -1,0 +1,10 @@
+# SOPS policy scoped to deploy/k8s. Must use the same age recipient as the cluster's
+# kamiwaza-argocd repo so the in-cluster Argo CD repo-server can decrypt with its SOPS_AGE_KEY.
+# Rotate by updating both files together, then re-encrypting *.enc.yaml.
+creation_rules:
+  - path_regex: .*\.enc\.yaml$
+    age: age1h89a67glsx02aqyjd63zvt5vgx7ffaax3v98t4pfm6e5e2pkt43qjw4w4k
+    encrypted_regex: ^(stringData|data)$
+  - path_regex: .*\.plain\.yaml$
+    age: age1h89a67glsx02aqyjd63zvt5vgx7ffaax3v98t4pfm6e5e2pkt43qjw4w4k
+    encrypted_regex: ^(stringData|data)$

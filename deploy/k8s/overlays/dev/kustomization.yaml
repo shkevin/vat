@@ -1,0 +1,16 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../base
+generators:
+  - ksops-generator.yaml
+images:
+  - name: vat-backend
+    newName: harbor.automatedhass.com/library/vat/backend
+    newTag: develop
+  - name: vat-frontend
+    newName: harbor.automatedhass.com/library/vat/frontend
+    newTag: develop
+patches:
+  - path: patch-replicas.yaml
+  - path: patch-frontend-lb.yaml
