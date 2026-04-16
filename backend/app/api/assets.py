@@ -36,6 +36,7 @@ from app.services.container_asset_observations import (
     migrate_observations_for_asset_merge,
 )
 from app.services.correlation_linking import apply_correlation_linking
+from app.services.vuln_feeds import get_asset_vuln_intel
 
 router = APIRouter()
 
@@ -323,6 +324,19 @@ async def list_asset_digest_conflicts(
     }
 
 
+@router.get("/{asset_id:path}/vuln-intel")
+async def get_asset_vulnerability_intel(
+    asset_id: str,
+    limit: int = Query(default=100, ge=1, le=500),
+    db: AsyncSession = Depends(get_db),
+    _ctx: UserContext = Depends(get_current_user_context),
+):
+    resolved_asset_id = (asset_id or "").strip()
+    if not resolved_asset_id:
+        raise HTTPException(status_code=422, detail="asset_id is required")
+    return await get_asset_vuln_intel(db, asset_id=resolved_asset_id, limit=limit)
+
+
 @router.put("/{asset_id:path}/digest-conflicts/{tag:path}/ack")
 async def acknowledge_asset_digest_conflict(
     asset_id: str,
@@ -589,11 +603,24 @@ async def group_asset_into_target(
                 )
             candidate_rows = list((await db.execute(candidates_q)).scalars().all())
 
+            source_key = source_asset_id.strip().lower()
+            target_key = canonical_target.strip().lower()
+
+            def _normalized_tag_for_merge_compare(row: Finding) -> str:
+                raw = str(row.tag or "").strip().lower()
+                if not raw:
+                    return ""
+                # Asset ids are sometimes mirrored into tag for legacy rows; ignore those
+                # placeholders during duplicate consolidation to avoid false mismatches.
+                if raw in {source_key, target_key}:
+                    return ""
+                return raw
+
             for finding, prev_values, next_values in changed_findings:
                 f_type = finding.finding_type
                 f_img = str(finding.image or "").strip().lower()
                 f_branch = str(finding.branch or "").strip().lower()
-                f_tag = str(finding.tag or "").strip().lower()
+                f_tag = _normalized_tag_for_merge_compare(finding)
                 f_pkg = str(finding.component_base or "").strip().lower()
 
                 peers = [
@@ -603,7 +630,7 @@ async def group_asset_into_target(
                     and r.finding_type == f_type
                     and str(r.image or "").strip().lower() == f_img
                     and str(r.branch or "").strip().lower() == f_branch
-                    and str(r.tag or "").strip().lower() == f_tag
+                    and _normalized_tag_for_merge_compare(r) == f_tag
                     and str(r.component_base or "").strip().lower() == f_pkg
                 ]
                 if len(peers) == 0:

@@ -2,12 +2,15 @@
 
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import get_current_user_context, require_admin, require_reviewer
+from app.core.config import get_settings
 from app.core.database import get_db
+from app.models.finding import Finding
 from app.schemas.auth import UserContext
 from app.schemas.finding import (
     FindingArchive,
@@ -77,7 +80,7 @@ async def get_findings(
     asset: Optional[str] = None,
     search: Optional[str] = None,
     search_fields: Optional[str] = None,
-    limit: int = 0,  # 0 = no limit
+    limit: int = Query(default=get_settings().finding_default_limit, ge=1, le=2000),
 ):
     """
     List findings with optional filters.
@@ -115,13 +118,14 @@ async def get_findings_groups(
     source: Optional[str] = None,
     type: Optional[str] = None,
     asset: Optional[str] = None,
-    limit: int = 100,
-    offset: int = 0,
+    limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
 ):
     """
     Return findings pre-grouped by group key. Per §13.6: groupKey, severity (max), findingCount, findings (embedded).
     Pagination: limit/offset on groups; total for UI.
     """
+    scan_limit = get_settings().finding_groups_scan_limit
     findings = await list_findings(
         db,
         tenant_id=ctx.tenant_id,
@@ -131,7 +135,7 @@ async def get_findings_groups(
         source=source,
         finding_type=type,
         asset=asset,
-        limit=0,  # fetch all for grouping, then paginate groups
+        limit=scan_limit,
     )
     # Group by key
     from collections import defaultdict
@@ -166,7 +170,7 @@ async def get_findings_groups(
     total = len(groups_list)
     # Paginate
     page = groups_list[offset : offset + limit]
-    return {"groups": page, "total": total}
+    return {"groups": page, "total": total, "scanLimitApplied": len(findings) >= scan_limit}
 
 
 @router.post("/bulk")
@@ -495,13 +499,25 @@ async def get_correlation_operation_history(
     if not edges:
         return {"operation_id": operation_id, "count": 0, "edges": []}
 
+    ids: set[str] = set()
+    for edge in edges:
+        ids.add(edge.finding_id_a)
+        ids.add(edge.finding_id_b)
+
+    tenant_map: dict[str, str | None] = {}
+    if ids:
+        rows = await db.execute(
+            select(Finding.id, Finding.tenant_id).where(Finding.id.in_(ids))
+        )
+        tenant_map = {str(fid): tid for fid, tid in rows.all()}
+
     out = []
     for e in edges:
-        left = await get_finding(db, e.finding_id_a)
-        right = await get_finding(db, e.finding_id_b)
         if ctx.tenant_id:
-            if (left and left.tenant_id and left.tenant_id != ctx.tenant_id) or (
-                right and right.tenant_id and right.tenant_id != ctx.tenant_id
+            left_tid = tenant_map.get(e.finding_id_a)
+            right_tid = tenant_map.get(e.finding_id_b)
+            if (left_tid and left_tid != ctx.tenant_id) or (
+                right_tid and right_tid != ctx.tenant_id
             ):
                 continue
         out.append(

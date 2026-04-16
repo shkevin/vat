@@ -35,6 +35,7 @@ async def get_vat_data(
     page_size: int = 500,
     include_assets: bool = True,
     include_zero_assets: bool = True,
+    include_asset_findings: bool = False,
     full: bool = False,
 ):
     """
@@ -66,7 +67,10 @@ async def get_vat_data(
     assets = []
     if include_assets:
         assets = await get_assets_with_findings(
-            db, findings_dicts=rows, include_zero_assets=include_zero_assets
+            db,
+            findings_dicts=rows,
+            include_zero_assets=include_zero_assets,
+            include_findings=include_asset_findings,
         )
 
     return {
@@ -78,5 +82,6 @@ async def get_vat_data(
             "hasMore": effective_limit > 0 and len(rows) == effective_limit,
             "includeAssets": include_assets,
             "includeZeroAssets": include_zero_assets,
+            "includeAssetFindings": include_asset_findings,
         },
     }

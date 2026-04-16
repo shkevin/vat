@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from datetime import datetime
 
+from app.core.config import get_settings
 from app.models.finding import Finding, FindingType, Severity, Status, SuppressionScope
 from app.services.sync_service import (
     SOURCE_IGNORE_STATUSES,
@@ -120,10 +121,14 @@ async def list_findings(
     asset: Optional[str] = None,
     search: Optional[str] = None,
     search_fields: Optional[str] = None,
-    limit: int = 0,  # 0 = no limit
+    limit: int = 0,  # 0 = no limit (callers enforce UI caps)
     offset: int = 0,
 ) -> list[Finding]:
     """List findings with optional filters."""
+    settings = get_settings()
+    effective_limit = (
+        min(limit, settings.finding_max_limit) if limit > 0 else 0
+    )
     q = select(Finding)
     if tenant_id is not None:
         # Include findings for this tenant OR global (tenant_id=None) so bootstrap/webhook findings are visible
@@ -197,8 +202,8 @@ async def list_findings(
     q = q.order_by(Finding.created_at.desc())
     if offset > 0:
         q = q.offset(offset)
-    if limit > 0:
-        q = q.limit(limit)
+    if effective_limit > 0:
+        q = q.limit(effective_limit)
     result = await db.execute(q)
     return list(result.scalars().all())
 

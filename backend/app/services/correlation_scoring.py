@@ -24,10 +24,12 @@ def _norm(value: str | None) -> str:
 def _asset_identity(finding: Any) -> str:
     image = _norm(getattr(finding, "image", None))
     branch = _norm(getattr(finding, "branch", None))
-    tag = _norm(getattr(finding, "tag", None))
     component = _norm(getattr(finding, "component", None))
-    if image or branch or tag:
-        return f"{image}|{branch}|{tag}"
+    # Tag is intentionally excluded from the hard asset gate.
+    # Different scanners and merge flows can preserve different tag variants for
+    # the same asset identity, and gating on tag can incorrectly force low score.
+    if image or branch:
+        return f"{image}|{branch}"
     return component
 
 

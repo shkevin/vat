@@ -3,12 +3,16 @@
 import json
 import logging
 import uuid
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from time import monotonic
 from typing import Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.settings import get_source_config
+from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.ingest_auth import get_ingest_source
 from app.models.asset import Asset
@@ -42,6 +46,155 @@ from app.services.sbom_extract import extract_sbom_from_report
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class _IngestRollupWindow:
+    """Tracks sampled ingest detail and counters for one time window."""
+
+    started_mono: float
+    last_event_mono: float
+    started_at_iso: str
+    event_count: int = 0
+    mappings_count: int = 0
+    dedup_new_count: int = 0
+    dedup_merged_count: int = 0
+    failed_count: int = 0
+    sampled_mappings: list[dict] = field(default_factory=list)
+    sampled_dedup: list[dict] = field(default_factory=list)
+    sampled_failures: list[dict] = field(default_factory=list)
+
+
+class _IngestRollupAccumulator:
+    """Accumulates ingest events and emits timeout-based summary windows."""
+
+    def __init__(
+        self,
+        *,
+        db: AsyncSession,
+        enabled: bool,
+        window_seconds: int,
+        idle_timeout_seconds: int,
+        sample_size: int,
+        trace_id: str,
+        actor_id: Optional[str],
+        source_id: str,
+        parser_id: str,
+    ) -> None:
+        self._db = db
+        self.enabled = enabled
+        self.window_seconds = max(1, int(window_seconds))
+        self.idle_timeout_seconds = max(1, int(idle_timeout_seconds))
+        self.sample_size = max(1, int(sample_size))
+        self.trace_id = trace_id
+        self.actor_id = actor_id
+        self.source_id = source_id
+        self.parser_id = parser_id
+        self._window: _IngestRollupWindow | None = None
+
+    def _now_iso(self) -> str:
+        return datetime.now(timezone.utc).isoformat()
+
+    def _ensure_window(self, now_mono: float) -> _IngestRollupWindow:
+        if self._window is None:
+            now_iso = self._now_iso()
+            self._window = _IngestRollupWindow(
+                started_mono=now_mono,
+                last_event_mono=now_mono,
+                started_at_iso=now_iso,
+            )
+        return self._window
+
+    async def _flush(self, *, flush_reason: str, window_end_mono: float) -> None:
+        if not self.enabled or self._window is None or self._window.event_count == 0:
+            self._window = None
+            return
+        window = self._window
+        await emit_audit_event(
+            self._db,
+            trace_id=self.trace_id,
+            event_type="ingest.rollup.window",
+            actor_type="api_client",
+            actor_id=self.actor_id,
+            source_id=self.source_id,
+            parser_id=self.parser_id,
+            decision_name="ingest_activity_rollup",
+            decision_reason_code=f"flush_{flush_reason}",
+            decision_confidence="high",
+            decision_result="window_emitted",
+            data={
+                "traceId": self.trace_id,
+                "sourceId": self.source_id,
+                "parserId": self.parser_id,
+                "windowStart": window.started_at_iso,
+                "windowEnd": self._now_iso(),
+                "windowDurationSec": round(window_end_mono - window.started_mono, 3),
+                "flushReason": flush_reason,
+                "eventsInWindow": window.event_count,
+                "assetMappingsResolvedCount": window.mappings_count,
+                "dedupNewCount": window.dedup_new_count,
+                "dedupMergedCount": window.dedup_merged_count,
+                "failed": window.failed_count,
+                "sampledMappings": window.sampled_mappings,
+                "sampledDedup": window.sampled_dedup,
+                "sampledFailures": window.sampled_failures,
+                "rollupMode": "event_window_sample_only",
+            },
+        )
+        self._window = None
+
+    async def _flush_if_due(self, now_mono: float) -> None:
+        if not self.enabled or self._window is None:
+            return
+        idle_age = now_mono - self._window.last_event_mono
+        window_age = now_mono - self._window.started_mono
+        if idle_age >= self.idle_timeout_seconds or window_age >= self.window_seconds:
+            reason = "timeout" if window_age >= self.window_seconds else "idle_timeout"
+            await self._flush(flush_reason=reason, window_end_mono=now_mono)
+
+    async def record_mapping(self, payload: dict) -> None:
+        if not self.enabled:
+            return
+        now_mono = monotonic()
+        await self._flush_if_due(now_mono)
+        window = self._ensure_window(now_mono)
+        window.last_event_mono = now_mono
+        window.event_count += 1
+        window.mappings_count += 1
+        if len(window.sampled_mappings) < self.sample_size:
+            window.sampled_mappings.append(payload)
+
+    async def record_dedup(self, payload: dict, *, is_new: bool) -> None:
+        if not self.enabled:
+            return
+        now_mono = monotonic()
+        await self._flush_if_due(now_mono)
+        window = self._ensure_window(now_mono)
+        window.last_event_mono = now_mono
+        window.event_count += 1
+        if is_new:
+            window.dedup_new_count += 1
+        else:
+            window.dedup_merged_count += 1
+        if len(window.sampled_dedup) < self.sample_size:
+            window.sampled_dedup.append(payload)
+
+    async def record_failure(self, payload: dict) -> None:
+        if not self.enabled:
+            return
+        now_mono = monotonic()
+        await self._flush_if_due(now_mono)
+        window = self._ensure_window(now_mono)
+        window.last_event_mono = now_mono
+        window.event_count += 1
+        window.failed_count += 1
+        if len(window.sampled_failures) < self.sample_size:
+            window.sampled_failures.append(payload)
+
+    async def flush_final(self) -> None:
+        if not self.enabled:
+            return
+        await self._flush(flush_reason="ingest_complete", window_end_mono=monotonic())
 
 
 async def _ensure_asset_record(
@@ -141,6 +294,19 @@ async def _ingest_from_parser(
     """
     parser = get_parser(parser_id)
     trace_id = trace_id or uuid.uuid4().hex
+    settings = get_settings()
+    rollup_enabled = settings.ingest_rollup_window_seconds > 0
+    rollup = _IngestRollupAccumulator(
+        db=db,
+        enabled=rollup_enabled,
+        window_seconds=settings.ingest_rollup_window_seconds,
+        idle_timeout_seconds=settings.ingest_rollup_idle_timeout_seconds,
+        sample_size=settings.ingest_rollup_sample_size,
+        trace_id=trace_id,
+        actor_id=actor_id,
+        source_id=source,
+        parser_id=parser_id,
+    )
     await emit_audit_event(
         db,
         trace_id=trace_id,
@@ -312,21 +478,31 @@ async def _ingest_from_parser(
                 resolution.asset_id = canonical_asset_id
                 resolution.reason = "manual_asset_alias_override"
                 resolution.confidence = "explicit"
-            await emit_audit_event(
-                db,
-                trace_id=trace_id,
-                event_type="asset.mapping.resolved",
-                actor_type="api_client",
-                actor_id=actor_id,
-                source_id=source,
-                parser_id=parser_id,
-                asset_id=resolution.asset_id,
-                decision_name="asset_mapping",
-                decision_reason_code=resolution.reason,
-                decision_confidence=resolution.confidence,
-                decision_result=resolution.asset_kind,
-                data=resolution.to_api_dict(),
-            )
+            if rollup.enabled:
+                await rollup.record_mapping(
+                    {
+                        "assetId": resolution.asset_id,
+                        "reason": resolution.reason,
+                        "confidence": resolution.confidence,
+                        "result": resolution.asset_kind,
+                    }
+                )
+            else:
+                await emit_audit_event(
+                    db,
+                    trace_id=trace_id,
+                    event_type="asset.mapping.resolved",
+                    actor_type="api_client",
+                    actor_id=actor_id,
+                    source_id=source,
+                    parser_id=parser_id,
+                    asset_id=resolution.asset_id,
+                    decision_name="asset_mapping",
+                    decision_reason_code=resolution.reason,
+                    decision_confidence=resolution.confidence,
+                    decision_result=resolution.asset_kind,
+                    data=resolution.to_api_dict(),
+                )
             if asset_override:
                 p = p.model_copy(update={"image": asset_override})
             p = tag_policy.apply_to_payload(p)
@@ -355,42 +531,57 @@ async def _ingest_from_parser(
                 raw_evidence_ref=raw_evidence_ref,
                 force_tag_override=tag_policy.force_override,
             )
-            await emit_audit_event(
-                db,
-                trace_id=trace_id,
-                event_type="dedup.replay.new" if is_new else "dedup.replay.merged",
-                actor_type="api_client",
-                actor_id=actor_id,
-                source_id=source,
-                parser_id=parser_id,
-                asset_id=(p.image or p.component),
-                finding_id=getattr(finding, "id", None),
-                decision_name="replay_dedup",
-                decision_reason_code="fingerprint_lookup",
-                decision_confidence="high",
-                decision_result="created" if is_new else "merged",
-                data={"finding_id": getattr(finding, "id", None)},
-            )
+            if rollup.enabled:
+                await rollup.record_dedup(
+                    {
+                        "findingId": getattr(finding, "id", None),
+                        "assetId": p.image or p.component,
+                        "result": "created" if is_new else "merged",
+                    },
+                    is_new=is_new,
+                )
+            else:
+                await emit_audit_event(
+                    db,
+                    trace_id=trace_id,
+                    event_type="dedup.replay.new" if is_new else "dedup.replay.merged",
+                    actor_type="api_client",
+                    actor_id=actor_id,
+                    source_id=source,
+                    parser_id=parser_id,
+                    asset_id=(p.image or p.component),
+                    finding_id=getattr(finding, "id", None),
+                    decision_name="replay_dedup",
+                    decision_reason_code="fingerprint_lookup",
+                    decision_confidence="high",
+                    decision_result="created" if is_new else "merged",
+                    data={"finding_id": getattr(finding, "id", None)},
+                )
             if is_new:
                 created += 1
             else:
                 merged += 1
         except Exception as e:
             logger.warning("Ingest failed for %s: %s", getattr(p, "cve_id", "?"), e)
-            await emit_audit_event(
-                db,
-                trace_id=trace_id,
-                event_type="ingest.finding.failed",
-                actor_type="api_client",
-                actor_id=actor_id,
-                source_id=source,
-                parser_id=parser_id,
-                decision_name="finding_ingest",
-                decision_reason_code="exception",
-                decision_confidence="high",
-                decision_result="failed",
-                data={"cve_id": getattr(p, "cve_id", "?"), "error": str(e)},
-            )
+            if rollup.enabled:
+                await rollup.record_failure(
+                    {"cveId": getattr(p, "cve_id", "?"), "error": str(e)}
+                )
+            else:
+                await emit_audit_event(
+                    db,
+                    trace_id=trace_id,
+                    event_type="ingest.finding.failed",
+                    actor_type="api_client",
+                    actor_id=actor_id,
+                    source_id=source,
+                    parser_id=parser_id,
+                    decision_name="finding_ingest",
+                    decision_reason_code="exception",
+                    decision_confidence="high",
+                    decision_result="failed",
+                    data={"cve_id": getattr(p, "cve_id", "?"), "error": str(e)},
+                )
 
     # Extract and import SBOM from Trivy/Grype/CycloneDX reports
     sbom_doc = extract_sbom_from_report(parser_id, raw, source)
@@ -433,6 +624,8 @@ async def _ingest_from_parser(
                 )
             except Exception as e:
                 logger.warning("Failed to store OpenSCAP scan result: %s", e)
+
+    await rollup.flush_final()
 
     normalized_tag_updates = 0
     if tag_policy.force_override and asset_override:

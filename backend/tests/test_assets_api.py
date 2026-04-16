@@ -899,3 +899,66 @@ async def test_digest_conflict_list_and_ack(client, db, assets_delete_setup):
     )
     assert reopen.status_code == 200
     assert reopen.json()["status"] == "open"
+
+
+@pytest.mark.asyncio
+async def test_asset_vuln_intel_cross_references_sbom_packages(
+    client, db, assets_delete_setup
+):
+    token = assets_delete_setup["reviewer_token"]
+    await db.execute(text("DELETE FROM vuln_feed_records"))
+    await db.execute(text("DELETE FROM sbom_packages"))
+    await db.execute(text("DELETE FROM asset_aliases"))
+    await db.execute(
+        text(
+            "INSERT INTO asset_aliases (source_asset_id, canonical_asset_id, created_at, updated_at) "
+            "VALUES ('asset-delete-test-alias', 'asset-delete-test', NOW(), NOW())"
+        )
+    )
+    await db.execute(
+        text(
+            """
+            INSERT INTO sbom_packages
+            (id, name, version, component, language, sources, tenant_id, created_at, updated_at)
+            VALUES
+            ('sbom-pkg-1', 'openssl', '3.0.0', 'asset-delete-test', 'python', '[{"name":"manual"}]'::jsonb, NULL, NOW(), NOW()),
+            ('sbom-pkg-2', 'requests', '2.31.0', 'asset-delete-test-alias', 'python', '[{"name":"manual"}]'::jsonb, NULL, NOW(), NOW())
+            """
+        )
+    )
+    await db.execute(
+        text(
+            """
+            INSERT INTO vuln_feed_records
+            (source, record_key, vulnerability_id, aliases, package_name, ecosystem, version, severity, title, details, published_at, modified_at, fetched_at, run_id)
+            VALUES
+            ('osv', 'CVE-2026-1111|openssl|PyPI|3.0.0', 'CVE-2026-1111', '["CVE-2026-1111"]'::jsonb, 'openssl', 'PyPI', '3.0.0', 'HIGH', 'OpenSSL advisory', '{}'::jsonb, NULL, NULL, NOW(), NULL),
+            ('osv', 'CVE-2026-2222|requests|PyPI|2.31.0', 'CVE-2026-2222', '["CVE-2026-2222"]'::jsonb, 'requests', 'PyPI', '2.31.0', 'CRITICAL', 'Requests advisory', '{}'::jsonb, NULL, NULL, NOW(), NULL),
+            ('osv', 'CVE-2026-3333|flask|PyPI|3.0.0', 'CVE-2026-3333', '["CVE-2026-3333"]'::jsonb, 'flask', 'PyPI', '3.0.0', 'MEDIUM', 'Flask advisory', '{}'::jsonb, NULL, NULL, NOW(), NULL)
+            """
+        )
+    )
+    await db.commit()
+
+    res = await client.get(
+        "/api/assets/asset-delete-test/vuln-intel?limit=20",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert res.status_code == 200
+    payload = res.json()
+    assert payload["asset_id"] == "asset-delete-test"
+    assert payload["sbom_package_count"] == 2
+    assert payload["matched_advisory_count"] == 2
+    assert payload["severity_breakdown"]["CRITICAL"] == 1
+    assert payload["severity_breakdown"]["HIGH"] == 1
+    vuln_ids = {m["vulnerability_id"] for m in payload["matches"]}
+    assert "CVE-2026-1111" in vuln_ids
+    assert "CVE-2026-2222" in vuln_ids
+    for match in payload["matches"]:
+        assert match["match_strategy"] in {
+            "name+version+ecosystem",
+            "name+version",
+            "name+ecosystem_no_version",
+            "advisory-no-version",
+        }
+        assert match["match_confidence"] in {"high", "medium", "low"}

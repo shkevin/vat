@@ -8,7 +8,7 @@ from datetime import datetime
 from typing import Any, Optional
 
 from openpyxl import Workbook
-from openpyxl.styles import Font
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
 STIG_RULE_ROWS_CAP = 100_000
@@ -135,23 +135,106 @@ def _metrics_summary(
     return rows
 
 
+# ── Style constants ──────────────────────────────────────────────────────────
+_HEADER_FILL = PatternFill(start_color="1F2937", end_color="1F2937", fill_type="solid")  # dark slate
+_HEADER_FONT = Font(bold=True, color="FFFFFF", size=10)
+_HEADER_ALIGNMENT = Alignment(horizontal="center", vertical="center", wrap_text=True)
+_HEADER_BORDER = Border(
+    bottom=Side(style="medium", color="4B5563"),
+)
+_STRIPE_FILL = PatternFill(start_color="F3F4F6", end_color="F3F4F6", fill_type="solid")  # light gray
+_CELL_FONT = Font(size=10)
+_CELL_ALIGNMENT = Alignment(vertical="top", wrap_text=False)
+_CELL_BORDER = Border(
+    bottom=Side(style="thin", color="E5E7EB"),
+)
+
+_SEVERITY_FILLS: dict[str, PatternFill] = {
+    "Critical": PatternFill(start_color="7F1D1D", end_color="7F1D1D", fill_type="solid"),
+    "High": PatternFill(start_color="DC2626", end_color="DC2626", fill_type="solid"),
+    "Medium": PatternFill(start_color="F59E0B", end_color="F59E0B", fill_type="solid"),
+    "Low": PatternFill(start_color="2563EB", end_color="2563EB", fill_type="solid"),
+    "Informational": PatternFill(start_color="6B7280", end_color="6B7280", fill_type="solid"),
+}
+_SEVERITY_FONTS: dict[str, Font] = {
+    "Critical": Font(bold=True, color="FFFFFF", size=10),
+    "High": Font(bold=True, color="FFFFFF", size=10),
+    "Medium": Font(bold=True, color="000000", size=10),
+    "Low": Font(bold=True, color="FFFFFF", size=10),
+    "Informational": Font(bold=True, color="FFFFFF", size=10),
+}
+
+_STATUS_FILLS: dict[str, PatternFill] = {
+    "Open": PatternFill(start_color="FEF3C7", end_color="FEF3C7", fill_type="solid"),
+    "In Review": PatternFill(start_color="DBEAFE", end_color="DBEAFE", fill_type="solid"),
+    "Risk Accepted": PatternFill(start_color="E0E7FF", end_color="E0E7FF", fill_type="solid"),
+    "Resolved": PatternFill(start_color="D1FAE5", end_color="D1FAE5", fill_type="solid"),
+    "False Positive": PatternFill(start_color="F3F4F6", end_color="F3F4F6", fill_type="solid"),
+}
+
+
 def _write_sheet(wb: Workbook, title: str, headers: list[str], data_rows: list[dict[str, Any]]) -> None:
     ws = wb.create_sheet(title)
-    bold = Font(bold=True)
+
+    # Header row
+    ws.row_dimensions[1].height = 28
     for col, h in enumerate(headers, start=1):
         cell = ws.cell(row=1, column=col, value=h)
-        cell.font = bold
+        cell.font = _HEADER_FONT
+        cell.fill = _HEADER_FILL
+        cell.alignment = _HEADER_ALIGNMENT
+        cell.border = _HEADER_BORDER
+
+    # Identify severity / status columns for conditional coloring
+    sev_col = None
+    status_col = None
+    for i, h in enumerate(headers):
+        hl = h.lower()
+        if hl == "severity":
+            sev_col = i
+        elif hl == "status":
+            status_col = i
+
+    # Data rows with alternating stripes and conditional coloring
     for r_i, row in enumerate(data_rows, start=2):
+        is_stripe = r_i % 2 == 0
         for c_i, h in enumerate(headers, start=1):
             v = row.get(h)
             if v is None:
                 v = ""
             elif isinstance(v, (dict, list)):
                 v = str(v)[:32000]
-            ws.cell(row=r_i, column=c_i, value=v)
+            cell = ws.cell(row=r_i, column=c_i, value=v)
+            cell.font = _CELL_FONT
+            cell.alignment = _CELL_ALIGNMENT
+            cell.border = _CELL_BORDER
+
+            # Severity column: colored badge
+            if c_i - 1 == sev_col and isinstance(v, str) and v in _SEVERITY_FILLS:
+                cell.fill = _SEVERITY_FILLS[v]
+                cell.font = _SEVERITY_FONTS[v]
+                cell.alignment = Alignment(horizontal="center", vertical="top")
+            # Status column: tinted background
+            elif c_i - 1 == status_col and isinstance(v, str) and v in _STATUS_FILLS:
+                cell.fill = _STATUS_FILLS[v]
+            # Default stripe
+            elif is_stripe:
+                cell.fill = _STRIPE_FILL
+
     ws.freeze_panes = "A2"
+
+    # Auto-fit column widths (sample first 50 data rows for performance)
     for i, h in enumerate(headers, start=1):
-        ws.column_dimensions[get_column_letter(i)].width = min(max(len(h) + 2, 12), 48)
+        max_len = len(h) + 4  # header padding
+        col_letter = get_column_letter(i)
+        for row in data_rows[:50]:
+            val = str(row.get(h) or "")
+            max_len = max(max_len, min(len(val) + 2, 60))
+        ws.column_dimensions[col_letter].width = min(max(max_len, 12), 60)
+
+    # Auto-filter on header row
+    if headers:
+        ws.auto_filter.ref = f"A1:{get_column_letter(len(headers))}{len(data_rows) + 1}"
 
 
 def _build_waiver_records_local(rows: list[dict]) -> list[dict]:
@@ -180,6 +263,119 @@ def _build_waiver_records_local(rows: list[dict]) -> list[dict]:
     return out
 
 
+def _build_readme_sheet(
+    ws,
+    *,
+    generated_at: datetime,
+    backend_version: str,
+    tenant_id: Optional[str],
+    export_options: dict[str, Any],
+) -> None:
+    """Build a styled cover/ReadMe sheet."""
+    ws.column_dimensions["A"].width = 4
+    ws.column_dimensions["B"].width = 28
+    ws.column_dimensions["C"].width = 72
+
+    # Title banner (merged across B-C)
+    banner_fill = PatternFill(start_color="1F2937", end_color="1F2937", fill_type="solid")
+    banner_font = Font(bold=True, color="FFFFFF", size=16)
+    ws.merge_cells("B2:C2")
+    title_cell = ws["B2"]
+    title_cell.value = "VAT Auditor Workbook"
+    title_cell.font = banner_font
+    title_cell.fill = banner_fill
+    title_cell.alignment = Alignment(horizontal="left", vertical="center")
+    ws["C2"].fill = banner_fill
+    ws.row_dimensions[2].height = 36
+
+    # Subtitle
+    ws.merge_cells("B3:C3")
+    sub_cell = ws["B3"]
+    sub_cell.value = "Compliance evidence companion to the VAT export bundle"
+    sub_cell.font = Font(italic=True, color="6B7280", size=10)
+
+    # Metadata section
+    label_font = Font(bold=True, color="374151", size=10)
+    value_font = Font(color="111827", size=10)
+    section_font = Font(bold=True, color="1F2937", size=11)
+    section_border = Border(bottom=Side(style="medium", color="D1D5DB"))
+
+    row = 5
+    ws.cell(row=row, column=2, value="Export Details").font = section_font
+    ws.cell(row=row, column=2).border = section_border
+    ws.cell(row=row, column=3).border = section_border
+
+    metadata = [
+        ("Generated (UTC)", generated_at.isoformat().replace("+00:00", "Z")),
+        ("Backend Version", backend_version),
+        ("Tenant", tenant_id or "(global / unset)"),
+        ("Export Options", json.dumps(export_options, default=str)),
+    ]
+    for label, value in metadata:
+        row += 1
+        ws.cell(row=row, column=2, value=label).font = label_font
+        ws.cell(row=row, column=3, value=value).font = value_font
+
+    # Definitions section
+    row += 2
+    ws.cell(row=row, column=2, value="Status Definitions").font = section_font
+    ws.cell(row=row, column=2).border = section_border
+    ws.cell(row=row, column=3).border = section_border
+
+    definitions = [
+        ("False Positive", "Scanner incorrect \u2014 global suppression"),
+        ("Suppressed", "Real finding accepted in context"),
+        ("Risk Accepted", "Formal waiver with attestation"),
+    ]
+    for label, desc in definitions:
+        row += 1
+        ws.cell(row=row, column=2, value=label).font = label_font
+        ws.cell(row=row, column=3, value=desc).font = value_font
+
+    # Sheet guide section
+    row += 2
+    ws.cell(row=row, column=2, value="Sheets in this Workbook").font = section_font
+    ws.cell(row=row, column=2).border = section_border
+    ws.cell(row=row, column=3).border = section_border
+
+    sheets = [
+        ("Findings", "All findings with full detail columns"),
+        ("Waivers_Risk_Acceptance", "Risk-accepted findings with waiver attestation"),
+        ("Justifications_Comments", "Findings with justification or reviewer notes"),
+        ("Finding_Decision_Log", "Per-finding audit trail entries"),
+        ("Remediation_Backlog", "Open findings requiring action"),
+        ("Metrics_Summary", "Aggregate counts and severity breakdown"),
+        ("STIG_STIGViewer_Files", "Index of STIG/OpenSCAP XML files in the bundle"),
+        ("STIG_Check_Results", "Rule-level results parsed from XCCDF"),
+        ("STIG_VAT_Findings", "VAT findings related to STIG benchmarks"),
+        ("System_Audit_Events", "System-level audit event stream"),
+    ]
+    for sheet_name, desc in sheets:
+        row += 1
+        ws.cell(row=row, column=2, value=sheet_name).font = Font(bold=True, color="2563EB", size=10)
+        ws.cell(row=row, column=3, value=desc).font = value_font
+
+    # STIG note
+    row += 2
+    ws.cell(row=row, column=2, value="STIG Viewer Import").font = section_font
+    ws.cell(row=row, column=2).border = section_border
+    ws.cell(row=row, column=3).border = section_border
+    row += 1
+    ws.cell(row=row, column=3, value=(
+        "Import raw results from the stig/ folder in the ZIP bundle "
+        "(*.xccdf.xml, *.oval-results.xml). See stig/README-STIG-Viewer.txt."
+    )).font = value_font
+    ws.cell(row=row, column=3).alignment = Alignment(wrap_text=True)
+    row += 1
+    ws.cell(row=row, column=3, value=(
+        f"STIG_Check_Results lists up to {STIG_RULE_ROWS_CAP:,} rule-results parsed from XCCDF; "
+        "XML files remain authoritative for STIG Viewer re-import."
+    )).font = Font(italic=True, color="6B7280", size=9)
+    ws.cell(row=row, column=3).alignment = Alignment(wrap_text=True)
+
+    ws.sheet_properties.tabColor = "1F2937"
+
+
 def build_auditor_workbook_bytes(
     *,
     findings: list[dict],
@@ -202,37 +398,15 @@ def build_auditor_workbook_bytes(
     default_ws = wb.active
     wb.remove(default_ws)
 
-    # --- ReadMe ---
-    readme_rows = [
-        {"key": "package", "value": "VAT auditor workbook (companion to evidence ZIP)"},
-        {"key": "generatedAtUtc", "value": generated_at.isoformat().replace("+00:00", "Z")},
-        {"key": "vatBackendVersion", "value": backend_version},
-        {"key": "tenantId", "value": tenant_id or "(global / unset)"},
-        {
-            "key": "definitions",
-            "value": (
-                "False Positive = scanner incorrect (global suppression). "
-                "Suppressed = real finding accepted in context. "
-                "Risk Accepted = formal waiver with attestation."
-            ),
-        },
-        {
-            "key": "stigViewer",
-            "value": (
-                "Import raw results from ZIP folder stig/ (*.xccdf.xml, *.oval-results.xml). "
-                "See stig/README-STIG-Viewer.txt in the bundle."
-            ),
-        },
-        {
-            "key": "stigRuleRowsNote",
-            "value": (
-                f"STIG_Check_Results lists up to {STIG_RULE_ROWS_CAP} rule-results parsed from XCCDF; "
-                "XML files remain authoritative for STIG Viewer re-import."
-            ),
-        },
-        {"key": "exportOptions", "value": json.dumps(export_options, default=str)},
-    ]
-    _write_sheet(wb, "ReadMe", ["key", "value"], readme_rows)
+    # --- ReadMe (styled cover sheet) ---
+    ws_readme = wb.create_sheet("ReadMe")
+    _build_readme_sheet(
+        ws_readme,
+        generated_at=generated_at,
+        backend_version=backend_version,
+        tenant_id=tenant_id,
+        export_options=export_options,
+    )
 
     # --- Findings (wide) ---
     finding_headers = [

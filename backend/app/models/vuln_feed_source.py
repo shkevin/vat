@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import DateTime, Integer, String, Text
+from sqlalchemy import JSON, DateTime, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
@@ -22,6 +22,7 @@ class VulnFeedSource(Base):
     last_etag: Mapped[Optional[str]] = mapped_column(String(256), nullable=True)
     last_checksum: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
     last_item_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    state: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
     )

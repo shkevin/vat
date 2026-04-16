@@ -171,6 +171,7 @@ def _build_asset_payload(
     asset_type: str | None = None,
     asset_branch: str | None = None,
     asset_tag: str | None = None,
+    include_findings: bool = True,
 ) -> dict[str, Any]:
     """Build asset dict matching frontend Asset shape."""
     status_breakdown: dict[str, int] = {}
@@ -274,7 +275,8 @@ def _build_asset_payload(
         "type": resolved_type,
         "branch": asset_branch,
         "tag": tag,
-        "findings": findings,
+        "findings": findings if include_findings else [],
+        "findingIds": [d.get("id") for d in findings if d.get("id")] if not include_findings else [],
         "openCount": open_count,
         "inReviewCount": in_review_count,
         "statusBreakdown": status_breakdown,
@@ -300,6 +302,7 @@ async def get_assets_with_findings(
     search_fields: Optional[str] = None,
     limit: int = 0,
     include_zero_assets: bool = True,
+    include_findings: bool = True,
 ) -> list[dict[str, Any]]:
     """
     Return assets (Asset records + findings-derived) with findings.
@@ -352,6 +355,7 @@ async def get_assets_with_findings(
             asset_type=getattr(asset_records.get(k), "type", None),
             asset_branch=getattr(asset_records.get(k), "branch", None),
             asset_tag=getattr(asset_records.get(k), "tag", None),
+            include_findings=include_findings,
         )
         for k, flist in by_key.items()
     ]

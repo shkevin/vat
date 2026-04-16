@@ -32,9 +32,9 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - ./backend:/app
+      - ${HOST_PROJECT_PATH:-.}/backend:/app
       - backend_venv:/app/.venv  # Isolate container venv from host; prevents root-owned files
-      - ./data:/app/data  # Exports + dev scanner token (data/.vat-scanner-token)
+      - ${HOST_PROJECT_PATH:-.}/data:/app/data  # Exports + dev scanner token (data/.vat-scanner-token)
     command: ["sh", "-c", "uv run alembic upgrade head && uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"]
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
@@ -52,16 +52,13 @@ services:
       VAT_FRONTEND_URL: http://localhost:3000
       VAT_CORS_ORIGINS: http://localhost:3000
       VAT_ALLOW_DEV_HEADERS: "true"
-      VAT_OTEL_ENABLED: "true"
-      VAT_OTEL_SERVICE_NAME: vat-backend
-      VAT_OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318/v1/traces
+      # OTEL off by default; enable stack with: docker compose --profile observability up -d
+      VAT_OTEL_ENABLED: "false"
     depends_on:
       postgres:
         condition: service_healthy
       valkey:
         condition: service_healthy
-      otel-collector:
-        condition: service_started
 
   frontend:
     build:
@@ -70,7 +67,7 @@ services:
     ports:
       - "3000:3000"
     volumes:
-      - ./frontend:/app
+      - ${HOST_PROJECT_PATH:-.}/frontend:/app
       - /app/node_modules
     env_file:
       - .env
@@ -81,7 +78,7 @@ services:
     command: ["sh", "-c", "if [ -z \"$VAT_FRONTEND_SKIP_BUILD\" ] && [ ! -f .next/routes-manifest.json ]; then npm run build; fi; npm run dev"]
     environment:
       HOSTNAME: "0.0.0.0"
-      # VAT_FRONTEND_SKIP_BUILD: "1"  # Uncomment for faster dev startup (skips pre-build)
+      VAT_FRONTEND_SKIP_BUILD: ""  # Set to "1" for faster dev startup (skips pre-build)
       API_UPSTREAM_URL: http://backend:8000
       APP_NAME: VAT
       APP_LOGO: "▣"
@@ -94,12 +91,17 @@ services:
     depends_on:
       - backend
 
+  # Optional: Prometheus + Loki + Tempo + OTEL Collector + Promtail + Grafana
+  #   docker compose --profile observability up -d
+  # Re-enable OTEL on backend: set VAT_OTEL_ENABLED=true and VAT_OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318/v1/traces
   prometheus:
+    profiles:
+      - observability
     image: prom/prometheus:v2.54.1
     ports:
       - "9090:9090"
     volumes:
-      - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ${HOST_PROJECT_PATH:-.}/observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus_data:/prometheus
     command:
       - "--config.file=/etc/prometheus/prometheus.yml"
@@ -110,36 +112,44 @@ services:
         condition: service_healthy
 
   loki:
+    profiles:
+      - observability
     image: grafana/loki:3.2.1
     ports:
       - "3100:3100"
     volumes:
-      - ./observability/loki-config.yaml:/etc/loki/local-config.yaml:ro
+      - ${HOST_PROJECT_PATH:-.}/observability/loki-config.yaml:/etc/loki/local-config.yaml:ro
       - loki_data:/loki
     command: ["-config.file=/etc/loki/local-config.yaml"]
 
   tempo:
+    profiles:
+      - observability
     image: grafana/tempo:2.6.1
     user: "0:0"
     ports:
       - "3200:3200"
     volumes:
-      - ./observability/tempo.yaml:/etc/tempo.yaml:ro
+      - ${HOST_PROJECT_PATH:-.}/observability/tempo.yaml:/etc/tempo.yaml:ro
       - tempo_data:/tmp/tempo
     command: ["-config.file=/etc/tempo.yaml"]
 
   otel-collector:
+    profiles:
+      - observability
     image: otel/opentelemetry-collector-contrib:0.111.0
     command: ["--config=/etc/otelcol-contrib/config.yaml"]
     volumes:
-      - ./observability/otel-collector-config.yaml:/etc/otelcol-contrib/config.yaml:ro
+      - ${HOST_PROJECT_PATH:-.}/observability/otel-collector-config.yaml:/etc/otelcol-contrib/config.yaml:ro
     depends_on:
       - tempo
 
   promtail:
+    profiles:
+      - observability
     image: grafana/promtail:3.2.1
     volumes:
-      - ./observability/promtail-config.yaml:/etc/promtail/config.yml:ro
+      - ${HOST_PROJECT_PATH:-.}/observability/promtail-config.yaml:/etc/promtail/config.yml:ro
       - /var/lib/docker/containers:/var/lib/docker/containers:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
     command: ["-config.file=/etc/promtail/config.yml"]
@@ -147,6 +157,8 @@ services:
       - loki
 
   grafana:
+    profiles:
+      - observability
     image: grafana/grafana:11.2.2
     ports:
       - "3001:3000"
@@ -156,7 +168,7 @@ services:
       GF_USERS_ALLOW_SIGN_UP: "false"
     volumes:
       - grafana_data:/var/lib/grafana
-      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ${HOST_PROJECT_PATH:-.}/observability/grafana/provisioning:/etc/grafana/provisioning:ro
     depends_on:
       - prometheus
       - loki
@@ -166,13 +178,13 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    command: ["sh", "-c", "uv run celery -A app.celery_app worker -Q vat-sync -l info -c ${VAT_CELERY_WORKER_CONCURRENCY:-4}"]
+    command: ["sh", "-c", "uv run celery -A app.celery_app worker -Q vat-sync,vat-feeds,vat-maintenance -l info -c ${VAT_CELERY_WORKER_CONCURRENCY:-4}"]
     env_file:
       - .env
     volumes:
-      - ./backend:/app
+      - ${HOST_PROJECT_PATH:-.}/backend:/app
       - backend_venv:/app/.venv  # Isolate container venv from host
-      - ./data:/app/data
+      - ${HOST_PROJECT_PATH:-.}/data:/app/data
     environment:
       VAT_DATABASE_URL: postgresql+asyncpg://vat:vat@postgres:5432/vat
       VAT_CELERY_BROKER_URL: redis://valkey:6379/0
@@ -191,9 +203,9 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     volumes:
-      - ./backend:/app
+      - ${HOST_PROJECT_PATH:-.}/backend:/app
       - backend_venv:/app/.venv
-      - ./data:/app/data  # Isolate container venv from host
+      - ${HOST_PROJECT_PATH:-.}/data:/app/data
     command: ["uv", "run", "celery", "-A", "app.celery_app", "beat", "-l", "info"]
     environment:
       VAT_DATABASE_URL: postgresql+asyncpg://vat:vat@postgres:5432/vat
@@ -219,7 +231,7 @@ services:
       context: ./vat-local-scanner
       dockerfile: Dockerfile
     volumes:
-      - .:/workspace:ro
+      - ${HOST_PROJECT_PATH:-.}:/workspace:ro
       - vat_scanner_keys:/root/.config/vat
       # Required for STIG scans: scanner loads images and runs Chainguard openscap via Docker
       - /var/run/docker.sock:/var/run/docker.sock

@@ -695,28 +695,6 @@ async def build_export_bundle(
 
     waiver_records = _build_waiver_records(rows)
     export_warnings: list[str] = []
-    try:
-        pdf_bytes = _build_compliance_pdf_bytes(
-            rows,
-            summary_from=summary_from,
-            summary_to=summary_to,
-            generated_at=now,
-            backend_version=backend_version,
-            tenant_id=tenant_id,
-            waiver_records=waiver_records,
-        )
-    except Exception as exc:
-        logger.exception("compliance PDF generation failed")
-        export_warnings.append(f"pdf_generation_failed: {exc!s}")
-        pdf_bytes = _build_compliance_pdf_bytes(
-            [],
-            summary_from=summary_from,
-            summary_to=summary_to,
-            generated_at=now,
-            backend_version=backend_version,
-            tenant_id=tenant_id,
-            waiver_records=[],
-        )
 
     bundle: dict[str, bytes] = {}
 
@@ -730,8 +708,7 @@ async def build_export_bundle(
     put("waivers.json", json.dumps(waiver_records, indent=2, default=str))
     put("waivers.csv", _waivers_csv_bytes(waiver_records))
     put("executive-summary-yearly.html", html_report)
-    put("compliance-summary.pdf", pdf_bytes)
-    put("sbom-cyclonedx.json", json.dumps(cyclonedx, indent=2))
+    put("sbom/sbom-cyclonedx.json", json.dumps(cyclonedx, indent=2))
 
     sbom_asset_manifest: list[dict[str, str | int]] = []
     for component, rows_for_component in sorted(per_asset_packages.items()):

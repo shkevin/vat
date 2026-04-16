@@ -36,6 +36,11 @@ class Settings(BaseSettings):
 
     # Database
     database_url: str = "postgresql+asyncpg://vat:vat@localhost:5432/vat"
+    db_pool_size: int = 20
+    db_max_overflow: int = 30
+    db_pool_timeout_sec: int = 30
+    db_pool_recycle_sec: int = 1800
+    db_pool_pre_ping: bool = True
 
     # Environment: development | production. When production, fail startup if secret_key is default.
     env: str = "development"
@@ -149,6 +154,16 @@ class Settings(BaseSettings):
     # Ingest API (push sources: Trivy, CI)
     require_ingest_auth: bool = False  # When True, ingest endpoints require API key
     ingest_api_key: Optional[str] = None  # Global fallback key (VAT_INGEST_API_KEY)
+    # Activity feed roll-ups for high-volume ingest streams.
+    # Set ingest_rollup_window_seconds=0 to disable roll-ups and emit per-finding events.
+    ingest_rollup_window_seconds: int = 20
+    ingest_rollup_idle_timeout_seconds: int = 8
+    ingest_rollup_sample_size: int = 10
+
+    # UI-facing list/query caps
+    finding_default_limit: int = 500
+    finding_max_limit: int = 2000
+    finding_groups_scan_limit: int = 5000
 
     # Cross-source correlation linking after ingest (link-only; set VAT_CORRELATION_LINKING_ENABLED=false to disable)
     correlation_linking_enabled: bool = True
@@ -174,10 +189,17 @@ class Settings(BaseSettings):
 
     # Public vulnerability feed ingestion (keyless HTTP)
     vuln_feeds_enabled: bool = True
-    vuln_feed_refresh_interval_hours: int = 6
+    vuln_feed_refresh_interval_hours: int = 1
     vuln_feed_request_timeout_sec: int = 30
     vuln_feed_max_records_per_source: int = 1000
     vuln_feed_osv_max_queries: int = 500
+    vuln_feed_recent_window_days: int = 3650
+    vuln_feed_recent_window_years: int = 0
+    vuln_feed_osv_max_records_per_ecosystem: int = 400
+    vuln_feed_linux_kernel_max_records: int = 120
+    vuln_feed_match_include_low_confidence: bool = False
+    vuln_feed_runs_retention_days: int = 60
+    vuln_feed_records_retention_days: int = 0
     vuln_feed_user_agent: str = "VAT-VulnFeeds/1.0"
     vuln_feed_osv_enabled: bool = True
     vuln_feed_cisa_enabled: bool = True

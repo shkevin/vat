@@ -25,6 +25,21 @@ services:
     # ports:
     #   - "5432:5432"
 
+  pgbouncer:
+    image: edoburu/pgbouncer:latest
+    environment:
+      DB_USER: ${POSTGRES_USER:-vat}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      DB_HOST: postgres
+      DB_NAME: ${POSTGRES_DB:-vat}
+      POOL_MODE: transaction
+      MAX_CLIENT_CONN: 500
+      DEFAULT_POOL_SIZE: 50
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
   valkey:
     image: valkey/valkey:7-alpine
     volumes:
@@ -49,9 +64,11 @@ services:
     env_file:
       - .env.production
     environment:
-      VAT_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-vat}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-vat}
+      VAT_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-vat}:${POSTGRES_PASSWORD}@pgbouncer:5432/${POSTGRES_DB:-vat}
       VAT_CELERY_BROKER_URL: redis://valkey:6379/0
       VAT_ENV: production
+      VAT_RUN_MIGRATIONS: "false"
+      VAT_UVICORN_WORKERS: ${VAT_UVICORN_WORKERS:-3}
       VAT_PUBLIC_URL: ${VAT_PUBLIC_URL:-http://localhost:8000}
       VAT_FRONTEND_URL: ${VAT_FRONTEND_URL:-http://localhost:3000}
       VAT_CORS_ORIGINS: ${VAT_CORS_ORIGINS:-http://localhost:3000}
@@ -63,8 +80,12 @@ services:
       retries: 5
       start_period: 40s
     depends_on:
+      migrate:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
+      pgbouncer:
+        condition: service_started
       valkey:
         condition: service_healthy
     restart: unless-stopped
@@ -93,15 +114,33 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
-  celery-worker:
+  migrate:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    command: ["uv", "run", "celery", "-A", "app.celery_app", "worker", "-Q", "vat-sync", "-l", "info"]
+    command: ["uv", "run", "alembic", "upgrade", "head"]
     env_file:
       - .env.production
     environment:
-      VAT_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-vat}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-vat}
+      VAT_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-vat}:${POSTGRES_PASSWORD}@pgbouncer:5432/${POSTGRES_DB:-vat}
+      VAT_CELERY_BROKER_URL: redis://valkey:6379/0
+      VAT_ENV: production
+    depends_on:
+      postgres:
+        condition: service_healthy
+      pgbouncer:
+        condition: service_started
+    restart: "no"
+
+  celery-worker-sync:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    command: ["uv", "run", "celery", "-A", "app.celery_app", "worker", "-Q", "vat-sync,vat-maintenance", "-l", "info"]
+    env_file:
+      - .env.production
+    environment:
+      VAT_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-vat}:${POSTGRES_PASSWORD}@pgbouncer:5432/${POSTGRES_DB:-vat}
       VAT_CELERY_BROKER_URL: redis://valkey:6379/0
       VAT_ENV: production
     depends_on:
@@ -109,6 +148,30 @@ services:
         condition: service_healthy
       postgres:
         condition: service_healthy
+      pgbouncer:
+        condition: service_started
+      valkey:
+        condition: service_healthy
+    restart: unless-stopped
+
+  celery-worker-feeds:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    command: ["uv", "run", "celery", "-A", "app.celery_app", "worker", "-Q", "vat-feeds", "-l", "info"]
+    env_file:
+      - .env.production
+    environment:
+      VAT_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-vat}:${POSTGRES_PASSWORD}@pgbouncer:5432/${POSTGRES_DB:-vat}
+      VAT_CELERY_BROKER_URL: redis://valkey:6379/0
+      VAT_ENV: production
+    depends_on:
+      backend:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      pgbouncer:
+        condition: service_started
       valkey:
         condition: service_healthy
     restart: unless-stopped

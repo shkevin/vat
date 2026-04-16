@@ -104,18 +104,15 @@ async def test_build_export_bundle_compliance_artifacts_and_manifest_hashes(monk
         f"{prefix}/findings.csv",
         f"{prefix}/waivers.json",
         f"{prefix}/waivers.csv",
-        f"{prefix}/compliance-summary.pdf",
         f"{prefix}/executive-summary-yearly.html",
         f"{prefix}/audit-events.json",
-        f"{prefix}/sbom-cyclonedx.json",
+        f"{prefix}/sbom/sbom-cyclonedx.json",
         f"{prefix}/auditor-workbook.xlsx",
         f"{prefix}/stig/README-STIG-Viewer.txt",
     }
     for path in expected:
         assert path in names, f"missing {path}"
-
-    pdf = zf.read(f"{prefix}/compliance-summary.pdf")
-    assert pdf[:4] == b"%PDF"
+    assert f"{prefix}/compliance-summary.pdf" not in names
 
     manifest = json.loads(zf.read(f"{prefix}/evidence-manifest.json").decode())
     assert manifest["schemaVersion"] == "evidence-v2"
@@ -128,7 +125,6 @@ async def test_build_export_bundle_compliance_artifacts_and_manifest_hashes(monk
     for rel, zpath in [
         ("findings.csv", f"{prefix}/findings.csv"),
         ("audit-events.json", f"{prefix}/audit-events.json"),
-        ("compliance-summary.pdf", f"{prefix}/compliance-summary.pdf"),
     ]:
         raw = zf.read(zpath)
         assert by_path[rel]["sha256"] == hashlib.sha256(raw).hexdigest()

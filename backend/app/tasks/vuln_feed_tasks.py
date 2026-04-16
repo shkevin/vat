@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from app.celery_app import app
 from app.core.config import get_settings
-from app.services.vuln_feeds import refresh_enabled_feeds
+from app.services.vuln_feeds import prune_feed_storage, refresh_enabled_feeds
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +31,21 @@ async def _run_vuln_feed_refresh() -> dict:
         await engine.dispose()
 
 
+async def _run_vuln_feed_retention() -> dict:
+    settings = get_settings()
+    engine = create_async_engine(settings.database_url)
+    session_factory = async_sessionmaker(
+        engine, class_=AsyncSession, expire_on_commit=False
+    )
+    try:
+        async with session_factory() as db:
+            result = await prune_feed_storage(db, actor_id="system")
+            await db.commit()
+            return result
+    finally:
+        await engine.dispose()
+
+
 @app.task(bind=True, name="app.tasks.vuln_feed_tasks.run_vuln_feed_refresh")
 def run_vuln_feed_refresh(self) -> dict:
     """Refresh keyless vulnerability feeds from public sources."""
@@ -38,4 +53,14 @@ def run_vuln_feed_refresh(self) -> dict:
         return asyncio.run(_run_vuln_feed_refresh())
     except Exception as exc:
         logger.exception("Vulnerability feed refresh failed: %s", exc)
+        raise self.retry(exc=exc, countdown=300, max_retries=2)
+
+
+@app.task(bind=True, name="app.tasks.vuln_feed_tasks.run_vuln_feed_retention")
+def run_vuln_feed_retention(self) -> dict:
+    """Prune old vulnerability feed run history and stale records."""
+    try:
+        return asyncio.run(_run_vuln_feed_retention())
+    except Exception as exc:
+        logger.exception("Vulnerability feed retention failed: %s", exc)
         raise self.retry(exc=exc, countdown=300, max_retries=2)

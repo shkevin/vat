@@ -1,12 +1,16 @@
 """SBOM service — CycloneDX import, dedup by name+version. PRD §5.8."""
 
 import hashlib
+import re
 from datetime import datetime, timezone
 from typing import Optional
+from urllib.parse import quote, unquote
 
+import httpx
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import get_settings
 from app.models.finding import Finding, FindingType, Severity, Status
 from app.models.sbom import SbomPackage, license_risk_tier
 
@@ -93,7 +97,8 @@ def _parse_cyclonedx(doc: dict) -> list[dict]:
         return []
     out = []
     for c in components:
-        name = c.get("name") or c.get("purl", "").split("/")[-1] or "unknown"
+        purl = _extract_component_purl(c)
+        name = c.get("name") or _name_from_purl(purl) or "unknown"
         version = c.get("version") or ""
         licenses = c.get("licenses", [])
         license_id = None
@@ -109,6 +114,18 @@ def _parse_cyclonedx(doc: dict) -> list[dict]:
                 license_id = str(lic)
         component = _extract_container_ref(c, doc)
         language = c.get("language") or ""
+        purl_source = "authoritative" if purl else None
+        purl_confidence = "high" if purl else None
+        if not purl:
+            derived_purl, derived_confidence = _derive_purl(
+                name=name,
+                version=version,
+                language=language,
+            )
+            if derived_purl:
+                purl = derived_purl
+                purl_source = "derived"
+                purl_confidence = derived_confidence
 
         out.append(
             {
@@ -117,9 +134,147 @@ def _parse_cyclonedx(doc: dict) -> list[dict]:
                 "license_id": license_id,
                 "component": str(component) if component else None,
                 "language": str(language) if language else None,
+                "purl": _clip(str(purl), 512) if purl else None,
+                "purl_source": purl_source,
+                "purl_confidence": purl_confidence,
             }
         )
     return out
+
+
+def _extract_component_purl(component: dict) -> str | None:
+    direct = component.get("purl")
+    if isinstance(direct, str) and direct.strip().startswith("pkg:"):
+        return direct.strip()
+    bom_ref = component.get("bom-ref") or component.get("bomRef")
+    if isinstance(bom_ref, str) and bom_ref.strip().startswith("pkg:"):
+        return bom_ref.strip()
+    return None
+
+
+def _name_from_purl(purl: str | None) -> str | None:
+    if not purl or not isinstance(purl, str) or not purl.startswith("pkg:"):
+        return None
+    body = purl[4:]
+    if "?" in body:
+        body = body.split("?", 1)[0]
+    if "#" in body:
+        body = body.split("#", 1)[0]
+    if "/" not in body:
+        return None
+    purl_type, remainder = body.split("/", 1)
+    path = remainder.split("@", 1)[0]
+    path = unquote(path).strip()
+    purl_type = (purl_type or "").strip().lower()
+    if not path:
+        return None
+    if purl_type == "maven":
+        parts = [p for p in path.split("/") if p]
+        if len(parts) >= 2:
+            return f"{parts[0]}:{parts[1]}"
+    if purl_type in {"pypi", "nuget", "gem", "cargo", "apk", "deb"}:
+        return path.split("/")[-1]
+    # npm scoped and golang module purls should retain path namespace.
+    return path
+
+
+_PURL_TYPE_BY_LANGUAGE = {
+    "python": "pypi",
+    "pypi": "pypi",
+    "javascript": "npm",
+    "typescript": "npm",
+    "npm": "npm",
+    "node": "npm",
+    "nodejs": "npm",
+    "go": "golang",
+    "golang": "golang",
+    "gomod": "golang",
+    "java": "maven",
+    "maven": "maven",
+    "ruby": "gem",
+    "rubygems": "gem",
+    "rust": "cargo",
+    "cargo": "cargo",
+    "nuget": "nuget",
+    "alpine": "apk",
+    "apk": "apk",
+    "debian": "deb",
+    "deb": "deb",
+}
+
+
+def _derive_purl(
+    *,
+    name: str | None,
+    version: str | None,
+    language: str | None,
+) -> tuple[str | None, str | None]:
+    pkg = (name or "").strip()
+    ver = (version or "").strip()
+    lang = (language or "").strip().lower()
+    if not pkg or not ver:
+        return None, None
+
+    # High-confidence package families with strong structural signals.
+    if pkg.startswith(("github.com/", "golang.org/", "gopkg.in/")):
+        return f"pkg:golang/{pkg}@{ver}", "high"
+    # Many Go modules are hosted under domain-style prefixes beyond github/golang.org.
+    first_segment = pkg.split("/", 1)[0].strip().lower()
+    if "/" in pkg and "." in first_segment and " " not in pkg and "@" not in pkg:
+        return f"pkg:golang/{pkg}@{ver}", "high"
+    if pkg.startswith("@") and "/" in pkg:
+        return f"pkg:npm/{quote(pkg, safe='/')}@{ver}", "high"
+    if re.search(r"-r\d+$", ver):
+        return f"pkg:apk/alpine/{pkg}@{ver}", "high"
+    if ":" in pkg and "." in pkg.split(":", 1)[0]:
+        group, artifact = pkg.split(":", 1)
+        if artifact:
+            return (
+                f"pkg:maven/{quote(group, safe='')}/{quote(artifact, safe='')}@{ver}",
+                "high",
+            )
+
+    # Medium-confidence fallback via language/ecosystem mapping.
+    purl_type = _PURL_TYPE_BY_LANGUAGE.get(lang)
+    if not purl_type:
+        return None, None
+    if purl_type == "maven":
+        if ":" in pkg:
+            group, artifact = pkg.split(":", 1)
+            if artifact:
+                return (
+                    f"pkg:maven/{quote(group, safe='')}/{quote(artifact, safe='')}@{ver}",
+                    "medium",
+                )
+        return None, None
+    if purl_type == "npm":
+        return f"pkg:npm/{quote(pkg, safe='/')}@{ver}", "medium"
+    if purl_type == "apk":
+        return f"pkg:apk/alpine/{pkg}@{ver}", "medium"
+    if purl_type == "deb":
+        return f"pkg:deb/debian/{pkg}@{ver}", "medium"
+    return f"pkg:{purl_type}/{quote(pkg, safe='/')}@{ver}", "medium"
+
+
+def _purl_from_osv_identity(
+    *, name: str, version: str, ecosystem: str
+) -> str | None:
+    eco = (ecosystem or "").strip()
+    pkg = (name or "").strip()
+    ver = (version or "").strip()
+    if not eco or not pkg or not ver:
+        return None
+    if eco == "PyPI":
+        return f"pkg:pypi/{pkg}@{ver}"
+    if eco == "npm":
+        return f"pkg:npm/{quote(pkg, safe='/')}@{ver}"
+    if eco == "crates.io":
+        return f"pkg:cargo/{pkg}@{ver}"
+    if eco == "NuGet":
+        return f"pkg:nuget/{pkg}@{ver}"
+    if eco == "RubyGems":
+        return f"pkg:gem/{pkg}@{ver}"
+    return None
 
 
 async def import_sbom(
@@ -155,9 +310,17 @@ async def import_sbom(
 
         if existing:
             sources = list(existing.sources or [])
+            did_update = False
             if not any(s.get("name") == source for s in sources):
                 sources.append(source_entry)
                 existing.sources = sources
+                did_update = True
+            if not (existing.purl and str(existing.purl).strip()) and pkg.get("purl"):
+                existing.purl = _clip(pkg.get("purl"), 512)
+                existing.purl_source = _clip(pkg.get("purl_source"), 32)
+                existing.purl_confidence = _clip(pkg.get("purl_confidence"), 16)
+                did_update = True
+            if did_update:
                 # TIMESTAMP WITHOUT TIME ZONE — use naive UTC (asyncpg rejects tz-aware here)
                 existing.updated_at = datetime.utcnow()
                 updated += 1
@@ -170,6 +333,9 @@ async def import_sbom(
                 license_risk=risk,
                 component=comp,
                 language=pkg.get("language"),
+                purl=pkg.get("purl"),
+                purl_source=_clip(pkg.get("purl_source"), 32),
+                purl_confidence=_clip(pkg.get("purl_confidence"), 16),
                 sources=[source_entry],
                 tenant_id=tenant_id,
             )
@@ -301,7 +467,162 @@ async def list_sbom_packages(
             "licenseRisk": r.license_risk,
             "component": r.component,
             "language": r.language,
+            "purl": r.purl,
+            "purlSource": r.purl_source,
+            "purlConfidence": r.purl_confidence,
             "sources": r.sources or [],
         }
         for r in rows
     ]
+
+
+async def backfill_derived_purls(
+    db: AsyncSession,
+    *,
+    only_source: str | None = None,
+    limit: int = 0,
+) -> dict[str, int]:
+    """Populate missing SBOM purls via deterministic derivation rules."""
+    q = select(SbomPackage).where(SbomPackage.purl.is_(None))
+    if only_source:
+        q = q.where(SbomPackage.sources.is_not(None))
+    if limit > 0:
+        q = q.limit(limit)
+    rows = (await db.execute(q)).scalars().all()
+    scanned = 0
+    updated = 0
+    for row in rows:
+        scanned += 1
+        if only_source:
+            sources = row.sources or []
+            names = {str(s.get("name") or "").strip().lower() for s in sources if isinstance(s, dict)}
+            if only_source.strip().lower() not in names:
+                continue
+        purl, confidence = _derive_purl(
+            name=row.name,
+            version=row.version,
+            language=row.language,
+        )
+        if not purl:
+            continue
+        row.purl = _clip(purl, 512)
+        row.purl_source = "derived"
+        row.purl_confidence = _clip(confidence, 16)
+        row.updated_at = datetime.utcnow()
+        updated += 1
+    if updated:
+        await db.commit()
+    return {"scanned": scanned, "updated": updated}
+
+
+async def backfill_purls_via_osv_probe(
+    db: AsyncSession,
+    *,
+    only_source: str | None = None,
+    limit: int = 0,
+) -> dict[str, int]:
+    """
+    Fill missing purls by probing multiple OSV ecosystems and accepting only
+    unambiguous (single-ecosystem) vulnerability hits.
+    """
+    q = select(SbomPackage).where(SbomPackage.purl.is_(None))
+    if limit > 0:
+        q = q.limit(limit)
+    rows = (await db.execute(q)).scalars().all()
+
+    candidate_rows: list[SbomPackage] = []
+    for row in rows:
+        if only_source:
+            sources = row.sources or []
+            names = {
+                str(s.get("name") or "").strip().lower()
+                for s in sources
+                if isinstance(s, dict)
+            }
+            if only_source.strip().lower() not in names:
+                continue
+        if not (row.name and row.version):
+            continue
+        # Skip rows where deterministic derivation should be used instead.
+        if _derive_purl(name=row.name, version=row.version, language=row.language)[0]:
+            continue
+        candidate_rows.append(row)
+
+    if not candidate_rows:
+        return {"scanned": 0, "updated": 0, "ambiguous": 0, "no_hits": 0}
+
+    ecosystems = ("PyPI", "npm", "crates.io", "NuGet", "RubyGems")
+    query_meta: list[tuple[int, str, str, str]] = []
+    queries: list[dict] = []
+    for idx, row in enumerate(candidate_rows):
+        pkg = (row.name or "").strip()
+        ver = (row.version or "").strip()
+        if not pkg or not ver:
+            continue
+        for eco in ecosystems:
+            query_meta.append((idx, eco, pkg, ver))
+            queries.append({"package": {"name": pkg, "ecosystem": eco}, "version": ver})
+
+    if not queries:
+        return {"scanned": len(candidate_rows), "updated": 0, "ambiguous": 0, "no_hits": 0}
+
+    settings = get_settings()
+    timeout = httpx.Timeout(settings.vuln_feed_request_timeout_sec)
+    headers = {"User-Agent": settings.vuln_feed_user_agent}
+    by_row_hits: dict[int, set[str]] = {}
+
+    chunk_size = 400
+    async with httpx.AsyncClient(timeout=timeout, headers=headers) as client:
+        for start in range(0, len(queries), chunk_size):
+            chunk = queries[start : start + chunk_size]
+            chunk_meta = query_meta[start : start + chunk_size]
+            resp = await client.post(
+                "https://api.osv.dev/v1/querybatch", json={"queries": chunk}
+            )
+            resp.raise_for_status()
+            payload = resp.json()
+            results = payload.get("results") if isinstance(payload, dict) else []
+            if not isinstance(results, list):
+                continue
+            for i, row in enumerate(results):
+                if i >= len(chunk_meta) or not isinstance(row, dict):
+                    continue
+                vulns = row.get("vulns")
+                if not isinstance(vulns, list) or not vulns:
+                    continue
+                row_idx, eco, _pkg, _ver = chunk_meta[i]
+                by_row_hits.setdefault(row_idx, set()).add(eco)
+
+    updated = 0
+    ambiguous = 0
+    no_hits = 0
+    for idx, row in enumerate(candidate_rows):
+        hits = by_row_hits.get(idx, set())
+        if not hits:
+            no_hits += 1
+            continue
+        if len(hits) != 1:
+            ambiguous += 1
+            continue
+        eco = next(iter(hits))
+        purl = _purl_from_osv_identity(
+            name=(row.name or "").strip(),
+            version=(row.version or "").strip(),
+            ecosystem=eco,
+        )
+        if not purl:
+            continue
+        row.purl = _clip(purl, 512)
+        row.purl_source = "derived_probe"
+        row.purl_confidence = "medium"
+        row.updated_at = datetime.utcnow()
+        updated += 1
+
+    if updated:
+        await db.commit()
+    return {
+        "scanned": len(candidate_rows),
+        "updated": updated,
+        "ambiguous": ambiguous,
+        "no_hits": no_hits,
+    }

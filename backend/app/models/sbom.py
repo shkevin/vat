@@ -101,9 +101,16 @@ class SbomPackage(Base):
         String(32), nullable=True
     )  # Critical|High|Medium|Low|Unknown
     component: Mapped[Optional[str]] = mapped_column(
-        String(256), nullable=True
+        String(256), nullable=True, index=True
     )  # image or service
     language: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    purl: Mapped[Optional[str]] = mapped_column(String(512), nullable=True, index=True)
+    purl_source: Mapped[Optional[str]] = mapped_column(
+        String(32), nullable=True
+    )  # authoritative|derived
+    purl_confidence: Mapped[Optional[str]] = mapped_column(
+        String(16), nullable=True
+    )  # high|medium
     sources: Mapped[list] = mapped_column(JSONB, default=list)  # [{name, importedAt}]
     tenant_id: Mapped[Optional[str]] = mapped_column(
         String(64), nullable=True, index=True

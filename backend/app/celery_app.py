@@ -70,13 +70,18 @@ app.conf.beat_schedule = {
     "refresh-vuln-feeds": {
         "task": "app.tasks.vuln_feed_tasks.run_vuln_feed_refresh",
         "schedule": crontab(minute=0, hour=f"*/{_vuln_feed_interval_hours}"),
-        "options": {"queue": "vat-sync"},
+        "options": {"queue": "vat-feeds"},
+    },
+    "retain-vuln-feed-history": {
+        "task": "app.tasks.vuln_feed_tasks.run_vuln_feed_retention",
+        "schedule": crontab(hour=2, minute=15),
+        "options": {"queue": "vat-feeds"},
     },
 }
 
 app.conf.task_default_queue = "vat-sync"
 app.conf.task_routes = {
     "app.tasks.sync_tasks.*": {"queue": "vat-sync"},
-    "app.tasks.audit_tasks.*": {"queue": "vat-sync"},
-    "app.tasks.vuln_feed_tasks.*": {"queue": "vat-sync"},
+    "app.tasks.audit_tasks.*": {"queue": "vat-maintenance"},
+    "app.tasks.vuln_feed_tasks.*": {"queue": "vat-feeds"},
 }

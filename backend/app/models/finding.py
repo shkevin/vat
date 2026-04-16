@@ -112,7 +112,7 @@ class Finding(Base):
     needs_family_classification: Mapped[bool] = mapped_column(Boolean, default=False)
 
     source: Mapped[Optional[str]] = mapped_column(
-        String(64), nullable=True
+        String(64), nullable=True, index=True
     )  # primary source name
     team: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
     owner: Mapped[Optional[str]] = mapped_column(String(256), nullable=True)
