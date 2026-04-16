@@ -106,6 +106,7 @@ export function VATLayout({
 
   return (
     <div
+      className="modern-shell"
       style={{
         display: "flex",
         flexDirection: "column",
@@ -139,6 +140,7 @@ export function VATLayout({
         </>
       )}
       <div
+        className="vat-layout-content"
         style={{
           display: "flex",
           flex: 1,
@@ -210,11 +212,11 @@ export function VATLayout({
           />
         </div>
         <main
+          className="modern-main vat-main"
           style={{
             flex: 1,
             minHeight: 0,
             overflow: view === "report" ? "hidden" : "auto",
-            padding: 20,
             display: "flex",
             flexDirection: "column",
           }}

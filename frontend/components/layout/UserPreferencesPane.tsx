@@ -167,7 +167,7 @@ export function UserPreferencesPane({
                 style={{
                   ...sans,
                   fontSize: 11,
-                  color: "#64748b",
+                  color: "var(--app-muted)",
                   textTransform: "uppercase",
                   letterSpacing: "0.05em",
                 }}
@@ -207,7 +207,7 @@ export function UserPreferencesPane({
               style={{
                 ...sans,
                 fontSize: 11,
-                color: "#64748b",
+                color: "var(--app-muted)",
                 textTransform: "uppercase",
                 letterSpacing: "0.05em",
               }}
@@ -306,7 +306,7 @@ export function UserPreferencesPane({
               style={{
                 ...sans,
                 fontSize: 11,
-                color: "#64748b",
+                color: "var(--app-muted)",
                 textTransform: "uppercase",
                 letterSpacing: "0.05em",
               }}

@@ -20,7 +20,17 @@ export interface ActivityEvent {
   title: string;
   detail?: string;
   findingId?: string;
+  relatedFindingIds?: string[];
+  relatedFindings?: Array<{
+    id: string;
+    title: string;
+    severity?: string;
+    timestamp: string;
+    assetId?: string;
+    assetName?: string;
+  }>;
   assetId?: string;
+  assetName?: string;
   severity?: string;
 }
 

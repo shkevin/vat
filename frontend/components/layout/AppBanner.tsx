@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback } from "react";
-import { Download } from "lucide-react";
+import { Bell, Download, Filter, Timer } from "lucide-react";
 import { mono, sans } from "@/lib/styles";
 import { downloadExportBundle } from "@/lib/api";
 
@@ -68,18 +68,18 @@ export function AppBanner({
 
   return (
     <div
+      className="app-banner-modern"
       style={{
-        background: "var(--app-header-bg)",
-        borderBottom: "1px solid var(--app-header-border)",
         padding: "0 20px",
         display: "flex",
         alignItems: "center",
-        height: 52,
+        minHeight: 56,
         gap: 24,
         flexWrap: "wrap",
       }}
     >
       <button
+        className="app-banner-brand"
         type="button"
         onClick={() => onViewChange("findings")}
         aria-label="Go to findings"
@@ -99,6 +99,7 @@ export function AppBanner({
       >
         {config.companyName && (
           <span
+            className="app-banner-company"
             style={{
               ...mono,
               fontSize: 14,
@@ -112,6 +113,7 @@ export function AppBanner({
         )}
         {isLogoImage(config.logo) ? (
           <img
+            className="app-banner-logo"
             src={config.logo}
             alt="VAT"
             style={{
@@ -123,6 +125,7 @@ export function AppBanner({
           />
         ) : (
           <span
+            className="app-banner-logo-text"
             style={{
               ...mono,
               fontSize: 18,
@@ -135,24 +138,26 @@ export function AppBanner({
         )}
       </button>
 
-      <nav style={{ display: "flex", alignItems: "center", gap: 4 }}>
+      <nav className="app-banner-tabs">
         {tabs.map(({ id, label, badge = 0, warn }) => {
           const active = currentView === id;
           return (
             <button
               key={id}
               onClick={() => onViewChange(id)}
+              className="app-banner-tab"
+              data-active={active ? "true" : "false"}
               style={{
-                ...mono,
+                ...sans,
                 background: "none",
-                border: "none",
+                border: "1px solid transparent",
                 color: active
                   ? "var(--app-accent-emerald)"
                   : "var(--app-muted)",
                 padding: "8px 14px",
                 borderRadius: 4,
                 cursor: "pointer",
-                fontSize: 12,
+                fontSize: 13,
                 fontWeight: active ? 600 : 400,
                 display: "flex",
                 alignItems: "center",
@@ -162,12 +167,13 @@ export function AppBanner({
               {label}
               {badge > 0 && (
                 <span
+                  className="app-banner-tab-badge"
                   style={{
                     background: warn
                       ? "var(--app-danger)"
                       : "var(--app-accent-emerald)",
                     color: "#fff",
-                    fontSize: 10,
+                    fontSize: 11,
                     fontWeight: 700,
                     padding: "1px 5px",
                     borderRadius: 10,
@@ -182,6 +188,7 @@ export function AppBanner({
       </nav>
 
       <div
+        className="app-banner-actions"
         style={{
           marginLeft: "auto",
           display: "flex",
@@ -191,6 +198,7 @@ export function AppBanner({
       >
         {showFilterButton && (
           <button
+            className="app-banner-filter-btn"
             type="button"
             onClick={onFilterClick}
             aria-label="Open filters"
@@ -204,7 +212,7 @@ export function AppBanner({
               cursor: "pointer",
             }}
           >
-            ☰ Filters
+            <Filter size={14} /> Filters
           </button>
         )}
         {!hideSearch && (
@@ -213,9 +221,8 @@ export function AppBanner({
             value={searchValue}
             onChange={(e) => onSearchChange(e.target.value)}
             placeholder={config.searchPlaceholder}
+            className="modern-input"
             style={{
-              background: "var(--app-input-bg)",
-              border: "1px solid var(--app-border)",
               borderRadius: 6,
               padding: "6px 12px",
               width: 220,
@@ -229,48 +236,57 @@ export function AppBanner({
           <button
             onClick={() => onViewChange("dash")}
             title="Waivers expiring within 30 days"
+            className="modern-chip app-banner-waiver-pill"
             style={{
-              ...mono,
+              ...sans,
               background: "var(--app-warning)",
               border: "none",
               borderRadius: 4,
               padding: "4px 10px",
               color: "var(--app-fg)",
-              fontSize: 11,
+              fontSize: 12,
               fontWeight: 700,
               cursor: "pointer",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
             }}
           >
-            ⏳ {waiverExpiringCount} waiver
+            <Timer size={14} /> {waiverExpiringCount} waiver
             {waiverExpiringCount !== 1 ? "s" : ""} expiring
           </button>
         )}
         {alertCount > 0 && (
           <button
             onClick={() => onViewChange("dash")}
+            className="modern-chip app-banner-alert-pill"
             style={{
-              ...mono,
+              ...sans,
               background: "var(--app-danger)",
               border: "none",
               borderRadius: 4,
               padding: "4px 10px",
-              color: "var(--app-fg)",
-              fontSize: 11,
+              color: "#fff",
+              fontSize: 12,
               fontWeight: 700,
               cursor: "pointer",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
             }}
           >
-            🚨 {alertCount}
+            <Bell size={14} /> {alertCount}
           </button>
         )}
         {user && (
           <button
+            className="app-banner-export-btn"
             type="button"
             onClick={handleExport}
             disabled={exportLoading}
             title="Download full export (assets, findings, SBOM, Executive Summary)"
             style={{
-              ...mono,
+              ...sans,
               display: "flex",
               alignItems: "center",
               gap: 6,
@@ -279,7 +295,7 @@ export function AppBanner({
               borderRadius: 6,
               padding: "6px 12px",
               color: "var(--app-fg)",
-              fontSize: 12,
+              fontSize: 13,
               cursor: exportLoading ? "not-allowed" : "pointer",
               opacity: exportLoading ? 0.7 : 1,
             }}
@@ -305,6 +321,7 @@ export function AppBanner({
         )}
         {config.envLabel && (
           <select
+            className="app-banner-env-select"
             style={{
               background: "var(--app-input-bg)",
               border: "1px solid var(--app-border)",

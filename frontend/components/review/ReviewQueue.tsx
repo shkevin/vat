@@ -28,8 +28,25 @@ export function ReviewQueue({
   );
 
   return (
-    <div>
+    <div className="review-queue-shell">
+      <section className="vat-tab-hero modern-card" style={{ marginBottom: 10 }}>
+        <div>
+          <p className="vat-tab-eyebrow">Triage Workflow</p>
+          <h2 className="vat-tab-title">Reviewer Workbench</h2>
+          <p className="vat-tab-subtitle">
+            Evaluate pending findings, apply disposition decisions, and close the
+            loop with evidence-backed justifications.
+          </p>
+        </div>
+        <div className="vat-tab-hero-chips">
+          <span className="vat-tab-chip">
+            {reviewQueue.length.toLocaleString()} pending
+          </span>
+        </div>
+      </section>
+
       <div
+        className="modern-section-label"
         style={{
           ...mono,
           fontSize: 9,
@@ -60,9 +77,8 @@ export function ReviewQueue({
           <div
             key={f.id}
             onClick={() => onSelect(f)}
+            className="modern-card review-queue-card"
             style={{
-              background: "var(--app-card-bg)",
-              border: "1px solid var(--app-border)",
               borderRadius: 6,
               padding: "14px 16px",
               marginBottom: 8,

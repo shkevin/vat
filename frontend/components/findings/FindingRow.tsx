@@ -1,8 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { memo, useState } from "react";
 import { SevTag, StTag, SrcTag, TypeTag, Dot } from "@/components/atoms";
-import { useUserPreferences } from "@/contexts/UserPreferencesContext";
 import { mono, sans } from "@/lib/styles";
 
 const ROW_PADDING = {
@@ -17,6 +16,7 @@ import type { Finding, Source } from "@/types";
 interface FindingRowProps {
   finding: Finding;
   sources: Source[];
+  density?: "compact" | "default" | "comfortable";
   selected: boolean;
   checked: boolean;
   onCheck: (v: boolean) => void;
@@ -27,9 +27,10 @@ interface FindingRowProps {
   instanceSource?: string;
 }
 
-export function FindingRow({
+function FindingRowBase({
   finding,
   sources,
+  density = "default",
   selected,
   checked,
   onCheck,
@@ -37,8 +38,6 @@ export function FindingRow({
   groupCount,
   instanceSource,
 }: FindingRowProps) {
-  const { preferences } = useUserPreferences();
-  const density = preferences.tableDensity ?? "default";
   const [hov, setHov] = useState(false);
   const d = daysLeft(finding.slaDue);
   const slaC = slaDot(finding.slaDue, finding.status);
@@ -84,7 +83,7 @@ export function FindingRow({
           width: 4,
           height: 24,
           borderRadius: 2,
-          background: SEV[finding.severity]?.c ?? "#888",
+          background: SEV[finding.severity]?.c ?? "var(--app-muted)",
         }}
       />
       <span style={{ fontSize: 14 }} title={fType.label}>
@@ -223,3 +222,16 @@ export function FindingRow({
     </div>
   );
 }
+
+export const FindingRow = memo(FindingRowBase, (prev, next) => {
+  return (
+    prev.finding === next.finding &&
+    prev.sources === next.sources &&
+    prev.density === next.density &&
+    prev.selected === next.selected &&
+    prev.checked === next.checked &&
+    prev.groupCount === next.groupCount &&
+    prev.instanceSource === next.instanceSource
+  );
+});
+FindingRow.displayName = "FindingRow";

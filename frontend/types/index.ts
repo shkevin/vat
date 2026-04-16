@@ -12,7 +12,16 @@ export interface Finding {
   severity: string;
   status: string;
   previousStatus?: string | null;
-  sources: Array<{ name: string; importedAt: string }>;
+  sources: Array<{
+    name: string;
+    importedAt: string;
+    feedSource?: string;
+    matchStrategy?: string;
+    matchConfidence?: string;
+    matchedPackage?: string;
+    matchedVersion?: string;
+    matchedAsset?: string;
+  }>;
   source?: string;
   component?: string;
   image?: string;
@@ -77,6 +86,8 @@ export interface Finding {
   ecosystem?: string | null;
   /** OpenSCAP / SCAP benchmark family — used with image/tag to infer ecosystem for cross-scanner SCA grouping */
   benchmarkFamily?: string | null;
+  correlationKey?: string | null;
+  correlationConfidence?: string | null;
   benchmarkId?: string | null;
   /** Grouping: Secret category (e.g. AWS Key) */
   secretType?: string | null;

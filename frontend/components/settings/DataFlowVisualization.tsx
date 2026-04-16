@@ -39,10 +39,10 @@ export function DataFlowVisualization({
   const trackerName = tracker?.name ?? "No tracker";
   const sourceColor = sources[0]
     ? SOURCE_NODE_REGISTRY[sources[0].adapter]?.color ?? sources[0].color
-    : "#475569";
+    : "var(--app-muted)";
   const trackerColor = tracker
-    ? TRACKER_NODE_REGISTRY[tracker.type]?.color ?? "#818cf8"
-    : "#475569";
+    ? TRACKER_NODE_REGISTRY[tracker.type]?.color ?? "var(--app-accent)"
+    : "var(--app-muted)";
 
   // Resolve source node: use registry component if adapter matches, else generic
   const firstSource = sources[0];
@@ -59,8 +59,8 @@ export function DataFlowVisualization({
   return (
     <div
       style={{
-        background: "#070f1e",
-        border: "1px solid #1a2540",
+        background: "var(--app-bg)",
+        border: "1px solid var(--app-border-subtle)",
         borderRadius: 8,
         padding: 24,
         overflow: "hidden",
@@ -72,7 +72,7 @@ export function DataFlowVisualization({
           fontSize: 9,
           fontWeight: 700,
           letterSpacing: "0.12em",
-          color: "#1e3a5f",
+          color: "var(--app-fg-group)",
           textTransform: "uppercase",
           marginBottom: 20,
         }}
@@ -95,12 +95,20 @@ export function DataFlowVisualization({
             <stop offset="100%" stopColor={trackerColor} stopOpacity="1" />
           </linearGradient>
           <linearGradient id="flowGrad3" x1="100%" y1="0%" x2="0%" y2="0%">
-            <stop offset="0%" stopColor="#50c878" stopOpacity="0.3" />
-            <stop offset="100%" stopColor="#50c878" stopOpacity="1" />
+            <stop offset="0%" stopColor="var(--app-success)" stopOpacity="0.3" />
+            <stop offset="100%" stopColor="var(--app-success)" stopOpacity="1" />
           </linearGradient>
           <linearGradient id="flowGrad4" x1="0%" y1="0%" x2="100%" y2="0%">
-            <stop offset="0%" stopColor="#818cf8" stopOpacity="0.3" />
-            <stop offset="100%" stopColor="#818cf8" stopOpacity="1" />
+            <stop
+              offset="0%"
+              stopColor="var(--app-accent-emerald)"
+              stopOpacity="0.3"
+            />
+            <stop
+              offset="100%"
+              stopColor="var(--app-accent-emerald)"
+              stopOpacity="1"
+            />
           </linearGradient>
           <filter id="glow">
             <feGaussianBlur stdDeviation="2" result="coloredBlur" />
@@ -131,15 +139,15 @@ export function DataFlowVisualization({
               width={120}
               height={60}
               rx={6}
-              fill="#0c1e38"
-              stroke="#475569"
+              fill="var(--app-input-bg)"
+              stroke="var(--app-muted)"
               strokeWidth={2}
             />
             <text
               x={80}
               y={95}
               textAnchor="middle"
-              fill="#64748b"
+              fill="var(--app-fg-secondary)"
               style={{ ...mono, fontSize: 11 }}
             >
               —
@@ -148,7 +156,7 @@ export function DataFlowVisualization({
               x={80}
               y={112}
               textAnchor="middle"
-              fill="#64748b"
+              fill="var(--app-fg-secondary)"
               style={{ ...sans, fontSize: 9 }}
             >
               No source
@@ -181,7 +189,7 @@ export function DataFlowVisualization({
             x={170}
             y={80}
             textAnchor="middle"
-            fill="#64748b"
+            fill="var(--app-fg-secondary)"
             style={{ ...mono, fontSize: 8 }}
           >
             ① webhook
@@ -190,7 +198,7 @@ export function DataFlowVisualization({
             x={170}
             y={72}
             textAnchor="middle"
-            fill="#475569"
+            fill="var(--app-muted)"
             style={{ ...mono, fontSize: 7 }}
           >
             findings
@@ -205,8 +213,8 @@ export function DataFlowVisualization({
             width={200}
             height={100}
             rx={8}
-            fill="#0c1e38"
-            stroke="#38bdf8"
+            fill="var(--app-input-bg)"
+            stroke="var(--app-accent)"
             strokeWidth={2}
             filter="url(#glow)"
           />
@@ -214,7 +222,7 @@ export function DataFlowVisualization({
             x={300}
             y={70}
             textAnchor="middle"
-            fill="#38bdf8"
+            fill="var(--app-accent)"
             style={{ ...mono, fontSize: 12, fontWeight: 700 }}
           >
             VAT Backend
@@ -223,7 +231,7 @@ export function DataFlowVisualization({
             x={300}
             y={88}
             textAnchor="middle"
-            fill="#64748b"
+            fill="var(--app-fg-secondary)"
             style={{ ...sans, fontSize: 9 }}
           >
             Ingest → Dedup → DB
@@ -232,7 +240,7 @@ export function DataFlowVisualization({
             x={300}
             y={125}
             textAnchor="middle"
-            fill="#475569"
+            fill="var(--app-muted)"
             style={{ ...mono, fontSize: 8 }}
           >
             /webhook/aikido · /webhook/linear
@@ -256,7 +264,7 @@ export function DataFlowVisualization({
             x={430}
             y={80}
             textAnchor="middle"
-            fill="#64748b"
+            fill="var(--app-fg-secondary)"
             style={{ ...mono, fontSize: 8 }}
           >
             ② create issue
@@ -265,7 +273,7 @@ export function DataFlowVisualization({
             x={430}
             y={72}
             textAnchor="middle"
-            fill="#475569"
+            fill="var(--app-muted)"
             style={{ ...mono, fontSize: 7 }}
           >
             + [VAT] template
@@ -299,15 +307,15 @@ export function DataFlowVisualization({
             width={120}
             height={40}
             rx={6}
-            fill="#0c1e38"
-            stroke="#50c878"
+            fill="var(--app-input-bg)"
+            stroke="var(--app-success)"
             strokeWidth={1.5}
           />
           <text
             x={520}
             y={158}
             textAnchor="middle"
-            fill="#50c878"
+            fill="var(--app-success)"
             style={{ ...sans, fontSize: 9, fontWeight: 600 }}
           >
             ③ Engineer adds [VAT] comment in Linear
@@ -323,12 +331,12 @@ export function DataFlowVisualization({
           strokeDasharray="6 4"
           className="flow-line flow-line-3"
         />
-        <polygon points="300,138 296,142 304,142" fill="#50c878" />
+        <polygon points="300,138 296,142 304,142" fill="var(--app-success)" />
         <text
           x={410}
           y={175}
           textAnchor="middle"
-          fill="#64748b"
+          fill="var(--app-fg-secondary)"
           style={{ ...mono, fontSize: 8 }}
         >
           ④ comment webhook
@@ -343,12 +351,15 @@ export function DataFlowVisualization({
           strokeDasharray="6 4"
           className="flow-line flow-line-4"
         />
-        <polygon points="460,116 456,121 464,121" fill="#818cf8" />
+        <polygon
+          points="460,116 456,121 464,121"
+          fill="var(--app-accent-emerald)"
+        />
         <text
           x={430}
           y={135}
           textAnchor="middle"
-          fill="#64748b"
+          fill="var(--app-fg-secondary)"
           style={{ ...mono, fontSize: 8 }}
         >
           ⑤ post decision
@@ -360,7 +371,7 @@ export function DataFlowVisualization({
             x={360}
             y={220}
             textAnchor="middle"
-            fill="#334155"
+            fill="var(--app-muted)"
             style={{ ...mono, fontSize: 9, fontWeight: 700 }}
           >
             DATA FLOW PATH
@@ -369,7 +380,7 @@ export function DataFlowVisualization({
             x={360}
             y={238}
             textAnchor="middle"
-            fill="#475569"
+            fill="var(--app-muted)"
             style={{ ...sans, fontSize: 9 }}
           >
             ① Findings webhook → ② Create issue → ③ Engineer responds → ④
@@ -415,7 +426,7 @@ export function DataFlowVisualization({
           transition: stroke 0.2s;
         }
         .vat-data-flow .flow-node-add-source:hover rect {
-          stroke: #475569;
+          stroke: var(--app-muted);
         }
       `}</style>
 
@@ -423,7 +434,7 @@ export function DataFlowVisualization({
         style={{
           ...sans,
           fontSize: 11,
-          color: "#475569",
+          color: "var(--app-fg-secondary)",
           marginTop: 16,
           lineHeight: 1.5,
         }}

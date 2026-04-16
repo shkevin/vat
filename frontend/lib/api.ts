@@ -41,6 +41,7 @@ export interface FindingsParams {
   page_size?: number;
   include_assets?: boolean;
   include_zero_assets?: boolean;
+  include_asset_findings?: boolean;
   full?: boolean;
 }
 
@@ -102,6 +103,7 @@ export interface VATDataResponse {
     name: string;
     tag?: string;
     findings: ApiFinding[];
+    findingIds?: string[];
     openCount: number;
     inReviewCount: number;
     statusBreakdown: Record<string, number>;
@@ -204,6 +206,8 @@ export async function fetchVATData(
     search.set("include_assets", String(params.include_assets));
   if (params?.include_zero_assets !== undefined)
     search.set("include_zero_assets", String(params.include_zero_assets));
+  if (params?.include_asset_findings !== undefined)
+    search.set("include_asset_findings", String(params.include_asset_findings));
   if (params?.full !== undefined) search.set("full", String(params.full));
 
   const url = `${API_BASE}/vat-data${search.toString() ? `?${search}` : ""}`;
@@ -535,6 +539,19 @@ export async function putSettingsTracker(
       method: "PUT",
       headers: apiHeaders(auth?.token, auth?.userEmail),
       body: JSON.stringify(tracker),
+    },
+    auth,
+  );
+  if (!res.ok) throw new Error(`API error: ${res.status} ${res.statusText}`);
+}
+
+export async function removeSettingsTracker(auth?: Auth): Promise<void> {
+  const res = await vatFetch(
+    `${API_BASE}/settings/tracker`,
+    {
+      method: "PUT",
+      headers: apiHeaders(auth?.token, auth?.userEmail),
+      body: JSON.stringify([]),
     },
     auth,
   );

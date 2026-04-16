@@ -91,6 +91,7 @@ function createMockDashboardData(): VATDashboardData {
         low_count: 0,
       },
     ],
+    packageRepos: [],
     containers: [],
     vms: [],
     teams: [],

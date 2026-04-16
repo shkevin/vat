@@ -2,7 +2,12 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { mono, sans } from "@/lib/styles";
-import { fetchLinearStatus, putLinearCredentials, syncLinear } from "@/lib/api";
+import {
+  fetchLinearStatus,
+  putLinearCredentials,
+  removeSettingsTracker,
+  syncLinear,
+} from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 import { DEFAULT_ISSUE_TEMPLATE, TRACKER_TYPES } from "@/lib/constants";
 import type { Tracker } from "@/types";
@@ -149,6 +154,7 @@ export function LinearSettingsPage({
         tracker={tracker}
         onTrackerChange={onTrackerChange}
         onRemoveTracker={onRemoveTracker}
+        auth={auth}
       />
       <LabelsConfigForm labels={labels} onLabelsChange={onLabelsChange} />
 
@@ -931,10 +937,12 @@ function TrackerConfigForm({
   tracker,
   onTrackerChange,
   onRemoveTracker,
+  auth,
 }: {
   tracker: Tracker;
   onTrackerChange?: (tracker: Tracker) => void;
   onRemoveTracker?: () => void;
+  auth?: { token?: string | null; userEmail?: string | null };
 }) {
   const [edit, setEdit] = useState<Tracker>({ ...tracker });
   const [saving, setSaving] = useState(false);
@@ -1028,12 +1036,13 @@ function TrackerConfigForm({
     )
       return;
     try {
-      await onTrackerChange?.({} as Tracker);
+      await removeSettingsTracker(auth);
       onRemoveTracker();
-    } catch {
-      // ignore
+    } catch (err) {
+      console.error("Remove tracker failed:", err);
+      alert("Failed to remove tracker. Check console for details.");
     }
-  }, [onTrackerChange, onRemoveTracker]);
+  }, [onRemoveTracker, auth]);
 
   return (
     <div style={{ marginTop: 24 }}>

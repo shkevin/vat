@@ -17,18 +17,19 @@ export function Tag({
 }) {
   return (
     <span
+      className="modern-chip"
       style={{
-        ...mono,
-        fontSize: 10,
-        fontWeight: 700,
-        letterSpacing: "0.1em",
+        ...sans,
+        fontSize: 11,
+        fontWeight: 600,
+        letterSpacing: "0.01em",
         color,
         background: bg || color + "18",
-        padding: "2px 7px",
-        borderRadius: 2,
+        padding: "3px 9px",
+        borderRadius: 999,
         border: `1px solid ${color}28`,
         whiteSpace: "nowrap" as const,
-        textTransform: "uppercase",
+        textTransform: "none",
       }}
     >
       {children}
@@ -64,7 +65,13 @@ export function SrcTag({
   sources: Array<{ id?: string; name: string; color?: string }>;
 }) {
   const cfg = sources?.find((s) => s.id === source || s.name === source);
-  return <Tag color={cfg?.color || "#888"}>{displaySourceName(source)}</Tag>;
+  const normalized = (source || "").trim().toLowerCase();
+  const isFeedMaterialized = normalized === "vuln_feed_match";
+  return (
+    <Tag color={isFeedMaterialized ? "var(--app-accent)" : (cfg?.color || "var(--app-muted)")}>
+      {displaySourceName(source)}
+    </Tag>
+  );
 }
 
 export function TypeTag({ type }: { type: string }) {
@@ -95,21 +102,61 @@ const VARIANTS: Record<
   string,
   { bg: string; hv: string; c: string; bd: string }
 > = {
-  primary: { bg: "#1e3a5f", hv: "#1d4ed8", c: "#93c5fd", bd: "#1d4ed8" },
-  approve: { bg: "#14532d", hv: "#166534", c: "#86efac", bd: "#16a34a" },
-  reject: { bg: "#450a0a", hv: "#7f1d1d", c: "#fca5a5", bd: "#dc2626" },
-  ghost: { bg: "transparent", hv: "#1e293b", c: "#64748b", bd: "#1e293b" },
+  primary: {
+    bg: "color-mix(in srgb, var(--ui-accent) 24%, transparent)",
+    hv: "color-mix(in srgb, var(--ui-accent) 34%, transparent)",
+    c: "var(--ui-accent)",
+    bd: "color-mix(in srgb, var(--ui-accent) 45%, transparent)",
+  },
+  approve: {
+    bg: "color-mix(in srgb, var(--ui-success) 24%, transparent)",
+    hv: "color-mix(in srgb, var(--ui-success) 34%, transparent)",
+    c: "var(--ui-success)",
+    bd: "color-mix(in srgb, var(--ui-success) 45%, transparent)",
+  },
+  reject: {
+    bg: "color-mix(in srgb, var(--ui-danger) 22%, transparent)",
+    hv: "color-mix(in srgb, var(--ui-danger) 30%, transparent)",
+    c: "var(--ui-danger)",
+    bd: "color-mix(in srgb, var(--ui-danger) 45%, transparent)",
+  },
+  ghost: {
+    bg: "transparent",
+    hv: "color-mix(in srgb, var(--ui-surface-2) 80%, transparent)",
+    c: "var(--ui-text-muted)",
+    bd: "var(--ui-border-subtle)",
+  },
   /** Theme-aware secondary: visible border + readable text on all themes */
   secondary: {
-    bg: "var(--app-input-bg)",
-    hv: "var(--app-card-bg)",
-    c: "var(--app-fg)",
-    bd: "var(--app-border)",
+    bg: "var(--ui-surface-2)",
+    hv: "var(--ui-surface-1)",
+    c: "var(--ui-text-primary)",
+    bd: "var(--ui-border)",
   },
-  warn: { bg: "#431407", hv: "#78350f", c: "#fde68a", bd: "#d97706" },
-  accent: { bg: "#0c2340", hv: "#0369a1", c: "#38bdf8", bd: "#0369a1" },
-  purple: { bg: "#1e1040", hv: "#4c1d95", c: "#c084fc", bd: "#7c3aed" },
-  orange: { bg: "#431407", hv: "#9a3412", c: "#fb923c", bd: "#ea580c" },
+  warn: {
+    bg: "color-mix(in srgb, var(--ui-warning) 22%, transparent)",
+    hv: "color-mix(in srgb, var(--ui-warning) 30%, transparent)",
+    c: "var(--ui-warning)",
+    bd: "color-mix(in srgb, var(--ui-warning) 45%, transparent)",
+  },
+  accent: {
+    bg: "color-mix(in srgb, var(--ui-accent) 20%, transparent)",
+    hv: "color-mix(in srgb, var(--ui-accent) 32%, transparent)",
+    c: "var(--ui-accent)",
+    bd: "color-mix(in srgb, var(--ui-accent) 48%, transparent)",
+  },
+  purple: {
+    bg: "color-mix(in srgb, var(--ui-accent-strong) 20%, transparent)",
+    hv: "color-mix(in srgb, var(--ui-accent-strong) 32%, transparent)",
+    c: "var(--ui-accent-strong)",
+    bd: "color-mix(in srgb, var(--ui-accent-strong) 50%, transparent)",
+  },
+  orange: {
+    bg: "color-mix(in srgb, var(--ui-warning) 22%, transparent)",
+    hv: "color-mix(in srgb, var(--ui-warning) 34%, transparent)",
+    c: "var(--ui-warning)",
+    bd: "color-mix(in srgb, var(--ui-warning) 48%, transparent)",
+  },
 };
 
 export function Btn({
@@ -139,18 +186,18 @@ export function Btn({
       onMouseEnter={() => setHov(true)}
       onMouseLeave={() => setHov(false)}
       style={{
-        ...mono,
+        ...sans,
         background: hov && !disabled ? v.hv : v.bg,
         border: `1px solid ${v.bd}`,
-        borderRadius: 4,
-        padding: size === "sm" ? "4px 10px" : "7px 14px",
+        borderRadius: 10,
+        padding: size === "sm" ? "6px 11px" : "9px 14px",
         color: v.c,
-        fontSize: size === "sm" ? 11 : 12,
+        fontSize: size === "sm" ? 12 : 13,
         fontWeight: 600,
-        letterSpacing: "0.05em",
+        letterSpacing: "0.01em",
         cursor: disabled ? "not-allowed" : "pointer",
         opacity: disabled ? 0.4 : 1,
-        transition: "background 0.12s",
+        transition: "background var(--motion-fast) ease",
         whiteSpace: "nowrap" as const,
         width: fullWidth ? "100%" : undefined,
       }}
@@ -198,12 +245,12 @@ export function Field({
       {label && (
         <label
           style={{
-            ...mono,
-            fontSize: 10,
+            ...sans,
+            fontSize: 11,
             fontWeight: 600,
-            letterSpacing: "0.1em",
+            letterSpacing: "0.02em",
             color: "var(--app-muted)",
-            textTransform: "uppercase",
+            textTransform: "none",
           }}
         >
           {label}

@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useMemo, useState } from "react";
 import { FindingRow } from "./FindingRow";
 import { BulkBar } from "./BulkBar";
 import { useUserPreferences } from "@/contexts/UserPreferencesContext";
@@ -43,6 +44,14 @@ export function FindingsTable({
 }: FindingsTableProps) {
   const { preferences } = useUserPreferences();
   const density = preferences.tableDensity ?? "default";
+  const [visibleCount, setVisibleCount] = useState(250);
+  useEffect(() => {
+    setVisibleCount(250);
+  }, [displayed.length, density]);
+  const visibleRows = useMemo(
+    () => displayed.slice(0, visibleCount),
+    [displayed, visibleCount],
+  );
   return (
     <div>
       <div
@@ -53,7 +62,7 @@ export function FindingsTable({
           marginBottom: 12,
         }}
       >
-        <span style={{ ...mono, fontSize: 11, color: "#475569" }}>
+        <span style={{ ...mono, fontSize: 11, color: "var(--app-muted)" }}>
           {displayed.length} finding{displayed.length !== 1 ? "s" : ""}
           {showArchived ? ` (${archivedCount} archived)` : ` of ${total}`}
         </span>
@@ -74,9 +83,9 @@ export function FindingsTable({
             "26px 4px 32px 130px 1fr 160px 60px 100px 90px 80px",
           gap: 8,
           padding: HEADER_PADDING[density],
-          background: "#060c18",
+          background: "var(--app-pane-header-bg)",
           borderRadius: "4px 4px 0 0",
-          border: "1px solid #0d1a2e",
+          border: "1px solid var(--app-border-subtle)",
           borderBottom: "none",
         }}
       >
@@ -99,7 +108,7 @@ export function FindingsTable({
               fontSize: 9,
               fontWeight: 700,
               letterSpacing: "0.1em",
-              color: "#1e3a5f",
+              color: "var(--app-fg-group)",
               textTransform: "uppercase",
             }}
           >
@@ -109,9 +118,16 @@ export function FindingsTable({
       </div>
       <div
         style={{
-          border: "1px solid #0d1a2e",
+          border: "1px solid var(--app-border-subtle)",
           borderRadius: "0 0 4px 4px",
-          overflow: "hidden",
+          overflow: "auto",
+          maxHeight: "62vh",
+        }}
+        onScroll={(event) => {
+          const target = event.currentTarget;
+          if (target.scrollTop + target.clientHeight >= target.scrollHeight - 120) {
+            setVisibleCount((prev) => Math.min(prev + 200, displayed.length));
+          }
         }}
       >
         {displayed.length === 0 ? (
@@ -119,7 +135,7 @@ export function FindingsTable({
             style={{
               ...sans,
               fontSize: 12,
-              color: "#1e3a5f",
+              color: "var(--app-muted)",
               padding: 40,
               textAlign: "center",
             }}
@@ -127,17 +143,32 @@ export function FindingsTable({
             No findings match current filters.
           </div>
         ) : (
-          displayed.map((f) => (
+          visibleRows.map((f) => (
             <FindingRow
               key={f.id}
               finding={f}
               sources={sources}
+              density={density}
               selected={selected?.id === f.id}
               checked={checked.has(f.id)}
               onCheck={(v) => onCheck(f.id, v)}
               onClick={() => onSelect(f)}
             />
           ))
+        )}
+        {displayed.length > visibleRows.length && (
+          <div
+            style={{
+              ...mono,
+              fontSize: 10,
+              color: "var(--app-muted)",
+              padding: "8px 14px",
+              textAlign: "center",
+            }}
+          >
+            Showing {visibleRows.length} of {displayed.length} findings. Scroll to
+            load more.
+          </div>
         )}
       </div>
     </div>

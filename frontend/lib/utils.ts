@@ -28,7 +28,10 @@ export const now = () => new Date().toISOString();
 /** Strip vat-local- and folder-scan- prefixes for display; do not differentiate scanners by origin. */
 export function displaySourceName(name: string | null | undefined): string {
   if (!name) return "";
-  return name.replace(/^(vat-local-|folder-scan-)/i, "").trim() || name;
+  const normalized = name.replace(/^(vat-local-|folder-scan-)/i, "").trim() || name;
+  const key = normalized.toLowerCase();
+  if (key === "vuln_feed_match") return "Feed Match";
+  return normalized;
 }
 
 export function fmtDt(s: string | null | undefined): string {

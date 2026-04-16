@@ -1299,7 +1299,7 @@ export function ReportBuilderView({
     if (previewMode === "float") {
       previewPanelRef.current?.collapse();
     } else {
-      previewPanelRef.current?.expand(45);
+      previewPanelRef.current?.expand(40);
     }
   }, [previewMode]);
 
@@ -2513,7 +2513,7 @@ export function ReportBuilderView({
 
           <ResizablePanel
             ref={previewPanelRef}
-            defaultSize={45}
+            defaultSize={40}
             minSize={28}
             collapsible
             style={{

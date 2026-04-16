@@ -41,9 +41,9 @@ function KeyMetricsTable({
 }) {
   return (
     <div
+      className="modern-card"
       style={{
         background: "var(--app-card-bg)",
-        border: "1px solid var(--app-border-subtle)",
         borderRadius: 8,
         overflow: "hidden",
       }}
@@ -114,9 +114,10 @@ function TypeCard({
   const pct = total > 0 ? (count / total) * 100 : 0;
   return (
     <div
+      className="modern-card"
       style={{
         background: "var(--app-card-bg)",
-        border: `1px solid ${color}30`,
+        border: `1px solid ${color}35`,
         borderRadius: 10,
         padding: "16px 18px",
         overflow: "hidden",
@@ -380,62 +381,27 @@ export function MetricsDashboard({
         overflow: "hidden",
       }}
     >
-      <div
-        style={{
-          paddingBottom: 16,
-          borderBottom: "1px solid var(--app-border-subtle)",
-          flexShrink: 0,
-        }}
-      >
-        <h1
-          style={{
-            ...sans,
-            fontSize: 24,
-            fontWeight: 600,
-            color: "var(--app-fg)",
-            margin: 0,
-            letterSpacing: "-0.02em",
-          }}
-        >
-          Vulnerability Metrics
-        </h1>
-        <p
-          style={{
-            ...sans,
-            fontSize: 12,
-            color: "var(--app-muted)",
-            marginTop: 4,
-            marginBottom: 0,
-          }}
-        >
-          Overview of active findings, SLA status, and compliance posture
-        </p>
-        <div
-          style={{
-            display: "flex",
-            flexWrap: "wrap",
-            gap: 10,
-            marginTop: 16,
-            alignItems: "center",
-          }}
-        >
-          <span
-            style={{
-              ...mono,
-              fontSize: 13,
-              fontWeight: 600,
-              color: "var(--app-fg)",
-            }}
-          >
-            Total: {total.toLocaleString()}
-          </span>
+      <section className="vat-tab-hero modern-card" style={{ flexShrink: 0 }}>
+        <div>
+          <p className="vat-tab-eyebrow">Observability</p>
+          <h2 className="vat-tab-title">Vulnerability Metrics</h2>
+          <p className="vat-tab-subtitle">
+            Monitor active risk posture, SLA pressure, and remediation progress in
+            real time.
+          </p>
+        </div>
+        <div className="vat-tab-hero-chips">
+          <span className="vat-tab-chip">Total {total.toLocaleString()}</span>
           {severityCounts
             .filter(({ count }) => count > 0)
+            .slice(0, 3)
             .map(({ severity, count }) => (
-              <SeverityPill key={severity} severity={severity} count={count} />
+              <span key={severity} className="vat-tab-chip">
+                {severity}: {count.toLocaleString()}
+              </span>
             ))}
         </div>
-      </div>
+      </section>
 
       <div
         className="metrics-dashboard-grid"

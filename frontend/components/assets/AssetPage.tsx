@@ -193,6 +193,7 @@ export function AssetPage({ config }: AssetPageProps) {
 
   const {
     loading,
+    refreshing,
     error,
     refetch,
     findings,
@@ -1258,7 +1259,7 @@ export function AssetPage({ config }: AssetPageProps) {
       );
     }
 
-    if (!assetId || !asset) {
+    if (!assetId) {
       return (
         <div
           style={{
@@ -1287,6 +1288,52 @@ export function AssetPage({ config }: AssetPageProps) {
       );
     }
 
+    if (!asset && (loading || refreshing)) {
+      return (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            minHeight: 300,
+            color: "var(--app-accent)",
+            ...mono,
+            fontSize: 12,
+          }}
+        >
+          ▣ Resolving asset…
+        </div>
+      );
+    }
+
+    if (!asset) {
+      return (
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            minHeight: 300,
+            color: "var(--app-muted)",
+            gap: 8,
+            ...sans,
+          }}
+        >
+          <span>Asset not found</span>
+          <Link
+            href="/"
+            style={{
+              color: "var(--app-accent)",
+              textDecoration: "underline",
+              fontSize: 13,
+            }}
+          >
+            ← Back to Assets
+          </Link>
+        </div>
+      );
+    }
     if (assetTab === "waivers") {
       return <WaiversTab waivers={assetWaivers} onSelect={setSelected} />;
     }

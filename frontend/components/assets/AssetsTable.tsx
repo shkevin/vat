@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ChevronDown, ChevronUp } from "lucide-react";
@@ -315,6 +315,7 @@ export function AssetsTable({
   const effectiveGroupFindings =
     preferences.groupFindings ?? groupFindings ?? true;
   const [sortBy, setSortBy] = useState("name");
+  const [visibleCount, setVisibleCount] = useState(200);
 
   const getAssetHref = useCallback(
     (assetId: string) => buildAssetUrl(assetId, getFavoriteContextForAsset),
@@ -356,6 +357,10 @@ export function AssetsTable({
       return desc ? -cmp : cmp;
     });
   }, [displayedAssets, sortBy]);
+
+  useEffect(() => {
+    setVisibleCount(200);
+  }, [sortBy, displayedAssets.length, density]);
 
   const severityCounts = useMemo(() => {
     const counts: Record<string, number> = {};
@@ -410,6 +415,7 @@ export function AssetsTable({
 
   return (
     <div
+      className="assets-table-shell"
       style={{
         width: "100%",
         flex: 1,
@@ -419,8 +425,26 @@ export function AssetsTable({
         overflow: "hidden",
       }}
     >
-      <div style={{ flexShrink: 0 }}>
+      <section className="vat-tab-hero modern-card">
+        <div>
+          <p className="vat-tab-eyebrow">Asset Intelligence</p>
+          <h2 className="vat-tab-title">Findings Workspace</h2>
+          <p className="vat-tab-subtitle">
+            Search, sort, and prioritize vulnerable assets with severity and
+            compliance context.
+          </p>
+        </div>
+        <div className="vat-tab-hero-chips">
+          <span className="vat-tab-chip">
+            {displayedAssets.length.toLocaleString()} visible
+          </span>
+          <span className="vat-tab-chip">{total.toLocaleString()} total</span>
+        </div>
+      </section>
+
+      <div className="assets-table-toolbar" style={{ flexShrink: 0 }}>
         <div
+          className="assets-table-stats"
           style={{
             display: "flex",
             alignItems: "center",
@@ -449,6 +473,7 @@ export function AssetsTable({
               const s = SEV[severity] ?? SEV.Informational;
               return (
                 <span
+                  className="assets-table-sev-chip"
                   key={severity}
                   style={{
                     ...mono,
@@ -471,10 +496,9 @@ export function AssetsTable({
           onChange={(e) => onSearchChange(e.target.value)}
           placeholder={searchPlaceholder}
           aria-label="Search"
+          className="modern-input"
           style={{
             width: "100%",
-            background: "var(--app-input-bg)",
-            border: "1px solid var(--app-border)",
             borderRadius: 6,
             padding: "10px 14px",
             color: "var(--app-fg)",
@@ -503,6 +527,7 @@ export function AssetsTable({
         }}
       >
         <div
+          className="modern-card assets-table-header"
           style={{
             flexShrink: 0,
             display: "grid",
@@ -511,7 +536,6 @@ export function AssetsTable({
             padding: HEADER_PADDING[density],
             background: "var(--app-header-bg)",
             borderRadius: "4px 4px 0 0",
-            border: "1px solid var(--app-border-subtle)",
             borderBottom: "none",
           }}
         >
@@ -610,12 +634,18 @@ export function AssetsTable({
           })}
         </div>
         <div
+          className="modern-card assets-table-body"
           style={{
             flex: 1,
             minHeight: 0,
-            border: "1px solid var(--app-border-subtle)",
             borderRadius: "0 0 4px 4px",
             overflow: "auto",
+          }}
+          onScroll={(event) => {
+            const target = event.currentTarget;
+            if (target.scrollTop + target.clientHeight >= target.scrollHeight - 160) {
+              setVisibleCount((prev) => Math.min(prev + 150, sortedAssets.length));
+            }
           }}
         >
           {sortedAssets.length === 0 ? (
@@ -623,7 +653,7 @@ export function AssetsTable({
               style={{
                 ...sans,
                 fontSize: 12,
-                color: "#94a3b8",
+                color: "var(--app-muted)",
                 padding: 40,
                 textAlign: "center",
                 display: "flex",
@@ -641,9 +671,10 @@ export function AssetsTable({
               )}
             </div>
           ) : (
-            sortedAssets.map((asset) => (
+            sortedAssets.slice(0, visibleCount).map((asset) => (
               <div
                 key={asset.id}
+                className="assets-table-row"
                 onClick={() => router.push(getAssetHref(asset.id))}
                 style={{
                   display: "grid",
@@ -661,6 +692,7 @@ export function AssetsTable({
                 }}
               >
                 <button
+                  className="assets-table-favorite"
                   type="button"
                   onClick={(e) => {
                     e.stopPropagation();
@@ -753,6 +785,20 @@ export function AssetsTable({
                 </div>
               </div>
             ))
+          )}
+          {sortedAssets.length > visibleCount && (
+            <div
+              style={{
+                ...mono,
+                fontSize: 10,
+                color: "var(--app-muted)",
+                padding: "10px 14px",
+                textAlign: "center",
+              }}
+            >
+              Showing {visibleCount} of {sortedAssets.length} assets. Scroll to
+              load more.
+            </div>
           )}
         </div>
       </div>

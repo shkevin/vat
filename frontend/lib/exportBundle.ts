@@ -222,7 +222,7 @@ export async function buildAndDownloadExportBundle(auth?: Auth): Promise<void> {
       2,
     ),
   );
-  folder.file("sbom-cyclonedx.json", JSON.stringify(cyclonedx, null, 2));
+  folder.file("sbom/sbom-cyclonedx.json", JSON.stringify(cyclonedx, null, 2));
   folder.file(
     "executive-summary-yearly.html",
     reportHtml || "<html><body>Report not available</body></html>",

@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { IBM_Plex_Sans, JetBrains_Mono } from "next/font/google";
+import { Manrope, JetBrains_Mono } from "next/font/google";
 import { NuqsAdapter } from "nuqs/adapters/next/app";
 import "./globals.css";
 import { AuthProvider } from "@/contexts/AuthContext";
@@ -7,8 +7,8 @@ import { VATQueryProvider } from "@/contexts/QueryProvider";
 import { ThemeProvider } from "@/contexts/ThemeContext";
 import { UserPreferencesProvider } from "@/contexts/UserPreferencesContext";
 
-const ibmPlexSans = IBM_Plex_Sans({
-  weight: ["400", "500", "600"],
+const manrope = Manrope({
+  weight: ["400", "500", "600", "700"],
   subsets: ["latin"],
   display: "swap",
   variable: "--font-sans",
@@ -41,12 +41,12 @@ export default function RootLayout({
     <html
       lang="en"
       data-theme={DEFAULT_THEME}
-      className={`${ibmPlexSans.variable} ${jetbrainsMono.variable}`}
+      className={`${manrope.variable} ${jetbrainsMono.variable}`}
     >
       <head>
         <link rel="icon" href="/vat-icon.svg" type="image/svg+xml" />
       </head>
-      <body className={`${ibmPlexSans.className} antialiased`}>
+      <body className={`${manrope.className} antialiased`}>
         <NuqsAdapter>
           <AuthProvider>
             <VATQueryProvider>

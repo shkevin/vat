@@ -45,13 +45,42 @@ export function ReportTab({ findings, allAssets }: ReportTabProps) {
         overflow: "hidden",
         display: "flex",
         flexDirection: "column",
+        gap: 12,
       }}
     >
-      <ReportBuilderView
-        data={data}
-        allAssets={allAssets}
-        defaultCountMode={groupFindings ? "groups" : "instances"}
-      />
+      <section className="vat-tab-hero modern-card">
+        <div>
+          <p className="vat-tab-eyebrow">Reporting</p>
+          <h2 className="vat-tab-title">Executive Report Builder</h2>
+          <p className="vat-tab-subtitle">
+            Build shareable security summaries with the same filtered data as the
+            findings workspace.
+          </p>
+        </div>
+        <div className="vat-tab-hero-chips">
+          <span className="vat-tab-chip">{findings.length.toLocaleString()} items</span>
+          <span className="vat-tab-chip">
+            Mode: {groupFindings ? "Grouped" : "Instances"}
+          </span>
+        </div>
+      </section>
+
+      <div
+        className="modern-card"
+        style={{
+          flex: 1,
+          minHeight: 0,
+          overflow: "hidden",
+          display: "flex",
+          flexDirection: "column",
+        }}
+      >
+        <ReportBuilderView
+          data={data}
+          allAssets={allAssets}
+          defaultCountMode={groupFindings ? "groups" : "instances"}
+        />
+      </div>
     </div>
   );
 }

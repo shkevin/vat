@@ -40,8 +40,20 @@ export function SettingsTab({
         overflow: "hidden",
       }}
     >
+      <section className="vat-tab-hero modern-card" style={{ marginBottom: 10 }}>
+        <div>
+          <p className="vat-tab-eyebrow">Configuration</p>
+          <h2 className="vat-tab-title">Platform Settings</h2>
+          <p className="vat-tab-subtitle">
+            Manage integrations, source ingestion, and access controls from a
+            single operations hub.
+          </p>
+        </div>
+      </section>
+
       {/* Sub-tab navigation */}
       <div
+        className="settings-tabs-modern"
         style={{
           flexShrink: 0,
           display: "flex",
@@ -53,6 +65,8 @@ export function SettingsTab({
       >
         <button
           onClick={() => setSubTab("integrations")}
+          className="settings-tab-btn"
+          data-active={subTab === "integrations" ? "true" : "false"}
           style={{
             ...mono,
             fontSize: 11,
@@ -76,6 +90,8 @@ export function SettingsTab({
         </button>
         <button
           onClick={() => setSubTab("access")}
+          className="settings-tab-btn"
+          data-active={subTab === "access" ? "true" : "false"}
           style={{
             ...mono,
             fontSize: 11,

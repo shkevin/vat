@@ -48,6 +48,7 @@ import {
   fmtDt as fmtDtUtil,
   now,
 } from "@/lib/utils";
+import { getFeedProvenanceFromSources } from "@/lib/feedProvenance";
 import type { Finding } from "@/types";
 import type { Source } from "@/types";
 import type { Tracker } from "@/types";
@@ -206,6 +207,7 @@ export function DetailPanel({
   const priorFindings = (finding.regressionOf ?? [])
     .map((id) => allFindings.find((f) => f.id === id))
     .filter(Boolean) as Finding[];
+  const feedProvenance = getFeedProvenanceFromSources(finding.sources);
 
   const doUpdate = async (status: string, extra: Partial<Finding> = {}) => {
     setSaving(true);
@@ -612,6 +614,49 @@ export function DetailPanel({
                 );
               })()}
             </div>
+
+            {feedProvenance && (
+              <div className="detail-panel-section">
+                <H>Feed Correlation Provenance</H>
+                <div className="detail-panel-card">
+                  <div className="detail-panel-kv-grid">
+                    <div className="detail-panel-kv-item">
+                      <label>Feed source</label>
+                      <div className="value">
+                        {displaySourceName(feedProvenance.feedSource) || "—"}
+                      </div>
+                    </div>
+                    <div className="detail-panel-kv-item">
+                      <label>Match strategy</label>
+                      <div className="value">{feedProvenance.matchStrategy || "—"}</div>
+                    </div>
+                    <div className="detail-panel-kv-item">
+                      <label>Confidence</label>
+                      <div className="value">{feedProvenance.matchConfidence || "—"}</div>
+                    </div>
+                    <div className="detail-panel-kv-item">
+                      <label>Matched package</label>
+                      <div className="value">
+                        {feedProvenance.matchedPackage || "—"}
+                        {feedProvenance.matchedVersion
+                          ? `@${feedProvenance.matchedVersion}`
+                          : ""}
+                      </div>
+                    </div>
+                    <div className="detail-panel-kv-item">
+                      <label>Correlation key</label>
+                      <div className="value">{finding.correlationKey || "—"}</div>
+                    </div>
+                    <div className="detail-panel-kv-item">
+                      <label>Backend confidence</label>
+                      <div className="value">
+                        {finding.correlationConfidence || "—"}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {groupFindings &&
               selectedSourceIndex == null &&

@@ -56,6 +56,8 @@ import type {
 } from "@/types";
 
 const VAT_SNAPSHOT_KEY = "vat:lastFindingsSnapshot:v1";
+const SNAPSHOT_MAX_FINDINGS = 1500;
+const SNAPSHOT_MAX_RAW_BYTES = 3_000_000;
 
 /** Map API response to Finding type */
 function toFinding(raw: Record<string, unknown>): Finding {
@@ -99,6 +101,12 @@ function toFinding(raw: Record<string, unknown>): Finding {
     groupKey:
       raw.groupKey != null && String(raw.groupKey).trim()
         ? String(raw.groupKey)
+        : undefined,
+    correlationKey:
+      raw.correlationKey != null ? String(raw.correlationKey) : undefined,
+    correlationConfidence:
+      raw.correlationConfidence != null
+        ? String(raw.correlationConfidence)
         : undefined,
     filePath: raw.filePath ? String(raw.filePath) : undefined,
     line: typeof raw.line === "number" ? raw.line : undefined,
@@ -194,6 +202,7 @@ function loadVatSnapshot(): {
   try {
     const raw = window.localStorage.getItem(VAT_SNAPSHOT_KEY);
     if (!raw) return null;
+    if (raw.length > SNAPSHOT_MAX_RAW_BYTES) return null;
     const parsed = JSON.parse(raw) as {
       findings?: Finding[];
       assets?: Asset[];
@@ -214,6 +223,7 @@ function loadVatSnapshot(): {
 
 function saveVatSnapshot(findings: Finding[], assets: Asset[]) {
   if (typeof window === "undefined") return;
+  if (findings.length > SNAPSHOT_MAX_FINDINGS) return;
   try {
     window.localStorage.setItem(
       VAT_SNAPSHOT_KEY,
@@ -245,8 +255,12 @@ export interface UseVATDataReturn {
   }>;
   setSbom: React.Dispatch<React.SetStateAction<typeof SAMPLE_SBOM>>;
   loading: boolean;
+  refreshing: boolean;
   error: string | null;
-  refetch: (opts?: { silent?: boolean }) => Promise<void>;
+  refetch: (opts?: {
+    silent?: boolean;
+    includeAuxiliary?: boolean;
+  }) => Promise<void>;
 
   selected: Finding | null;
   setSelected: (f: Finding | null) => void;
@@ -550,16 +564,42 @@ export function useVATDataCore(): UseVATDataReturn {
     initialDataUpdatedAt: snapshot?.updatedAt,
     queryFn: async () => {
       const params: Record<string, string | string[] | number | boolean> = {
-        full: true,
+        full: false,
+        page_size: 500,
         include_assets: true,
+        include_asset_findings: false,
         include_zero_assets: showEmptyAssets,
+        page: 1,
       };
       if (showArchived !== "both") params.archived = showArchived;
-      return fetchVATData(params, auth);
+      const first = await fetchVATData(params, auth);
+      if (!first.meta?.hasMore) return first;
+
+      const allFindings = [...first.findings];
+      let page = 2;
+      while (page <= 20) {
+        const next = await fetchVATData(
+          {
+            ...params,
+            page,
+            include_assets: false,
+            include_zero_assets: false,
+          },
+          auth,
+        );
+        allFindings.push(...next.findings);
+        if (!next.meta?.hasMore) break;
+        page += 1;
+      }
+
+      return {
+        ...first,
+        findings: allFindings,
+      };
     },
     refetchInterval: () =>
       typeof document !== "undefined" && document.visibilityState === "visible"
-        ? 15_000
+        ? 45_000
         : false,
     refetchOnReconnect: true,
   });
@@ -574,7 +614,7 @@ export function useVATDataCore(): UseVATDataReturn {
   const sbomQuery = useQuery({
     queryKey: ["vat-sbom", token ?? "", userEmail ?? ""],
     enabled: Boolean(token || userEmail),
-    queryFn: async () => fetchSbomPackages({ limit: 5000 }, auth),
+    queryFn: async () => fetchSbomPackages({ limit: 1000 }, auth),
     staleTime: 5 * 60_000,
     refetchOnWindowFocus: false,
   });
@@ -585,11 +625,29 @@ export function useVATDataCore(): UseVATDataReturn {
       toFinding(r as unknown as Record<string, unknown>),
     );
     const withExpiry = applyWaiverExpiry(mapped);
+    const findingById = new Map<string, Finding>(
+      withExpiry.map((f) => [f.id, f] as const),
+    );
+    const findingsByAssetId = new Map<string, Finding[]>();
+    for (const finding of withExpiry) {
+      const aid = assetIdForFinding(finding);
+      if (!aid) continue;
+      const bucket = findingsByAssetId.get(aid) ?? [];
+      bucket.push(finding);
+      findingsByAssetId.set(aid, bucket);
+    }
     setFindings(withExpiry);
     const apiAssets = (vatQuery.data.assets ?? []).map((a) => {
-      const findings = (a.findings ?? []).map((r) =>
-        toFinding(r as unknown as Record<string, unknown>),
-      );
+      const findings =
+        Array.isArray(a.findings) && a.findings.length > 0
+          ? (a.findings ?? []).map((r) =>
+              toFinding(r as unknown as Record<string, unknown>),
+            )
+          : Array.isArray(a.findingIds) && a.findingIds.length > 0
+            ? a.findingIds
+                .map((fid) => findingById.get(String(fid)))
+                .filter((f): f is Finding => Boolean(f))
+            : (findingsByAssetId.get(String(a.id ?? "")) ?? []);
       const id = String(a.id ?? "");
       return {
         ...a,
@@ -602,8 +660,42 @@ export function useVATDataCore(): UseVATDataReturn {
         findings,
       } as Asset;
     });
-    setAssetsFromApi(apiAssets);
-    saveVatSnapshot(withExpiry, apiAssets);
+
+    // IMPORTANT: /vat-data returns assets based on the first findings page when pagination is active.
+    // Merge backend asset metadata with frontend-derived assets from ALL loaded findings
+    // so summary cards and severity chips reflect the full loaded result set.
+    const derivedAssets = deriveAssets(withExpiry, SEV_ORDER);
+    const derivedById = new Map<string, Asset>(derivedAssets.map((a) => [a.id, a]));
+    const mergedAssets: Asset[] = apiAssets.map((apiAsset) => {
+      const derived = derivedById.get(apiAsset.id);
+      if (!derived) return apiAsset;
+      return {
+        ...apiAsset,
+        findings: derived.findings,
+        openCount: derived.openCount,
+        inReviewCount: derived.inReviewCount,
+        statusBreakdown: derived.statusBreakdown,
+        worstSeverity: derived.worstSeverity,
+        overdueCount: derived.overdueCount,
+        verifiedPct: derived.verifiedPct,
+        oraPct: derived.oraPct,
+      };
+    });
+    const apiIds = new Set(apiAssets.map((a) => a.id));
+    for (const derived of derivedAssets) {
+      if (apiIds.has(derived.id)) continue;
+      mergedAssets.push({
+        ...derived,
+        name: getAssetDisplayTitle({
+          id: derived.id,
+          name: derived.name ?? derived.id,
+          type: derived.type,
+        }),
+      });
+    }
+
+    setAssetsFromApi(mergedAssets);
+    saveVatSnapshot(withExpiry, mergedAssets);
   }, [vatQuery.data]);
 
   useEffect(() => {
@@ -640,12 +732,11 @@ export function useVATDataCore(): UseVATDataReturn {
   }, [sbomQuery.data]);
 
   const refetch = useCallback(
-    async (_opts?: { silent?: boolean }) => {
-      await Promise.all([
-        vatQuery.refetch(),
-        settingsQuery.refetch(),
-        sbomQuery.refetch(),
-      ]);
+    async (opts?: { silent?: boolean; includeAuxiliary?: boolean }) => {
+      await vatQuery.refetch();
+      if (opts?.includeAuxiliary) {
+        await Promise.all([settingsQuery.refetch(), sbomQuery.refetch()]);
+      }
     },
     [vatQuery, settingsQuery, sbomQuery],
   );
@@ -1042,6 +1133,7 @@ export function useVATDataCore(): UseVATDataReturn {
   }, [assetsFromApi, active]);
 
   const loading = vatQuery.isLoading && findings.length === 0;
+  const refreshing = vatQuery.isFetching;
   const error = vatQuery.error instanceof Error ? vatQuery.error.message : null;
 
   return {
@@ -1053,6 +1145,7 @@ export function useVATDataCore(): UseVATDataReturn {
     sbom,
     setSbom,
     loading,
+    refreshing,
     error,
     refetch,
     selected,

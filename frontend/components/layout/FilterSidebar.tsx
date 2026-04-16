@@ -119,7 +119,7 @@ export function FilterSidebar({
 
   return (
     <aside
-      className="filter-sidebar"
+      className="filter-sidebar filter-sidebar-modern"
       style={{
         width: 240,
         minWidth: 240,
@@ -152,6 +152,7 @@ export function FilterSidebar({
           }}
         >
           <h2
+            className="modern-section-label"
             style={{
               ...mono,
               fontSize: 11,
@@ -188,9 +189,9 @@ export function FilterSidebar({
                 type="button"
                 onClick={clearAll}
                 aria-label="Clear all filters"
+                className="modern-chip"
                 style={{
-                  background: "none",
-                  border: "none",
+                  background: "transparent",
                   color: "var(--app-muted)",
                   fontSize: 11,
                   cursor: "pointer",
@@ -257,9 +258,9 @@ export function FilterSidebar({
               }}
               tabIndex={0}
               style={{
-                width: 36,
-                height: 20,
-                borderRadius: 10,
+                width: 40,
+                height: 22,
+                borderRadius: 11,
                 background: onlyFavorites
                   ? "var(--app-accent-emerald)"
                   : "var(--app-border)",
@@ -274,10 +275,10 @@ export function FilterSidebar({
                 style={{
                   position: "absolute",
                   top: 2,
-                  left: onlyFavorites ? 18 : 2,
-                  width: 16,
-                  height: 16,
-                  borderRadius: 8,
+                  left: onlyFavorites ? 20 : 2,
+                  width: 18,
+                  height: 18,
+                  borderRadius: 9,
                   background: "#fff",
                   transition: "left 0.15s ease-out",
                 }}
@@ -340,9 +341,9 @@ export function FilterSidebar({
               }}
               tabIndex={0}
               style={{
-                width: 36,
-                height: 20,
-                borderRadius: 10,
+                width: 40,
+                height: 22,
+                borderRadius: 11,
                 background: showEmptyAssets
                   ? "var(--app-accent-emerald)"
                   : "var(--app-border)",
@@ -357,10 +358,10 @@ export function FilterSidebar({
                 style={{
                   position: "absolute",
                   top: 2,
-                  left: showEmptyAssets ? 18 : 2,
-                  width: 16,
-                  height: 16,
-                  borderRadius: 8,
+                  left: showEmptyAssets ? 20 : 2,
+                  width: 18,
+                  height: 18,
+                  borderRadius: 9,
                   background: "#fff",
                   transition: "left 0.15s ease-out",
                 }}
@@ -481,9 +482,9 @@ export function FilterSidebar({
                 }}
                 tabIndex={0}
                 style={{
-                  width: 36,
-                  height: 20,
-                  borderRadius: 10,
+                  width: 40,
+                  height: 22,
+                  borderRadius: 11,
                   background: needsJustification
                     ? "var(--app-accent-emerald)"
                     : "var(--app-border)",
@@ -498,10 +499,10 @@ export function FilterSidebar({
                   style={{
                     position: "absolute",
                     top: 2,
-                    left: needsJustification ? 18 : 2,
-                    width: 16,
-                    height: 16,
-                    borderRadius: 8,
+                    left: needsJustification ? 20 : 2,
+                    width: 18,
+                    height: 18,
+                    borderRadius: 9,
                     background: "#fff",
                     transition: "left 0.15s ease-out",
                   }}
@@ -518,12 +519,12 @@ export function FilterSidebar({
           type="button"
           onClick={onApply}
           aria-label={applyLabel}
+          className="modern-card"
           style={{
             width: "100%",
             marginTop: "auto",
             flexShrink: 0,
             background: "var(--app-accent-emerald)",
-            border: "none",
             borderRadius: 6,
             padding: "10px 16px",
             color: "#fff",
@@ -1111,9 +1112,9 @@ function GroupFindingsToggle() {
         }}
         tabIndex={0}
         style={{
-          width: 36,
-          height: 20,
-          borderRadius: 10,
+          width: 40,
+          height: 22,
+          borderRadius: 11,
           background: groupFindings
             ? "var(--app-accent-emerald)"
             : "var(--app-border)",
@@ -1128,10 +1129,10 @@ function GroupFindingsToggle() {
           style={{
             position: "absolute",
             top: 2,
-            left: groupFindings ? 18 : 2,
-            width: 16,
-            height: 16,
-            borderRadius: 8,
+            left: groupFindings ? 20 : 2,
+            width: 18,
+            height: 18,
+            borderRadius: 9,
             background: "#fff",
             transition: "left 0.15s ease-out",
           }}
