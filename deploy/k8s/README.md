@@ -61,6 +61,28 @@ The `harbor-creds` Secret is synced into the `vat` namespace by the Argo CD
 maintenance hooks (`kamiwaza-argocd` → `root/base/integrations/argocd-maintenance/hooks.yaml`).
 Each workload's `imagePullSecrets: [harbor-creds]` relies on that sync.
 
+## Image build pipeline
+
+`.gitlab-ci.yml` at the repo root builds backend + frontend with Kaniko and
+pushes to Harbor. Tagging rules:
+
+| Trigger               | Tags pushed                                   |
+|-----------------------|-----------------------------------------------|
+| branch `main`         | `latest`, `sha-<short>`                       |
+| branch `develop`      | `develop`, `sha-<short>`                      |
+| git tag `v*`          | `<tag>`, `sha-<short>`                        |
+| merge request         | dry-run build (`--no-push`), no tags pushed   |
+
+Required CI/CD variables:
+
+- `HARBOR_USER` (masked, protected) — Harbor robot or user
+- `HARBOR_TOKEN` (masked, protected) — Harbor token with push on `library`
+
+Optional:
+
+- `SOPS_AGE_KEY` (masked, protected, file) — enables the
+  `validate:overlays` job to render the KSOPS-enabled overlays in CI.
+
 ## Local validation
 
 ```bash
