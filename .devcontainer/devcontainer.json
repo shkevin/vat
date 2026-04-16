@@ -1,0 +1,92 @@
+{
+  "name": "vat",
+  // Skip Dev Containers' UID/GID remap image (updateUID.Dockerfile). That
+  // extra build uses `ARG BASE_IMAGE` without a default and triggers Docker
+  // BuildKit's InvalidDefaultArgInFrom warning even though the build succeeds.
+  "updateRemoteUserUID": false,
+  "build": {
+    "dockerfile": "Dockerfile",
+    "context": ".."
+  },
+
+  // ── Dev Container Features ─────────────────────────────────────────────────
+  "features": {
+    "ghcr.io/devcontainers/features/github-cli:1": {
+      "version": "latest"
+    },
+    "ghcr.io/anthropics/devcontainer-features/claude-code:1.0": {},
+    "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {}
+  },
+
+  // ── Volumes ────────────────────────────────────────────────────────────────
+  // Isolated Docker volumes so Claude config and shell history survive rebuilds.
+  // Host ~/.ssh is bind-mounted so git/ssh use your keys.
+  "mounts": [
+    "source=${localEnv:HOME}/.ssh,target=/home/vscode/.ssh,type=bind,consistency=cached",
+    "source=claude-code-config-${devcontainerId},target=/home/vscode/.claude,type=volume",
+    "source=commandhistory-vat-${devcontainerId},target=/commandhistory,type=volume"
+  ],
+
+  // ── Environment ───────────────────────────────────────────────────────────
+  "containerEnv": {
+    // Persist Claude auth across container rebuilds
+    "CLAUDE_CONFIG_DIR": "/home/vscode/.claude",
+    // Belt-and-suspenders: never run p10k interactive wizard in the container
+    "POWERLEVEL9K_DISABLE_CONFIGURATION_WIZARD": "true"
+  },
+
+  // ── Users ─────────────────────────────────────────────────────────────────
+  // Non-root required for --dangerously-skip-permissions to work safely
+  "remoteUser": "vscode",
+  "containerUser": "vscode",
+
+  // ── Runtime args (GH token from init.sh) ─────────────────────────────────
+  "runArgs": [
+    "--env-file", ".devcontainer/.env.devcontainer"
+  ],
+
+  // ── Lifecycle hooks ───────────────────────────────────────────────────────
+  // Runs on the HOST before the container starts — captures GH token
+  "initializeCommand": "bash .devcontainer/init.sh",
+  // Runs inside the container after creation — installs deps and configures env
+  "postCreateCommand": "bash .devcontainer/post-create.sh",
+
+  // ── VS Code extensions ────────────────────────────────────────────────────
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        // Python / backend
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "ms-python.black-formatter",
+        "charliermarsh.ruff",
+        // Frontend / TypeScript
+        "dbaeumer.vscode-eslint",
+        "esbenp.prettier-vscode",
+        "bradlc.vscode-tailwindcss",
+        "ms-vscode.vscode-typescript-next",
+        // Database
+        "cweijan.vscode-postgresql-client2",
+        // General
+        "redhat.vscode-yaml",
+        "editorconfig.editorconfig",
+        "github.copilot"
+      ],
+      "settings": {
+        "terminal.integrated.defaultProfile.linux": "zsh",
+        "terminal.integrated.fontFamily": "MesloLGS NF",
+        "python.defaultInterpreterPath": "/usr/local/bin/python",
+        "editor.formatOnSave": true,
+        "[python]": {
+          "editor.defaultFormatter": "ms-python.black-formatter"
+        },
+        "[typescript]": {
+          "editor.defaultFormatter": "esbenp.prettier-vscode"
+        },
+        "[typescriptreact]": {
+          "editor.defaultFormatter": "esbenp.prettier-vscode"
+        }
+      }
+    }
+  }
+}
