@@ -58,8 +58,10 @@ data:
             await client_w.drain()
             client_w.close()
             return
+        dial_host = host if host.endswith(".") else f"{host}."
         try:
-            remote_r, remote_w = await asyncio.open_connection(host, port)
+            print(f"CONNECT {host}:{port} via {dial_host}", flush=True)
+            remote_r, remote_w = await asyncio.open_connection(dial_host, port)
             client_w.write(b"HTTP/1.1 200 Connection Established\r\n\r\n")
             await client_w.drain()
             await _tunnel(client_r, client_w, remote_r, remote_w)
@@ -79,8 +81,10 @@ data:
         host = parts.hostname or ""
         port = parts.port or (443 if parts.scheme == "https" else 80)
         path = (parts.path or "/") + (f"?{parts.query}" if parts.query else "")
+        dial_host = host if host.endswith(".") else f"{host}."
         try:
-            remote_r, remote_w = await asyncio.open_connection(host, port)
+            print(f"{method} {host}:{port} via {dial_host}", flush=True)
+            remote_r, remote_w = await asyncio.open_connection(dial_host, port)
             req = f"{method} {path} HTTP/1.1\r\n".encode()
             remote_w.write(req)
             for h in headers:
