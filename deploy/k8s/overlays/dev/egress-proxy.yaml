@@ -15,9 +15,11 @@ spec:
       labels:
         app.kubernetes.io/name: vat-egress-proxy
     spec:
+      imagePullSecrets:
+        - name: harbor-creds
       containers:
         - name: squid
-          image: squid:5.9
+          image: harbor.automatedhass.com/dockerhub/library/squid:5.9
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 3128
