@@ -73,8 +73,9 @@ base manifests.
 - `egress-config.yaml` sets a shared `NO_PROXY` list for in-cluster traffic.
 - `patch-egress-env.yaml` injects `HTTP(S)_PROXY` and lowercase equivalents
   into backend/celery deployments from optional Secret `vat-egress-proxy`.
-- `egress-proxy.yaml` deploys an in-cluster Squid forward proxy Service
-  (`vat-egress-proxy:3128`) for the simplest "works everywhere" setup.
+- `egress-proxy.yaml` + `egress-proxy-config.yaml` deploy an in-cluster
+  forward proxy Service (`vat-egress-proxy:3128`) for the simplest
+  "works everywhere" setup.
 - `egress-proxy-secret.yaml` points `HTTP(S)_PROXY` at that in-cluster proxy.
 
 If you have an external corporate proxy, override the Secret values:

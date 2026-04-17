@@ -4,32 +4,157 @@ metadata:
   name: vat-egress-proxy-config
   namespace: vat
 data:
-  squid.conf: |
-    http_port 3128
+  proxy.py: |
+    import asyncio
+    import ipaddress
+    import socket
+    from urllib.parse import urlsplit
 
-    acl localnet src 10.0.0.0/8
-    acl localnet src 172.16.0.0/12
-    acl localnet src 192.168.0.0/16
+    LISTEN_HOST = "0.0.0.0"
+    LISTEN_PORT = 3128
 
-    acl SSL_ports port 443
-    acl Safe_ports port 80
-    acl Safe_ports port 443
-    acl Safe_ports port 1025-65535
-    acl CONNECT method CONNECT
+    def _is_ip(host: str) -> bool:
+        try:
+            ipaddress.ip_address(host)
+            return True
+        except ValueError:
+            return False
 
-    http_access deny !Safe_ports
-    http_access deny CONNECT !SSL_ports
-    http_access allow localhost manager
-    http_access deny manager
-    http_access allow localnet
-    http_access allow localhost
-    http_access deny all
+    async def _tunnel(reader_a: asyncio.StreamReader, writer_a: asyncio.StreamWriter,
+                      reader_b: asyncio.StreamReader, writer_b: asyncio.StreamWriter):
+        async def pipe(src, dst):
+            try:
+                while True:
+                    data = await src.read(65536)
+                    if not data:
+                        break
+                    dst.write(data)
+                    await dst.drain()
+            finally:
+                try:
+                    dst.close()
+                except Exception:
+                    pass
+        await asyncio.gather(pipe(reader_a, writer_b), pipe(reader_b, writer_a), return_exceptions=True)
 
-    dns_v4_first on
-    forwarded_for off
-    via off
+    async def _handle_connect(target: str, client_r: asyncio.StreamReader, client_w: asyncio.StreamWriter):
+        if ":" not in target:
+            client_w.write(b"HTTP/1.1 400 Bad Request\r\n\r\n")
+            await client_w.drain()
+            client_w.close()
+            return
+        host, port_raw = target.rsplit(":", 1)
+        try:
+            port = int(port_raw)
+        except ValueError:
+            client_w.write(b"HTTP/1.1 400 Bad Request\r\n\r\n")
+            await client_w.drain()
+            client_w.close()
+            return
 
-    cache deny all
-    access_log stdio:/dev/stdout
-    cache_log /dev/stderr
-    coredump_dir /var/spool/squid
+        # Reject direct IP CONNECT to reduce abuse.
+        if _is_ip(host):
+            client_w.write(b"HTTP/1.1 403 Forbidden\r\n\r\n")
+            await client_w.drain()
+            client_w.close()
+            return
+        try:
+            remote_r, remote_w = await asyncio.open_connection(host, port)
+            client_w.write(b"HTTP/1.1 200 Connection Established\r\n\r\n")
+            await client_w.drain()
+            await _tunnel(client_r, client_w, remote_r, remote_w)
+        except Exception:
+            client_w.write(b"HTTP/1.1 502 Bad Gateway\r\n\r\n")
+            await client_w.drain()
+            client_w.close()
+
+    async def _handle_plain_http(method: str, target: str, headers: list[bytes], body: bytes,
+                                 client_w: asyncio.StreamWriter):
+        parts = urlsplit(target)
+        if not parts.scheme or not parts.netloc:
+            client_w.write(b"HTTP/1.1 400 Bad Request\r\n\r\n")
+            await client_w.drain()
+            client_w.close()
+            return
+        host = parts.hostname or ""
+        port = parts.port or (443 if parts.scheme == "https" else 80)
+        path = (parts.path or "/") + (f"?{parts.query}" if parts.query else "")
+        try:
+            remote_r, remote_w = await asyncio.open_connection(host, port)
+            req = f"{method} {path} HTTP/1.1\r\n".encode()
+            remote_w.write(req)
+            for h in headers:
+                if h.lower().startswith(b"proxy-connection:"):
+                    continue
+                remote_w.write(h + b"\r\n")
+            remote_w.write(b"\r\n")
+            if body:
+                remote_w.write(body)
+            await remote_w.drain()
+            while True:
+                chunk = await remote_r.read(65536)
+                if not chunk:
+                    break
+                client_w.write(chunk)
+                await client_w.drain()
+            remote_w.close()
+            client_w.close()
+        except Exception:
+            client_w.write(b"HTTP/1.1 502 Bad Gateway\r\n\r\n")
+            await client_w.drain()
+            client_w.close()
+
+    async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
+        try:
+            line = await reader.readline()
+            if not line:
+                writer.close()
+                return
+            parts = line.decode("latin1", "ignore").strip().split(" ", 2)
+            if len(parts) < 3:
+                writer.write(b"HTTP/1.1 400 Bad Request\r\n\r\n")
+                await writer.drain()
+                writer.close()
+                return
+            method, target, _ = parts
+            headers = []
+            content_length = 0
+            while True:
+                h = await reader.readline()
+                if h in (b"\r\n", b"\n", b""):
+                    break
+                headers.append(h.rstrip(b"\r\n"))
+                if h.lower().startswith(b"content-length:"):
+                    try:
+                        content_length = int(h.split(b":", 1)[1].strip())
+                    except Exception:
+                        content_length = 0
+
+            if method.upper() == "CONNECT":
+                await _handle_connect(target, reader, writer)
+                return
+
+            body = b""
+            if content_length > 0:
+                body = await reader.readexactly(content_length)
+            await _handle_plain_http(method.upper(), target, headers, body, writer)
+        except Exception:
+            try:
+                writer.write(b"HTTP/1.1 500 Internal Server Error\r\n\r\n")
+                await writer.drain()
+            except Exception:
+                pass
+            writer.close()
+
+    async def main():
+        server = await asyncio.start_server(handle_client, LISTEN_HOST, LISTEN_PORT)
+        addrs = ", ".join(str(s.getsockname()) for s in server.sockets or [])
+        print(f"proxy listening on {addrs}", flush=True)
+        async with server:
+            await server.serve_forever()
+
+    if __name__ == "__main__":
+        try:
+            asyncio.run(main())
+        except KeyboardInterrupt:
+            pass
