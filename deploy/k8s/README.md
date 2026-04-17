@@ -72,7 +72,9 @@ base manifests.
 
 - `egress-config.yaml` sets a shared `NO_PROXY` list for in-cluster traffic.
 - `patch-egress-env.yaml` injects `HTTP(S)_PROXY` and lowercase equivalents
-  into backend/celery deployments from optional Secret `vat-egress-proxy`.
+  into backend/celery deployments from optional Secret `vat-egress-proxy`,
+  and sets pod `dnsConfig.options.ndots=1` to avoid wildcard search-domain
+  rewrites of public hostnames.
 - `egress-proxy.yaml` + `egress-proxy-config.yaml` deploy an in-cluster
   forward proxy Service (`vat-egress-proxy:3128`) for the simplest
   "works everywhere" setup.

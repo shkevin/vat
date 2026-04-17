@@ -6,6 +6,10 @@ metadata:
 spec:
   template:
     spec:
+      dnsConfig:
+        options:
+          - name: ndots
+            value: "1"
       containers:
         - name: api
           env:
@@ -54,6 +58,10 @@ metadata:
 spec:
   template:
     spec:
+      dnsConfig:
+        options:
+          - name: ndots
+            value: "1"
       containers:
         - name: worker
           env:
@@ -102,6 +110,10 @@ metadata:
 spec:
   template:
     spec:
+      dnsConfig:
+        options:
+          - name: ndots
+            value: "1"
       containers:
         - name: worker
           env:
@@ -150,6 +162,10 @@ metadata:
 spec:
   template:
     spec:
+      dnsConfig:
+        options:
+          - name: ndots
+            value: "1"
       containers:
         - name: beat
           env:

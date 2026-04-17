@@ -15,6 +15,10 @@ spec:
       labels:
         app.kubernetes.io/name: vat-egress-proxy
     spec:
+      dnsConfig:
+        options:
+          - name: ndots
+            value: "1"
       imagePullSecrets:
         - name: harbor-creds
       containers:
