@@ -64,6 +64,28 @@ The `harbor-creds` Secret is synced into the `vat` namespace by the Argo CD
 maintenance hooks (`kamiwaza-argocd` → `root/base/integrations/argocd-maintenance/hooks.yaml`).
 Each workload's `imagePullSecrets: [harbor-creds]` relies on that sync.
 
+## Dev egress overlay (portable networking shim)
+
+`deploy/k8s/overlays/dev` includes an optional egress shim so environment-
+specific outbound networking can be configured without hard-coding infra
+details into base manifests.
+
+- `egress-config.yaml` sets a shared `NO_PROXY` list for in-cluster traffic.
+- `patch-egress-env.yaml` injects `HTTP(S)_PROXY` and lowercase equivalents
+  into backend/celery deployments from optional Secret `vat-egress-proxy`.
+
+If your environment requires an outbound proxy, create/update this Secret:
+
+```bash
+kubectl -n vat create secret generic vat-egress-proxy \
+  --from-literal=HTTP_PROXY=http://proxy.example.local:3128 \
+  --from-literal=HTTPS_PROXY=http://proxy.example.local:3128 \
+  --dry-run=client -o yaml | kubectl apply -f -
+```
+
+If no proxy is required, omit the Secret; the injected references are
+`optional: true` and pods run unchanged.
+
 ## Image build pipeline
 
 `.gitlab-ci.yml` at the repo root builds backend + frontend with Kaniko and

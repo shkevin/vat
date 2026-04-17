@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vat-egress-settings
+  namespace: vat
+data:
+  # Always bypass proxy for in-cluster traffic.
+  NO_PROXY: ".svc,.svc.cluster.local,.cluster.local,localhost,127.0.0.1,10.0.0.0/8,10.42.0.0/16,10.43.0.0/16,postgres,valkey,vat-backend,backend,kubernetes.default.svc"
