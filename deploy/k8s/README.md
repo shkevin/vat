@@ -66,15 +66,18 @@ Each workload's `imagePullSecrets: [harbor-creds]` relies on that sync.
 
 ## Dev egress overlay (portable networking shim)
 
-`deploy/k8s/overlays/dev` includes an optional egress shim so environment-
-specific outbound networking can be configured without hard-coding infra
-details into base manifests.
+`deploy/k8s/overlays/dev` includes an egress shim so environment-specific
+outbound networking can be configured without hard-coding infra details into
+base manifests.
 
 - `egress-config.yaml` sets a shared `NO_PROXY` list for in-cluster traffic.
 - `patch-egress-env.yaml` injects `HTTP(S)_PROXY` and lowercase equivalents
   into backend/celery deployments from optional Secret `vat-egress-proxy`.
+- `egress-proxy.yaml` deploys an in-cluster Squid forward proxy Service
+  (`vat-egress-proxy:3128`) for the simplest "works everywhere" setup.
+- `egress-proxy-secret.yaml` points `HTTP(S)_PROXY` at that in-cluster proxy.
 
-If your environment requires an outbound proxy, create/update this Secret:
+If you have an external corporate proxy, override the Secret values:
 
 ```bash
 kubectl -n vat create secret generic vat-egress-proxy \
@@ -83,8 +86,8 @@ kubectl -n vat create secret generic vat-egress-proxy \
   --dry-run=client -o yaml | kubectl apply -f -
 ```
 
-If no proxy is required, omit the Secret; the injected references are
-`optional: true` and pods run unchanged.
+If no proxy is required, remove `egress-proxy-secret.yaml` and
+`egress-proxy.yaml` from the overlay resources list (or set empty proxy values).
 
 ## Image build pipeline
 

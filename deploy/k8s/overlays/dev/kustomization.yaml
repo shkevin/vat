@@ -3,6 +3,9 @@ kind: Kustomization
 resources:
   - ../../base
   - egress-config.yaml
+  - egress-proxy-config.yaml
+  - egress-proxy.yaml
+  - egress-proxy-secret.yaml
 generators:
   - ksops-generator.yaml
 images:
