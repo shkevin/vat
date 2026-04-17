@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { exchangeCode, fetchAuthConfig, login } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
@@ -10,6 +10,14 @@ import { mono, sans } from "@/lib/styles";
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "/api";
 
 export default function LoginPage() {
+  return (
+    <Suspense fallback={null}>
+      <LoginPageInner />
+    </Suspense>
+  );
+}
+
+function LoginPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { user, initialized, setUser } = useAuth();

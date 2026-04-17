@@ -850,7 +850,20 @@ export async function fetchVatStatus(auth?: Auth): Promise<{
 }
 
 export async function fetchIngestKeys(auth?: Auth): Promise<{
-  keys: Array<{ sourceId: string; keyPrefix: string; configured: boolean }>;
+  keys: Array<{
+    sourceId: string;
+    keyPrefix: string;
+    configured: boolean;
+    authType?: string;
+    createdAt?: string;
+    rotatedAt?: string;
+  }>;
+  oauthClients?: Array<{
+    sourceId: string;
+    clientId: string;
+    createdAt?: string;
+    rotatedAt?: string;
+  }>;
 }> {
   const res = await vatFetch(
     `${API_BASE}/settings/ingest-keys`,

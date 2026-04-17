@@ -972,19 +972,26 @@ export function AssetPage({ config }: AssetPageProps) {
 
   const groupFindings = preferences.groupFindings ?? true;
 
-  const displayRows = useMemo(() => {
+  type DisplayRow = {
+    finding: Finding;
+    groupCount: number | undefined;
+    sourceIndex: number | undefined;
+    sourceName: string | undefined;
+  };
+
+  const displayRows = useMemo<DisplayRow[]>(() => {
     if (!groupFindings) {
       const sorted = [...filteredFindings].sort(
         (a, b) =>
           SEV_ORDER.indexOf(a.severity as (typeof SEV_ORDER)[number]) -
           SEV_ORDER.indexOf(b.severity as (typeof SEV_ORDER)[number]),
       );
-      return sorted.flatMap((f) => {
+      return sorted.flatMap<DisplayRow>((f) => {
         const srcCount = f.sources?.length ?? 0;
         if (srcCount > 1) {
-          return f.sources!.map((s, i) => ({
+          return f.sources!.map<DisplayRow>((s, i) => ({
             finding: f,
-            groupCount: undefined as number | undefined,
+            groupCount: undefined,
             sourceIndex: i,
             sourceName: s.name ?? "",
           }));
@@ -993,14 +1000,14 @@ export function AssetPage({ config }: AssetPageProps) {
           {
             finding: f,
             groupCount: undefined,
-            sourceIndex: undefined as number | undefined,
-            sourceName: undefined as string | undefined,
+            sourceIndex: undefined,
+            sourceName: undefined,
           },
         ];
       });
     }
     const groups = getGroupedFindings(filteredFindings, SEV_ORDER);
-    return groups.flatMap(({ findings: list }) => {
+    return groups.flatMap<DisplayRow>(({ findings: list }) => {
       const worst = list.reduce((a, b) =>
         SEV_ORDER.indexOf(a.severity as (typeof SEV_ORDER)[number]) <
         SEV_ORDER.indexOf(b.severity as (typeof SEV_ORDER)[number])
@@ -1013,8 +1020,8 @@ export function AssetPage({ config }: AssetPageProps) {
         {
           finding: worst,
           groupCount: count,
-          sourceIndex: undefined as number | undefined,
-          sourceName: undefined as string | undefined,
+          sourceIndex: undefined,
+          sourceName: undefined,
         },
       ];
     });

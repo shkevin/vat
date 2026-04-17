@@ -24,6 +24,8 @@ export interface Finding {
   }>;
   source?: string;
   component?: string;
+  /** Normalized package name (without version) for SCA grouping. */
+  componentBase?: string | null;
   image?: string;
   branch?: string;
   tag?: string;

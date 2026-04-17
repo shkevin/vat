@@ -655,7 +655,7 @@ export function useVATDataCore(): UseVATDataReturn {
         name: getAssetDisplayTitle({
           id,
           name: (a.name as string | undefined) ?? id,
-          type: a.type as string | undefined,
+          type: (a as Record<string, unknown>).type as string | undefined,
         }),
         findings,
       } as Asset;

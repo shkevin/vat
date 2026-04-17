@@ -65,7 +65,10 @@ import { getGroupedFindings } from "@/lib/findingGroupUtils";
 import { SEV_ORDER } from "@/lib/constants";
 import { daysLeft } from "@/lib/utils";
 import { mono, sans } from "@/lib/styles";
-import { fetchAssetMergeSuggestions } from "@/lib/api";
+import {
+  fetchAssetMergeSuggestions,
+  type AssetMergeSuggestion,
+} from "@/lib/api";
 import type { AppConfig } from "@/config/app";
 
 interface VATProps {
@@ -333,17 +336,7 @@ export default function VAT({ config }: VATProps) {
             ): r is {
               source_asset_id: string;
               count: number;
-              suggestions: Array<{
-                source_asset_id: string;
-                target_asset_id: string;
-                strategy:
-                  | "digest"
-                  | "exact_ref"
-                  | "sbom_similarity"
-                  | "name_heuristic";
-                score: number;
-                confidence: "high" | "medium" | "low";
-              }>;
+              suggestions: AssetMergeSuggestion[];
             } => Boolean(r && (r.suggestions?.length ?? 0) > 0),
           )
           .map((r) => ({
