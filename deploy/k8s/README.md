@@ -86,6 +86,18 @@ Optional:
 - `SOPS_AGE_KEY` (masked, protected, file) — enables the
   `validate:overlays` job to render the KSOPS-enabled overlays in CI.
 
+The frontend Kaniko job passes `--build-arg API_UPSTREAM_URL=http://vat-backend:8000`
+so Next.js rewrites `/api/*` to the in-cluster Service `vat-backend` (not
+`backend`, which is only valid in docker-compose).
+
+## First login (local auth)
+
+Alembic migration `006` seeds user id `admin`, email `admin@vat.local`, password
+`admin` (bcrypt). `POST /api/auth/login` accepts **either** the user id or the
+email in the username field. If you see *Use Sign in with Google*, the default
+tenant was switched to Google SSO — use Google or reset `tenants.auth_method`
+to `local` for `t-default`.
+
 ## Local validation
 
 ```bash

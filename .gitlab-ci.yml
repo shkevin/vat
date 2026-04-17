@@ -110,13 +110,21 @@ validate:overlays:
       echo "${DESTINATIONS}" > /tmp/kaniko-destinations
       echo "Pushing: ${DESTINATIONS}"
   script:
-    - /kaniko/executor
-        --context "${CI_PROJECT_DIR}/${CONTEXT}"
-        --dockerfile "${CI_PROJECT_DIR}/${CONTEXT}/${DOCKERFILE}"
-        --cache=true
-        --cache-repo="${HARBOR_HOST}/${HARBOR_PROJECT}/vat/${COMPONENT}/cache"
-        --snapshot-mode=redo
-        ${KANIKO_NO_PUSH:-}
+    - |
+      KANIKO_EXTRA_ARGS=""
+      # Next.js rewrites bake API_UPSTREAM_URL at build time. Docker Compose uses
+      # hostname "backend"; in Kubernetes the Service is vat-backend.
+      if [ "${COMPONENT}" = "frontend" ]; then
+        KANIKO_EXTRA_ARGS='--build-arg API_UPSTREAM_URL=http://vat-backend:8000'
+      fi
+      /kaniko/executor \
+        --context "${CI_PROJECT_DIR}/${CONTEXT}" \
+        --dockerfile "${CI_PROJECT_DIR}/${CONTEXT}/${DOCKERFILE}" \
+        --cache=true \
+        --cache-repo="${HARBOR_HOST}/${HARBOR_PROJECT}/vat/${COMPONENT}/cache" \
+        --snapshot-mode=redo \
+        ${KANIKO_EXTRA_ARGS} \
+        ${KANIKO_NO_PUSH:-} \
         $(cat /tmp/kaniko-destinations)
   rules:
     - if: $CI_COMMIT_BRANCH == "main"

@@ -21,6 +21,7 @@ from app.core.jwt import (
 from app.models.user import AUTH_METHOD_LOCAL, Tenant
 from app.services.user_service import (
     get_google_tenant,
+    get_user_by_email,
     get_user_by_email_in_google_tenant,
     get_user_by_id,
     verify_password,
@@ -114,7 +115,11 @@ async def login(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Username and password required",
         )
-    user = await get_user_by_id(db, body.username.strip())
+    ident = body.username.strip()
+    user = await get_user_by_id(db, ident)
+    if not user:
+        # Allow email as well as user id (seed admin uses id "admin", email admin@vat.local).
+        user = await get_user_by_email(db, ident)
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

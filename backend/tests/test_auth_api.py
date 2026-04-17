@@ -51,6 +51,35 @@ async def test_login_returns_user_and_token(client, db):
 
 
 @pytest.mark.asyncio
+async def test_login_accepts_email_when_id_differs(client, db):
+    """POST /api/auth/login accepts email as username (not only user id)."""
+    pw_hash = bcrypt.hashpw(b"byemail", bcrypt.gensalt()).decode("utf-8")
+    await db.execute(
+        text(
+            "INSERT INTO tenants (id, name, created_at, auth_method) "
+            "VALUES ('t-email-login', 'Email Tenant', NOW(), 'local') "
+            "ON CONFLICT (id) DO NOTHING"
+        )
+    )
+    await db.execute(
+        text(
+            "INSERT INTO users (id, tenant_id, email, role, password_hash, created_at) "
+            "VALUES ('u-by-id', 't-email-login', 'person@example.com', 'reviewer', :pw, NOW()) "
+            "ON CONFLICT (id) DO UPDATE SET password_hash = EXCLUDED.password_hash"
+        ),
+        {"pw": pw_hash},
+    )
+    await db.commit()
+
+    res = await client.post(
+        "/api/auth/login",
+        json={"username": "person@example.com", "password": "byemail"},
+    )
+    assert res.status_code == 200
+    assert res.json()["user"]["id"] == "u-by-id"
+
+
+@pytest.mark.asyncio
 async def test_login_rejects_invalid_password(client, db):
     """POST /api/auth/login returns 401 for wrong password."""
     pw_hash = bcrypt.hashpw(b"correct", bcrypt.gensalt()).decode("utf-8")
