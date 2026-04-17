@@ -77,6 +77,8 @@ base manifests.
   forward proxy Service (`vat-egress-proxy:3128`) for the simplest
   "works everywhere" setup.
 - `egress-proxy-secret.yaml` points `HTTP(S)_PROXY` at that in-cluster proxy.
+  It uses a trailing dot in the FQDN (`.cluster.local.`) to avoid broken
+  enterprise search-domain rewrites.
 
 If you have an external corporate proxy, override the Secret values:
 
