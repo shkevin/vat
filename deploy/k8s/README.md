@@ -6,8 +6,11 @@ below per environment:
 
 | Environment | Overlay path                 | Image tag | Frontend VIP    | DNS                                 |
 |-------------|------------------------------|-----------|-----------------|-------------------------------------|
-| dev         | `deploy/k8s/overlays/dev`    | `develop` | `10.0.40.173`   | `vat.kamidev.automatedhass.com`     |
+| dev         | `deploy/k8s/overlays/dev`    | `latest`  | `10.0.40.173`   | `vat.kamidev.automatedhass.com`     |
 | prod        | `deploy/k8s/overlays/prod`   | `latest`  | `10.0.40.174`   | `vat.kamiprod.automatedhass.com`    |
+
+> Both overlays currently track `:latest` (built from `main`). Switch dev to
+> `:develop` (or a `sha-<short>`) once a `develop` branch is in active use.
 
 ## Layout
 

@@ -7,10 +7,10 @@ generators:
 images:
   - name: vat-backend
     newName: harbor.automatedhass.com/library/vat/backend
-    newTag: develop
+    newTag: latest
   - name: vat-frontend
     newName: harbor.automatedhass.com/library/vat/frontend
-    newTag: develop
+    newTag: latest
 patches:
   - path: patch-replicas.yaml
   - path: patch-frontend-lb.yaml
