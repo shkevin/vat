@@ -6,5 +6,6 @@ resources:
   - valkey.yaml
   - configmap-frontend.yaml
   - backend.yaml
+  - backend-alias.yaml
   - frontend.yaml
   - celery.yaml
