@@ -73,6 +73,59 @@ describe("computeReportContext countMode", () => {
     });
     expect(ctx.openIssues).toBe(3);
   });
+
+  it("dedupes findings that share an issue_group_id in groups mode regardless of reported repository", () => {
+    // Two findings the backend considers the same group (explicit groupKey),
+    // but with different repository strings. Previously the renderer applied
+    // its own asset-scope on top of the group id and counted them as 2 when
+    // the raw repo strings differed; now the groupId is the sole dedup key,
+    // matching the server-side severity donut / trend / aging widgets.
+    const sameGroupDifferentRepoStrings: Finding[] = [
+      {
+        id: "f-a",
+        findingType: "SCA",
+        fingerprintId: "fp-a",
+        cveId: "CVE-2026-1000",
+        severity: "High",
+        status: "Open",
+        sources: [],
+        audit: [],
+        component: "libfoo 1.0",
+        image: "containers/images/api",
+        groupKey: "sca:npm|libfoo#shared-asset",
+        title: "libfoo vuln",
+      },
+      {
+        id: "f-b",
+        findingType: "SCA",
+        fingerprintId: "fp-b",
+        cveId: "CVE-2026-1000",
+        severity: "High",
+        status: "Open",
+        sources: [],
+        audit: [],
+        component: "libfoo 1.0",
+        image: "containers/images/api-replica",
+        groupKey: "sca:npm|libfoo#shared-asset",
+        title: "libfoo vuln",
+      },
+    ];
+    const data = toVATDashboardData(sameGroupDifferentRepoStrings, [], "VAT", {
+      groupFindings: true,
+    });
+    const groupsCtx = computeReportContext(data, {
+      ...baseFilters,
+      countMode: "groups",
+    });
+    expect(groupsCtx.openIssues).toBe(1);
+    expect(groupsCtx.counts.high).toBe(1);
+    const instancesCtx = computeReportContext(data, {
+      ...baseFilters,
+      countMode: "instances",
+    });
+    expect(instancesCtx.openIssues).toBe(2);
+    expect(instancesCtx.counts.high).toBe(2);
+  });
 });
 
 describe("trend stacked dropdown filters", () => {

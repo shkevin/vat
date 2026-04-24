@@ -371,28 +371,12 @@ export interface ComputeReportContextOptions {
   allIssuesForPeriodComparison?: VATReportIssue[];
 }
 
-function issueAssetScopeKey(
-  issue: VATReportIssue,
-  data: VATDashboardData,
-): string {
-  const repo = (issue.repository ?? "").trim();
-  if (!repo) return "unknown";
-  const container = (data.containers ?? []).find((c) =>
-    issueMatchesContainer(repo, c.name),
-  );
-  if (container) return `container:${container.name.toLowerCase()}`;
-  const vm = (data.vms ?? []).find((v) => {
-    const a = repo.toLowerCase();
-    const b = (v.name ?? "").toLowerCase();
-    return a === b || a.endsWith(`/${b}`) || b.endsWith(`/${a}`);
-  });
-  if (vm) return `vm:${(vm.name ?? "").toLowerCase()}`;
-  return `repo:${repo.toLowerCase()}`;
-}
-
-function resolveOpenCountsMainParity(
+// Groups mode dedupes by issue_group_id only — a group is a vulnerability class
+// (e.g. CVE-X in package Y), counted once regardless of how many assets carry it.
+// Instances mode counts every finding separately. Per-asset slicing (Repo/Container
+// Risk Ranking) applies its own per-row scoping inside those widgets.
+function resolveOpenCountsForContext(
   openIssues: VATReportIssue[],
-  data: VATDashboardData,
   countMode: "groups" | "instances",
 ): { totalOpen: number; counts: SeverityCounts } {
   if (countMode === "instances") {
@@ -408,12 +392,11 @@ function resolveOpenCountsMainParity(
     low: 0,
     info: 0,
   };
-  const seen = new Set<string>();
+  const seen = new Set<number>();
   for (const issue of openIssues) {
     const gid = issue.issue_group_id ?? issue.issue_id;
-    const key = `${issueAssetScopeKey(issue, data)}:${gid}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
+    if (seen.has(gid)) continue;
+    seen.add(gid);
     const sev = normalizeSeverity(issue.severity, issue.severity_score);
     counts[sev]++;
   }
@@ -507,9 +490,8 @@ export function computeReportContext(
   }
 
   const openIssues = issues.filter(isOpen);
-  const { totalOpen, counts } = resolveOpenCountsMainParity(
+  const { totalOpen, counts } = resolveOpenCountsForContext(
     openIssues,
-    data,
     countMode,
   );
   const riskScore = computeReportRiskScore(counts);
@@ -1211,30 +1193,14 @@ function buildReportFilterBar(
       if (sc >= 0.1) return "low";
       return "info";
     }
-    function issueAssetKey(i) {
-      if (!i || !i.r) return "unknown";
-      var repo = (i.r || "").trim();
-      if (isContainerOrVm(repo)) {
-        var c = containers.find(function(name) { return repoMatchesContainer(repo, name); });
-        if (c) return "container:" + c.toLowerCase();
-        var r = repo.toLowerCase().trim();
-        var vm = vmNames.find(function(v) {
-          var vn = (v || "").toLowerCase().trim();
-          return r === vn || r.endsWith("/" + vn) || vn.endsWith("/" + r);
-        });
-        if (vm) return "vm:" + vm.toLowerCase();
-      }
-      return "repo:" + repo.toLowerCase();
-    }
     function countBySeverity(issues) {
       var c = { critical: 0, high: 0, medium: 0, low: 0, info: 0 };
       if (countMode === "groups") {
         var seen = {};
         issues.forEach(function(i) {
           var gid = i.g != null ? i.g : (i.r + "|" + i.d + "|" + (i.s||""));
-          var key = issueAssetKey(i) + "|" + gid;
-          if (seen[key]) return;
-          seen[key] = true;
+          if (seen[gid]) return;
+          seen[gid] = true;
           var sev = normSev(i);
           c[sev]++;
         });
@@ -1248,9 +1214,8 @@ function buildReportFilterBar(
         var seen = {};
         return issues.filter(function(i) {
           var gid = i.g != null ? i.g : (i.r + "|" + i.d + "|" + (i.s||""));
-          var key = issueAssetKey(i) + "|" + gid;
-          if (seen[key]) return false;
-          seen[key] = true;
+          if (seen[gid]) return false;
+          seen[gid] = true;
           return true;
         }).length;
       }
@@ -1572,9 +1537,8 @@ function buildReportFilterBar(
           var byGroup = {};
           issues.forEach(function(i) {
             var gid = i.g != null ? i.g : (i.r + "|" + i.d + "|" + (i.s||""));
-            var key = issueAssetKey(i) + "|" + gid;
-            if (byGroup[key]) return;
-            byGroup[key] = { sev: normSev(i) };
+            if (byGroup[gid]) return;
+            byGroup[gid] = { sev: normSev(i) };
           });
         Object.keys(byGroup).forEach(function(k) { c[byGroup[k].sev]++; });
         } else {
@@ -1598,7 +1562,7 @@ function buildReportFilterBar(
       var thisEndTs = currentWindowEnd.getTime();
       var lastStartTs = previousWindowStart.getTime();
       var lastEndTs = previousWindowEnd.getTime();
-      var countTotalTrend = function(issues) { return trendCountMode === "groups" ? (function() { var seen = {}; return issues.filter(function(i) { var gid = i.g != null ? i.g : (i.r + "|" + i.d + "|" + (i.s||"")); var key = issueAssetKey(i) + "|" + gid; if (seen[key]) return false; seen[key] = true; return true; }).length; })() : issues.length; };
+      var countTotalTrend = function(issues) { return trendCountMode === "groups" ? (function() { var seen = {}; return issues.filter(function(i) { var gid = i.g != null ? i.g : (i.r + "|" + i.d + "|" + (i.s||"")); if (seen[gid]) return false; seen[gid] = true; return true; }).length; })() : issues.length; };
       var isResolvedStatus = function(st) { return ["resolved","closed"].indexOf((st||"").toLowerCase()) >= 0; };
       var resolvedThisWeek = 0, resolvedLastWeek = 0, newThisWeek = 0, newLastWeek = 0;
       trendFilteredScoped.forEach(function(i) {
