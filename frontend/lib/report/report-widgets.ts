@@ -973,7 +973,7 @@ function renderTrendTable(
   config: Record<string, unknown>,
 ): string {
   if (ctx.trends.length === 0) return "";
-  const limit = Number(config.limit) ?? 999;
+  const limit = Number(config.limit) || 999;
   const trends = ctx.trends.slice(0, limit);
   const rows = trends
     .map((t) => {
@@ -1028,7 +1028,7 @@ function renderAgingTable(
   ctx: ReportContext,
   config: Record<string, unknown>,
 ): string {
-  const limit = Number(config.limit) ?? 999;
+  const limit = Number(config.limit) || 999;
   const aging = ctx.aging.slice(0, limit);
   const rows = aging
     .map((b) => {
@@ -1130,7 +1130,7 @@ function renderRepoTable(
   ctx: ReportContext,
   config: Record<string, unknown>,
 ): string {
-  const limit = Number(config.limit) ?? 25;
+  const limit = Number(config.limit) || 25;
   const repos = ctx.repoRisk.slice(0, limit);
   if (repos.length === 0) return "";
   const rows = repos
@@ -1173,7 +1173,7 @@ function renderTopVulnsTable(
   ctx: ReportContext,
   config: Record<string, unknown>,
 ): string {
-  const limit = Number(config.limit) ?? 25;
+  const limit = Number(config.limit) || 25;
   const vulns = ctx.topVulns.slice(0, limit);
   const issueById = (id: number) =>
     ctx.filteredIssues.find((i) => i.issue_id === id);
@@ -1239,7 +1239,7 @@ function renderTopVulnsList(
   ctx: ReportContext,
   config: Record<string, unknown>,
 ): string {
-  const limit = Number(config.limit) ?? 5;
+  const limit = Number(config.limit) || 5;
   const vulns = ctx.topVulns.slice(0, limit);
   const issueById = (id: number) =>
     ctx.filteredIssues.find((i) => i.issue_id === id);
@@ -1311,7 +1311,7 @@ function renderTopVulnsAdvisory(
   ctx: ReportContext,
   config: Record<string, unknown>,
 ): string {
-  const limit = Number(config.limit) ?? 30;
+  const limit = Number(config.limit) || 30;
   const vulns = ctx.topVulns.slice(0, limit);
   const issueById = (id: number) =>
     ctx.filteredIssues.find((i) => i.issue_id === id);
@@ -1415,7 +1415,7 @@ function renderScannerTable(
   config: Record<string, unknown>,
 ): string {
   if (ctx.scanners.length === 0) return "";
-  const limit = Number(config.limit) ?? 999;
+  const limit = Number(config.limit) || 999;
   const scanners = ctx.scanners.slice(0, limit);
   const rows = scanners
     .map((s) => {
@@ -1595,7 +1595,7 @@ function renderIssueList(
   ctx: ReportContext,
   config: Record<string, unknown>,
 ): string {
-  const limit = Number(config.limit) ?? 100;
+  const limit = Number(config.limit) || 100;
   const issues = [...ctx.filteredIssues]
     .sort((a, b) => {
       const aOpen = isOpen(a) ? 1 : 0;
@@ -1672,7 +1672,7 @@ function renderContainerBars(
   ctx: ReportContext,
   config: Record<string, unknown>,
 ): string {
-  const maxContainers = Number(config.maxContainers) ?? 8;
+  const maxContainers = Number(config.maxContainers) || 8;
   const containers = ctx.containerRisk.slice(0, maxContainers);
   const attrs = sectionFilterAttrs(ctx);
   if (containers.length === 0)
@@ -1688,7 +1688,7 @@ function renderContainerTable(
   ctx: ReportContext,
   config: Record<string, unknown>,
 ): string {
-  const limit = Number(config.limit) ?? 25;
+  const limit = Number(config.limit) || 25;
   const containers = ctx.containerRisk.slice(0, limit);
   if (containers.length === 0)
     return `<div class="section"><div data-report-aggregate="container-risk" data-limit="${limit}"><h2>Container Risk Ranking</h2><p class="activity-empty">No container repositories with issues.</p></div></div>`;
@@ -1737,7 +1737,7 @@ function renderAssetMixDonut(
   const total =
     mix.code + mix.container + mix.vm + (mix.package ?? 0) + mix.other;
   const attrs = sectionFilterAttrs(ctx);
-  const size = Number(config.size) ?? 100;
+  const size = Number(config.size) || 100;
   const primary = getPrimaryColor(ctx);
   if (total === 0)
     return `<div class="section" data-report-aggregate="asset-mix" data-asset-mix-size="${size}"><div${attrs}><h2>Issues by Asset Type</h2><div class="asset-mix-body"><p class="activity-empty">No open issues to categorize.</p></div></div></div>`;
@@ -1777,7 +1777,7 @@ function renderTeamTable(
   config: Record<string, unknown>,
 ): string {
   const teams = ctx.teams ?? [];
-  const limit = Number(config.limit) ?? 999;
+  const limit = Number(config.limit) || 999;
   const limited = teams.slice(0, limit);
   const attrs = sectionFilterAttrs(ctx);
   if (teams.length === 0)
@@ -1797,7 +1797,7 @@ function renderActivityTimeline(
   config: Record<string, unknown>,
 ): string {
   const log = ctx.activityLog ?? [];
-  const limit = Number(config.limit) ?? 20;
+  const limit = Number(config.limit) || 20;
   const items = log.slice(0, limit);
   const attrs = sectionFilterAttrs(ctx);
   if (items.length === 0) {
@@ -1906,7 +1906,8 @@ function renderCiScanFrequency(
   config: Record<string, unknown>,
 ): string {
   const scans = ctx.ciScans ?? [];
-  const periodDays = ctx.effectivePeriodDays ?? Number(config.periodDays) ?? 30;
+  const periodDays =
+    ctx.effectivePeriodDays ?? (Number(config.periodDays) || 30);
   const attrs = sectionFilterAttrs(ctx);
   if (scans.length === 0)
     return `<div class="section"><div${attrs}><h2>CI Scan Frequency</h2><p class="activity-empty">No CI scan data. CI scans may require a connected CI/CD integration.</p></div></div>`;
