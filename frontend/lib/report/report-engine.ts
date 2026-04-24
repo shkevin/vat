@@ -1563,10 +1563,18 @@ function buildReportFilterBar(
       var lastStartTs = previousWindowStart.getTime();
       var lastEndTs = previousWindowEnd.getTime();
       var countTotalTrend = function(issues) { return trendCountMode === "groups" ? (function() { var seen = {}; return issues.filter(function(i) { var gid = i.g != null ? i.g : (i.r + "|" + i.d + "|" + (i.s||"")); if (seen[gid]) return false; seen[gid] = true; return true; }).length; })() : issues.length; };
-      var isResolvedStatus = function(st) { return ["resolved","closed"].indexOf((st||"").toLowerCase()) >= 0; };
+      // "Closed" = any status that takes the finding off the open queue (remediated,
+      // suppressed, false-positive, ignored, etc.) plus a closed_at timestamp. Mirrors
+      // EXCLUDED_OPEN_STATUSES on the server so MTTR and "Closed this week" agree.
+      var isClosedStatus = function(st) {
+        var s = (st||"").toLowerCase();
+        return s === "closed" || s === "resolved" || s === "ignored" || s === "auto_ignored"
+          || s === "false positive" || s === "suppressed" || s === "approved"
+          || s === "duplicate" || s === "not applicable" || s === "rejected";
+      };
       var resolvedThisWeek = 0, resolvedLastWeek = 0, newThisWeek = 0, newLastWeek = 0;
       trendFilteredScoped.forEach(function(i) {
-        if (i.c && isResolvedStatus(i.st)) { var ts = new Date(i.c).getTime(); if (ts >= thisStartTs && ts <= thisEndTs) resolvedThisWeek++; else if (ts >= lastStartTs && ts <= lastEndTs) resolvedLastWeek++; }
+        if (i.c && isClosedStatus(i.st)) { var ts = new Date(i.c).getTime(); if (ts >= thisStartTs && ts <= thisEndTs) resolvedThisWeek++; else if (ts >= lastStartTs && ts <= lastEndTs) resolvedLastWeek++; }
       });
       trendFilteredScoped.forEach(function(i) {
         var st = (i.st||"").toLowerCase(); if (st === "ignored" || st === "auto_ignored" || st === "suppressed") return;

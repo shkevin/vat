@@ -11,6 +11,9 @@ import {
   getRiskLevel,
   computeRiskScore,
   computeContainerRiskScores,
+  computeMTTR,
+  computeTrendMetrics,
+  isClosedIssue,
 } from "./metrics";
 import type { VATReportIssue, VATReportIssueGroup } from "./vatReportAdapter";
 
@@ -322,5 +325,102 @@ describe("computeContainerRiskScores source of truth", () => {
     expect(scores[0].high).toBe(1);
     expect(scores[0].medium).toBe(0);
     expect(scores[0].low).toBe(0);
+  });
+});
+
+describe("isClosedIssue / unified resolved-vs-closed semantics", () => {
+  // VAT's product scope treats triage, risk acceptance, and remediation as
+  // peer outcomes. Any EXCLUDED_OPEN_STATUS with a closed_at timestamp is
+  // "closed" — MTTR and "Closed this week" must agree.
+  it("counts both Resolved and Suppressed findings as closed", () => {
+    expect(
+      isClosedIssue({
+        ...mkIssue(1, 1, "Resolved"),
+        closed_at: "2026-04-20T12:00:00Z",
+      }),
+    ).toBe(true);
+    expect(
+      isClosedIssue({
+        ...mkIssue(2, 2, "Suppressed"),
+        closed_at: "2026-04-20T12:00:00Z",
+      }),
+    ).toBe(true);
+    expect(
+      isClosedIssue({
+        ...mkIssue(3, 3, "False Positive"),
+        closed_at: "2026-04-20T12:00:00Z",
+      }),
+    ).toBe(true);
+  });
+  it("does NOT count Open findings or findings missing closed_at", () => {
+    expect(isClosedIssue(mkIssue(1, 1, "Open"))).toBe(false);
+    // status is closed but no closed_at — should not count
+    expect(
+      isClosedIssue({
+        ...mkIssue(1, 1, "Resolved"),
+        closed_at: undefined as unknown as string,
+      }),
+    ).toBe(false);
+  });
+
+  it("computeTrendMetrics counts Suppressed closures in 'resolved this week'", () => {
+    // Build a this-week window; Sun→Sun dates relative to now
+    const now = new Date();
+    const weekStart = new Date(now);
+    weekStart.setUTCDate(now.getUTCDate() - 2); // 2 days ago, safely this week
+    weekStart.setUTCHours(12, 0, 0, 0);
+    const tsThisWeek = weekStart.toISOString();
+
+    const issues: VATReportIssue[] = [
+      // 1 resolved + 2 suppressed + 1 false-positive, all closed this week
+      {
+        ...mkIssue(1, 1, "Resolved"),
+        first_detected_at: "2024-01-01T00:00:00Z",
+        closed_at: tsThisWeek,
+      },
+      {
+        ...mkIssue(2, 2, "Suppressed"),
+        first_detected_at: "2024-01-01T00:00:00Z",
+        closed_at: tsThisWeek,
+      },
+      {
+        ...mkIssue(3, 3, "Suppressed"),
+        first_detected_at: "2024-01-01T00:00:00Z",
+        closed_at: tsThisWeek,
+      },
+      {
+        ...mkIssue(4, 4, "False Positive"),
+        first_detected_at: "2024-01-01T00:00:00Z",
+        closed_at: tsThisWeek,
+      },
+      // 1 currently open — should not be counted as closed
+      mkIssue(5, 5, "Open"),
+    ];
+    const metrics = computeTrendMetrics(issues, "instances");
+    // Before PR 2: only the Resolved one (1). After PR 2: all 4 closures count.
+    expect(metrics.resolvedThisWeek).toBe(4);
+  });
+
+  it("computeMTTR counts all EXCLUDED_OPEN_STATUS findings with closed_at", () => {
+    const issues: VATReportIssue[] = [
+      // 2 high findings closed
+      {
+        ...mkIssue(1, 1, "Resolved"),
+        first_detected_at: "2024-01-01T00:00:00Z",
+        closed_at: "2024-01-11T00:00:00Z", // 10 days
+      },
+      {
+        ...mkIssue(2, 2, "Suppressed"),
+        first_detected_at: "2024-01-01T00:00:00Z",
+        closed_at: "2024-01-03T00:00:00Z", // 2 days
+      },
+      // 1 currently open — skipped by computeMTTR
+      mkIssue(3, 3, "Open"),
+    ];
+    const mttr = computeMTTR(issues, "instances");
+    expect(mttr).toHaveLength(1);
+    expect(mttr[0].severity).toBe("High");
+    expect(mttr[0].count).toBe(2); // both closed findings count
+    expect(mttr[0].avgDays).toBe(6); // (10 + 2) / 2
   });
 });

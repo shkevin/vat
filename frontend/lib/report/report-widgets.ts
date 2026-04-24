@@ -1108,7 +1108,7 @@ function renderMttrTable(ctx: ReportContext): string {
     .map((s) => filterAttr(s))
     .join(" ");
   const mttrFilter = sevAttrs ? ` data-filter-severity="${sevAttrs}"` : "";
-  return `<div class="section"><div${mttrFilter}><h2>Mean Time to Remediate</h2><table><thead><tr><th>Severity</th><th class="text-right">Avg (days)</th><th class="text-right">Median (days)</th><th class="text-right">Resolved</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
+  return `<div class="section"><div${mttrFilter}><h2>Mean Time to Remediate</h2><table><thead><tr><th>Severity</th><th class="text-right">Avg (days)</th><th class="text-right">Median (days)</th><th class="text-right">Closed</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
 }
 
 function renderRepoBars(
@@ -1555,7 +1555,7 @@ function renderTrendStacked(
 
   const topBar = `<div class="kpi-grid trend-stacked-topbar" style="grid-template-columns: repeat(3, 1fr); margin-bottom: 16px;">
     <div class="kpi-card"><div class="label">Current open issues</div><div class="value">${currentOpen.toLocaleString()}</div><div class="detail">vs ${metrics.openOneWeekAgo.toLocaleString()} one week ago</div><div class="kpi-trend" style="color:${openPctColor}">${openPctText}</div></div>
-    <div class="kpi-card"><div class="label">Resolved this week</div><div class="value">${metrics.resolvedThisWeek.toLocaleString()}</div><div class="detail">vs ${metrics.resolvedLastWeek.toLocaleString()} last week</div><div class="kpi-trend" style="color:${resolvedPctColor}">${resolvedPctText}</div></div>
+    <div class="kpi-card"><div class="label">Closed this week</div><div class="value">${metrics.resolvedThisWeek.toLocaleString()}</div><div class="detail">vs ${metrics.resolvedLastWeek.toLocaleString()} last week</div><div class="kpi-trend" style="color:${resolvedPctColor}">${resolvedPctText}</div></div>
     <div class="kpi-card"><div class="label">New issues this week</div><div class="value">${metrics.newThisWeek.toLocaleString()}</div><div class="detail">vs ${metrics.newLastWeek.toLocaleString()} last week</div><div class="kpi-trend" style="color:${newPctColor}">${newPctText}</div></div>
   </div>`;
 

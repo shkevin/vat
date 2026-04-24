@@ -157,6 +157,19 @@ export function isOpen(issue: VATReportIssue): boolean {
   );
 }
 
+/** A finding is "closed" for reporting purposes when it has a closure timestamp
+ * and a status that removes it from the open queue — remediated, suppressed,
+ * false-positive, ignored, etc. Used by both MTTR (for time-to-close) and the
+ * trend "Closed this week" KPI so both speak the same language about "off the
+ * board this period". */
+export function isClosedIssue(issue: VATReportIssue): boolean {
+  if (!issue.closed_at) return false;
+  const st = (issue.status ?? "").toLowerCase();
+  return EXCLUDED_OPEN_STATUSES.includes(
+    st as (typeof EXCLUDED_OPEN_STATUSES)[number],
+  );
+}
+
 function isMitigated(issue: VATReportIssue): boolean {
   return (issue.status ?? "").toLowerCase() === "mitigated";
 }
@@ -417,8 +430,8 @@ function avgMttrInRange(
   const startTs = start.getTime();
   const endTs = end.getTime();
   for (const i of issues) {
-    if (!i.closed_at || !i.first_detected_at) continue;
-    const closed = safeDate(i.closed_at);
+    if (!isClosedIssue(i) || !i.first_detected_at) continue;
+    const closed = safeDate(i.closed_at!);
     const detected = safeDate(i.first_detected_at);
     if (!closed || !detected || closed < detected) continue;
     const closedTs = closed.getTime();
@@ -1130,9 +1143,9 @@ export function computeMTTR(
   const raw: Array<{ sev: keyof SeverityCounts; gid: number; days: number }> =
     [];
   for (const issue of issues) {
-    if (!issue.closed_at || !issue.first_detected_at) continue;
+    if (!isClosedIssue(issue) || !issue.first_detected_at) continue;
     const detected = safeDate(issue.first_detected_at);
-    const closed = safeDate(issue.closed_at);
+    const closed = safeDate(issue.closed_at!);
     if (!detected || !closed || closed < detected) continue;
     const days =
       (closed.getTime() - detected.getTime()) / (1000 * 60 * 60 * 24);
@@ -1528,15 +1541,16 @@ export function computeTrendMetrics(
   let resolvedLastWeek = 0;
   let newThisWeek = 0;
   let newLastWeek = 0;
-  const isResolvedStatus = (st: string) =>
-    ["resolved", "closed"].includes((st ?? "").toLowerCase());
+  // "Closed" matches VAT's product scope of triage + risk acceptance +
+  // remediation: suppressions, false-positives, approvals all count as
+  // "off the open queue". Aligns with computeMTTR (same isClosedIssue).
   for (const i of trendIssues) {
-    const closed = i.closed_at ? safeDate(i.closed_at) : null;
-    if (closed && isResolvedStatus(i.status ?? "")) {
-      const ts = closed.getTime();
-      if (ts >= thisStartTs && ts <= thisEndTs) resolvedThisWeek++;
-      else if (ts >= lastStartTs && ts <= lastEndTs) resolvedLastWeek++;
-    }
+    if (!isClosedIssue(i)) continue;
+    const closed = safeDate(i.closed_at!);
+    if (!closed) continue;
+    const ts = closed.getTime();
+    if (ts >= thisStartTs && ts <= thisEndTs) resolvedThisWeek++;
+    else if (ts >= lastStartTs && ts <= lastEndTs) resolvedLastWeek++;
   }
   // "New" = first detections in window, excluding ignored/auto_ignored/suppressed (matches Aikido).
   // VAT maps Aikido "ignored" → "Suppressed", so we must exclude suppressed to align with vulnerability-dashboard.
