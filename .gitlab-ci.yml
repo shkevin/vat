@@ -2,8 +2,8 @@
 # the in-cluster Harbor registry so Argo CD can pull them.
 #
 # Required GitLab CI/CD variables (Settings → CI/CD → Variables):
-#   HARBOR_USER   masked, protected — Harbor robot or user account (e.g. robot$library+vat-ci)
-#   HARBOR_TOKEN  masked, protected — PAT/robot token with push rights on project "library"
+#   HARBOR_USER   masked, protected — Harbor robot or user with push to project "vat"
+#   HARBOR_TOKEN  masked, protected — PAT/robot token with push rights on project "vat"
 #
 # Optional:
 #   SOPS_AGE_KEY  masked, protected, file — age private key matching .sops.yaml
@@ -17,7 +17,7 @@ stages:
 
 variables:
   HARBOR_HOST: harbor.automatedhass.com
-  HARBOR_PROJECT: library
+  HARBOR_PROJECT: vat
   # Folder inside the repo that carries the manifests.
   K8S_ROOT: deploy/k8s
   # Same flags the kamiwaza-argocd Argo repo-server uses; both are required for
@@ -97,7 +97,7 @@ validate:overlays:
       AUTH=$(printf '%s:%s' "${HARBOR_USER}" "${HARBOR_TOKEN}" | base64 | tr -d '\n')
       printf '{"auths":{"%s":{"auth":"%s"}}}\n' "${HARBOR_HOST}" "${AUTH}" > /kaniko/.docker/config.json
     - |
-      IMAGE="${HARBOR_HOST}/${HARBOR_PROJECT}/vat/${COMPONENT}"
+      IMAGE="${HARBOR_HOST}/${HARBOR_PROJECT}/${COMPONENT}"
       DESTINATIONS="--destination=${IMAGE}:sha-${CI_COMMIT_SHORT_SHA}"
       if [ "${CI_COMMIT_BRANCH:-}" = "main" ]; then
         DESTINATIONS="${DESTINATIONS} --destination=${IMAGE}:latest"
@@ -121,7 +121,7 @@ validate:overlays:
         --context "${CI_PROJECT_DIR}/${CONTEXT}" \
         --dockerfile "${CI_PROJECT_DIR}/${CONTEXT}/${DOCKERFILE}" \
         --cache=true \
-        --cache-repo="${HARBOR_HOST}/${HARBOR_PROJECT}/vat/${COMPONENT}/cache" \
+        --cache-repo="${HARBOR_HOST}/${HARBOR_PROJECT}/${COMPONENT}/cache" \
         --snapshot-mode=redo \
         ${KANIKO_EXTRA_ARGS} \
         ${KANIKO_NO_PUSH:-} \

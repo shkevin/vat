@@ -59,7 +59,7 @@ Commit only the `*.enc.yaml` files. `*.plain.yaml` and `age.key` are
 
 ## Image pull credentials
 
-Images live in `harbor.automatedhass.com/library/vat/{backend,frontend}`.
+Images live in `harbor.automatedhass.com/vat/{backend,frontend}` (Harbor project `vat`).
 The `harbor-creds` Secret is synced into the `vat` namespace by the Argo CD
 maintenance hooks (`kamiwaza-argocd` → `root/base/integrations/argocd-maintenance/hooks.yaml`).
 Each workload's `imagePullSecrets: [harbor-creds]` relies on that sync.
@@ -109,7 +109,7 @@ pushes to Harbor. Tagging rules:
 Required CI/CD variables:
 
 - `HARBOR_USER` (masked, protected) — Harbor robot or user
-- `HARBOR_TOKEN` (masked, protected) — Harbor token with push on `library`
+- `HARBOR_TOKEN` (masked, protected) — Harbor token with push on project `vat`
 
 Optional:
 

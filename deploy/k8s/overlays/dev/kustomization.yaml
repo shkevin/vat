@@ -10,10 +10,10 @@ generators:
   - ksops-generator.yaml
 images:
   - name: vat-backend
-    newName: harbor.automatedhass.com/library/vat/backend
+    newName: harbor.automatedhass.com/vat/backend
     newTag: latest
   - name: vat-frontend
-    newName: harbor.automatedhass.com/library/vat/frontend
+    newName: harbor.automatedhass.com/vat/frontend
     newTag: latest
 patches:
   - path: patch-replicas.yaml
