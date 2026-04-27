@@ -14,6 +14,8 @@ import {
   computeMTTR,
   computeTrendMetrics,
   isClosedIssue,
+  computeScannerBreakdown,
+  computeSlaCompliance,
 } from "./metrics";
 import type { VATReportIssue, VATReportIssueGroup } from "./vatReportAdapter";
 
@@ -479,5 +481,72 @@ describe("isClosedIssue / unified resolved-vs-closed semantics", () => {
     expect(mttr[0].severity).toBe("High");
     expect(mttr[0].count).toBe(2); // both closed findings count
     expect(mttr[0].avgDays).toBe(6); // (10 + 2) / 2
+  });
+
+  it("computeScannerBreakdown groups mode picks max-severity instance per group as representative", () => {
+    // Group 1: two instances, Critical (Trivy) + Low (Grype). Server's
+    // computeSeverityCountsByGroups would call this group Critical; the
+    // breakdown must agree, attributing it to whichever scanner the worst
+    // instance came from.
+    const issues: VATReportIssue[] = [
+      {
+        ...mkIssue(1, 1, "open"),
+        severity: "low",
+        severity_score: 3,
+        scanner_type: "Grype",
+      },
+      {
+        ...mkIssue(2, 1, "open"),
+        severity: "critical",
+        severity_score: 9.8,
+        scanner_type: "Trivy",
+      },
+      // Group 2: single Medium from Semgrep
+      {
+        ...mkIssue(3, 2, "open"),
+        severity: "medium",
+        severity_score: 5,
+        scanner_type: "Semgrep",
+      },
+    ];
+    const groups = computeScannerBreakdown(issues, "groups");
+    const trivy = groups.find((g) => g.scanner === "Trivy");
+    const grype = groups.find((g) => g.scanner === "Grype");
+    expect(trivy?.count).toBe(1);
+    expect(trivy?.critical).toBe(1);
+    expect(trivy?.low).toBe(0);
+    // Grype loses the attribution because Trivy's instance is the worst rep.
+    expect(grype).toBeUndefined();
+    // Instances mode counts every instance in its own scanner.
+    const inst = computeScannerBreakdown(issues, "instances");
+    expect(inst.find((g) => g.scanner === "Trivy")?.critical).toBe(1);
+    expect(inst.find((g) => g.scanner === "Grype")?.low).toBe(1);
+  });
+
+  it("computeSlaCompliance groups mode evaluates against group's worst severity and earliest detection", () => {
+    const longAgo = "2024-01-01T00:00:00Z";
+    const recent = new Date(Date.now() - 5 * 86400000).toISOString();
+    // Group 1: Critical instance detected long ago + Low instance detected
+    // recently. Bucket should be Critical (15-day SLA), aged from longAgo →
+    // exceeding. Pre-fix, if Low was visited first, the bucket would be Low's
+    // 360-day SLA aged from longAgo → still within (false negative).
+    const issues: VATReportIssue[] = [
+      {
+        ...mkIssue(1, 1, "open"),
+        severity: "low",
+        severity_score: 3,
+        first_detected_at: recent,
+      },
+      {
+        ...mkIssue(2, 1, "open"),
+        severity: "critical",
+        severity_score: 9.8,
+        first_detected_at: longAgo,
+      },
+    ];
+    const groups = computeSlaCompliance(issues, {}, "groups");
+    expect(groups.total).toBe(1);
+    expect(groups.exceedingSla).toBe(1);
+    expect(groups.bySeverity[0]?.severity).toBe("critical");
   });
 });

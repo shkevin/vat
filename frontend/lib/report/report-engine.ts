@@ -976,17 +976,25 @@ function buildReportFilterBar(
     }
     var openIssues = reportData.issues.filter(function(i) { return isOpenStatus(i.st); });
     var counts = { severity: {}, assetType: {}, asset: {}, branch: {}, scanner: {} };
-    var list = countMode === "groups" ? (function() {
-      var seen = {};
-      return openIssues.filter(function(i) {
+    // Groups mode: the snapshot's severity counts must dedupe by gid alone
+    // (21c410c invariant) and pick MAX severity per group (server parity with
+    // computeSeverityCountsByGroups). Asset/branch/scanner buckets keep one
+    // count per group, attributed to the max-severity representative — same
+    // approach as computeScannerBreakdown's groups-mode rewrite.
+    var sevRankSnap = function(s) { return s === "critical" ? 4 : s === "high" ? 3 : s === "medium" ? 2 : s === "low" ? 1 : 0; };
+    var list;
+    if (countMode === "groups") {
+      var byGroup = {};
+      openIssues.forEach(function(i) {
         var gid = i.g != null ? i.g : (i.r + "|" + i.d + "|" + (i.s||""));
-        var repo = (i.r || "").trim();
-        var key = (isContainerOrVm(repo) ? normContainerName(repo) : repo.toLowerCase()) + "|" + gid;
-        if (seen[key]) return false;
-        seen[key] = true;
-        return true;
+        var iSev = normSev(i);
+        var prev = byGroup[gid];
+        if (!prev || sevRankSnap(iSev) > sevRankSnap(normSev(prev))) byGroup[gid] = i;
       });
-    })() : openIssues;
+      list = Object.keys(byGroup).map(function(k) { return byGroup[k]; });
+    } else {
+      list = openIssues;
+    }
     list.forEach(function(i) {
       var sev = normSev(i);
       counts.severity[sev] = (counts.severity[sev] || 0) + 1;

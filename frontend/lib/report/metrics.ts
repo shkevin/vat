@@ -598,14 +598,7 @@ export function computeScannerBreakdown(
   countMode: CountMode = "groups",
 ): ScannerBreakdown[] {
   const map = new Map<string, ScannerBreakdown>();
-  const seenGroups = countMode === "groups" ? new Set<number>() : null;
-  for (const issue of issues) {
-    if (countMode === "groups" && seenGroups) {
-      const gid = issue.issue_group_id ?? 0;
-      if (seenGroups.has(gid)) continue;
-      seenGroups.add(gid);
-    }
-    const scanner = issue.scanner_type || "Unknown";
+  const ensure = (scanner: string) => {
     if (!map.has(scanner))
       map.set(scanner, {
         scanner,
@@ -615,10 +608,40 @@ export function computeScannerBreakdown(
         medium: 0,
         low: 0,
       });
-    const e = map.get(scanner)!;
-    e.count++;
-    const sev = normalizeSeverity(issue.severity, issue.severity_score);
-    if (sev !== "info") e[sev]++;
+    return map.get(scanner)!;
+  };
+  if (countMode === "groups") {
+    // Pick the max-severity instance per group as the representative; attribute
+    // the group's count + severity to that representative's scanner. Matches
+    // the max-sev-per-group invariant of computeSeverityCountsByGroups so the
+    // donut totals agree with the executive summary KPIs.
+    const byGroup = new Map<number, VATReportIssue>();
+    for (const i of issues) {
+      const gid = i.issue_group_id ?? 0;
+      const prev = byGroup.get(gid);
+      const iSev = severityRank(
+        normalizeSeverity(i.severity, i.severity_score),
+      );
+      const pSev = prev
+        ? severityRank(normalizeSeverity(prev.severity, prev.severity_score))
+        : -1;
+      if (!prev || iSev > pSev) byGroup.set(gid, i);
+    }
+    for (const issue of Array.from(byGroup.values())) {
+      const scanner = issue.scanner_type || "Unknown";
+      const e = ensure(scanner);
+      e.count++;
+      const sev = normalizeSeverity(issue.severity, issue.severity_score);
+      if (sev !== "info") e[sev]++;
+    }
+  } else {
+    for (const issue of issues) {
+      const scanner = issue.scanner_type || "Unknown";
+      const e = ensure(scanner);
+      e.count++;
+      const sev = normalizeSeverity(issue.severity, issue.severity_score);
+      if (sev !== "info") e[sev]++;
+    }
   }
   return Array.from(map.values()).sort((a, b) => b.count - a.count);
 }
@@ -1377,18 +1400,62 @@ export function computeSlaCompliance(
     info: 365,
   };
   const open = issues.filter(isOpen);
-  const seenGroups = countMode === "groups" ? new Set<number>() : null;
+  // In groups mode, evaluate SLA against the group's worst (max-severity)
+  // instance and its earliest first_detected_at. Otherwise the bucket would
+  // depend on iteration order and disagree with the executive summary KPIs
+  // for the same group.
+  const evaluables: Array<{ severity: string; ageDays: number }> = [];
+  if (countMode === "groups") {
+    const byGroup = new Map<
+      number,
+      { rep: VATReportIssue; earliestDetectedAt: string | undefined }
+    >();
+    for (const issue of open) {
+      const gid = issue.issue_group_id ?? 0;
+      const iSev = severityRank(
+        normalizeSeverity(issue.severity, issue.severity_score),
+      );
+      const prev = byGroup.get(gid);
+      const pSev = prev
+        ? severityRank(
+            normalizeSeverity(prev.rep.severity, prev.rep.severity_score),
+          )
+        : -1;
+      // Track earliest first_detected_at independent of severity — SLA aging
+      // should reflect when the group first appeared, not when the worst
+      // instance was added.
+      const earliest =
+        prev && prev.earliestDetectedAt
+          ? safeDate(issue.first_detected_at) &&
+            safeDate(prev.earliestDetectedAt)! >
+              safeDate(issue.first_detected_at!)!
+            ? issue.first_detected_at
+            : prev.earliestDetectedAt
+          : issue.first_detected_at;
+      if (!prev || iSev > pSev) {
+        byGroup.set(gid, { rep: issue, earliestDetectedAt: earliest });
+      } else {
+        prev.earliestDetectedAt = earliest;
+      }
+    }
+    for (const { rep, earliestDetectedAt } of Array.from(byGroup.values())) {
+      evaluables.push({
+        severity: normalizeSeverity(rep.severity, rep.severity_score),
+        ageDays: safeAge(earliestDetectedAt ?? rep.first_detected_at),
+      });
+    }
+  } else {
+    for (const issue of open) {
+      evaluables.push({
+        severity: normalizeSeverity(issue.severity, issue.severity_score),
+        ageDays: safeAge(issue.first_detected_at),
+      });
+    }
+  }
   let withinSla = 0;
   let exceedingSla = 0;
   const bySev: Record<string, { within: number; exceeding: number }> = {};
-  for (const issue of open) {
-    if (countMode === "groups" && seenGroups) {
-      const gid = issue.issue_group_id ?? 0;
-      if (seenGroups.has(gid)) continue;
-      seenGroups.add(gid);
-    }
-    const sev = normalizeSeverity(issue.severity, issue.severity_score);
-    const age = safeAge(issue.first_detected_at);
+  for (const { severity: sev, ageDays: age } of evaluables) {
     const limit = slaBySeverity[sev] ?? 365;
     const compliant = age <= limit;
     if (compliant) withinSla++;
@@ -1415,22 +1482,49 @@ export function computeABCComplianceForIssues(
   countMode: CountMode = "groups",
 ): ABCCriteriaResult {
   const open = issues.filter(isOpen);
-  const seenGroups = countMode === "groups" ? new Set<number>() : null;
   const inputs: ABCIssueInput[] = [];
-  for (const i of open) {
-    if (countMode === "groups" && seenGroups) {
+  if (countMode === "groups") {
+    // Use the group's worst (max-severity) instance as the ABC representative.
+    // The compliance bucket otherwise depended on iteration order, breaking
+    // parity with the executive summary KPIs derived from
+    // computeSeverityCountsByGroups.
+    const byGroup = new Map<number, VATReportIssue>();
+    for (const i of open) {
       const gid = i.issue_group_id ?? 0;
-      if (seenGroups.has(gid)) continue;
-      seenGroups.add(gid);
+      const prev = byGroup.get(gid);
+      const iSev = severityRank(
+        normalizeSeverity(i.severity, i.severity_score),
+      );
+      const pSev = prev
+        ? severityRank(normalizeSeverity(prev.severity, prev.severity_score))
+        : -1;
+      if (!prev || iSev > pSev) byGroup.set(gid, i);
     }
-    const vatIssue = i as VATReportIssue & { cve_published_at?: string | null };
-    inputs.push({
-      severity: i.severity ?? "",
-      severityScore: i.severity_score,
-      firstDetectedAt: i.first_detected_at ?? "",
-      cvePublishedAt: vatIssue.cve_published_at,
-      status: i.status ?? "",
-    });
+    for (const i of Array.from(byGroup.values())) {
+      const vatIssue = i as VATReportIssue & {
+        cve_published_at?: string | null;
+      };
+      inputs.push({
+        severity: i.severity ?? "",
+        severityScore: i.severity_score,
+        firstDetectedAt: i.first_detected_at ?? "",
+        cvePublishedAt: vatIssue.cve_published_at,
+        status: i.status ?? "",
+      });
+    }
+  } else {
+    for (const i of open) {
+      const vatIssue = i as VATReportIssue & {
+        cve_published_at?: string | null;
+      };
+      inputs.push({
+        severity: i.severity ?? "",
+        severityScore: i.severity_score,
+        firstDetectedAt: i.first_detected_at ?? "",
+        cvePublishedAt: vatIssue.cve_published_at,
+        status: i.status ?? "",
+      });
+    }
   }
   return computeABCCompliance(inputs);
 }
