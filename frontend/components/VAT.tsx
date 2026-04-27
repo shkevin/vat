@@ -368,11 +368,24 @@ export default function VAT({ config }: VATProps) {
   }, [view, canReviewAssets, reportAssets, token, user?.email]);
 
   const mainContent = (() => {
-    // Pre-fix: a full-page "▣ Loading VAT…" splash blocked the entire main
-    // content until the API finished. On fleet-scale deployments that's a
-    // 3+ second blank screen on every refresh. Now we render the actual view
-    // immediately — each widget already handles its own empty state, and the
-    // header's `refreshing` indicator covers in-flight fetches.
+    if (loading && !error && findings.length === 0) {
+      return (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            minHeight: 300,
+            color: "#1d4ed8",
+            ...mono,
+            fontSize: 12,
+          }}
+        >
+          ▣ Loading VAT…
+        </div>
+      );
+    }
+
     if (error) {
       return (
         <div

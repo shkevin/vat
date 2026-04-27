@@ -614,53 +614,23 @@ export function useVATDataCore(): UseVATDataReturn {
     // appears on a genuinely cold first load.
     placeholderData: keepPreviousData,
     queryFn: async () => {
-      // Two-phase fetch — fast first paint without sacrificing accuracy:
+      // Single full=true fetch. The two-phase fast-first-paint experiment
+      // (c2a624b → 853f99e) was reverted: Phase 1's partial findings + asset
+      // sample broke widgets (severity badges, report widgets) for the
+      // ~3-4s window before Phase 2 settled. Accept the ~3.4s wait per
+      // refresh in exchange for correct stats from the first paint.
       //
-      //   Phase 1: page=1, page_size=500, include_assets=true. Backend TTFB
-      //            ~150ms vs ~3.3s for full=true, so the workspace renders in
-      //            ~1/20th the time it used to.
-      //
-      //   Phase 2: full=true, limit=0, include_assets=true. Background. ~3.4s.
-      //            Replaces the cached value via setQueryData. Critically, the
-      //            backend's get_assets_with_findings derives asset counts
-      //            from whichever findings list is passed in — so Phase 1's
-      //            asset stats are scoped to its 500 findings (badges,
-      //            severity, openCount). Only Phase 2's full=true pass yields
-      //            correct fleet-wide asset stats. Widgets re-render to full
-      //            accuracy when it lands.
-      //
-      // (Pre-84570c9 there was a paginated loop with a 10k cap that silently
-      // truncated. We don't paginate here — full=true on Phase 2 is faster
-      // than 30 sequential 500-page calls and gives correct asset enrichment
-      // on the same DB pass.)
-      const baseParams: Record<string, string | string[] | number | boolean> = {
+      // No 10k cap here — full=true streams all findings on a single DB
+      // pass, so the silent tail-truncation bug 84570c9 fixed stays fixed.
+      const params: Record<string, string | string[] | number | boolean> = {
+        full: true,
+        limit: 0,
         include_assets: true,
         include_asset_findings: false,
         include_zero_assets: showEmptyAssets,
       };
-      if (showArchived !== "both") baseParams.archived = showArchived;
-
-      const first = await fetchVATData(
-        { ...baseParams, full: false, page_size: 500, page: 1 },
-        auth,
-      );
-      if (!first.meta?.hasMore) return first;
-
-      // Don't await — Phase 2 runs in the background while we return Phase 1.
-      void (async () => {
-        try {
-          const full = await fetchVATData(
-            { ...baseParams, full: true, limit: 0 },
-            auth,
-          );
-          queryClient.setQueryData(vatQueryKey, full);
-        } catch {
-          // Silent: Phase 1 stays rendered; the next refetch (45s poll /
-          // reconnect / refresh) will retry.
-        }
-      })();
-
-      return first;
+      if (showArchived !== "both") params.archived = showArchived;
+      return fetchVATData(params, auth);
     },
     refetchInterval: () =>
       typeof document !== "undefined" && document.visibilityState === "visible"
