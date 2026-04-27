@@ -614,59 +614,49 @@ export function useVATDataCore(): UseVATDataReturn {
     // appears on a genuinely cold first load.
     placeholderData: keepPreviousData,
     queryFn: async () => {
-      // Two-phase fetch:
-      //   Phase 1: page 1 of 500 — backend TTFB ~150ms vs ~3.3s for full=true,
-      //            so the report renders in ~1/20th the time it used to.
-      //   Phase 2: stream remaining pages in the background and merge into the
-      //            React Query cache via setQueryData. Widgets re-render to
-      //            full accuracy without ever blanking.
-      // Earlier (pre-84570c9) the fetch was paginated but capped at 20×500 =
-      // 10k findings; once exceeded, the tail was silently dropped and
-      // Severity Distribution / MTTR / Top Vulns rendered wrong numbers. No
-      // cap here — we keep iterating until meta.hasMore is false.
+      // Two-phase fetch — fast first paint without sacrificing accuracy:
+      //
+      //   Phase 1: page=1, page_size=500, include_assets=true. Backend TTFB
+      //            ~150ms vs ~3.3s for full=true, so the workspace renders in
+      //            ~1/20th the time it used to.
+      //
+      //   Phase 2: full=true, limit=0, include_assets=true. Background. ~3.4s.
+      //            Replaces the cached value via setQueryData. Critically, the
+      //            backend's get_assets_with_findings derives asset counts
+      //            from whichever findings list is passed in — so Phase 1's
+      //            asset stats are scoped to its 500 findings (badges,
+      //            severity, openCount). Only Phase 2's full=true pass yields
+      //            correct fleet-wide asset stats. Widgets re-render to full
+      //            accuracy when it lands.
+      //
+      // (Pre-84570c9 there was a paginated loop with a 10k cap that silently
+      // truncated. We don't paginate here — full=true on Phase 2 is faster
+      // than 30 sequential 500-page calls and gives correct asset enrichment
+      // on the same DB pass.)
       const baseParams: Record<string, string | string[] | number | boolean> = {
-        full: false,
-        page_size: 500,
         include_assets: true,
         include_asset_findings: false,
         include_zero_assets: showEmptyAssets,
       };
       if (showArchived !== "both") baseParams.archived = showArchived;
 
-      const first = await fetchVATData({ ...baseParams, page: 1 }, auth);
+      const first = await fetchVATData(
+        { ...baseParams, full: false, page_size: 500, page: 1 },
+        auth,
+      );
       if (!first.meta?.hasMore) return first;
 
-      // Don't await — Phase 2 runs in the background while we return the
-      // first page. The user gets a fast first paint, accuracy converges
-      // within a few seconds.
+      // Don't await — Phase 2 runs in the background while we return Phase 1.
       void (async () => {
         try {
-          const allFindings = [...first.findings];
-          let page = 2;
-          while (true) {
-            const next = await fetchVATData(
-              {
-                ...baseParams,
-                page,
-                // Asset enrichment runs once on page 1; subsequent pages skip
-                // it to keep the per-page cost low.
-                include_assets: false,
-                include_zero_assets: false,
-              },
-              auth,
-            );
-            allFindings.push(...next.findings);
-            if (!next.meta?.hasMore) break;
-            page += 1;
-          }
-          queryClient.setQueryData(vatQueryKey, {
-            ...first,
-            findings: allFindings,
-          });
+          const full = await fetchVATData(
+            { ...baseParams, full: true, limit: 0 },
+            auth,
+          );
+          queryClient.setQueryData(vatQueryKey, full);
         } catch {
-          // Silent failure on background pages keeps the first-page render
-          // visible. The next refetch (45s poll / reconnect / refresh) will
-          // try again.
+          // Silent: Phase 1 stays rendered; the next refetch (45s poll /
+          // reconnect / refresh) will retry.
         }
       })();
 
