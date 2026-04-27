@@ -1,7 +1,11 @@
 "use client";
 
 import React, { useState, useEffect, useCallback, useMemo } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  keepPreviousData,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { now, daysLeft, computeAlerts } from "@/lib/utils";
 import {
   archiveFinding,
@@ -55,9 +59,17 @@ import type {
   Alert,
 } from "@/types";
 
-const VAT_SNAPSHOT_KEY = "vat:lastFindingsSnapshot:v1";
-const SNAPSHOT_MAX_FINDINGS = 1500;
-const SNAPSHOT_MAX_RAW_BYTES = 3_000_000;
+// v1 = full-finding snapshot (capped 1500). v2 = slim projection — drops the
+// heavy free-form fields (audit history, prose like description/justification,
+// attestation, external link list) that aren't needed for first-paint and
+// would otherwise bust localStorage at fleet scale. Bumped to v2 so old
+// oversized v1 entries (silently rejected by previous size cap) don't leak in.
+const VAT_SNAPSHOT_KEY = "vat:lastFindingsSnapshot:v2";
+// Caps tuned for ~14k-finding deployments after the v2 slim projection. Pre-v2
+// any deployment with >1500 findings silently failed to persist a snapshot, so
+// every page refresh blanked to "Loading VAT" while waiting on the full fetch.
+const SNAPSHOT_MAX_FINDINGS = 50_000;
+const SNAPSHOT_MAX_RAW_BYTES = 6_000_000;
 
 /** Map API response to Finding type */
 function toFinding(raw: Record<string, unknown>): Finding {
@@ -221,18 +233,51 @@ function loadVatSnapshot(): {
   }
 }
 
+/**
+ * Slim a Finding for snapshot persistence: keep every field the report engine,
+ * filter bar, and finding cards read on first paint; drop the heavy free-form
+ * payload (audit history, prose, attestation, external links). At fleet scale
+ * this is the difference between "snapshot fits in localStorage and the next
+ * refresh skips the full-page splash" and "snapshot silently fails to save".
+ *
+ * Once the React Query refetch completes (within seconds), the full Finding
+ * objects replace the slim snapshot in memory — slim is first-paint only.
+ */
+function slimFindingForSnapshot(f: Finding): Finding {
+  return {
+    ...f,
+    // Drop arrays/objects that can be large per finding.
+    audit: [],
+    externalLinks: undefined,
+    regressionOf: undefined,
+    attestation: null,
+    // Drop free-form prose. Kept fields (title, cveId, etc.) are sufficient
+    // for the issue list and report widgets.
+    description: undefined,
+    justification: undefined,
+    compensatingControls: undefined,
+    reviewerNote: undefined,
+    snippetMasked: null,
+    archivedReason: null,
+    // Sources array carries match-detail metadata we don't need at first paint;
+    // keep names only so feed-match detection (atoms.tsx, feedProvenance) keeps
+    // working off the slim snapshot.
+    sources: f.sources?.map((s) => ({ name: s.name, importedAt: s.importedAt })) ?? [],
+  };
+}
+
 function saveVatSnapshot(findings: Finding[], assets: Asset[]) {
   if (typeof window === "undefined") return;
   if (findings.length > SNAPSHOT_MAX_FINDINGS) return;
   try {
-    window.localStorage.setItem(
-      VAT_SNAPSHOT_KEY,
-      JSON.stringify({
-        findings,
-        assets,
-        updatedAt: Date.now(),
-      }),
-    );
+    const slim = findings.map(slimFindingForSnapshot);
+    const payload = JSON.stringify({
+      findings: slim,
+      assets,
+      updatedAt: Date.now(),
+    });
+    if (payload.length > SNAPSHOT_MAX_RAW_BYTES) return;
+    window.localStorage.setItem(VAT_SNAPSHOT_KEY, payload);
   } catch {
     // Ignore quota/serialization issues; cache is best-effort.
   }
@@ -562,6 +607,11 @@ export function useVATDataCore(): UseVATDataReturn {
         } satisfies VATDataResponse)
       : undefined,
     initialDataUpdatedAt: snapshot?.updatedAt,
+    // Keep previously-rendered data visible during in-session refetches so
+    // toggle/filter changes don't blank to "Loading VAT" while waiting on the
+    // next 27MB payload. Combined with the localStorage snapshot, the splash
+    // only appears on a genuinely cold first load.
+    placeholderData: keepPreviousData,
     queryFn: async () => {
       // Fetch the entire findings set in one call. Previously this paginated
       // 20× 500/page (10,000-finding cap), which silently dropped the tail of
