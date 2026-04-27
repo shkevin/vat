@@ -1193,17 +1193,23 @@ function buildReportFilterBar(
       if (sc >= 0.1) return "low";
       return "info";
     }
+    // Server's computeSeverityCountsByGroups picks the MAX severity across a
+    // group's instances. The client must match or filter clicks on the static
+    // export show different bar heights than the snapshot they were rendered
+    // alongside.
+    function sevRank(s) {
+      return s === "critical" ? 4 : s === "high" ? 3 : s === "medium" ? 2 : s === "low" ? 1 : 0;
+    }
     function countBySeverity(issues) {
       var c = { critical: 0, high: 0, medium: 0, low: 0, info: 0 };
       if (countMode === "groups") {
-        var seen = {};
+        var byGroup = {};
         issues.forEach(function(i) {
           var gid = i.g != null ? i.g : (i.r + "|" + i.d + "|" + (i.s||""));
-          if (seen[gid]) return;
-          seen[gid] = true;
           var sev = normSev(i);
-          c[sev]++;
+          if (!(gid in byGroup) || sevRank(sev) > sevRank(byGroup[gid])) byGroup[gid] = sev;
         });
+        Object.keys(byGroup).forEach(function(k) { c[byGroup[k]]++; });
       } else {
         issues.forEach(function(i) { c[normSev(i)]++; });
       }
@@ -1537,8 +1543,8 @@ function buildReportFilterBar(
           var byGroup = {};
           issues.forEach(function(i) {
             var gid = i.g != null ? i.g : (i.r + "|" + i.d + "|" + (i.s||""));
-            if (byGroup[gid]) return;
-            byGroup[gid] = { sev: normSev(i) };
+            var sev = normSev(i);
+            if (!(gid in byGroup) || sevRank(sev) > sevRank(byGroup[gid].sev)) byGroup[gid] = { sev: sev };
           });
         Object.keys(byGroup).forEach(function(k) { c[byGroup[k].sev]++; });
         } else {
@@ -1573,13 +1579,57 @@ function buildReportFilterBar(
           || s === "duplicate" || s === "not applicable" || s === "rejected";
       };
       var resolvedThisWeek = 0, resolvedLastWeek = 0, newThisWeek = 0, newLastWeek = 0;
-      trendFilteredScoped.forEach(function(i) {
-        if (i.c && isClosedStatus(i.st)) { var ts = new Date(i.c).getTime(); if (ts >= thisStartTs && ts <= thisEndTs) resolvedThisWeek++; else if (ts >= lastStartTs && ts <= lastEndTs) resolvedLastWeek++; }
-      });
-      trendFilteredScoped.forEach(function(i) {
-        var st = (i.st||"").toLowerCase(); if (st === "ignored" || st === "auto_ignored" || st === "suppressed") return;
-        if (i.d) { var ts = new Date(i.d).getTime(); if (ts >= thisStartTs && ts <= thisEndTs) newThisWeek++; else if (ts >= lastStartTs && ts <= lastEndTs) newLastWeek++; }
-      });
+      // Mirror server computeTrendMetrics groups-mode semantics (interpretation B):
+      // a group is "resolved this week" iff every instance is closed AND the
+      // latest closure timestamp falls in the window; "new this week" iff the
+      // earliest first detection across non-excluded instances falls in window.
+      // Without this, the static export's KPI cards drift from the chart series
+      // (which is already group-deduped via countBySeverityTrend).
+      if (trendCountMode === "groups") {
+        var groupClosure = {};
+        trendFilteredScoped.forEach(function(i) {
+          var gid = i.g != null ? i.g : (i.r + "|" + i.d + "|" + (i.s||""));
+          var open = isOpenStatus(i.st);
+          var closedTs = (i.c && isClosedStatus(i.st)) ? new Date(i.c).getTime() : null;
+          if (closedTs !== null && isNaN(closedTs)) closedTs = null;
+          var prev = groupClosure[gid];
+          if (!prev) {
+            groupClosure[gid] = { allClosed: !open, latestClosedTs: closedTs != null ? closedTs : -Infinity };
+          } else {
+            if (open) prev.allClosed = false;
+            if (closedTs != null && closedTs > prev.latestClosedTs) prev.latestClosedTs = closedTs;
+          }
+        });
+        Object.keys(groupClosure).forEach(function(k) {
+          var s = groupClosure[k];
+          if (!s.allClosed || s.latestClosedTs === -Infinity) return;
+          if (s.latestClosedTs >= thisStartTs && s.latestClosedTs <= thisEndTs) resolvedThisWeek++;
+          else if (s.latestClosedTs >= lastStartTs && s.latestClosedTs <= lastEndTs) resolvedLastWeek++;
+        });
+        var groupFirstDet = {};
+        trendFilteredScoped.forEach(function(i) {
+          var st = (i.st||"").toLowerCase();
+          if (st === "ignored" || st === "auto_ignored" || st === "suppressed") return;
+          if (!i.d) return;
+          var det = new Date(i.d).getTime();
+          if (isNaN(det)) return;
+          var gid = i.g != null ? i.g : (i.r + "|" + i.d + "|" + (i.s||""));
+          if (!(gid in groupFirstDet) || det < groupFirstDet[gid]) groupFirstDet[gid] = det;
+        });
+        Object.keys(groupFirstDet).forEach(function(k) {
+          var ts = groupFirstDet[k];
+          if (ts >= thisStartTs && ts <= thisEndTs) newThisWeek++;
+          else if (ts >= lastStartTs && ts <= lastEndTs) newLastWeek++;
+        });
+      } else {
+        trendFilteredScoped.forEach(function(i) {
+          if (i.c && isClosedStatus(i.st)) { var ts = new Date(i.c).getTime(); if (ts >= thisStartTs && ts <= thisEndTs) resolvedThisWeek++; else if (ts >= lastStartTs && ts <= lastEndTs) resolvedLastWeek++; }
+        });
+        trendFilteredScoped.forEach(function(i) {
+          var st = (i.st||"").toLowerCase(); if (st === "ignored" || st === "auto_ignored" || st === "suppressed") return;
+          if (i.d) { var ts = new Date(i.d).getTime(); if (ts >= thisStartTs && ts <= thisEndTs) newThisWeek++; else if (ts >= lastStartTs && ts <= lastEndTs) newLastWeek++; }
+        });
+      }
       var numBuckets = Math.max(1, Math.ceil(trendPeriodDays / bucketDays));
       var trends = [];
       for (var w = numBuckets - 1; w >= 0; w--) {
