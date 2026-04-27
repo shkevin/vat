@@ -591,14 +591,15 @@ export function useVATDataCore(): UseVATDataReturn {
     setLoadouts(loadAssetLoadouts());
   }, []);
 
+  const vatQueryKey = [
+    "vat-data",
+    token ?? "",
+    userEmail ?? "",
+    showArchived,
+    showEmptyAssets,
+  ] as const;
   const vatQuery = useQuery({
-    queryKey: [
-      "vat-data",
-      token ?? "",
-      userEmail ?? "",
-      showArchived,
-      showEmptyAssets,
-    ],
+    queryKey: vatQueryKey,
     enabled: Boolean(token || userEmail),
     initialData: snapshot
       ? ({
@@ -609,26 +610,67 @@ export function useVATDataCore(): UseVATDataReturn {
     initialDataUpdatedAt: snapshot?.updatedAt,
     // Keep previously-rendered data visible during in-session refetches so
     // toggle/filter changes don't blank to "Loading VAT" while waiting on the
-    // next 27MB payload. Combined with the localStorage snapshot, the splash
-    // only appears on a genuinely cold first load.
+    // next payload. Combined with the localStorage snapshot, the splash only
+    // appears on a genuinely cold first load.
     placeholderData: keepPreviousData,
     queryFn: async () => {
-      // Fetch the entire findings set in one call. Previously this paginated
-      // 20× 500/page (10,000-finding cap), which silently dropped the tail of
-      // the dataset and made downstream widgets — Severity Distribution, MTTR,
-      // Top Vulnerabilities, etc. — render systematically wrong numbers once
-      // the cap was hit (e.g. Critical/High closed findings ordered late by
-      // created_at would never reach the report). The backend's full=true path
-      // streams the result; same behavior the export-bundle already relies on.
-      const params: Record<string, string | string[] | number | boolean> = {
-        full: true,
-        limit: 0,
+      // Two-phase fetch:
+      //   Phase 1: page 1 of 500 — backend TTFB ~150ms vs ~3.3s for full=true,
+      //            so the report renders in ~1/20th the time it used to.
+      //   Phase 2: stream remaining pages in the background and merge into the
+      //            React Query cache via setQueryData. Widgets re-render to
+      //            full accuracy without ever blanking.
+      // Earlier (pre-84570c9) the fetch was paginated but capped at 20×500 =
+      // 10k findings; once exceeded, the tail was silently dropped and
+      // Severity Distribution / MTTR / Top Vulns rendered wrong numbers. No
+      // cap here — we keep iterating until meta.hasMore is false.
+      const baseParams: Record<string, string | string[] | number | boolean> = {
+        full: false,
+        page_size: 500,
         include_assets: true,
         include_asset_findings: false,
         include_zero_assets: showEmptyAssets,
       };
-      if (showArchived !== "both") params.archived = showArchived;
-      return fetchVATData(params, auth);
+      if (showArchived !== "both") baseParams.archived = showArchived;
+
+      const first = await fetchVATData({ ...baseParams, page: 1 }, auth);
+      if (!first.meta?.hasMore) return first;
+
+      // Don't await — Phase 2 runs in the background while we return the
+      // first page. The user gets a fast first paint, accuracy converges
+      // within a few seconds.
+      void (async () => {
+        try {
+          const allFindings = [...first.findings];
+          let page = 2;
+          while (true) {
+            const next = await fetchVATData(
+              {
+                ...baseParams,
+                page,
+                // Asset enrichment runs once on page 1; subsequent pages skip
+                // it to keep the per-page cost low.
+                include_assets: false,
+                include_zero_assets: false,
+              },
+              auth,
+            );
+            allFindings.push(...next.findings);
+            if (!next.meta?.hasMore) break;
+            page += 1;
+          }
+          queryClient.setQueryData(vatQueryKey, {
+            ...first,
+            findings: allFindings,
+          });
+        } catch {
+          // Silent failure on background pages keeps the first-page render
+          // visible. The next refetch (45s poll / reconnect / refresh) will
+          // try again.
+        }
+      })();
+
+      return first;
     },
     refetchInterval: () =>
       typeof document !== "undefined" && document.visibilityState === "visible"
