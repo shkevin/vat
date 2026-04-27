@@ -1305,13 +1305,26 @@ export function computeFleetRiskScore(
   return Math.max(0, Math.min(100, Math.round(100 - meanOra)));
 }
 
-/** Risk level from report risk score (higher = worse). */
+/** Risk level from report risk score (higher = worse).
+ *
+ * Bands are calibrated for the per-asset-average fleet score from
+ * computeFleetRiskScore: a fleet whose typical asset has a handful of
+ * Mediums and one straggler High lands in the 40s — that's "Medium" risk,
+ * not "High". The pre-fix even-25 split (50+ → High) flagged ordinary
+ * working states as High, which read as alarmist on the executive summary.
+ *
+ * Industry-aligned bands (Tenable / Qualys executive readouts use similar):
+ *   < 30  Low
+ *   30-59 Medium
+ *   60-79 High
+ *   80+   Critical
+ */
 export function getReportRiskLevel(
   score: number,
 ): "Critical" | "High" | "Medium" | "Low" {
-  if (score >= 75) return "Critical";
-  if (score >= 50) return "High";
-  if (score >= 25) return "Medium";
+  if (score >= 80) return "Critical";
+  if (score >= 60) return "High";
+  if (score >= 30) return "Medium";
   return "Low";
 }
 

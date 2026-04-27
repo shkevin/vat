@@ -1401,7 +1401,7 @@ function buildReportFilterBar(
       return Math.max(0, Math.min(100, Math.round(100 - meanOra)));
     }
     var riskScore = fleetRisk(openIssues);
-    var riskLevel = riskScore >= 75 ? "Critical" : riskScore >= 50 ? "High" : riskScore >= 25 ? "Medium" : "Low";
+    var riskLevel = riskScore >= 80 ? "Critical" : riskScore >= 60 ? "High" : riskScore >= 30 ? "Medium" : "Low";
     var criticalHigh = counts.critical + counts.high;
     var pc = null;
     if (reportData.dateFrom && reportData.dateTo) {
