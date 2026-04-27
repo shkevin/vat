@@ -1058,7 +1058,7 @@ function renderAgingTable(
     ctx.aging.length > aging.length
       ? ` (${aging.length} of ${ctx.aging.length})`
       : "";
-  return `<div class="section"><h2>Vulnerability Aging${totalNote}</h2><table><thead><tr><th>Age</th><th class="text-right">Critical</th><th class="text-right">High</th><th class="text-right">Medium</th><th class="text-right">Low</th><th class="text-right">Total</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+  return `<div class="section" data-report-aggregate="aging-table"><h2>Vulnerability Aging${totalNote}</h2><table><thead><tr><th>Age</th><th class="text-right">Critical</th><th class="text-right">High</th><th class="text-right">Medium</th><th class="text-right">Low</th><th class="text-right">Total</th></tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 
 function renderMttrBars(ctx: ReportContext): string {
@@ -1108,7 +1108,7 @@ function renderMttrTable(ctx: ReportContext): string {
     .map((s) => filterAttr(s))
     .join(" ");
   const mttrFilter = sevAttrs ? ` data-filter-severity="${sevAttrs}"` : "";
-  return `<div class="section"><div${mttrFilter}><h2>Mean Time to Remediate</h2><table><thead><tr><th>Severity</th><th class="text-right">Avg (days)</th><th class="text-right">Median (days)</th><th class="text-right">Closed</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
+  return `<div class="section" data-report-aggregate="mttr-table"><div${mttrFilter}><h2>Mean Time to Remediate</h2><table><thead><tr><th>Severity</th><th class="text-right">Avg (days)</th><th class="text-right">Median (days)</th><th class="text-right">Closed</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
 }
 
 function renderRepoBars(
@@ -1232,7 +1232,7 @@ function renderTopVulnsTable(
     })
     .join("");
   const attrs = sectionFilterAttrs(ctx);
-  return `<div class="section"><div${attrs}><h2>Top Vulnerabilities</h2><table><thead><tr><th>Vulnerability</th><th>Severity</th><th>CVE</th><th>Repository</th><th class="text-right">Age</th><th>Tracking</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
+  return `<div class="section" data-report-aggregate="top-vulns-table" data-limit="${limit}"><div${attrs}><h2>Top Vulnerabilities</h2><table><thead><tr><th>Vulnerability</th><th>Severity</th><th>CVE</th><th>Repository</th><th class="text-right">Age</th><th>Tracking</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
 }
 
 function renderTopVulnsList(
@@ -1291,7 +1291,7 @@ function renderTopVulnsList(
     })
     .join("");
   const attrs = sectionFilterAttrs(ctx);
-  return `<div class="section"><div${attrs}><h2>Key findings</h2><ul class="findings-list">${items}</ul></div></div>`;
+  return `<div class="section" data-report-aggregate="top-vulns-list" data-limit="${limit}"><div${attrs}><h2>Key findings</h2><ul class="findings-list">${items}</ul></div></div>`;
 }
 
 function cveLink(cve: string): string {

@@ -701,6 +701,10 @@ interface ReportDataIssue {
   scanner?: string;
   /** Asset type: Code, Container, VM, Package, Other. */
   at?: string;
+  /** Title (used by Top Vulnerabilities recompute on filter change). */
+  t?: string;
+  /** CVE id (used by Top Vulnerabilities recompute on filter change). */
+  cve?: string;
 }
 
 /** Build payload for client-side aggregate widget updates (summary, trend). */
@@ -767,6 +771,8 @@ function buildReportDataPayload(
         g: i.issue_group_id ?? undefined,
         scanner: i.scanner_type ?? undefined,
         at,
+        t: i.title ?? undefined,
+        cve: i.cve_id ?? undefined,
       };
     });
   const fullIssues = toPayload(context.filteredIssues);
@@ -1944,6 +1950,164 @@ function buildReportFilterBar(
       var donutSvg = '<svg viewBox="0 0 ' + size + ' ' + size + '" class="viz-donut" width="' + size + '" height="' + size + '"><circle cx="' + cx + '" cy="' + cx + '" r="' + r + '" fill="none" stroke="#e2e8f0" stroke-width="8" pathLength="100"/>' + circles + '<text x="' + cx + '" y="' + (cx + 5) + '" text-anchor="middle" font-size="14" font-weight="700" fill="#0f172a">' + total + '</text></svg>';
       body.innerHTML = '<div class="severity-with-donut"><div class="severity-donut-wrap">' + donutSvg + '</div><div class="severity-bar-legend severity-legend">' + legend + '</div></div>';
     });
+    // Aging table: recompute bucket counts (0-7 / 8-30 / 31-90 / 91-180 / 180+)
+    // from the post-filter open issues. Pre-fix the rows stayed frozen at the
+    // server-rendered values when filters changed (e.g. selecting Feed Match
+    // → table still showed full-dataset counts).
+    document.querySelectorAll("[data-report-aggregate=aging-table]").forEach(function(section) {
+      var tbody = section.querySelector("tbody");
+      if (!tbody) return;
+      var BUCKETS = [
+        { range: "0-7d", critical: 0, high: 0, medium: 0, low: 0 },
+        { range: "8-30d", critical: 0, high: 0, medium: 0, low: 0 },
+        { range: "31-90d", critical: 0, high: 0, medium: 0, low: 0 },
+        { range: "91-180d", critical: 0, high: 0, medium: 0, low: 0 },
+        { range: "180d+", critical: 0, high: 0, medium: 0, low: 0 },
+      ];
+      var nowMs = Date.now();
+      var seenAg = countMode === "groups" ? {} : null;
+      for (var ki = 0; ki < openIssues.length; ki++) {
+        var ag = openIssues[ki];
+        if (seenAg) {
+          var aGid = ag.g != null ? ag.g : (ag.r + "|" + ag.d + "|" + (ag.s || ""));
+          if (seenAg[aGid]) continue;
+          seenAg[aGid] = true;
+        }
+        var aSev = normSev(ag);
+        if (aSev === "info") continue;
+        var aDet = ag.d ? new Date(ag.d).getTime() : NaN;
+        if (isNaN(aDet)) continue;
+        var ageDays = Math.round((nowMs - aDet) / 86400000);
+        var bIdx = ageDays <= 7 ? 0 : ageDays <= 30 ? 1 : ageDays <= 90 ? 2 : ageDays <= 180 ? 3 : 4;
+        BUCKETS[bIdx][aSev]++;
+      }
+      var agRows = BUCKETS.map(function(b) {
+        var sevs = [];
+        if (b.critical > 0) sevs.push("critical");
+        if (b.high > 0) sevs.push("high");
+        if (b.medium > 0) sevs.push("medium");
+        if (b.low > 0) sevs.push("low");
+        var sevAttr = sevs.length > 0 ? ' data-filter-severity="' + sevs.join(" ") + '"' : "";
+        return '<tr' + sevAttr + '><td>' + b.range + '</td><td class="text-right mono ' + (b.critical > 0 ? "critical-val" : "") + '">' + b.critical + '</td><td class="text-right mono ' + (b.high > 0 ? "high-val" : "") + '">' + b.high + '</td><td class="text-right mono ' + (b.medium > 0 ? "medium-val" : "") + '">' + b.medium + '</td><td class="text-right mono ' + (b.low > 0 ? "low-val" : "") + '">' + b.low + '</td><td class="text-right mono" style="font-weight:600">' + (b.critical + b.high + b.medium + b.low) + '</td></tr>';
+      }).join("");
+      tbody.innerHTML = agRows;
+    });
+    // MTTR table: recompute avg/median days + closure count per severity from
+    // closures inside the post-filter set. Same staleness problem as aging.
+    document.querySelectorAll("[data-report-aggregate=mttr-table]").forEach(function(section) {
+      var tbody = section.querySelector("tbody");
+      if (!tbody) return;
+      var isClosedSt = function(st) {
+        var s = (st || "").toLowerCase();
+        return s === "closed" || s === "resolved" || s === "ignored" || s === "auto_ignored" || s === "false positive" || s === "suppressed" || s === "approved" || s === "duplicate" || s === "not applicable" || s === "rejected";
+      };
+      var raw = [];
+      for (var mi = 0; mi < filtered.length; mi++) {
+        var im = filtered[mi];
+        if (!im.c || !im.d || !isClosedSt(im.st)) continue;
+        var det = new Date(im.d).getTime();
+        var cls = new Date(im.c).getTime();
+        if (isNaN(det) || isNaN(cls) || cls < det) continue;
+        var d = (cls - det) / 86400000;
+        if (!isFinite(d) || d < 0) continue;
+        var gid = im.g != null ? im.g : (im.r + "|" + im.d + "|" + (im.s || ""));
+        raw.push({ sev: normSev(im), gid: gid, days: d });
+      }
+      var bySev = {};
+      if (countMode === "groups") {
+        var bestByGroup = {};
+        raw.forEach(function(r) {
+          var key = r.sev + ":" + r.gid;
+          if (!(key in bestByGroup) || r.days < bestByGroup[key]) bestByGroup[key] = r.days;
+        });
+        Object.keys(bestByGroup).forEach(function(k) {
+          var sev = k.split(":")[0];
+          if (!bySev[sev]) bySev[sev] = [];
+          bySev[sev].push(bestByGroup[k]);
+        });
+      } else {
+        raw.forEach(function(r) {
+          if (!bySev[r.sev]) bySev[r.sev] = [];
+          bySev[r.sev].push(r.days);
+        });
+      }
+      var SEV_ORDER = ["critical", "high", "medium", "low", "info"];
+      var sevToBadge = function(s) { return s === "critical" ? "sev-critical" : s === "high" ? "sev-high" : s === "medium" ? "sev-medium" : s === "low" ? "sev-low" : "sev-info"; };
+      var mttrRows = SEV_ORDER.filter(function(sev) { return bySev[sev] && bySev[sev].length > 0; }).map(function(sev) {
+        var days = bySev[sev].slice().sort(function(a, b) { return a - b; });
+        var avg = days.reduce(function(s, d) { return s + d; }, 0) / days.length;
+        var mid = Math.floor(days.length / 2);
+        var median = days.length % 2 === 0 ? (days[mid - 1] + days[mid]) / 2 : days[mid];
+        var label = sev.charAt(0).toUpperCase() + sev.slice(1);
+        return '<tr data-filter-severity="' + sev + '"><td><span class="badge ' + sevToBadge(sev) + '">' + label + '</span></td><td class="text-right mono">' + (Math.round(avg * 10) / 10) + '</td><td class="text-right mono">' + (Math.round(median * 10) / 10) + '</td><td class="text-right mono">' + days.length + '</td></tr>';
+      }).join("");
+      tbody.innerHTML = mttrRows;
+    });
+    // Top Vulns: re-pick worst-per-group from filtered open issues + sort by
+    // sev → score → age. Pre-fix the table held the server-side top-N from
+    // the unfiltered set; selecting Feed Match could leave the table empty
+    // even though 17 valid feed matches exist.
+    function recomputeTopVulns(section, asList) {
+      var limit = parseInt(section.getAttribute("data-limit") || "25", 10) || 25;
+      var sevRankFor = function(s) { return s === "critical" ? 4 : s === "high" ? 3 : s === "medium" ? 2 : s === "low" ? 1 : 0; };
+      var byGid = {};
+      for (var ti = 0; ti < openIssues.length; ti++) {
+        var it = openIssues[ti];
+        var gid = it.g != null ? it.g : (it.r + "|" + it.d + "|" + (it.s || ""));
+        var prev = byGid[gid];
+        var iSev = sevRankFor(normSev(it));
+        var iScore = it.sc != null ? it.sc : 0;
+        var iDet = it.d ? new Date(it.d).getTime() : 0;
+        if (!prev) { byGid[gid] = it; continue; }
+        var pSev = sevRankFor(normSev(prev));
+        var pScore = prev.sc != null ? prev.sc : 0;
+        var pDet = prev.d ? new Date(prev.d).getTime() : 0;
+        if (iSev > pSev || (iSev === pSev && (iScore > pScore || (iScore === pScore && iDet < pDet)))) byGid[gid] = it;
+      }
+      var nowMsTv = Date.now();
+      var picks = Object.keys(byGid).map(function(k) {
+        var it = byGid[k];
+        var det = it.d ? new Date(it.d).getTime() : nowMsTv;
+        var ageDays = Math.max(0, Math.round((nowMsTv - det) / 86400000));
+        return {
+          title: it.t || it.cve || "Unknown",
+          severity: normSev(it),
+          cve: it.cve || "N/A",
+          repo: it.r || "Unknown",
+          age: ageDays,
+          score: it.sc || 0,
+          scanner: it.scanner || "Unknown",
+          branch: it.b || "",
+        };
+      });
+      picks.sort(function(a, b) {
+        return sevRankFor(b.severity) - sevRankFor(a.severity) || (b.score - a.score) || (b.age - a.age);
+      });
+      picks = picks.slice(0, limit);
+      var sevBadge = function(s) { return s === "critical" ? "sev-critical" : s === "high" ? "sev-high" : s === "medium" ? "sev-medium" : s === "low" ? "sev-low" : "sev-info"; };
+      var esc = function(s) { return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); };
+      var attrEsc = function(s) { return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;"); };
+      if (asList) {
+        var ul = section.querySelector("ul.findings-list");
+        if (!ul) return;
+        ul.innerHTML = picks.map(function(v) {
+          var sevLabel = v.severity.charAt(0).toUpperCase() + v.severity.slice(1);
+          var cvss = (typeof v.score === "number" && v.score > 0) ? " · CVSS " + v.score.toFixed(1) : "";
+          var cvePart = (v.cve && v.cve !== "N/A") ? v.cve : "";
+          return '<li data-filter-severity="' + v.severity + '" data-filter-repo="' + attrEsc(v.repo) + '" data-filter-branch="' + attrEsc(v.branch) + '" data-filter-scanner="' + attrEsc(v.scanner) + '"><span class="badge ' + sevBadge(v.severity) + '">' + sevLabel + '</span> ' + esc(v.title) + ' <span class="findings-meta">' + esc(cvePart) + cvss + ' · ' + esc(v.repo) + '</span></li>';
+        }).join("");
+      } else {
+        var tbody = section.querySelector("tbody");
+        if (!tbody) return;
+        tbody.innerHTML = picks.map(function(v) {
+          var sevLabel = v.severity.charAt(0).toUpperCase() + v.severity.slice(1);
+          var ageCls = v.age > 90 ? "critical-val" : v.age > 30 ? "high-val" : "";
+          return '<tr data-filter-severity="' + v.severity + '" data-filter-repo="' + attrEsc(v.repo) + '" data-filter-branch="' + attrEsc(v.branch) + '" data-filter-scanner="' + attrEsc(v.scanner) + '"><td style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(v.title) + '</td><td><span class="badge ' + sevBadge(v.severity) + '">' + sevLabel + '</span></td><td class="mono">' + esc(v.cve) + '</td><td class="mono">' + esc(v.repo) + '</td><td class="text-right mono ' + ageCls + '">' + v.age + 'd</td><td><span style="color:#94a3b8">-</span></td></tr>';
+        }).join("");
+      }
+    }
+    document.querySelectorAll("[data-report-aggregate=top-vulns-table]").forEach(function(section) { recomputeTopVulns(section, false); });
+    document.querySelectorAll("[data-report-aggregate=top-vulns-list]").forEach(function(section) { recomputeTopVulns(section, true); });
   }
   var CHIP_COLLAPSE_THRESHOLD = 6;
   function renderChips() {
