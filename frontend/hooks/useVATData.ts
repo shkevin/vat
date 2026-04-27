@@ -563,39 +563,22 @@ export function useVATDataCore(): UseVATDataReturn {
       : undefined,
     initialDataUpdatedAt: snapshot?.updatedAt,
     queryFn: async () => {
+      // Fetch the entire findings set in one call. Previously this paginated
+      // 20× 500/page (10,000-finding cap), which silently dropped the tail of
+      // the dataset and made downstream widgets — Severity Distribution, MTTR,
+      // Top Vulnerabilities, etc. — render systematically wrong numbers once
+      // the cap was hit (e.g. Critical/High closed findings ordered late by
+      // created_at would never reach the report). The backend's full=true path
+      // streams the result; same behavior the export-bundle already relies on.
       const params: Record<string, string | string[] | number | boolean> = {
-        full: false,
-        page_size: 500,
+        full: true,
+        limit: 0,
         include_assets: true,
         include_asset_findings: false,
         include_zero_assets: showEmptyAssets,
-        page: 1,
       };
       if (showArchived !== "both") params.archived = showArchived;
-      const first = await fetchVATData(params, auth);
-      if (!first.meta?.hasMore) return first;
-
-      const allFindings = [...first.findings];
-      let page = 2;
-      while (page <= 20) {
-        const next = await fetchVATData(
-          {
-            ...params,
-            page,
-            include_assets: false,
-            include_zero_assets: false,
-          },
-          auth,
-        );
-        allFindings.push(...next.findings);
-        if (!next.meta?.hasMore) break;
-        page += 1;
-      }
-
-      return {
-        ...first,
-        findings: allFindings,
-      };
+      return fetchVATData(params, auth);
     },
     refetchInterval: () =>
       typeof document !== "undefined" && document.visibilityState === "visible"
