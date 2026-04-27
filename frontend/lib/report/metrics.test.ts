@@ -16,6 +16,8 @@ import {
   isClosedIssue,
   computeScannerBreakdown,
   computeSlaCompliance,
+  computeFleetRiskScore,
+  computePeriodOverPeriodChange,
 } from "./metrics";
 import type { VATReportIssue, VATReportIssueGroup } from "./vatReportAdapter";
 
@@ -521,6 +523,69 @@ describe("isClosedIssue / unified resolved-vs-closed semantics", () => {
     const inst = computeScannerBreakdown(issues, "instances");
     expect(inst.find((g) => g.scanner === "Trivy")?.critical).toBe(1);
     expect(inst.find((g) => g.scanner === "Grype")?.low).toBe(1);
+  });
+
+  it("computeFleetRiskScore averages per-asset ORA so fleet-scale data doesn't saturate", () => {
+    // Old computeReportRiskScore: 50 Critical → penalty 500 → score saturates
+    // to 100/100 regardless of how many assets carry the load.
+    // New: spread the same 50 Critical across 100 assets and the per-asset
+    // ORA is non-zero, yielding a non-saturated fleet score.
+    const issues: VATReportIssue[] = [];
+    for (let asset = 0; asset < 100; asset++) {
+      // Each asset has 1 Critical + 4 Low (a "noisy but tractable" repo)
+      issues.push({
+        ...mkIssue(asset * 5 + 1, asset * 5 + 1, "open"),
+        repository: `repo-${asset}`,
+        severity: "critical",
+        severity_score: 9.8,
+      });
+      for (let lo = 0; lo < 4; lo++) {
+        issues.push({
+          ...mkIssue(asset * 5 + 2 + lo, asset * 5 + 2 + lo, "open"),
+          repository: `repo-${asset}`,
+          severity: "low",
+          severity_score: 2,
+        });
+      }
+    }
+    // Per-asset penalty: 1*10 + min(4*0.25, 10) = 11 → ORA 89 → fleet 11.
+    const score = computeFleetRiskScore(issues, "instances");
+    expect(score).toBeGreaterThan(0);
+    expect(score).toBeLessThan(50); // not saturated
+    expect(score).toBe(11);
+
+    // Empty fleet → 0 risk.
+    expect(computeFleetRiskScore([], "instances")).toBe(0);
+  });
+
+  it("computePeriodOverPeriodChange returns flat direction (no badge) when prior baseline is 0", () => {
+    // Brand-new dataset: nothing existed at the comparison-window start.
+    // Pre-fix every KPI surfaced a misleading +100% change.
+    // dateFrom/dateTo strings parse as midnight UTC of those dates; pick a
+    // detection timestamp safely inside the [from, to] window.
+    const issues: VATReportIssue[] = [
+      {
+        ...mkIssue(1, 1, "open"),
+        first_detected_at: "2026-03-01T12:00:00Z",
+      },
+      {
+        ...mkIssue(2, 2, "open"),
+        first_detected_at: "2026-03-01T12:00:00Z",
+      },
+    ];
+    const change = computePeriodOverPeriodChange(
+      issues,
+      "2026-02-01",
+      "2026-04-01",
+      "instances",
+    );
+    expect(change).not.toBeNull();
+    // currentTotal=2, previousTotal=0 → no baseline. Pre-fix: pctChange=100,
+    // direction="up". Post-fix: pctChange=0, direction="flat".
+    expect(change!.openIssues.previous).toBe(0);
+    expect(change!.openIssues.current).toBe(2);
+    expect(change!.openIssues.direction).toBe("flat");
+    expect(change!.openIssues.pctChange).toBe(0);
   });
 
   it("computeSlaCompliance groups mode evaluates against group's worst severity and earliest detection", () => {

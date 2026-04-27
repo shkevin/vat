@@ -2,7 +2,7 @@
 
 import type { VATDashboardData, VATReportIssue } from "./vatReportAdapter";
 import {
-  computeReportRiskScore,
+  computeFleetRiskScore,
   getReportRiskLevel,
   computeMTTR,
   computeABCComplianceForIssues,
@@ -494,7 +494,7 @@ export function computeReportContext(
     openIssues,
     countMode,
   );
-  const riskScore = computeReportRiskScore(counts);
+  const riskScore = computeFleetRiskScore(openIssues, countMode);
   const mttr = computeMTTR(issues, countMode);
   const assetFilter = new Set(filters.repoFilter);
   const reposForRisk =
@@ -1375,8 +1375,32 @@ function buildReportFilterBar(
     var useServerCounts = reportData.serverCounts != null && reportData.totalOpen != null && noFilters && (reportData.serverCountsMode || countMode) === countMode;
     var counts = useServerCounts ? reportData.serverCounts : countBySeverity(openIssues);
     function oraPenalty(c) { var p = (c.critical||0)*10 + (c.high||0)*4; p += Math.min((c.medium||0)*0.5, 30); p += Math.min((c.low||0)*0.25, 10); return p; }
-    function toReportRisk(c) { return Math.max(0, Math.min(100, Math.round(oraPenalty(c)))); }
-    var riskScore = toReportRisk(counts);
+    function oraScoreFor(c) { return Math.max(0, Math.min(100, Math.round(100 - oraPenalty(c)))); }
+    // Per-asset average ORA, inverted for stakeholder readout. The flat
+    // aggregate version saturates instantly at fleet scale; this matches the
+    // server-side computeFleetRiskScore so re-renders after a filter click
+    // don't suddenly disagree with the snapshot.
+    function fleetRisk(issues) {
+      if (!issues || !issues.length) return 0;
+      var byAsset = {};
+      for (var i = 0; i < issues.length; i++) {
+        var it = issues[i];
+        var key = ((it.r || "") + "").trim() || "__unassigned__";
+        if (!byAsset[key]) byAsset[key] = [];
+        byAsset[key].push(it);
+      }
+      var assetKeys = Object.keys(byAsset);
+      if (!assetKeys.length) return 0;
+      var totalOra = 0;
+      for (var ak = 0; ak < assetKeys.length; ak++) {
+        var arr = byAsset[assetKeys[ak]];
+        var c = countBySeverity(arr);
+        totalOra += oraScoreFor(c);
+      }
+      var meanOra = totalOra / assetKeys.length;
+      return Math.max(0, Math.min(100, Math.round(100 - meanOra)));
+    }
+    var riskScore = fleetRisk(openIssues);
     var riskLevel = riskScore >= 75 ? "Critical" : riskScore >= 50 ? "High" : riskScore >= 25 ? "Medium" : "Low";
     var criticalHigh = counts.critical + counts.high;
     var pc = null;
@@ -1660,15 +1684,36 @@ function buildReportFilterBar(
       var resLast = resolvedLastWeek;
       var newThis = newThisWeek;
       var newLast = newLastWeek;
-      var openPct = trendPrev === 0 ? (trendCurr > 0 ? 100 : 0) : Math.round(((trendCurr - trendPrev) / trendPrev) * 100);
-      var resolvedPct = resLast === 0 ? (resThis > 0 ? 100 : 0) : Math.round(((resThis - resLast) / resLast) * 100);
-      var newPct = newLast === 0 ? (newThis > 0 ? 100 : 0) : Math.round(((newThis - newLast) / newLast) * 100);
+      // No-baseline guard: pre-fix returned +100% when prev === 0, which
+      // falsely showed a +100% increase on every KPI for fresh datasets where
+      // nothing existed at the start of the comparison window. Carry a
+      // "hasBaseline" flag so the badge can be suppressed entirely.
+      var openHasBaseline = trendPrev > 0;
+      var openPct = openHasBaseline ? Math.round(((trendCurr - trendPrev) / trendPrev) * 100) : 0;
+      var resolvedHasBaseline = resLast > 0;
+      var resolvedPct = resolvedHasBaseline ? Math.round(((resThis - resLast) / resLast) * 100) : 0;
+      var newHasBaseline = newLast > 0;
+      var newPct = newHasBaseline ? Math.round(((newThis - newLast) / newLast) * 100) : 0;
       var trendTopBar = trendSection.querySelector(".trend-stacked-topbar");
       if (trendTopBar) {
-        var setVal = function(sel, val, pct, isGood) { var el = trendTopBar.querySelector(sel); if (el) { el.textContent = val; var card = el.closest(".kpi-card"); var trendEl = card ? card.querySelector(".kpi-trend") : null; if (trendEl) { trendEl.textContent = (pct > 0 ? "+" : "") + pct + "%"; trendEl.style.color = isGood ? "#22c55e" : "#ef4444"; } } };
-        setVal(".kpi-card:nth-child(1) .value", trendCurr.toLocaleString(), openPct, trendCurr <= trendPrev);
-        setVal(".kpi-card:nth-child(2) .value", resThis.toLocaleString(), resolvedPct, resThis >= resLast);
-        setVal(".kpi-card:nth-child(3) .value", newThis.toLocaleString(), newPct, newThis <= newLast);
+        var setVal = function(sel, val, pct, isGood, hasBaseline) {
+          var el = trendTopBar.querySelector(sel);
+          if (!el) return;
+          el.textContent = val;
+          var card = el.closest(".kpi-card");
+          var trendEl = card ? card.querySelector(".kpi-trend") : null;
+          if (!trendEl) return;
+          if (!hasBaseline || pct === 0) {
+            trendEl.textContent = "";
+            trendEl.removeAttribute("style");
+          } else {
+            trendEl.textContent = (pct > 0 ? "+" : "") + pct + "%";
+            trendEl.style.color = isGood ? "#22c55e" : "#ef4444";
+          }
+        };
+        setVal(".kpi-card:nth-child(1) .value", trendCurr.toLocaleString(), openPct, trendCurr <= trendPrev, openHasBaseline);
+        setVal(".kpi-card:nth-child(2) .value", resThis.toLocaleString(), resolvedPct, resThis >= resLast, resolvedHasBaseline);
+        setVal(".kpi-card:nth-child(3) .value", newThis.toLocaleString(), newPct, newThis <= newLast, newHasBaseline);
         var d1 = trendTopBar.querySelector(".kpi-card:nth-child(1) .detail"); if (d1) d1.textContent = "vs " + trendPrev.toLocaleString() + " previous period";
         var d2 = trendTopBar.querySelector(".kpi-card:nth-child(2) .detail"); if (d2) d2.textContent = "vs " + resLast.toLocaleString() + " previous period";
         var d3 = trendTopBar.querySelector(".kpi-card:nth-child(3) .detail"); if (d3) d3.textContent = "vs " + newLast.toLocaleString() + " previous period";

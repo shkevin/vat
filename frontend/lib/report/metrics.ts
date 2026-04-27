@@ -486,32 +486,31 @@ export function computePeriodOverPeriodChange(
       : previous.total;
   const currentCriticalHigh = currentCounts.critical + currentCounts.high;
   const previousCriticalHigh = previousCounts.critical + previousCounts.high;
+  // Period-over-period: when there's no prior baseline (prev === 0), there is
+  // no meaningful percentage to display. Pre-fix this returned +100% which
+  // showed up on every KPI card on freshly-onboarded datasets where nothing
+  // existed at the start of the comparison window. Fall through to direction
+  // "flat" so trendBadgeHtml suppresses the badge.
   const pct = (curr: number, prev: number) =>
-    prev === 0
-      ? curr > 0
-        ? 100
-        : 0
-      : Math.round(((curr - prev) / prev) * 100);
-  const dir = (curr: number, prev: number): "up" | "down" | "flat" =>
-    curr > prev ? "up" : curr < prev ? "down" : "flat";
+    prev === 0 ? 0 : Math.round(((curr - prev) / prev) * 100);
+  const dir = (
+    curr: number,
+    prev: number,
+  ): "up" | "down" | "flat" =>
+    prev === 0 ? "flat" : curr > prev ? "up" : curr < prev ? "down" : "flat";
   const periodDays = Math.round(
     (to.getTime() - from.getTime()) / (1000 * 60 * 60 * 24),
   );
   const prevStart = new Date(from);
   prevStart.setDate(prevStart.getDate() - periodDays);
-  const currentRisk = computeReportRiskScore(currentCounts);
-  const previousRisk = computeReportRiskScore(previousCounts);
+  const currentRisk = computeFleetRiskScore(current.issues, countMode);
+  const previousRisk = computeFleetRiskScore(previous.issues, countMode);
   const riskScore =
     currentTotal > 0 || previousTotal > 0
       ? {
           current: currentRisk,
           previous: previousRisk,
-          pctChange:
-            previousRisk === 0
-              ? currentRisk > 0
-                ? 100
-                : 0
-              : Math.round(((currentRisk - previousRisk) / previousRisk) * 100),
+          pctChange: pct(currentRisk, previousRisk),
           direction: dir(currentRisk, previousRisk),
         }
       : null;
@@ -522,12 +521,7 @@ export function computePeriodOverPeriodChange(
       ? {
           current: currentMttr,
           previous: previousMttr,
-          pctChange:
-            previousMttr === 0
-              ? currentMttr > 0
-                ? 100
-                : 0
-              : Math.round(((currentMttr - previousMttr) / previousMttr) * 100),
+          pctChange: pct(currentMttr, previousMttr),
           direction: dir(currentMttr, previousMttr),
         }
       : null;
@@ -1261,10 +1255,54 @@ export function getRiskLevel(
  * Report risk score: inverted ORA for stakeholder intuition.
  * 0 = no risk, 100 = maximum risk. Higher = worse.
  * Uses same ORA weighting; for reports only.
+ *
+ * Note: this flat-aggregate variant saturates immediately on fleet-scale data
+ * (e.g. ~5 Critical findings already drives the penalty above 100). For
+ * report KPIs that summarize many assets, prefer computeFleetRiskScore which
+ * averages per-asset ORA so the score scales with fleet *health* rather than
+ * absolute count.
  */
 export function computeReportRiskScore(counts: SeverityCounts): number {
   const oraScore = computeORAScore(counts);
   return Math.max(0, Math.min(100, Math.round(100 - oraScore)));
+}
+
+/**
+ * Fleet risk score: average per-asset ORA, inverted (higher = worse).
+ *
+ * The flat ORA model was designed for a single Aikido project (handful of
+ * findings). Applied as a fleet aggregate to thousands of findings across
+ * many repos/containers, the linear penalty saturates and the report shows
+ * 100/100 unconditionally. Per-asset averaging restores meaningful resolution:
+ * a fleet of 100 assets averaging ORA 73 reads as 27/100 risk regardless of
+ * raw finding count, and adding a brand-new clean asset moves the needle.
+ *
+ * Asset key is `repository`; findings without a repository fall into a
+ * single "__unassigned__" bucket so they don't all become their own
+ * pseudo-asset.
+ */
+export function computeFleetRiskScore(
+  openIssues: VATReportIssue[],
+  countMode: CountMode = "instances",
+): number {
+  if (openIssues.length === 0) return 0;
+  const byAsset = new Map<string, VATReportIssue[]>();
+  for (const i of openIssues) {
+    const key = (i.repository ?? "").trim() || "__unassigned__";
+    if (!byAsset.has(key)) byAsset.set(key, []);
+    byAsset.get(key)!.push(i);
+  }
+  if (byAsset.size === 0) return 0;
+  let totalOra = 0;
+  for (const issues of Array.from(byAsset.values())) {
+    const counts =
+      countMode === "groups"
+        ? computeSeverityCountsByGroups(issues)
+        : computeSeverityCounts(issues);
+    totalOra += computeORAScore(counts);
+  }
+  const meanOra = totalOra / byAsset.size;
+  return Math.max(0, Math.min(100, Math.round(100 - meanOra)));
 }
 
 /** Risk level from report risk score (higher = worse). */
