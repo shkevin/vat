@@ -364,12 +364,10 @@ describe("isClosedIssue / unified resolved-vs-closed semantics", () => {
   });
 
   it("computeTrendMetrics counts Suppressed closures in 'resolved this week'", () => {
-    // Build a this-week window; Sun→Sun dates relative to now
-    const now = new Date();
-    const weekStart = new Date(now);
-    weekStart.setUTCDate(now.getUTCDate() - 2); // 2 days ago, safely this week
-    weekStart.setUTCHours(12, 0, 0, 0);
-    const tsThisWeek = weekStart.toISOString();
+    // computeTrendMetrics uses Mon–Sun UTC weeks. `now - 2 days` lands in
+    // last week on Mondays/Tuesdays, so use `now` itself which is always
+    // inside [thisWeekStart, thisWeekEnd].
+    const tsThisWeek = new Date().toISOString();
 
     const issues: VATReportIssue[] = [
       // 1 resolved + 2 suppressed + 1 false-positive, all closed this week
@@ -399,6 +397,65 @@ describe("isClosedIssue / unified resolved-vs-closed semantics", () => {
     const metrics = computeTrendMetrics(issues, "instances");
     // Before PR 2: only the Resolved one (1). After PR 2: all 4 closures count.
     expect(metrics.resolvedThisWeek).toBe(4);
+  });
+
+  it("computeTrendMetrics groups mode: resolved counts groups whose last open instance closed in window", () => {
+    const thisWeekTs = new Date().toISOString();
+    const longAgo = "2024-01-01T00:00:00Z";
+
+    const issues: VATReportIssue[] = [
+      // Group 1: 2 instances, both closed; latest closed_at is this week → counts as 1
+      {
+        ...mkIssue(1, 1, "Resolved"),
+        first_detected_at: longAgo,
+        closed_at: longAgo,
+      },
+      {
+        ...mkIssue(2, 1, "Resolved"),
+        first_detected_at: longAgo,
+        closed_at: thisWeekTs,
+      },
+      // Group 2: 1 closed this week + 1 still open → group not fully closed, NOT counted
+      {
+        ...mkIssue(3, 2, "Resolved"),
+        first_detected_at: longAgo,
+        closed_at: thisWeekTs,
+      },
+      { ...mkIssue(4, 2, "Open"), first_detected_at: longAgo },
+      // Group 3: single instance closed this week → counts as 1
+      {
+        ...mkIssue(5, 3, "Suppressed"),
+        first_detected_at: longAgo,
+        closed_at: thisWeekTs,
+      },
+    ];
+    const groups = computeTrendMetrics(issues, "groups");
+    expect(groups.resolvedThisWeek).toBe(2);
+    // Instance-mode counts every closure event in the window: instances 2, 3, 5.
+    const inst = computeTrendMetrics(issues, "instances");
+    expect(inst.resolvedThisWeek).toBe(3);
+  });
+
+  it("computeTrendMetrics groups mode: new counts groups by earliest first detection", () => {
+    const thisWeekTs = new Date().toISOString();
+    const longAgo = "2024-01-01T00:00:00Z";
+
+    const issues: VATReportIssue[] = [
+      // Group 1: pre-existing — earliest detection is longAgo, NOT new this week
+      // (even though instance 2 was first detected this week)
+      { ...mkIssue(1, 1, "Open"), first_detected_at: longAgo },
+      { ...mkIssue(2, 1, "Open"), first_detected_at: thisWeekTs },
+      // Group 2: only this-week detections → counts as 1 new
+      { ...mkIssue(3, 2, "Open"), first_detected_at: thisWeekTs },
+      { ...mkIssue(4, 2, "Open"), first_detected_at: thisWeekTs },
+      // Group 3: this-week detection but status is suppressed → excluded entirely
+      { ...mkIssue(5, 3, "Suppressed"), first_detected_at: thisWeekTs },
+    ];
+    const groups = computeTrendMetrics(issues, "groups");
+    expect(groups.newThisWeek).toBe(1);
+    // Instance-mode counts every non-suppressed first detection: 1 + 2 = 3
+    const inst = computeTrendMetrics(issues, "instances");
+    expect(inst.newThisWeek).toBe(3);
   });
 
   it("computeMTTR counts all EXCLUDED_OPEN_STATUS findings with closed_at", () => {

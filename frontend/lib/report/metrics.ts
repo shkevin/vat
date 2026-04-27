@@ -1541,29 +1541,91 @@ export function computeTrendMetrics(
   let resolvedLastWeek = 0;
   let newThisWeek = 0;
   let newLastWeek = 0;
-  // "Closed" matches VAT's product scope of triage + risk acceptance +
-  // remediation: suppressions, false-positives, approvals all count as
-  // "off the open queue". Aligns with computeMTTR (same isClosedIssue).
-  for (const i of trendIssues) {
-    if (!isClosedIssue(i)) continue;
-    const closed = safeDate(i.closed_at!);
-    if (!closed) continue;
-    const ts = closed.getTime();
-    if (ts >= thisStartTs && ts <= thisEndTs) resolvedThisWeek++;
-    else if (ts >= lastStartTs && ts <= lastEndTs) resolvedLastWeek++;
-  }
   // "New" = first detections in window, excluding ignored/auto_ignored/suppressed (matches Aikido).
   // VAT maps Aikido "ignored" → "Suppressed", so we must exclude suppressed to align with vulnerability-dashboard.
   const excludeNewStatuses = ["ignored", "auto_ignored", "suppressed"] as const;
-  for (const i of issues) {
-    const st = (i.status ?? "").toLowerCase();
-    if (excludeNewStatuses.includes(st as (typeof excludeNewStatuses)[number]))
-      continue;
-    const det = safeDate(i.first_detected_at);
-    if (det) {
+  if (countMode === "groups") {
+    // Groups mode: a group is "resolved this week" iff every instance is
+    // closed AND the latest closure timestamp falls in the window — i.e. the
+    // group transitioned off the open queue during the window. Mirrors the
+    // group-deduped semantics of currentOpen/openOneWeekAgo above.
+    const groupClosure = new Map<
+      number,
+      { allClosed: boolean; latestClosedTs: number }
+    >();
+    for (const i of trendIssues) {
+      const gid = i.issue_group_id ?? 0;
+      const open = isOpen(i);
+      const closedTs =
+        isClosedIssue(i) && i.closed_at
+          ? (safeDate(i.closed_at)?.getTime() ?? null)
+          : null;
+      const prev = groupClosure.get(gid);
+      if (!prev) {
+        groupClosure.set(gid, {
+          allClosed: !open,
+          latestClosedTs: closedTs ?? -Infinity,
+        });
+      } else {
+        if (open) prev.allClosed = false;
+        if (closedTs !== null && closedTs > prev.latestClosedTs)
+          prev.latestClosedTs = closedTs;
+      }
+    }
+    for (const { allClosed, latestClosedTs } of groupClosure.values()) {
+      if (!allClosed || latestClosedTs === -Infinity) continue;
+      if (latestClosedTs >= thisStartTs && latestClosedTs <= thisEndTs)
+        resolvedThisWeek++;
+      else if (latestClosedTs >= lastStartTs && latestClosedTs <= lastEndTs)
+        resolvedLastWeek++;
+    }
+    // Groups mode: a group is "new this week" iff the earliest first
+    // detection across its non-excluded instances falls in the window. A
+    // group already detected before the window doesn't count as new even if
+    // additional instances appear later.
+    const groupFirstDet = new Map<number, number>();
+    for (const i of issues) {
+      const st = (i.status ?? "").toLowerCase();
+      if (
+        excludeNewStatuses.includes(st as (typeof excludeNewStatuses)[number])
+      )
+        continue;
+      const det = safeDate(i.first_detected_at);
+      if (!det) continue;
+      const gid = i.issue_group_id ?? 0;
       const ts = det.getTime();
+      const prev = groupFirstDet.get(gid);
+      if (prev === undefined || ts < prev) groupFirstDet.set(gid, ts);
+    }
+    for (const ts of Array.from(groupFirstDet.values())) {
       if (ts >= thisStartTs && ts <= thisEndTs) newThisWeek++;
       else if (ts >= lastStartTs && ts <= lastEndTs) newLastWeek++;
+    }
+  } else {
+    // Instances mode: per-finding closure and detection events.
+    // "Closed" matches VAT's product scope of triage + risk acceptance +
+    // remediation: suppressions, false-positives, approvals all count as
+    // "off the open queue". Aligns with computeMTTR (same isClosedIssue).
+    for (const i of trendIssues) {
+      if (!isClosedIssue(i)) continue;
+      const closed = safeDate(i.closed_at!);
+      if (!closed) continue;
+      const ts = closed.getTime();
+      if (ts >= thisStartTs && ts <= thisEndTs) resolvedThisWeek++;
+      else if (ts >= lastStartTs && ts <= lastEndTs) resolvedLastWeek++;
+    }
+    for (const i of issues) {
+      const st = (i.status ?? "").toLowerCase();
+      if (
+        excludeNewStatuses.includes(st as (typeof excludeNewStatuses)[number])
+      )
+        continue;
+      const det = safeDate(i.first_detected_at);
+      if (det) {
+        const ts = det.getTime();
+        if (ts >= thisStartTs && ts <= thisEndTs) newThisWeek++;
+        else if (ts >= lastStartTs && ts <= lastEndTs) newLastWeek++;
+      }
     }
   }
   return {
