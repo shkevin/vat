@@ -13,6 +13,26 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import get_settings
 from app.models.finding import Finding, FindingType, Severity, Status
 from app.models.sbom import SbomPackage, license_risk_tier
+from app.services.asset_resolver import infer_asset_kind
+from app.services.container_ref_normalization import (
+    apply_container_asset_path_aliases,
+    normalize_container_ref,
+)
+
+
+def _canonicalize_container_image(value: str | None) -> str | None:
+    """Apply the same container ref canonicalization used by ingest's resolver.
+
+    Strips digest, tag, and configured registry prefix so SBOM-derived License
+    findings land on the same canonical asset key as the rest of ingest.
+    """
+    if not value:
+        return value
+    if infer_asset_kind(value, "") != "container":
+        return value
+    return apply_container_asset_path_aliases(
+        normalize_container_ref(value).canonical_asset_key
+    )
 
 
 def _clip(value: str | None, max_len: int) -> str | None:
@@ -365,7 +385,7 @@ async def import_sbom(
                     severity=Severity.Critical if risk == "Critical" else Severity.High,
                     status=Status.Open,
                     component=pkg["name"],
-                    image=comp,
+                    image=_canonicalize_container_image(comp),
                     tag=_clip(finding_tag, 256),
                     title=title[:512],
                     description=(
