@@ -63,16 +63,29 @@ def _fmt_elapsed(seconds: float) -> str:
 
 
 def _apply_cyclonedx_container_ref(doc: dict | None, container_ref: str | None) -> dict | None:
-    """Stamp VAT container reference into CycloneDX component properties."""
+    """Stamp the canonical container reference onto a Trivy-generated CycloneDX doc.
+
+    Trivy's ``metadata.component.name`` for ``trivy image --input <file>`` is the
+    tar/OCI-layout path on disk — useless for downstream tag/digest extraction.
+    Overwrite it with the upstream OCI ref the scanner discovered (e.g.
+    ``ghcr.io/.../backend:1.5.28``) so backend parsers can recover the
+    per-artifact tag and digest.
+    """
     if not isinstance(doc, dict):
         return None
     ref = (container_ref or "").strip()
     if not ref:
         return doc
+    out = dict(doc)
+    # Overwrite metadata.component.name with the upstream ref.
+    metadata = dict(out.get("metadata") or {})
+    md_component = dict(metadata.get("component") or {})
+    md_component["name"] = ref
+    metadata["component"] = md_component
+    out["metadata"] = metadata
     components = doc.get("components") or []
     if not isinstance(components, list):
-        return doc
-    out = dict(doc)
+        return out
     patched_components: list[dict] = []
     for c in components:
         if not isinstance(c, dict):
