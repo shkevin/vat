@@ -15,6 +15,23 @@ STIG_PROFILE = "xccdf_basic_profile_.check"
 STIG_DATASTREAM = "/usr/share/xml/scap/ssg/content/ssg-chainguard-gpos-ds.xml"
 
 
+def _docker_rmi_best_effort(image_ref: str, timeout: int = 60) -> None:
+    """Cleanup helper: ``docker rmi`` may hang under daemon contention.
+
+    Treat as best-effort — a failed cleanup must not abort the scan, since the
+    image is no longer needed by the calling routine. Bumped timeout (60s) and
+    swallowed exceptions cover transient daemon stalls during parallel scans.
+    """
+    try:
+        subprocess.run(
+            ["docker", "rmi", image_ref],
+            capture_output=True,
+            timeout=timeout,
+        )
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+        pass
+
+
 def _trivy_skip_args(exclude: list[str] | None) -> list[str]:
     """Build --skip-dirs and --skip-files from exclude patterns."""
     if not exclude:
@@ -325,11 +342,7 @@ def run_stig_oci_layout(
             text=True,
             timeout=timeout,
         )
-        subprocess.run(
-            ["docker", "rmi", image_ref],
-            capture_output=True,
-            timeout=10,
-        )
+        _docker_rmi_best_effort(image_ref)
         # oscap exit codes: 0=all pass, 1=error, 2=findings — treat 0 and 2 as success
         if result.returncode not in (0, 2) or not results_path.exists():
             if verbose and (result.stderr or result.stdout):
@@ -488,11 +501,7 @@ def run_oval_cve_oci_layout(
             text=True,
             timeout=timeout,
         )
-        subprocess.run(
-            ["docker", "rmi", image_ref],
-            capture_output=True,
-            timeout=10,
-        )
+        _docker_rmi_best_effort(image_ref)
         if result.returncode not in (0, 2) or not results_path.exists():
             err = (result.stderr or "").strip() or (result.stdout or "").strip()
             skip = _OVAL_NOT_RHEL in err
@@ -625,7 +634,7 @@ def run_trivy_image_cyclonedx(
             mode_stats["trivy_image_docker_fallback"] = mode_stats.get("trivy_image_docker_fallback", 0) + 1
         return _scan_ref(image_ref)
     finally:
-        subprocess.run(["docker", "rmi", image_ref], capture_output=True, timeout=10)
+        _docker_rmi_best_effort(image_ref)
 
 
 def run_trivy_oci_layout_cyclonedx(
@@ -679,7 +688,7 @@ def run_trivy_oci_layout_cyclonedx(
             mode_stats["trivy_oci_skopeo_fallback"] = mode_stats.get("trivy_oci_skopeo_fallback", 0) + 1
         return _scan_ref(image_ref)
     finally:
-        subprocess.run(["docker", "rmi", image_ref], capture_output=True, timeout=10)
+        _docker_rmi_best_effort(image_ref)
 
 
 def run_gitleaks(
