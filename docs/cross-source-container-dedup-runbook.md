@@ -13,9 +13,12 @@ When two paths are **policy-equivalent** (same org policy, different path prefix
 
 - **Backend:** `VAT_CONTAINER_ASSET_PATH_ALIASES` — semicolon-separated pairs  
   `source_prefix=>target_prefix`  
-  Applied **after** `normalize_container_ref`, on the **lowercase** canonical key.  
-  Example:  
-  `docker.io/operators/images/=>docker.io/containers/images/`
+  Applied **after** `normalize_container_ref`, on the **lowercase** canonical key for matching; the returned key keeps the original casing of the suffix after `source_prefix`.  
+  **Empty `target_prefix`** (nothing after `=>`, or whitespace only) means **strip** `source_prefix` so multiple registry shapes collapse to one bare key (e.g. `containers/images/python`).  
+  Example (rewrite only):  
+  `docker.io/operators/images/=>docker.io/containers/images/`  
+  Example (strip registries for online ↔ offline parity):  
+  `docker.io/=>;ghcr.io/kamiwaza-internal/=>;registry-1.docker.io/=>`
 
 - **Frontend (grouping parity):** `NEXT_PUBLIC_VAT_CONTAINER_ASSET_PATH_ALIASES` — same syntax so sidebar grouping matches the API.
 

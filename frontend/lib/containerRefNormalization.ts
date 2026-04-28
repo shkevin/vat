@@ -94,7 +94,7 @@ export function normalizeContainerRef(value: string | null | undefined): Normali
   };
 }
 
-/** Parse ``NEXT_PUBLIC_VAT_CONTAINER_ASSET_PATH_ALIASES``: ``from=>to;from2=>to2``. */
+/** Parse ``NEXT_PUBLIC_VAT_CONTAINER_ASSET_PATH_ALIASES``: ``from=>to;from2=>to2``. Empty ``to`` = strip ``from`` (same as backend). */
 export function parseContainerAssetPathAliases(
   raw: string | undefined,
 ): Array<[string, string]> {
@@ -108,7 +108,7 @@ export function parseContainerAssetPathAliases(
     const right = s.slice(idx + 2);
     const src = left.trim().toLowerCase();
     const dst = right.trim().toLowerCase();
-    if (src && dst) out.push([src, dst]);
+    if (src) out.push([src, dst]);
   }
   return out;
 }

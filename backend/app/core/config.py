@@ -172,7 +172,8 @@ class Settings(BaseSettings):
 
     # Tenant-scoped container path equivalence (scanner vs integration naming).
     # Semicolon-separated pairs: source_prefix=>target_prefix (lowercase paths after normalize).
-    # Example: docker.io/operators/images/=>docker.io/containers/images/
+    # Empty target_prefix strips source_prefix (bare path key). Example rewrite:
+    # docker.io/operators/images/=>docker.io/containers/images/
     container_asset_path_aliases: str = ""
 
     # Audit ledger: optional Celery Beat job to anchor previous UTC day (POST /audit/checkpoints/daily remains manual)

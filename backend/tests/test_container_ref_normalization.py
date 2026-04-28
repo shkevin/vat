@@ -84,6 +84,39 @@ def test_apply_container_asset_path_aliases_rewrites_prefix(
     assert apply_container_asset_path_aliases("docker.io/other/etcd") == "docker.io/other/etcd"
 
 
+def test_apply_container_asset_path_aliases_empty_dst_strips_prefix(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Part B: registry prefixes strip to bare org/path (online ↔ local scanner)."""
+    monkeypatch.setenv(
+        "VAT_CONTAINER_ASSET_PATH_ALIASES",
+        "docker.io/=>;ghcr.io/kamiwaza-internal/=>;registry-1.docker.io/=>",
+    )
+    get_settings.cache_clear()
+    assert (
+        apply_container_asset_path_aliases("docker.io/containers/images/python")
+        == "containers/images/python"
+    )
+    assert (
+        apply_container_asset_path_aliases(
+            "ghcr.io/kamiwaza-internal/containers/images/python"
+        )
+        == "containers/images/python"
+    )
+    assert (
+        apply_container_asset_path_aliases(
+            "registry-1.docker.io/bitnamilegacy/postgresql"
+        )
+        == "bitnamilegacy/postgresql"
+    )
+    assert (
+        apply_container_asset_path_aliases(
+            "docker.io/kamiwaza-extensions-kaizen/images/backend"
+        )
+        == "kamiwaza-extensions-kaizen/images/backend"
+    )
+
+
 def test_resolver_applies_container_path_aliases(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

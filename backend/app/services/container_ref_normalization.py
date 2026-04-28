@@ -8,7 +8,11 @@ from app.parsers.image_digest import normalize_image_digest
 
 
 def _parse_container_asset_path_aliases(raw: str) -> list[tuple[str, str]]:
-    """Parse ``VAT_CONTAINER_ASSET_PATH_ALIASES``: ``from=>to;from2=>to2``."""
+    """Parse ``VAT_CONTAINER_ASSET_PATH_ALIASES``: ``from=>to;from2=>to2``.
+
+    Empty ``to`` (nothing after ``=>``, or whitespace only) means **strip** ``from``:
+    the canonical key becomes the remainder after ``from`` (cross-registry collapse).
+    """
     out: list[tuple[str, str]] = []
     if not raw or not str(raw).strip():
         return out
@@ -19,7 +23,7 @@ def _parse_container_asset_path_aliases(raw: str) -> list[tuple[str, str]]:
         left, right = segment.split("=>", 1)
         src = left.strip().lower()
         dst = right.strip().lower()
-        if src and dst:
+        if src:
             out.append((src, dst))
     return out
 
@@ -30,6 +34,9 @@ def apply_container_asset_path_aliases(canonical_key: str) -> str:
 
     Applied after ``normalize_container_ref`` so scanner ``.../operators/images/...``
     and Aikido ``.../containers/images/...`` can map to one asset key when configured.
+
+    Pair ``prefix=>`` (empty replacement) strips ``prefix`` so online and hostless
+    scanner paths can share one bare key (``<ns>/images/<name>``).
     """
     if not canonical_key or not canonical_key.strip():
         return canonical_key

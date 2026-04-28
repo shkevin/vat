@@ -38,6 +38,22 @@ describe("normalizeContainerRef parity with backend vectors", () => {
     vi.unstubAllEnvs();
   });
 
+  it("applyContainerAssetPathAliases strips prefix when target is empty (backend parity)", () => {
+    vi.stubEnv(
+      "NEXT_PUBLIC_VAT_CONTAINER_ASSET_PATH_ALIASES",
+      "docker.io/=>;ghcr.io/kamiwaza-internal/=>;registry-1.docker.io/=>",
+    );
+    expect(
+      applyContainerAssetPathAliases("docker.io/containers/images/python"),
+    ).toBe("containers/images/python");
+    expect(
+      applyContainerAssetPathAliases(
+        "ghcr.io/kamiwaza-internal/containers/images/python",
+      ),
+    ).toBe("containers/images/python");
+    vi.unstubAllEnvs();
+  });
+
   it("containerImageGroupKey applies path aliases for container kind only", () => {
     vi.stubEnv(
       "NEXT_PUBLIC_VAT_CONTAINER_ASSET_PATH_ALIASES",
