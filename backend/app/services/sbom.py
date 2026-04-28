@@ -35,6 +35,47 @@ def _canonicalize_container_image(value: str | None) -> str | None:
     )
 
 
+def _extract_metadata_tag_digest(doc: dict) -> tuple[str | None, str | None]:
+    """Pull (tag, digest) from CycloneDX ``metadata.component`` for SBOM-derived findings.
+
+    Mirrors parsers.cyclonedx._extract_sbom_tag_digest precedence: name suffix,
+    version, PURL ``?tag=``/``@sha256:``. Defensive against varying SBOM emitters.
+    """
+    md = (doc or {}).get("metadata") or {}
+    comp_meta = md.get("component") or {}
+    if not isinstance(comp_meta, dict):
+        return None, None
+    name = str(comp_meta.get("name") or "").strip()
+    version = str(comp_meta.get("version") or "").strip() or None
+    purl = str(comp_meta.get("purl") or "").strip()
+
+    tag: str | None = None
+    digest: str | None = None
+    s = name
+    if "@sha256:" in s:
+        s, _, dig = s.partition("@sha256:")
+        digest = f"sha256:{dig.strip()}" if dig else None
+    if s and ":" in s:
+        last_slash = s.rfind("/")
+        last_colon = s.rfind(":")
+        if last_colon > last_slash:
+            cand = s[last_colon + 1 :].strip()
+            if cand and "/" not in cand:
+                tag = cand
+    if not tag and version:
+        tag = version
+    if not tag and purl and "?" in purl:
+        for kv in purl.split("?", 1)[1].split("&"):
+            if kv.startswith("tag="):
+                tag = kv[4:].strip() or None
+                break
+    if not digest and "@sha256:" in purl:
+        digest = (
+            f"sha256:{purl.split('@sha256:', 1)[1].split('?', 1)[0].strip()}"
+        )
+    return tag, digest
+
+
 def _clip(value: str | None, max_len: int) -> str | None:
     """Bound persisted string fields to DB column sizes."""
     if value is None:
@@ -317,6 +358,9 @@ async def import_sbom(
     created = 0
     updated = 0
     source_entry = {"name": source, "importedAt": _now()}
+    # SBOM-derived per-image tag/digest. Wins over caller-supplied finding_tag,
+    # which typically carries a bundle/release tag rather than the artifact tag.
+    sbom_tag, sbom_digest = _extract_metadata_tag_digest(doc)
 
     for pkg in packages:
         comp = pkg.get("component") or component
@@ -373,6 +417,7 @@ async def import_sbom(
             fp = make_fingerprint(cve_id, occurrence_scope)
             res = await db.execute(select(Finding).where(Finding.fingerprint_id == fp))
             existing_finding = res.scalar_one_or_none()
+            effective_tag = _clip(sbom_tag or finding_tag, 256)
             if existing_finding is None:
                 title = f"{license_id} license in {pkg['name']}"
                 if comp:
@@ -386,7 +431,8 @@ async def import_sbom(
                     status=Status.Open,
                     component=pkg["name"],
                     image=_canonicalize_container_image(comp),
-                    tag=_clip(finding_tag, 256),
+                    tag=effective_tag,
+                    image_digest=sbom_digest,
                     title=title[:512],
                     description=(
                         f"SBOM import detected {risk} risk license {license_id}"
@@ -405,12 +451,17 @@ async def import_sbom(
                 )
                 db.add(finding)
             else:
-                normalized_tag = _clip(finding_tag, 256)
-                if normalized_tag and (
+                if effective_tag and (
                     force_finding_tag_override
+                    or sbom_tag
                     or not (existing_finding.tag and str(existing_finding.tag).strip())
                 ):
-                    existing_finding.tag = normalized_tag
+                    existing_finding.tag = effective_tag
+                if sbom_digest and not (
+                    getattr(existing_finding, "image_digest", None)
+                    and str(existing_finding.image_digest).strip()
+                ):
+                    existing_finding.image_digest = sbom_digest
 
     await db.commit()
     return created, updated
