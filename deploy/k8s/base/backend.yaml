@@ -74,6 +74,8 @@ spec:
           env:
             - name: VAT_ENV
               value: production
+            - name: VAT_CONTAINER_ASSET_PATH_ALIASES
+              value: "docker.io/=>ghcr.io/kamiwaza-internal/"
             - name: VAT_RUN_MIGRATIONS
               value: "false"
             - name: VAT_UVICORN_WORKERS
