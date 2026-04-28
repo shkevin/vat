@@ -494,10 +494,18 @@ async def group_asset_into_target(
     target_asset = await db.get(Asset, canonical_target)
     created_target_asset = False
     if not target_asset:
+        if source_asset:
+            inferred_type = source_asset.type
+        else:
+            inferred_type = (
+                "container"
+                if infer_asset_kind(canonical_target, "") == "container"
+                else "package"
+            )
         target_asset = Asset(
             id=canonical_target,
             name=canonical_target,
-            type=(source_asset.type if source_asset else "package"),
+            type=inferred_type,
             source=(source_asset.source if source_asset else "manual-grouping"),
             branch=(source_asset.branch if source_asset else None),
             tag=(source_asset.tag if source_asset else None),
