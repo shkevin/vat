@@ -45,11 +45,15 @@ class IngestTagPolicy:
         return self.header_tag
 
     def apply_to_payload(self, payload: VatFindingSchema) -> VatFindingSchema:
-        """Apply tag policy to one finding payload."""
+        """Apply tag policy to one finding payload.
+
+        Parser-supplied tag wins over the header — SBOM-derived per-artifact
+        tags (e.g. ``1.5.28`` extracted from CycloneDX ``metadata.component``)
+        must not be clobbered by a bundle-scope ``X-VAT-Tag`` header. Header
+        tag only fills the field when the parser left it empty.
+        """
         if not self.header_tag:
             return payload
-        if self.force_override:
-            return payload.model_copy(update={"tag": self.header_tag})
         existing = _clean(getattr(payload, "tag", None))
         if existing:
             return payload
