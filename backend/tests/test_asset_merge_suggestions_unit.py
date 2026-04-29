@@ -105,6 +105,52 @@ def test_digest_match_wins_over_other_strategies() -> None:
     assert conf == "high"
 
 
+def test_name_heuristic_does_not_match_on_shared_org_token() -> None:
+    """bitnamilegacy/postgresql vs bitnamilegacy/kafka share only the
+    bitnamilegacy org token. Best-match picker must skip generic/registry
+    tokens so this doesn't fire."""
+    src = _sig("bitnamilegacy/postgresql", name_tokens={"bitnamilegacy", "postgresql"})
+    tgt = _sig("bitnamilegacy/kafka", name_tokens={"bitnamilegacy", "kafka"})
+    strategy, _, _, _ = _strategy_from_signatures(src, tgt)
+    assert strategy != "name_heuristic"
+
+
+def test_sbom_similarity_blocks_bitnami_with_only_distro_packages() -> None:
+    """Real bitnami siblings carry only Debian-base packages — every
+    "distinctive" Debian infrastructure package (bsdutils, debianutils,
+    gcc-12-base, insserv, startpar, sysv-rc, usrmerge) must be filtered
+    so identical-OS-only Jaccard collisions don't surface as merges."""
+    distro_only = {
+        "bash@5.2",
+        "coreutils@9.1",
+        "libc6@2.36",
+        "openssl@3.0.11",
+        "ca-certificates@20230311",
+        "tzdata@2024a",
+        "perl-base@5.36",
+        "bsdutils@1.0",
+        "debianutils@5.7",
+        "gcc-12-base@12.2",
+        "insserv@1.21",
+        "startpar@0.64",
+        "sysv-rc@2.96",
+        "usrmerge@35",
+        "xz-utils@5.4",
+    }
+    src = _sig(
+        "bitnamilegacy/kafka",
+        packages=distro_only,
+        name_tokens={"bitnamilegacy", "kafka"},
+    )
+    tgt = _sig(
+        "bitnamilegacy/os-shell",
+        packages=distro_only,
+        name_tokens={"bitnamilegacy", "os-shell", "os", "shell"},
+    )
+    strategy, _, _, _ = _strategy_from_signatures(src, tgt)
+    assert strategy == "", f"expected no merge, got {strategy!r}"
+
+
 def test_is_os_noise_package_classifies_distro_basics() -> None:
     for pkg in [
         "bash@5.2",

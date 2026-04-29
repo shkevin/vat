@@ -38,7 +38,7 @@ from app.services.dedup import component_base, normalize
 
 MIN_SBOM_JACCARD = 0.85
 MIN_SHARED_PACKAGES = 5
-MIN_DISTINCT_SHARED_PACKAGES = 3
+MIN_DISTINCT_SHARED_PACKAGES = 8
 MIN_NAME_SIMILARITY = 0.78
 GENERIC_NAME_TOKENS = {
     "container",
@@ -52,6 +52,20 @@ GENERIC_NAME_TOKENS = {
     "fips",
     "latest",
     "stable",
+    # Registry / org / namespace tokens — these are infrastructure, not
+    # product identifiers. Two images sharing only an org segment (e.g.
+    # bitnamilegacy/postgresql vs bitnamilegacy/kafka) must not match.
+    "bitnami",
+    "bitnamilegacy",
+    "library",
+    "localhost",
+    "docker.io",
+    "ghcr.io",
+    "quay.io",
+    "registry-1.docker.io",
+    "registry.io",
+    "kamiwaza",
+    "kamiwaza-internal",
 }
 
 # OS / base-image packages that any distro-derived container will share. Two
@@ -79,13 +93,17 @@ _OS_NOISE_PACKAGE_PREFIXES: tuple[str, ...] = (
     "apt",
     "adduser",
     "base-",
+    "bsdutils",
+    "debianutils",
     "diffutils",
     "findutils",
+    "gcc-",
     "gpgv",
     "grep",
     "gzip",
     "hostname",
     "init-system-helpers",
+    "insserv",
     "login",
     "logsave",
     "lsb-base",
@@ -93,8 +111,12 @@ _OS_NOISE_PACKAGE_PREFIXES: tuple[str, ...] = (
     "mount",
     "passwd",
     "sed",
+    "startpar",
+    "sysv-rc",
     "sysvinit-utils",
     "tar",
+    "usrmerge",
+    "xz-utils",
     "zlib",
     "musl",
     "alpine-baselayout",
@@ -293,20 +315,23 @@ def _strategy_from_signatures(
             },
         )
 
-    # Pick the best matching token pair across both sides instead of just the
-    # longest tokens. Otherwise multi-segment refs like
-    # "localhost/vespaengine/vespa" pick "vespaengine" and miss the shared
-    # "vespa" sitting right there in name_tokens.
+    # Pick the best matching token pair across both sides — but only over
+    # *meaningful* tokens (registry/org segments and generic suffixes are
+    # filtered) so multi-segment refs like "localhost/vespaengine/vespa"
+    # match "containers/images/vespa" on the shared "vespa" while sibling
+    # Bitnami images don't trigger on a shared "bitnamilegacy" org token.
     source_name = ""
     target_name = ""
     name_score = 0.0
-    if source.name_tokens and target.name_tokens:
-        for s_tok in source.name_tokens:
-            if not s_tok:
-                continue
-            for t_tok in target.name_tokens:
-                if not t_tok:
-                    continue
+    source_meaningful_set = {
+        t for t in source.name_tokens if _meaningful_name_tokens(t)
+    }
+    target_meaningful_set = {
+        t for t in target.name_tokens if _meaningful_name_tokens(t)
+    }
+    if source_meaningful_set and target_meaningful_set:
+        for s_tok in source_meaningful_set:
+            for t_tok in target_meaningful_set:
                 score = _sequence_similarity(s_tok, t_tok)
                 if score > name_score:
                     name_score = score
