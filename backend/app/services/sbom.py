@@ -383,6 +383,12 @@ async def import_sbom(
     for pkg in packages:
         comp = pkg.get("component") or component
         comp = _clip(comp, 256)
+        # Canonicalize the component (which becomes the asset_id for downstream
+        # vuln_feed_match) so feed-match findings land on the same asset key
+        # the rest of ingest uses. _canonicalize_container_image is a no-op
+        # for non-container components.
+        canonical_comp = _canonicalize_container_image(comp) or comp
+        comp = _clip(canonical_comp, 256)
         pkg_id = _package_id(pkg["name"], pkg["version"], comp)
         license_id = _clip(pkg.get("license_id"), 64)
         risk = license_risk_tier(license_id) if license_id else None

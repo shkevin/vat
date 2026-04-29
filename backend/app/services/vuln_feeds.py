@@ -16,13 +16,19 @@ from sqlalchemy import delete, desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
+from app.models.asset import Asset
 from app.models.asset_alias import AssetAlias
 from app.models.finding import Finding, FindingType, Severity, Status
 from app.models.sbom import SbomPackage
 from app.models.vuln_feed_record import VulnFeedRecord
 from app.models.vuln_feed_run import VulnFeedRun
 from app.models.vuln_feed_source import VulnFeedSource
+from app.services.asset_resolver import infer_asset_kind
 from app.services.audit_events import emit_audit_event, new_trace_id
+from app.services.container_ref_normalization import (
+    apply_container_asset_path_aliases,
+    normalize_container_ref,
+)
 from app.services.dedup import make_fingerprint
 
 SOURCE_OSV = "osv"
@@ -1404,6 +1410,54 @@ def _match_strategy(
     return (strategy, confidence)
 
 
+def _canonicalize_feed_match_image(value: str | None) -> str:
+    """Apply the same canonicalization HTTP ingest uses, so feed-match
+    findings land on the same asset key as Aikido/SBOM findings.
+
+    SbomPackage.component values can be full OCI refs (e.g.
+    ``ghcr.io/kamiwaza-internal/foo:1.5.28``) when the local scanner
+    stamped them. Without normalization, vuln_feed_match findings show
+    up under shadow assets with un-stripped registry prefixes.
+    """
+    raw = (value or "").strip()
+    if not raw:
+        return raw
+    if infer_asset_kind(raw, "") != "container":
+        return raw
+    return apply_container_asset_path_aliases(
+        normalize_container_ref(raw).canonical_asset_key
+    )
+
+
+async def _ensure_feed_match_asset_record(
+    db: AsyncSession, asset_id: str | None
+) -> bool:
+    """Backfill an ``Asset`` row for a feed-match finding's image.
+
+    Mirrors the SBOM-side and Aikido-sync helpers so vuln-feed-match
+    findings appear in the assets list rather than as orphans.
+    """
+    if not asset_id or not str(asset_id).strip():
+        return False
+    aid = str(asset_id).strip()
+    existing = await db.get(Asset, aid)
+    if existing:
+        return False
+    inferred = infer_asset_kind(aid, "")
+    kind = inferred if inferred in ("container", "repo") else "package"
+    db.add(
+        Asset(
+            id=aid,
+            name=aid,
+            type=kind,
+            source=SOURCE_VULN_FEED_MATCH,
+            branch=None,
+            tag=None,
+        )
+    )
+    return True
+
+
 def _materialized_finding_payload(
     *,
     asset_id: str,
@@ -1539,7 +1593,12 @@ async def materialize_feed_matches_to_findings(
         asset_id_raw = (pkg.component or "").strip()
         if not asset_id_raw:
             continue
-        asset_id = source_to_canonical.get(asset_id_raw, asset_id_raw)
+        # Canonicalize first (apply container alias rules), then resolve
+        # asset_aliases so existing manual merges are honored too.
+        asset_id_canonical = _canonicalize_feed_match_image(asset_id_raw)
+        asset_id = source_to_canonical.get(
+            asset_id_canonical, asset_id_canonical
+        )
         for advisory in advisories_by_package.get(package_key, []):
             strategy, confidence = _match_strategy(
                 sbom_name=pkg.name,
@@ -1626,6 +1685,7 @@ async def materialize_feed_matches_to_findings(
     for fp, payload in candidates.items():
         row = existing_by_fp.get(fp)
         now_iso = _now_iso()
+        await _ensure_feed_match_asset_record(db, payload.get("image"))
         if row is None:
             finding = Finding(
                 id=f"f-{fp[:8]}",
