@@ -528,6 +528,18 @@ async def import_sbom(
                         pass
 
     await db.commit()
+
+    # Auto-merge any new SBOM-side asset whose sha256 digest now matches an
+    # existing asset (typically the Aikido side of the same image). Digest
+    # collision = same image, no false-positive risk.
+    try:
+        from app.services.asset_merge_suggestions import auto_merge_assets_by_digest
+
+        await auto_merge_assets_by_digest(db, created_by=f"sbom-import:{source}")
+        await db.commit()
+    except Exception:
+        pass
+
     return created, updated
 
 

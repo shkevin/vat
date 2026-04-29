@@ -452,13 +452,29 @@ async def run_full_sync(
         "skipped_no_first_detected": skipped_no_fd,
         "skipped_already_has": skipped_has_fd,
     }
+
+    # Apply any cross-source digest merges Aikido just enabled (e.g. an Aikido
+    # asset and a previously-ingested SBOM asset that share a sha256 manifest
+    # digest). Conservative: only digest matches auto-merge.
+    try:
+        from app.services.asset_merge_suggestions import auto_merge_assets_by_digest
+
+        async with async_session() as session:
+            stats = await auto_merge_assets_by_digest(session, created_by="aikido-sync")
+            await session.commit()
+        result["auto_merge"] = stats
+    except Exception as e:
+        logger.warning("auto_merge_assets_by_digest failed: %s", e)
+        result["auto_merge"] = {"error": str(e).split("\n")[0][:200]}
+
     logger.info(
-        "Full sync complete: pull %d/%d/%d, dashboard %d issues, backfill fd=%d ca=%d",
+        "Full sync complete: pull %d/%d/%d, dashboard %d issues, backfill fd=%d ca=%d, auto-merge=%s",
         len(raw_issues),
         created,
         merged,
         result["dashboard"].get("issues", 0),
         result["backfill"].get("updated_first_detected", 0),
         result["backfill"].get("updated_closed_at", 0),
+        result.get("auto_merge"),
     )
     return result

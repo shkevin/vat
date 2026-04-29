@@ -62,25 +62,41 @@ def _fmt_elapsed(seconds: float) -> str:
     return f"{m}m {s:.1f}s" if s >= 0.1 else f"{m}m"
 
 
-def _apply_cyclonedx_container_ref(doc: dict | None, container_ref: str | None) -> dict | None:
+def _apply_cyclonedx_container_ref(
+    doc: dict | None,
+    container_ref: str | None,
+    image_digest: str | None = None,
+) -> dict | None:
     """Stamp the canonical container reference onto a Trivy-generated CycloneDX doc.
 
     Trivy's ``metadata.component.name`` for ``trivy image --input <file>`` is the
     tar/OCI-layout path on disk — useless for downstream tag/digest extraction.
     Overwrite it with the upstream OCI ref the scanner discovered (e.g.
     ``ghcr.io/.../backend:1.5.28``) so backend parsers can recover the
-    per-artifact tag and digest.
+    per-artifact tag and digest. When ``image_digest`` is supplied we append
+    ``@sha256:<hex>`` so the backend's SBOM extractor records it as
+    ``image_digest`` on every License finding — this is what the cross-source
+    asset-merge auto-merger keys on.
     """
     if not isinstance(doc, dict):
         return None
     ref = (container_ref or "").strip()
     if not ref:
         return doc
+    digest = (image_digest or "").strip()
+    if digest and "@sha256:" not in ref:
+        # Normalize to the canonical sha256:<hex> form before appending.
+        if digest.startswith("sha256:"):
+            ref_with_digest = f"{ref}@{digest}"
+        else:
+            ref_with_digest = f"{ref}@sha256:{digest}"
+    else:
+        ref_with_digest = ref
     out = dict(doc)
-    # Overwrite metadata.component.name with the upstream ref.
+    # Overwrite metadata.component.name with the upstream ref + optional digest.
     metadata = dict(out.get("metadata") or {})
     md_component = dict(metadata.get("component") or {})
-    md_component["name"] = ref
+    md_component["name"] = ref_with_digest
     metadata["component"] = md_component
     out["metadata"] = metadata
     components = doc.get("components") or []
@@ -102,7 +118,7 @@ def _apply_cyclonedx_container_ref(doc: dict | None, container_ref: str | None) 
                 has_ref = True
                 break
         if not has_ref:
-            props = [*props, {"name": "vat:container_ref", "value": ref}]
+            props = [*props, {"name": "vat:container_ref", "value": ref_with_digest}]
         patched_components.append({**c, "properties": props})
     out["components"] = patched_components
     return out
@@ -423,7 +439,11 @@ def run_scan(
                 container_timings["cyclonedx_item"].append(elapsed)
                 if img_cdx:
                     container_ref = src.image_ref or src.label
-                    doc = _apply_cyclonedx_container_ref(img_cdx, container_ref)
+                    doc = _apply_cyclonedx_container_ref(
+                        img_cdx,
+                        container_ref,
+                        image_digest=getattr(src, "image_digest", None),
+                    )
                     if doc:
                         cyclonedx_docs.append(
                             (
