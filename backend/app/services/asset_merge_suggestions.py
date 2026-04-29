@@ -340,9 +340,26 @@ def _strategy_from_signatures(
     source_meaningful = _meaningful_name_tokens(source_name)
     target_meaningful = _meaningful_name_tokens(target_name)
     shared_name_tokens = sorted(source_meaningful & target_meaningful)
-    if name_score >= MIN_NAME_SIMILARITY and shared_name_tokens:
+    # Allow product-suffix variants (postgresql ↔ postgres, redis-cli ↔ redis)
+    # when either token is a prefix of the other AND both are at least 6
+    # chars — short enough to avoid e.g. "kube" matching "kubectl" but long
+    # enough to keep real product matches.
+    has_prefix_overlap = (
+        bool(source_name)
+        and bool(target_name)
+        and source_name != target_name
+        and (
+            (source_name.startswith(target_name) or target_name.startswith(source_name))
+        )
+        and min(len(source_name), len(target_name)) >= 6
+    )
+    if name_score >= MIN_NAME_SIMILARITY and (shared_name_tokens or has_prefix_overlap):
         confidence = "medium" if name_score >= 0.75 else "low"
         exact_name_match = source_name == target_name and bool(source_name)
+        if not shared_name_tokens and has_prefix_overlap:
+            shared_name_tokens = [
+                source_name if len(source_name) <= len(target_name) else target_name
+            ]
         return (
             "name_heuristic",
             round(name_score, 4),

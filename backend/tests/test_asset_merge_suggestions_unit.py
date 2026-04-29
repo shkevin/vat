@@ -105,6 +105,32 @@ def test_digest_match_wins_over_other_strategies() -> None:
     assert conf == "high"
 
 
+def test_name_heuristic_matches_product_suffix_variants() -> None:
+    """postgresql ↔ postgres, redis-cli ↔ redis: prefix-overlap on tokens
+    ≥6 chars surfaces a suggestion even without an exact shared token."""
+    src = _sig(
+        "bitnamilegacy/postgresql",
+        name_tokens={"bitnamilegacy", "postgresql"},
+    )
+    tgt = _sig(
+        "containers/images/postgres",
+        name_tokens={"containers", "images", "postgres"},
+    )
+    strategy, score, _, details = _strategy_from_signatures(src, tgt)
+    assert strategy == "name_heuristic"
+    assert score >= 0.85
+    assert "postgres" in details.get("sharedNameTokens", [])
+
+
+def test_name_heuristic_does_not_match_short_prefix_collisions() -> None:
+    """kubectl (7) vs kube (4): too short to safely treat as suffix variants.
+    The min-6-char gate must prevent this from firing."""
+    src = _sig("kubectl", name_tokens={"kubectl"})
+    tgt = _sig("kube", name_tokens={"kube"})
+    strategy, _, _, _ = _strategy_from_signatures(src, tgt)
+    assert strategy != "name_heuristic"
+
+
 def test_name_heuristic_does_not_match_on_shared_org_token() -> None:
     """bitnamilegacy/postgresql vs bitnamilegacy/kafka share only the
     bitnamilegacy org token. Best-match picker must skip generic/registry
