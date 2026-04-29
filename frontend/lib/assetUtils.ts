@@ -41,13 +41,10 @@ export function containerImageGroupKey(
   const img = image.trim();
   if (!img) return img;
   const kind = inferAssetKindForGrouping(img);
-  if (kind === "container") {
+  if (kind === "container" || kind === "repo") {
     return applyContainerAssetPathAliases(
       normalizeContainerRef(img).canonicalAssetKey,
     );
-  }
-  if (kind === "repo") {
-    return normalizeContainerRef(img).canonicalAssetKey;
   }
   return img;
 }

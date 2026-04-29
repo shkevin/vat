@@ -25,17 +25,22 @@ ORA_CAPS = {"low": 10, "medium": 30}
 
 
 def _container_image_group_key(image: str, _tag: Optional[str]) -> str:
-    """Match frontend containerImageGroupKey — canonical registry path (correlation-aligned)."""
+    """Match frontend containerImageGroupKey — canonical registry path (correlation-aligned).
+
+    For repo-shape refs (bitnamilegacy/foo, kamiwaza/bar) the same alias
+    rules that strip docker.io/ from container refs must apply: the Asset
+    row is stored alias-stripped, so the grouping key has to match it or
+    findings end up in a "ghost" group at the un-stripped path with no
+    Asset row, surfacing as zero-finding orphans on the frontend.
+    """
     img = (image or "").strip()
     if not img:
         return img
     kind = infer_asset_kind(img, "")
-    if kind == "container":
+    if kind in ("container", "repo"):
         return apply_container_asset_path_aliases(
             normalize_container_ref(img).canonical_asset_key
         )
-    if kind == "repo":
-        return normalize_container_ref(img).canonical_asset_key
     return img
 
 
