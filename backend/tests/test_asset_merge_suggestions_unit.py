@@ -177,6 +177,82 @@ def test_sbom_similarity_blocks_bitnami_with_only_distro_packages() -> None:
     assert strategy == "", f"expected no merge, got {strategy!r}"
 
 
+async def test_auto_merge_respects_same_kind_guard() -> None:
+    """Auto-merger must not collapse a package-type asset (e.g.
+    kamiwaza-bundle) into a container-type asset (containers/images/neo4j)
+    just because they share an inherited digest. Regression for an
+    incident that destroyed the bundle asset and orphaned trivy/semgrep
+    bundle-root findings on the live cluster.
+    """
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock, MagicMock
+
+    from app.models.asset import Asset
+    from app.services.asset_merge_suggestions import auto_merge_assets_by_digest
+
+    digest = "sha256:" + "a" * 64
+    bundle = Asset(id="kamiwaza-bundle", name="kamiwaza-bundle", type="package", source="cyclonedx")
+    container = Asset(
+        id="containers/images/neo4j", name="containers/images/neo4j", type="container", source="Aikido"
+    )
+
+    # Mock session: get(Asset, id) returns one of the two; finding/observed
+    # rows produce the digest-collision; select(Finding image=...) returns []
+    # (no rewrite needed for this test) and aliases tables are empty.
+    async def execute(stmt):
+        # Distinguish stmts by returning canned data based on the column
+        # signature inspected via str(); simpler: return based on call order.
+        result = MagicMock()
+        text = str(stmt)
+        if "image_digest" in text and "image" in text and "FROM findings" in text:
+            result.all = MagicMock(
+                return_value=[
+                    ("kamiwaza-bundle", digest),
+                    ("containers/images/neo4j", digest),
+                ]
+            )
+        elif "asset_observed_tags" in text or "AssetObservedTag" in text:
+            result.all = MagicMock(return_value=[])
+        else:
+            scalars = MagicMock()
+            scalars.all = MagicMock(return_value=[])
+            result.scalars = MagicMock(return_value=scalars)
+        return result
+
+    async def get(model, key):
+        if model is Asset:
+            return {"kamiwaza-bundle": bundle, "containers/images/neo4j": container}.get(key)
+        return None  # AssetAlias lookups return None — no aliases yet
+
+    session = SimpleNamespace(
+        execute=AsyncMock(side_effect=execute),
+        get=AsyncMock(side_effect=get),
+        add=MagicMock(),
+        delete=AsyncMock(),
+        flush=AsyncMock(),
+    )
+
+    stats = await auto_merge_assets_by_digest(session, created_by="test")
+    # Must NOT have created any aliases or rewrites — different kinds.
+    assert stats["aliases_created"] == 0, stats
+    assert stats["findings_repointed"] == 0, stats
+
+
+def test_canonical_pick_prefers_aikido_shape() -> None:
+    """Within a digest cluster the canonical id should be the
+    containers/images/<name> form (Aikido convention), not whatever sorts
+    first lexicographically."""
+    from app.services.asset_merge_suggestions import _canonical_pick
+
+    assert (
+        _canonical_pick({"localhost/vespaengine/vespa", "containers/images/vespa"})
+        == "containers/images/vespa"
+    )
+    assert (
+        _canonical_pick({"docker.io/foo", "bar/baz"}) == "bar/baz"
+    )  # neither is aikido-shape — lex order
+
+
 def test_is_os_noise_package_classifies_distro_basics() -> None:
     for pkg in [
         "bash@5.2",

@@ -629,52 +629,69 @@ async def auto_merge_assets_by_digest(
         if len(canonicals) <= 1:
             continue
 
-        canonical = _canonical_pick(canonicals)
-        if not canonical:
-            continue
-        canonical_assets_visited.add(canonical)
-
-        for source_id in canonicals:
-            if source_id == canonical:
+        # Same-kind guard: a digest collision between asset rows of different
+        # kinds (e.g. a "package"-type bundle row and a "container"-type image
+        # row) does NOT mean the assets are equivalent. The bundle scan
+        # collects findings against many constituent images and inherits each
+        # image's digest into the bundle-asset's digest set. Without this
+        # guard we'd merge "kamiwaza-bundle" into "containers/images/neo4j"
+        # and destroy the bundle asset. Restrict auto-merge to assets sharing
+        # ``Asset.type``.
+        kind_to_ids: dict[str, set[str]] = {}
+        for aid in canonicals:
+            row = await db.get(Asset, aid)
+            kind = (row.type if row is not None else None) or "unknown"
+            kind_to_ids.setdefault(kind, set()).add(aid)
+        for kind, kind_ids in kind_to_ids.items():
+            if len(kind_ids) <= 1:
                 continue
-            # Persist alias so future ingests on the source land on canonical.
-            await upsert_asset_alias(
-                db,
-                source_asset_id=source_id,
-                canonical_asset_id=canonical,
-                created_by=created_by,
-            )
-            await repoint_aliases(
-                db, old_canonical_id=source_id, new_canonical_id=canonical
-            )
-            aliases_created += 1
+            canonical = _canonical_pick(kind_ids)
+            if not canonical:
+                continue
+            canonical_assets_visited.add(canonical)
 
-            # Rewrite existing findings whose image still points at the source
-            # so they show under the canonical asset in the UI.
-            existing = (
-                await db.execute(
-                    select(Finding).where(Finding.image == source_id)
-                )
-            ).scalars().all()
-            for f in existing:
-                prev = {"image": f.image}
-                f.image = canonical
-                findings_repointed += 1
-                await record_merge_event(
+            for source_id in kind_ids:
+                if source_id == canonical:
+                    continue
+                # Persist alias so future ingests on the source land on canonical.
+                await upsert_asset_alias(
                     db,
                     source_asset_id=source_id,
-                    target_asset_id=canonical,
-                    finding_id=f.id,
-                    prev_values=prev,
-                    next_values={"image": canonical},
+                    canonical_asset_id=canonical,
                     created_by=created_by,
                 )
+                await repoint_aliases(
+                    db, old_canonical_id=source_id, new_canonical_id=canonical
+                )
+                aliases_created += 1
 
-            # Drop the now-empty source asset row so the assets list stays
-            # de-duplicated; future ingests on source_id resolve via alias.
-            src_asset = await db.get(Asset, source_id)
-            if src_asset is not None:
-                await db.delete(src_asset)
+                # Rewrite existing findings whose image still points at the
+                # source so they show under the canonical asset in the UI.
+                existing = (
+                    await db.execute(
+                        select(Finding).where(Finding.image == source_id)
+                    )
+                ).scalars().all()
+                for f in existing:
+                    prev = {"image": f.image}
+                    f.image = canonical
+                    findings_repointed += 1
+                    await record_merge_event(
+                        db,
+                        source_asset_id=source_id,
+                        target_asset_id=canonical,
+                        finding_id=f.id,
+                        prev_values=prev,
+                        next_values={"image": canonical},
+                        created_by=created_by,
+                    )
+
+                # Drop the now-empty source asset row so the assets list
+                # stays de-duplicated; future ingests on source_id resolve
+                # via alias.
+                src_asset = await db.get(Asset, source_id)
+                if src_asset is not None:
+                    await db.delete(src_asset)
 
     await db.flush()
 
