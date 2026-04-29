@@ -310,7 +310,21 @@ export function AssetsTable({
 }: AssetsTableProps) {
   const router = useRouter();
   const { preferences } = useUserPreferences();
-  const { getFavoriteContextForAsset } = useVATData();
+  const { getFavoriteContextForAsset, refetch, refreshing } = useVATData();
+  const [refreshError, setRefreshError] = useState<string | null>(null);
+  const handleManualRefresh = useCallback(async () => {
+    setRefreshError(null);
+    try {
+      window.localStorage.removeItem("vat:lastFindingsSnapshot:v2");
+    } catch {
+      // ignore
+    }
+    try {
+      await refetch({ includeAuxiliary: true });
+    } catch (e) {
+      setRefreshError(e instanceof Error ? e.message : "refresh failed");
+    }
+  }, [refetch]);
   const density = preferences.tableDensity ?? "default";
   /** Use context directly so severity counts update immediately when toggle changes (prop can lag) */
   const effectiveGroupFindings =
@@ -440,6 +454,28 @@ export function AssetsTable({
             {displayedAssets.length.toLocaleString()} visible
           </span>
           <span className="vat-tab-chip">{total.toLocaleString()} total</span>
+          <button
+            type="button"
+            onClick={handleManualRefresh}
+            disabled={refreshing}
+            title="Force a fresh fetch and clear the cached snapshot"
+            style={{
+              fontSize: 12,
+              padding: "4px 10px",
+              borderRadius: 999,
+              border: "1px solid var(--app-border, #ccc)",
+              background: "transparent",
+              color: "inherit",
+              cursor: refreshing ? "wait" : "pointer",
+            }}
+          >
+            {refreshing ? "Refreshing…" : "↻ Refresh"}
+          </button>
+          {refreshError && (
+            <span style={{ color: "var(--app-error, #b00020)", fontSize: 12 }}>
+              {refreshError}
+            </span>
+          )}
         </div>
       </section>
 

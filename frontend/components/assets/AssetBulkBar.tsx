@@ -24,7 +24,7 @@ export function AssetBulkBar({
 }: AssetBulkBarProps) {
   const { token, user, isAdmin } = useAuth();
   const auth = { token: token ?? undefined, userEmail: user?.email ?? undefined };
-  const { loadouts, applyLoadout } = useVATData();
+  const { loadouts, applyLoadout, refetch } = useVATData();
   const [mode, setMode] = useState<Mode>("idle");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -66,6 +66,14 @@ export function AssetBulkBar({
       reset();
       onDeselect();
       onMutated?.();
+      // Drop the stale localStorage snapshot so a hard reload picks up the
+      // fresh state too, then refetch to refresh React Query in-memory state.
+      try {
+        window.localStorage.removeItem("vat:lastFindingsSnapshot:v2");
+      } catch {
+        // ignore
+      }
+      await refetch();
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Failed to update loadout");
       setBusy(false);
@@ -88,6 +96,14 @@ export function AssetBulkBar({
       reset();
       onDeselect();
       onMutated?.();
+      // Drop the stale localStorage snapshot so a hard reload picks up the
+      // fresh state too, then refetch to refresh React Query in-memory state.
+      try {
+        window.localStorage.removeItem("vat:lastFindingsSnapshot:v2");
+      } catch {
+        // ignore
+      }
+      await refetch();
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Bulk delete failed");
       setBusy(false);
