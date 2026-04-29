@@ -28,6 +28,7 @@ from app.api import (
     aikido,
     assets,
     auth,
+    client_config,
     export,
     findings,
     health,
@@ -181,6 +182,7 @@ app.add_middleware(
 )
 
 app.include_router(health.router, prefix="/health", tags=["health"])
+app.include_router(client_config.router, prefix="/api/config", tags=["client-config"])
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
 app.include_router(audit.router, prefix="/api/audit", tags=["audit"])
 app.include_router(findings.router, prefix="/api/findings", tags=["findings"])

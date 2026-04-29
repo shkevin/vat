@@ -1,11 +1,17 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, afterEach } from "vitest";
 import {
   inferAssetKindForGrouping,
   normalizeContainerRef,
   applyContainerAssetPathAliases,
   containerDisplayPathWithoutRegistry,
+  setContainerAssetPathAliases,
 } from "./containerRefNormalization";
 import { containerImageGroupKey, getAssetDisplayTitle } from "./assetUtils";
+
+afterEach(() => {
+  // Reset alias rules between tests so leakage from one stub doesn't affect others.
+  setContainerAssetPathAliases("");
+});
 
 describe("normalizeContainerRef parity with backend vectors", () => {
   it("merges bundle-style and docker.io registry paths", () => {
@@ -25,8 +31,7 @@ describe("normalizeContainerRef parity with backend vectors", () => {
   });
 
   it("applyContainerAssetPathAliases mirrors backend prefix rewrite", () => {
-    vi.stubEnv(
-      "NEXT_PUBLIC_VAT_CONTAINER_ASSET_PATH_ALIASES",
+    setContainerAssetPathAliases(
       "docker.io/operators/images/=>docker.io/containers/images/",
     );
     expect(
@@ -35,12 +40,10 @@ describe("normalizeContainerRef parity with backend vectors", () => {
     expect(
       applyContainerAssetPathAliases("docker.io/other/etcd"),
     ).toBe("docker.io/other/etcd");
-    vi.unstubAllEnvs();
   });
 
   it("applyContainerAssetPathAliases strips prefix when target is empty (backend parity)", () => {
-    vi.stubEnv(
-      "NEXT_PUBLIC_VAT_CONTAINER_ASSET_PATH_ALIASES",
+    setContainerAssetPathAliases(
       "docker.io/=>;ghcr.io/kamiwaza-internal/=>;registry-1.docker.io/=>",
     );
     expect(
@@ -51,18 +54,15 @@ describe("normalizeContainerRef parity with backend vectors", () => {
         "ghcr.io/kamiwaza-internal/containers/images/python",
       ),
     ).toBe("containers/images/python");
-    vi.unstubAllEnvs();
   });
 
   it("containerImageGroupKey applies path aliases for container kind only", () => {
-    vi.stubEnv(
-      "NEXT_PUBLIC_VAT_CONTAINER_ASSET_PATH_ALIASES",
+    setContainerAssetPathAliases(
       "docker.io/operators/images/=>docker.io/containers/images/",
     );
     expect(containerImageGroupKey("docker.io/operators/images/etcd", null)).toBe(
       "docker.io/containers/images/etcd",
     );
-    vi.unstubAllEnvs();
   });
 
   it("leaves package-scope ids unchanged", () => {

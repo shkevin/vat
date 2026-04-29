@@ -94,7 +94,7 @@ export function normalizeContainerRef(value: string | null | undefined): Normali
   };
 }
 
-/** Parse ``NEXT_PUBLIC_VAT_CONTAINER_ASSET_PATH_ALIASES``: ``from=>to;from2=>to2``. Empty ``to`` = strip ``from`` (same as backend). */
+/** Parse ``VAT_CONTAINER_ASSET_PATH_ALIASES``: ``from=>to;from2=>to2``. Empty ``to`` = strip ``from`` (same as backend). */
 export function parseContainerAssetPathAliases(
   raw: string | undefined,
 ): Array<[string, string]> {
@@ -114,20 +114,36 @@ export function parseContainerAssetPathAliases(
 }
 
 /**
- * Mirrors backend ``apply_container_asset_path_aliases`` (tenant prefix rewrite).
- * Read env on each call so tests can stub ``NEXT_PUBLIC_VAT_CONTAINER_ASSET_PATH_ALIASES``.
+ * Container alias rules in effect for this client. Primed at app startup from
+ * ``GET /api/config/container-aliases`` so the frontend matches the backend's
+ * ``apply_container_asset_path_aliases`` deterministically. Tests can call
+ * ``setContainerAssetPathAliases`` directly. The legacy
+ * ``NEXT_PUBLIC_VAT_CONTAINER_ASSET_PATH_ALIASES`` build-time env still seeds
+ * the initial value when present, so existing dev workflows keep working.
  */
-export function applyContainerAssetPathAliases(canonicalKey: string): string {
-  const k = canonicalKey.trim();
-  if (!k) return canonicalKey;
+let _containerAliasPairs: Array<[string, string]> = (() => {
   const raw =
     typeof process !== "undefined"
       ? (process.env.NEXT_PUBLIC_VAT_CONTAINER_ASSET_PATH_ALIASES ?? "")
       : "";
-  const pairs = parseContainerAssetPathAliases(raw);
-  if (!pairs.length) return canonicalKey;
+  return parseContainerAssetPathAliases(raw);
+})();
+
+/** Replace the in-memory alias rules. Pass the same string the backend env carries. */
+export function setContainerAssetPathAliases(raw: string | undefined): void {
+  _containerAliasPairs = parseContainerAssetPathAliases(raw);
+}
+
+/**
+ * Mirrors backend ``apply_container_asset_path_aliases`` (tenant prefix rewrite).
+ * Reads from the in-memory rules primed at app startup.
+ */
+export function applyContainerAssetPathAliases(canonicalKey: string): string {
+  const k = canonicalKey.trim();
+  if (!k) return canonicalKey;
+  if (!_containerAliasPairs.length) return canonicalKey;
   const lower = k.toLowerCase();
-  for (const [src, dst] of pairs) {
+  for (const [src, dst] of _containerAliasPairs) {
     if (lower.startsWith(src)) {
       return dst + k.slice(src.length);
     }
