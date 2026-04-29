@@ -3,6 +3,7 @@
 from app.adapters.aikido import (
     AikidoAdapter,
     _extract_image_digest_from_issue,
+    _normalize_aikido_license_type,
     _strip_tag_from_container_name,
     aikido_container_list_item_tags,
     fetch_aikido_issues,
@@ -267,3 +268,59 @@ async def test_aikido_adapter_container_link_without_id_falls_back_to_queue():
     assert (
         result.source_issue_url == "https://app.aikido.dev/queue?sidebarIssue=grp-456"
     )
+
+
+def test_normalize_aikido_license_type_passthrough_spdx() -> None:
+    assert _normalize_aikido_license_type("GPL-3.0-or-later") == "GPL-3.0-or-later"
+    assert _normalize_aikido_license_type("SSPL-1.0") == "SSPL-1.0"
+    assert _normalize_aikido_license_type("Proprietary") == "Proprietary"
+
+
+def test_normalize_aikido_license_type_picks_highest_risk_from_list() -> None:
+    # Comma-separated multi-license: pick the highest-risk recognizable SPDX
+    val = _normalize_aikido_license_type(
+        "AGPL-3.0,Apache-2.0,BSD-3-Clause"
+    )
+    assert val == "AGPL-3.0"
+
+
+def test_normalize_aikido_license_type_handles_blank_and_none() -> None:
+    assert _normalize_aikido_license_type(None) is None
+    assert _normalize_aikido_license_type("") is None
+    assert _normalize_aikido_license_type("   ") is None
+
+
+async def test_aikido_adapter_extracts_license_expression_from_license_type() -> None:
+    """License-typed issues should surface ``license_type`` as ``license_expression``."""
+    adapter = AikidoAdapter()
+    payload = {
+        "issue": {
+            "id": "178564620",
+            "group_id": "21767798",
+            "cve_id": None,
+            "type": "license",
+            "severity": "critical",
+            "container_repo_name": "containers/images/falkordb",
+            "affected_package": "redis-cli-8.6@8.6.0-r0",
+            "license_type": "SSPL-1.0",
+        },
+    }
+    result = await adapter.to_vat_finding(payload)
+    assert result.license_expression == "SSPL-1.0"
+
+
+async def test_aikido_adapter_does_not_set_license_expression_for_non_license_findings() -> None:
+    """SCA/SAST findings should not pick up license_type even if Aikido emits it."""
+    adapter = AikidoAdapter()
+    payload = {
+        "issue": {
+            "id": "1",
+            "cve_id": "CVE-2024-1234",
+            "type": "open_source",
+            "severity": "high",
+            "code_repo_name": "test-repo",
+            "license_type": "GPL-3.0",
+        },
+    }
+    result = await adapter.to_vat_finding(payload)
+    assert result.license_expression is None

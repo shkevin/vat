@@ -264,6 +264,13 @@ async def ingest_finding(
         )
 
     _settings = get_settings()
+    license_expr_for_corr: str | None = None
+    if ft_lower == "license":
+        license_expr_for_corr = (
+            getattr(payload, "license_expression", None)
+            or _license_expression_from_payload(payload)
+            or None
+        )
     corr_key, corr_conf = correlation_key_for_payload(
         finding_type=ft_val,
         image=corr_image,
@@ -278,6 +285,7 @@ async def ingest_finding(
         image_digest=image_digest_val,
         include_digest_in_correlation=_settings.correlation_include_digest,
         benchmark_family=getattr(payload, "benchmark_family", None),
+        license_expression=license_expr_for_corr,
     )
 
     fp = compute_ingest_fingerprint(payload, source_name, parser_id=parser_id)
@@ -570,6 +578,7 @@ async def ingest_finding(
         correlation_key=corr_key,
         correlation_confidence=corr_conf,
         correlated_to=None,
+        license_expression=license_expr_for_corr,
         stable_rule_key=getattr(payload, "stable_rule_key", None),
         benchmark_id=getattr(payload, "benchmark_id", None),
         benchmark_family=getattr(payload, "benchmark_family", None),

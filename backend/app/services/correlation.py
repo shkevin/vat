@@ -27,6 +27,7 @@ def correlation_key_for_payload(
     image_digest: str | None = None,
     include_digest_in_correlation: bool = False,
     benchmark_family: str | None = None,
+    license_expression: str | None = None,
 ) -> tuple[str, str]:
     """
     Returns (correlation_key, confidence).
@@ -59,7 +60,36 @@ def correlation_key_for_payload(
     inner: str
     conf: str
 
-    if ft in ("sca", "license"):
+    if ft == "license":
+        # License findings correlate by SPDX expression + package, not CVE id.
+        # Different sources use incompatible identifiers (Aikido numeric ids vs
+        # SBOM-derived ``LICENSE-<spdx>-<pkg>``), so keying on cve_id prevents
+        # cross-source clustering.
+        #
+        # We also drop tag from the asset segment for License keys. License
+        # risk is determined by the package's SPDX expression and is invariant
+        # to image tag — and Aikido License findings carry no tag while SBOM
+        # findings do, so including tag here would re-introduce the asymmetry
+        # that blocks cross-source linking.
+        license_asset = f"{normalize(image)}|{normalize(branch)}"
+        spdx = normalize(license_expression or "")
+        if spdx and comp:
+            inner = f"license:{license_asset}:{spdx}:{comp}"
+            conf = "high"
+        elif spdx:
+            inner = f"license:{license_asset}:{spdx}"
+            conf = "medium"
+        elif comp:
+            inner = f"license:{license_asset}::{comp}"
+            conf = "medium"
+        else:
+            inner = f"license:{license_asset}:{cve}"
+            conf = "low"
+        if include_digest_in_correlation:
+            dig = normalize(image_digest or "")
+            if dig:
+                inner = f"{inner}:digest:{dig}"
+    elif ft == "sca":
         if comp:
             inner = f"{ft}:{asset}:{eco}:{comp}:{cve}"
             conf = "high"

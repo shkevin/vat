@@ -99,6 +99,9 @@ class Finding(Base):
     ecosystem: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     secret_type: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
     resource: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
+    license_expression: Mapped[Optional[str]] = mapped_column(
+        String(256), nullable=True, index=True
+    )
     # Phase 1 OpenSCAP identity metadata
     stable_rule_key: Mapped[Optional[str]] = mapped_column(
         String(256), nullable=True, index=True

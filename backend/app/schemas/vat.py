@@ -182,6 +182,14 @@ class VatFindingSchema(BaseModel):
         max_length=256,
         description="Opaque stable id from the scanner when not using SARIF fingerprints",
     )
+    license_expression: Optional[str] = Field(
+        default=None,
+        max_length=256,
+        description=(
+            "SPDX license id/expression for License findings (e.g. 'GPL-3.0-or-later'). "
+            "Used to align License correlation keys across sources."
+        ),
+    )
 
     @field_validator("*", mode="before")
     @classmethod

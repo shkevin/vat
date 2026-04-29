@@ -447,6 +447,7 @@ async def import_sbom(
                 ecosystem=None,
                 image_digest=sbom_digest,
                 include_digest_in_correlation=get_settings().correlation_include_digest,
+                license_expression=license_id,
             )
             await _ensure_sbom_asset_record(db, canonical_image, source)
             if existing_finding is None:
@@ -481,6 +482,7 @@ async def import_sbom(
                     ],
                     correlation_key=corr_key,
                     correlation_confidence=corr_conf,
+                    license_expression=license_id,
                 )
                 db.add(finding)
                 await db.flush()
@@ -502,10 +504,15 @@ async def import_sbom(
                     and str(existing_finding.image_digest).strip()
                 ):
                     existing_finding.image_digest = sbom_digest
+                if license_id and not (
+                    getattr(existing_finding, "license_expression", None)
+                    and str(existing_finding.license_expression).strip()
+                ):
+                    existing_finding.license_expression = license_id
                 if not (
                     existing_finding.correlation_key
                     and str(existing_finding.correlation_key).strip()
-                ):
+                ) or existing_finding.correlation_key != corr_key:
                     existing_finding.correlation_key = corr_key
                     existing_finding.correlation_confidence = corr_conf
                     await db.flush()

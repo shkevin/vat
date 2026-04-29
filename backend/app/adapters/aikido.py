@@ -199,6 +199,37 @@ def _extract_image_digest_from_issue(issue: dict, image_ref: str | None) -> str 
     return effective_image_digest(None, image_ref)
 
 
+def _normalize_aikido_license_type(value: str | None) -> str | None:
+    """Pick the highest-risk SPDX id from Aikido's ``license_type`` field.
+
+    Aikido may emit a single SPDX id (``GPL-3.0``), a non-SPDX bucket
+    (``Proprietary``), or a comma-separated list of identifiers
+    (``AGPL-3,Apache-2.0,...``). For correlation we pick the highest-risk
+    SPDX-recognizable token via ``license_risk_tier`` so cross-source keys
+    align with the cyclonedx side, which uses the same risk-ranked picker.
+    """
+    if not value or not isinstance(value, str):
+        return None
+    raw = value.strip()
+    if not raw:
+        return None
+    if "," not in raw:
+        return raw
+    from app.models.sbom import _LICENSE_RISK_RANK, license_risk_tier
+
+    candidates = [tok.strip() for tok in raw.split(",") if tok.strip()]
+    if not candidates:
+        return raw
+    best = candidates[0]
+    best_rank = _LICENSE_RISK_RANK.get(license_risk_tier(best), 99)
+    for cand in candidates[1:]:
+        rank = _LICENSE_RISK_RANK.get(license_risk_tier(cand), 99)
+        if rank < best_rank:
+            best = cand
+            best_rank = rank
+    return best
+
+
 def _strip_tag_from_container_name(name: str | None) -> str | None:
     """Remove :tag from container image/repo name. e.g. containers/images/foo:latest -> containers/images/foo."""
     if not name or not isinstance(name, str):
@@ -1281,6 +1312,13 @@ class AikidoAdapter:
             elif tag:
                 observed_container_tags = [tag]
 
+        license_expression: str | None = None
+        if finding_type == VatFindingType.LICENSE:
+            license_expression = _normalize_aikido_license_type(
+                _get_nested(issue, "license_type")
+                or _get_nested(issue, "licenseType")
+            )
+
         return VatFindingSchema(
             cve_id=cve_id,
             severity=sev,
@@ -1310,6 +1348,7 @@ class AikidoAdapter:
             line=line,
             first_detected_at=first_detected_at,
             closed_at=closed_at_iso,
+            license_expression=license_expression,
         )
 
     async def ignore_issue(self, request: VatSourceIgnoreRequest) -> None:
