@@ -33,7 +33,8 @@ async def _ensure_sbom_asset_record(
     existing = await db.get(Asset, aid)
     if existing:
         return
-    kind = "container" if infer_asset_kind(aid, "") == "container" else "package"
+    inferred = infer_asset_kind(aid, "")
+    kind = inferred if inferred in ("container", "repo") else "package"
     db.add(Asset(id=aid, name=aid, type=kind, source=source, branch=None, tag=None))
 
 
