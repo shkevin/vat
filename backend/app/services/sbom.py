@@ -11,6 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
+from app.models.asset import Asset
 from app.models.finding import Finding, FindingType, Severity, Status
 from app.models.sbom import SbomPackage, license_risk_tier
 from app.services.asset_resolver import infer_asset_kind
@@ -18,6 +19,22 @@ from app.services.container_ref_normalization import (
     apply_container_asset_path_aliases,
     normalize_container_ref,
 )
+from app.services.correlation import correlation_key_for_payload
+from app.services.correlation_linking import apply_correlation_linking
+
+
+async def _ensure_sbom_asset_record(
+    db: AsyncSession, asset_id: str | None, source: str
+) -> None:
+    """Backfill an ``Asset`` row for SBOM-derived images so they surface in the UI."""
+    if not asset_id or not str(asset_id).strip():
+        return
+    aid = str(asset_id).strip()
+    existing = await db.get(Asset, aid)
+    if existing:
+        return
+    kind = "container" if infer_asset_kind(aid, "") == "container" else "package"
+    db.add(Asset(id=aid, name=aid, type=kind, source=source, branch=None, tag=None))
 
 
 def _canonicalize_container_image(value: str | None) -> str | None:
@@ -418,6 +435,19 @@ async def import_sbom(
             res = await db.execute(select(Finding).where(Finding.fingerprint_id == fp))
             existing_finding = res.scalar_one_or_none()
             effective_tag = _clip(sbom_tag or finding_tag, 256)
+            canonical_image = _canonicalize_container_image(comp)
+            corr_key, corr_conf = correlation_key_for_payload(
+                finding_type="license",
+                image=canonical_image or "",
+                branch="",
+                tag=effective_tag or "",
+                cve_id=cve_id,
+                component=pkg["name"],
+                ecosystem=None,
+                image_digest=sbom_digest,
+                include_digest_in_correlation=get_settings().correlation_include_digest,
+            )
+            await _ensure_sbom_asset_record(db, canonical_image, source)
             if existing_finding is None:
                 title = f"{license_id} license in {pkg['name']}"
                 if comp:
@@ -430,7 +460,7 @@ async def import_sbom(
                     severity=Severity.Critical if risk == "Critical" else Severity.High,
                     status=Status.Open,
                     component=pkg["name"],
-                    image=_canonicalize_container_image(comp),
+                    image=canonical_image,
                     tag=effective_tag,
                     image_digest=sbom_digest,
                     title=title[:512],
@@ -448,8 +478,17 @@ async def import_sbom(
                             "note": None,
                         }
                     ],
+                    correlation_key=corr_key,
+                    correlation_confidence=corr_conf,
                 )
                 db.add(finding)
+                await db.flush()
+                try:
+                    await apply_correlation_linking(
+                        db, finding, trace_id=None, source_id=source, parser_id="cyclonedx"
+                    )
+                except Exception:
+                    pass
             else:
                 if effective_tag and (
                     force_finding_tag_override
@@ -462,6 +501,23 @@ async def import_sbom(
                     and str(existing_finding.image_digest).strip()
                 ):
                     existing_finding.image_digest = sbom_digest
+                if not (
+                    existing_finding.correlation_key
+                    and str(existing_finding.correlation_key).strip()
+                ):
+                    existing_finding.correlation_key = corr_key
+                    existing_finding.correlation_confidence = corr_conf
+                    await db.flush()
+                    try:
+                        await apply_correlation_linking(
+                            db,
+                            existing_finding,
+                            trace_id=None,
+                            source_id=source,
+                            parser_id="cyclonedx",
+                        )
+                    except Exception:
+                        pass
 
     await db.commit()
     return created, updated

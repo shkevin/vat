@@ -7,6 +7,7 @@ import uuid
 import pytest
 from sqlalchemy import select
 
+from app.models.asset import Asset
 from app.models.finding import Finding
 from app.models.sbom import SbomPackage
 from app.schemas.vat import VatFindingSchema, VatFindingType, VatSeverity
@@ -251,6 +252,49 @@ async def test_backfill_derived_purls_updates_missing_rows(db) -> None:
     ).scalar_one()
     assert refreshed.purl == f"pkg:apk/alpine/ca-certificates-bundle-{uniq}@20251003-r4"
     assert refreshed.purl_source == "derived"
+
+
+@pytest.mark.anyio
+async def test_import_sbom_sets_correlation_key_and_asset(db) -> None:
+    """SBOM-derived License findings get correlation_key + an Asset row."""
+    uniq = uuid.uuid4().hex[:8]
+    component = f"containers/images/svc-{uniq}"
+    package = f"pkg-{uniq}"
+    doc = {
+        "components": [
+            {
+                "name": package,
+                "version": "1.0.0",
+                "licenses": [{"license": {"id": "GPL-3.0"}}],
+            }
+        ]
+    }
+
+    await import_sbom(
+        db,
+        doc,
+        source="cyclonedx",
+        component=component,
+        finding_tag="1.5.28",
+    )
+
+    finding = (
+        await db.execute(
+            select(Finding).where(
+                Finding.cve_id == f"LICENSE-GPL-3.0-{package}",
+                Finding.component == package,
+            )
+        )
+    ).scalar_one()
+    assert finding.correlation_key, "correlation_key must be set on SBOM License findings"
+    assert finding.correlation_key.startswith("v1:license:")
+    assert finding.correlation_confidence in ("high", "medium")
+
+    asset = (
+        await db.execute(select(Asset).where(Asset.id == finding.image))
+    ).scalar_one()
+    assert asset.type == "container"
+    assert asset.source == "cyclonedx"
 
 
 def test_purl_from_osv_identity_builds_expected_values() -> None:
