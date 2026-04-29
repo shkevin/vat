@@ -442,6 +442,79 @@ async def delete_asset(
     return {"deleted_findings": findings_deleted, "deleted_asset": asset_deleted}
 
 
+class AssetBulkDeleteRequest(BaseModel):
+    asset_ids: list[str] = Field(..., min_length=1, max_length=500)
+
+
+@router.post("/bulk-delete")
+async def bulk_delete_assets(
+    body: AssetBulkDeleteRequest,
+    db: AsyncSession = Depends(get_db),
+    ctx: UserContext = Depends(require_admin),
+):
+    """Bulk-delete assets. Per-id results so one bad id doesn't fail the batch.
+
+    Accepts up to 500 ids. Returns a structured result for each — useful
+    when the caller needs to report per-asset success/failure to the user.
+    """
+    results: list[dict] = []
+    deleted = 0
+    failed = 0
+    not_found = 0
+    seen: set[str] = set()
+    for raw in body.asset_ids:
+        aid = (raw or "").strip()
+        if not aid or aid in seen:
+            continue
+        seen.add(aid)
+        try:
+            findings_q = delete(Finding).where(
+                (Finding.image == aid) | (Finding.component == aid)
+            )
+            if ctx.tenant_id is not None:
+                findings_q = findings_q.where(
+                    (Finding.tenant_id == ctx.tenant_id)
+                    | (Finding.tenant_id.is_(None))
+                )
+            findings_result = await db.execute(findings_q)
+            f_deleted = findings_result.rowcount or 0
+            asset_result = await db.execute(delete(Asset).where(Asset.id == aid))
+            a_deleted = (asset_result.rowcount or 0) > 0
+            await db.commit()
+            if not a_deleted and f_deleted == 0:
+                not_found += 1
+                results.append(
+                    {"asset_id": aid, "status": "not_found"}
+                )
+            else:
+                deleted += 1
+                results.append(
+                    {
+                        "asset_id": aid,
+                        "status": "deleted",
+                        "deleted_findings": f_deleted,
+                        "deleted_asset": a_deleted,
+                    }
+                )
+        except Exception as e:
+            await db.rollback()
+            failed += 1
+            results.append(
+                {
+                    "asset_id": aid,
+                    "status": "error",
+                    "error": str(e).split("\n")[0][:200],
+                }
+            )
+    return {
+        "requested": len(body.asset_ids),
+        "deleted": deleted,
+        "not_found": not_found,
+        "failed": failed,
+        "results": results,
+    }
+
+
 @router.post("/{asset_id:path}/group")
 async def group_asset_into_target(
     asset_id: str,

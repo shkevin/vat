@@ -10,10 +10,14 @@ import { now, daysLeft, computeAlerts } from "@/lib/utils";
 import {
   archiveFinding,
   bulkUpdateFindings,
+  createLoadout as apiCreateLoadout,
+  deleteLoadout as apiDeleteLoadout,
   fetchSettings,
   fetchSbomPackages,
   fetchVATData,
   type VATDataResponse,
+  type LoadoutDTO,
+  listLoadouts as apiListLoadouts,
   overrideFindingFingerprint,
   putSettingsLabels,
   putSettingsSources,
@@ -21,6 +25,7 @@ import {
   revertFinding,
   unarchiveFinding,
   updateFinding,
+  updateLoadout as apiUpdateLoadout,
 } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 import { loadSettingsFromStorage, saveToStorage } from "@/lib/settingsStorage";
@@ -45,9 +50,6 @@ import {
 import {
   ASSET_LOADOUTS_KEY,
   loadAssetLoadouts,
-  saveAssetLoadout,
-  deleteAssetLoadout as deleteLoadoutStorage,
-  renameAssetLoadout as renameLoadoutStorage,
   type AssetLoadout,
 } from "@/lib/assetLoadoutStorage";
 import type {
@@ -540,24 +542,79 @@ export function useVATDataCore(): UseVATDataReturn {
     [favoriteEntries],
   );
 
-  const [loadouts, setLoadouts] = useState<AssetLoadout[]>(() => {
-    if (typeof window === "undefined") return [];
-    return loadAssetLoadouts();
+  // Loadouts are server-persisted (path B). The localStorage helpers stay
+  // around as a one-shot migration source — on first authenticated load,
+  // any pre-existing localStorage loadouts are pushed to the backend and
+  // then the localStorage entry is cleared.
+  const [loadouts, setLoadouts] = useState<AssetLoadout[]>([]);
+
+  const dtoToLoadout = (l: LoadoutDTO): AssetLoadout => ({
+    id: l.id,
+    name: l.name,
+    assetIds: l.asset_ids ?? [],
+    entries: (l.entries ?? undefined) as FavoriteEntry[] | undefined,
+    savedAt: l.updated_at ?? l.created_at ?? new Date().toISOString(),
   });
 
-  const syncLoadoutsFromStorage = useCallback(() => {
+  const refreshLoadouts = useCallback(async () => {
     if (typeof window === "undefined") return;
-    setLoadouts(loadAssetLoadouts());
-  }, []);
+    if (!token && !userEmail) return;
+    try {
+      const list = await apiListLoadouts(auth);
+      setLoadouts(list.map(dtoToLoadout));
+    } catch {
+      // network blip — keep current state
+    }
+  }, [auth, token, userEmail]);
 
+  // One-shot localStorage → backend migration. Runs once per session when
+  // the user is authenticated and the backend has no loadouts yet for them.
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const onStorage = (e: StorageEvent) => {
-      if (e.key === ASSET_LOADOUTS_KEY) syncLoadoutsFromStorage();
+    if (!token && !userEmail) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const remote = await apiListLoadouts(auth);
+        if (cancelled) return;
+        if (remote.length === 0) {
+          const local = loadAssetLoadouts();
+          if (local.length > 0) {
+            for (const l of local) {
+              try {
+                await apiCreateLoadout(
+                  {
+                    name: l.name,
+                    asset_ids: l.assetIds,
+                    entries: l.entries?.map((e) => ({
+                      assetId: e.assetId,
+                      branch: e.branch ?? undefined,
+                      tag: e.tag ?? undefined,
+                    })),
+                    shared_with_team: false,
+                  },
+                  auth,
+                );
+              } catch {
+                // skip individual migration failures; user can retry
+              }
+            }
+            try {
+              window.localStorage.removeItem(ASSET_LOADOUTS_KEY);
+            } catch {
+              // localStorage may be sandboxed
+            }
+          }
+        }
+        await refreshLoadouts();
+      } catch {
+        // initial fetch failed; will retry on next refresh
+      }
+    })();
+    return () => {
+      cancelled = true;
     };
-    window.addEventListener("storage", onStorage);
-    return () => window.removeEventListener("storage", onStorage);
-  }, [syncLoadoutsFromStorage]);
+  }, [auth, token, userEmail, refreshLoadouts]);
 
   const applyLoadout = useCallback(
     (loadout: AssetLoadout, options?: { enableOnlyFavorites?: boolean }) => {
@@ -574,22 +631,62 @@ export function useVATDataCore(): UseVATDataReturn {
   );
 
   const saveLoadout = useCallback(
-    (id: string | null, name: string, entries: FavoriteEntry[]) => {
-      saveAssetLoadout(id, name, entries);
-      setLoadouts(loadAssetLoadouts());
+    async (id: string | null, name: string, entries: FavoriteEntry[]) => {
+      const asset_ids = entries.map((e) => e.assetId);
+      const apiEntries = entries.map((e) => ({
+        assetId: e.assetId,
+        branch: e.branch ?? undefined,
+        tag: e.tag ?? undefined,
+      }));
+      try {
+        if (id) {
+          await apiUpdateLoadout(
+            id,
+            { name, asset_ids, entries: apiEntries },
+            auth,
+          );
+        } else {
+          await apiCreateLoadout(
+            { name, asset_ids, entries: apiEntries, shared_with_team: false },
+            auth,
+          );
+        }
+        await refreshLoadouts();
+      } catch (e) {
+        // Surface the failure but don't crash — bubble through; caller may toast.
+        // eslint-disable-next-line no-console
+        console.warn("saveLoadout failed:", e);
+      }
     },
-    [],
+    [auth, refreshLoadouts],
   );
 
-  const deleteLoadout = useCallback((id: string) => {
-    deleteLoadoutStorage(id);
-    setLoadouts(loadAssetLoadouts());
-  }, []);
+  const deleteLoadout = useCallback(
+    async (id: string) => {
+      try {
+        await apiDeleteLoadout(id, auth);
+        // Optimistic local-state update so the UI reflects the change immediately.
+        setLoadouts((prev) => prev.filter((l) => l.id !== id));
+      } catch (e) {
+        // eslint-disable-next-line no-console
+        console.warn("deleteLoadout failed:", e);
+      }
+    },
+    [auth],
+  );
 
-  const renameLoadout = useCallback((id: string, name: string) => {
-    renameLoadoutStorage(id, name);
-    setLoadouts(loadAssetLoadouts());
-  }, []);
+  const renameLoadout = useCallback(
+    async (id: string, name: string) => {
+      try {
+        await apiUpdateLoadout(id, { name }, auth);
+        await refreshLoadouts();
+      } catch (e) {
+        // eslint-disable-next-line no-console
+        console.warn("renameLoadout failed:", e);
+      }
+    },
+    [auth, refreshLoadouts],
+  );
 
   const vatQueryKey = [
     "vat-data",

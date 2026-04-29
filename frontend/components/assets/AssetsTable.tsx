@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ChevronDown, ChevronUp } from "lucide-react";
 import { BulkBar } from "@/components/findings/BulkBar";
+import { AssetBulkBar } from "@/components/assets/AssetBulkBar";
 import { useUserPreferences } from "@/contexts/UserPreferencesContext";
 import { useVATData } from "@/contexts/VATDataContext";
 import {
@@ -509,11 +510,18 @@ export function AssetsTable({
         />
 
         {checked.size > 0 && (
-          <BulkBar
-            count={checked.size}
-            onAction={onBulkAction}
-            onDeselect={onDeselectAll}
-          />
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <AssetBulkBar
+              count={checked.size}
+              selectedAssetIds={Array.from(checked)}
+              onDeselect={onDeselectAll}
+            />
+            <BulkBar
+              count={checked.size}
+              onAction={onBulkAction}
+              onDeselect={onDeselectAll}
+            />
+          </div>
         )}
       </div>
 

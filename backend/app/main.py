@@ -33,6 +33,7 @@ from app.api import (
     findings,
     health,
     ingest,
+    loadouts,
     oauth,
     sbom,
     seed,
@@ -195,6 +196,7 @@ app.include_router(settings.router, prefix="/api/settings", tags=["settings"])
 app.include_router(tenants.router, prefix="/api/tenants", tags=["tenants"])
 app.include_router(users.router, prefix="/api/users", tags=["users"])
 app.include_router(ingest.router, prefix="/api/ingest", tags=["ingest"])
+app.include_router(loadouts.router, prefix="/api/loadouts", tags=["loadouts"])
 app.include_router(oauth.router, prefix="/api/oauth", tags=["oauth"])
 app.include_router(webhooks_router, prefix="/webhook", tags=["webhooks"])
 app.include_router(aikido.router, prefix="/api/aikido", tags=["aikido"])

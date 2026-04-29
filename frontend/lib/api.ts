@@ -1379,6 +1379,143 @@ export async function deleteTenant(
   }
 }
 
+// ---- Loadouts (server-persisted) ---------------------------------------
+
+export interface LoadoutEntryDTO {
+  assetId: string;
+  branch?: string | null;
+  tag?: string | null;
+}
+
+export interface LoadoutDTO {
+  id: string;
+  name: string;
+  owner_email: string;
+  tenant_id: string | null;
+  asset_ids: string[];
+  entries: LoadoutEntryDTO[] | null;
+  shared_with_team: boolean;
+  is_owner: boolean;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export async function listLoadouts(auth?: Auth): Promise<LoadoutDTO[]> {
+  const res = await vatFetch(
+    `${API_BASE}/loadouts`,
+    { headers: apiHeaders(auth?.token, auth?.userEmail) },
+    auth,
+  );
+  if (!res.ok) throw new Error(`listLoadouts: ${res.status}`);
+  const body = (await res.json()) as { count: number; loadouts: LoadoutDTO[] };
+  return body.loadouts;
+}
+
+export async function createLoadout(
+  body: {
+    name: string;
+    asset_ids: string[];
+    entries?: LoadoutEntryDTO[];
+    shared_with_team?: boolean;
+  },
+  auth?: Auth,
+): Promise<LoadoutDTO> {
+  const res = await vatFetch(
+    `${API_BASE}/loadouts`,
+    {
+      method: "POST",
+      headers: apiHeaders(auth?.token, auth?.userEmail),
+      body: JSON.stringify(body),
+    },
+    auth,
+  );
+  if (!res.ok) throw new Error(`createLoadout: ${res.status}`);
+  return (await res.json()) as LoadoutDTO;
+}
+
+export async function updateLoadout(
+  id: string,
+  body: Partial<{
+    name: string;
+    asset_ids: string[];
+    entries: LoadoutEntryDTO[];
+    shared_with_team: boolean;
+  }>,
+  auth?: Auth,
+): Promise<LoadoutDTO> {
+  const res = await vatFetch(
+    `${API_BASE}/loadouts/${encodeURIComponent(id)}`,
+    {
+      method: "PUT",
+      headers: apiHeaders(auth?.token, auth?.userEmail),
+      body: JSON.stringify(body),
+    },
+    auth,
+  );
+  if (!res.ok) throw new Error(`updateLoadout: ${res.status}`);
+  return (await res.json()) as LoadoutDTO;
+}
+
+export async function deleteLoadout(id: string, auth?: Auth): Promise<void> {
+  const res = await vatFetch(
+    `${API_BASE}/loadouts/${encodeURIComponent(id)}`,
+    { method: "DELETE", headers: apiHeaders(auth?.token, auth?.userEmail) },
+    auth,
+  );
+  if (!res.ok) throw new Error(`deleteLoadout: ${res.status}`);
+}
+
+export async function addLoadoutItems(
+  id: string,
+  assetIds: string[],
+  auth?: Auth,
+): Promise<LoadoutDTO> {
+  const res = await vatFetch(
+    `${API_BASE}/loadouts/${encodeURIComponent(id)}/items`,
+    {
+      method: "POST",
+      headers: apiHeaders(auth?.token, auth?.userEmail),
+      body: JSON.stringify({ asset_ids: assetIds }),
+    },
+    auth,
+  );
+  if (!res.ok) throw new Error(`addLoadoutItems: ${res.status}`);
+  return (await res.json()) as LoadoutDTO;
+}
+
+// ---- Bulk asset ops -----------------------------------------------------
+
+export interface BulkDeleteResult {
+  requested: number;
+  deleted: number;
+  not_found: number;
+  failed: number;
+  results: {
+    asset_id: string;
+    status: "deleted" | "not_found" | "error";
+    deleted_findings?: number;
+    deleted_asset?: boolean;
+    error?: string;
+  }[];
+}
+
+export async function bulkDeleteAssets(
+  assetIds: string[],
+  auth?: Auth,
+): Promise<BulkDeleteResult> {
+  const res = await vatFetch(
+    `${API_BASE}/assets/bulk-delete`,
+    {
+      method: "POST",
+      headers: apiHeaders(auth?.token, auth?.userEmail),
+      body: JSON.stringify({ asset_ids: assetIds }),
+    },
+    auth,
+  );
+  if (!res.ok) throw new Error(`bulkDeleteAssets: ${res.status}`);
+  return (await res.json()) as BulkDeleteResult;
+}
+
 export async function deleteAsset(assetId: string, auth?: Auth): Promise<void> {
   const res = await vatFetch(
     `${API_BASE}/assets/${encodeURIComponent(assetId)}`,
