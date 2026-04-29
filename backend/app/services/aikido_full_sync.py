@@ -20,6 +20,7 @@ from app.adapters.aikido import (
 from app.core.database import async_session
 from app.models.asset import Asset
 from app.models.finding import Finding
+from app.services.asset_resolver import infer_asset_kind
 from app.services.audit_events import emit_audit_event
 from app.services.container_asset_observations import ensure_container_tags_observed
 from app.services.dedup import make_fingerprint
@@ -42,6 +43,36 @@ def _progress(
 def _asset_key(name: str) -> str:
     """Build asset_key — name only. Branches are shown in asset page dropdown."""
     return (name or "").strip()
+
+
+async def _ensure_asset_for_aikido_finding(session, finding: Finding) -> bool:
+    """Create an ``Asset`` row for the finding's image when one is missing.
+
+    Aikido's ``/containers`` endpoint enumerates only top-level container
+    repositories, but ``/issues/export`` returns findings against many more
+    images (variants like ``-dev``/``-fips``/``-cuda``). Without this
+    backfill, those images show up only as findings and never as discrete
+    assets in the UI. Mirrors the SBOM-side ``_ensure_sbom_asset_record``.
+    """
+    image = (getattr(finding, "image", None) or "").strip()
+    if not image:
+        return False
+    existing = await session.get(Asset, image)
+    if existing:
+        return False
+    inferred = infer_asset_kind(image, "aikido")
+    kind = inferred if inferred in ("container", "repo") else "package"
+    session.add(
+        Asset(
+            id=image,
+            name=image,
+            type=kind,
+            source="Aikido",
+            branch=getattr(finding, "branch", None),
+            tag=None,
+        )
+    )
+    return True
 
 
 def _aikido_trace_id(source_id: str | None, issue: dict[str, Any]) -> str:
@@ -285,6 +316,8 @@ async def run_full_sync(
                     trace_id=_aikido_trace_id(source_id, raw),
                     parser_id="aikido",
                 )
+                if await _ensure_asset_for_aikido_finding(session, finding):
+                    assets_created += 1
                 await emit_audit_event(
                     session,
                     trace_id=trace_id,
