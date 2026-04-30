@@ -79,3 +79,42 @@ def decode_oauth_exchange_code(code: str) -> Optional[str]:
         return payload.get("grant")
     except JWTError:
         return None
+
+
+OAUTH_STATE_ISSUER = "vat-oauth-state"
+
+
+def create_oauth_state(code_verifier: str, ttl_seconds: int = 300) -> str:
+    """Create a signed state token for the Google OAuth flow.
+
+    The token carries a per-flow ``code_verifier`` (PKCE) and is issued at
+    ``/authorize`` time. We store it in an httpOnly cookie so the same
+    browser must present it back on the callback — defeats the
+    "attacker initiates, victim completes" CSRF login attack. The token is
+    also passed to Google as ``state`` so a tampered cookie returning a
+    foreign state is rejected on signature validation.
+    """
+    settings = get_settings()
+    now = datetime.now(timezone.utc)
+    payload = {
+        "cv": code_verifier,
+        "usage": "oauth_state",
+        "exp": int((now + timedelta(seconds=ttl_seconds)).timestamp()),
+        "iat": int(now.timestamp()),
+        "iss": OAUTH_STATE_ISSUER,
+    }
+    return jwt.encode(payload, settings.secret_key, algorithm=JWT_ALGORITHM)
+
+
+def decode_oauth_state(state: str) -> Optional[dict]:
+    """Decode and validate a state token. Returns the payload or None."""
+    settings = get_settings()
+    try:
+        return jwt.decode(
+            state,
+            settings.secret_key,
+            algorithms=[JWT_ALGORITHM],
+            issuer=OAUTH_STATE_ISSUER,
+        )
+    except JWTError:
+        return None

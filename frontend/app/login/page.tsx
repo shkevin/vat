@@ -4,7 +4,6 @@ import { Suspense, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { exchangeCode, fetchAuthConfig, login } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
-import { decodeJwtPayload } from "@/lib/jwt";
 import { mono, sans } from "@/lib/styles";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "/api";
@@ -38,15 +37,18 @@ function LoginPageInner() {
     if (initialized && user) router.replace("/", { scroll: false });
   }, [initialized, user, router]);
 
-  // Handle OAuth callback: code (preferred) or legacy token, or error in URL
+  // Handle OAuth callback: ?code= (server-exchanged) or ?error=
+  // The legacy ?token= path was removed (CVE-equivalent: anyone with a
+  // crafted login URL could log a victim in as the attacker's account
+  // since the token was decoded client-side without server verification).
   useEffect(() => {
     const code = searchParams.get("code");
-    const token = searchParams.get("token");
     const err = searchParams.get("error");
     if (err) {
       const messages: Record<string, string> = {
         oauth_denied: "Sign-in was cancelled",
         oauth_failed: "Google sign-in failed",
+        oauth_state: "Sign-in expired or was tampered with — please try again",
         no_email: "Google did not provide an email",
         user_not_found: "Account not found. Contact your admin.",
       };
@@ -64,24 +66,6 @@ function LoginPageInner() {
           setError(e instanceof Error ? e.message : "Invalid session");
           router.replace("/login", { scroll: false });
         });
-      return;
-    }
-    if (token) {
-      const payload = decodeJwtPayload(token);
-      if (payload?.sub) {
-        setUser(
-          {
-            id: payload.user_id ?? payload.sub,
-            email: payload.sub,
-            role: payload.role ?? "reviewer",
-            tenant_id: payload.tenant_id ?? null,
-          },
-          token,
-        );
-        router.replace("/", { scroll: false });
-      } else {
-        setError("Invalid session");
-      }
     }
   }, [searchParams, setUser, router]);
 

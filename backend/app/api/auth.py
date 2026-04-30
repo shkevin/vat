@@ -1,10 +1,13 @@
 """Auth API — local login, Google OAuth, JWT issuance."""
 
+import base64
+import hashlib
 import logging
+import secrets
 from urllib.parse import urlencode
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, status
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -14,8 +17,10 @@ from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.jwt import (
     create_oauth_exchange_code,
+    create_oauth_state,
     create_token,
     decode_oauth_exchange_code,
+    decode_oauth_state,
     decode_token,
 )
 from app.models.user import AUTH_METHOD_LOCAL, Tenant
@@ -160,11 +165,29 @@ async def login(
     )
 
 
+OAUTH_STATE_COOKIE = "vat-oauth-state"
+OAUTH_STATE_TTL_SECONDS = 300
+
+
+def _make_pkce_pair() -> tuple[str, str]:
+    """Return (code_verifier, code_challenge_S256) per RFC 7636."""
+    verifier = secrets.token_urlsafe(64)[:128]
+    digest = hashlib.sha256(verifier.encode("ascii")).digest()
+    challenge = base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
+    return verifier, challenge
+
+
 @router.get("/google/authorize")
 async def google_authorize(
     db: AsyncSession = Depends(get_db),
 ):
-    """Redirect to Google OAuth. Requires VAT_GOOGLE_CLIENT_ID and a tenant with auth_method=google."""
+    """Redirect to Google OAuth. Requires VAT_GOOGLE_CLIENT_ID and a tenant with auth_method=google.
+
+    Adds CSRF protection via a signed ``state`` (echoed by Google, verified
+    on callback) plus a browser-binding httpOnly cookie that must match.
+    Adds PKCE (S256) so an attacker who intercepts the authorization code
+    still cannot exchange it without the code_verifier sealed in the cookie.
+    """
     settings = get_settings()
     if not settings.google_client_id or not settings.google_client_secret:
         raise HTTPException(
@@ -178,6 +201,8 @@ async def google_authorize(
             detail="No tenant configured for Google sign-in",
         )
     redirect_uri = f"{settings.public_url.rstrip('/')}/api/auth/google/callback"
+    code_verifier, code_challenge = _make_pkce_pair()
+    state = create_oauth_state(code_verifier, ttl_seconds=OAUTH_STATE_TTL_SECONDS)
     params = {
         "client_id": settings.google_client_id,
         "redirect_uri": redirect_uri,
@@ -185,18 +210,37 @@ async def google_authorize(
         "scope": "openid email profile",
         "access_type": "offline",
         "prompt": "select_account",
+        "state": state,
+        "code_challenge": code_challenge,
+        "code_challenge_method": "S256",
     }
     url = f"{GOOGLE_AUTH_URL}?{urlencode(params)}"
-    return RedirectResponse(url=url)
+    response = RedirectResponse(url=url)
+    # SameSite=Lax is required for the cross-site GET callback to send the
+    # cookie back. Secure requires HTTPS in production (the prod-startup
+    # gate already enforces https:// origins).
+    response.set_cookie(
+        OAUTH_STATE_COOKIE,
+        state,
+        max_age=OAUTH_STATE_TTL_SECONDS,
+        httponly=True,
+        secure=settings.env == "production",
+        samesite="lax",
+        path="/api/auth/google/callback",
+    )
+    return response
 
 
 @router.get("/google/callback")
 async def google_callback(
+    request: Request,
     code: str | None = None,
+    state: str | None = None,
     error: str | None = None,
+    state_cookie: str | None = Cookie(default=None, alias=OAUTH_STATE_COOKIE),
     db: AsyncSession = Depends(get_db),
 ):
-    """Handle Google OAuth callback. Exchange code for tokens, lookup user, issue JWT, redirect to frontend."""
+    """Handle Google OAuth callback. Verify state + PKCE, exchange code, issue JWT, redirect to frontend."""
     settings = get_settings()
     frontend_url = settings.frontend_url or settings.public_url.replace(
         ":8000", ":3000"
@@ -204,11 +248,24 @@ async def google_callback(
 
     if error:
         logger.warning("Google OAuth error: %s", error)
-        return RedirectResponse(url=f"{frontend_url}/login?error=oauth_denied")
+        return _clear_state_redirect(f"{frontend_url}/login?error=oauth_denied")
     if not code:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Missing code"
         )
+    # CSRF defense: state must be present, must be a valid signed token, and
+    # must match the cookie set by /authorize. Either side missing → reject.
+    if not state or not state_cookie or state != state_cookie:
+        logger.warning("Google OAuth state/cookie mismatch")
+        return _clear_state_redirect(f"{frontend_url}/login?error=oauth_state")
+    state_payload = decode_oauth_state(state)
+    if not state_payload:
+        logger.warning("Google OAuth state failed signature/expiry check")
+        return _clear_state_redirect(f"{frontend_url}/login?error=oauth_state")
+    code_verifier = state_payload.get("cv")
+    if not code_verifier:
+        return _clear_state_redirect(f"{frontend_url}/login?error=oauth_state")
+
     redirect_uri = f"{settings.public_url.rstrip('/')}/api/auth/google/callback"
     # Bound the upstream call so a stalled Google response cannot pin a
     # request worker open indefinitely.
@@ -221,16 +278,17 @@ async def google_callback(
                 "client_secret": settings.google_client_secret,
                 "redirect_uri": redirect_uri,
                 "grant_type": "authorization_code",
+                "code_verifier": code_verifier,
             },
             headers={"Content-Type": "application/x-www-form-urlencoded"},
         )
     if token_res.status_code != 200:
         logger.warning("Google token exchange failed: %s", token_res.status_code)
-        return RedirectResponse(url=f"{frontend_url}/login?error=oauth_failed")
+        return _clear_state_redirect(f"{frontend_url}/login?error=oauth_failed")
     token_data = token_res.json()
     access_token = token_data.get("access_token")
     if not access_token:
-        return RedirectResponse(url=f"{frontend_url}/login?error=oauth_failed")
+        return _clear_state_redirect(f"{frontend_url}/login?error=oauth_failed")
     async with httpx.AsyncClient(timeout=10.0) as client:
         userinfo_res = await client.get(
             GOOGLE_USERINFO_URL,
@@ -238,15 +296,15 @@ async def google_callback(
         )
     if userinfo_res.status_code != 200:
         logger.warning("Google userinfo failed: %s", userinfo_res.status_code)
-        return RedirectResponse(url=f"{frontend_url}/login?error=oauth_failed")
+        return _clear_state_redirect(f"{frontend_url}/login?error=oauth_failed")
     userinfo = userinfo_res.json()
     email = userinfo.get("email")
     if not email:
-        return RedirectResponse(url=f"{frontend_url}/login?error=no_email")
+        return _clear_state_redirect(f"{frontend_url}/login?error=no_email")
     user = await get_user_by_email_in_google_tenant(db, email)
     if not user:
         logger.warning("Google user not found in Google tenant: %s", email)
-        return RedirectResponse(url=f"{frontend_url}/login?error=user_not_found")
+        return _clear_state_redirect(f"{frontend_url}/login?error=user_not_found")
     auth_token = create_token(
         user_id=user.id,
         email=user.email,
@@ -255,4 +313,12 @@ async def google_callback(
     )
     # Use one-time code instead of token in URL to avoid logging/referrer exposure
     exchange_code = create_oauth_exchange_code(auth_token)
-    return RedirectResponse(url=f"{frontend_url}/login?code={exchange_code}")
+    return _clear_state_redirect(f"{frontend_url}/login?code={exchange_code}")
+
+
+def _clear_state_redirect(url: str) -> RedirectResponse:
+    """Redirect that also clears the OAuth state cookie. Always used on
+    callback exits so a stale state doesn't survive into the next attempt."""
+    response = RedirectResponse(url=url)
+    response.delete_cookie(OAUTH_STATE_COOKIE, path="/api/auth/google/callback")
+    return response
