@@ -184,9 +184,11 @@ function isOpenFinding(f: Finding): boolean {
   return !CLOSED_STATUSES.has(st);
 }
 
-/** Tags is column 4 — must not use a fixed narrow width or chips truncate in the wrong column. */
+/** First column is the bulk-select checkbox (28px), second is the favorite heart
+ * (28px). Tags is column 5 — must not use a fixed narrow width or chips
+ * truncate in the wrong column. */
 const ASSETS_TABLE_GRID_COLS =
-  "28px 1fr 90px minmax(220px, 2.4fr) 90px 90px 90px 1fr";
+  "28px 28px 1fr 90px minmax(220px, 2.4fr) 90px 90px 90px 1fr";
 
 function AssetTagsCell({ asset }: { asset: Asset }) {
   const isContainer = getAssetTypeFromAsset(asset) === "container";
@@ -275,8 +277,12 @@ function AssetTagsCell({ asset }: { asset: Asset }) {
   );
 }
 
-/** Sortable column config: label, sort key. Empty sortKey = not sortable. */
+/** Sortable column config: label, sort key. Empty sortKey = not sortable.
+ * The first two columns (bulk-select checkbox, favorite heart) are control
+ * cells with no header — the layout adds explicit cells for them so the
+ * grid stays aligned with the row template. */
 const ASSET_COLUMNS: { label: string; sortKey: string }[] = [
+  { label: "", sortKey: "" },
   { label: "", sortKey: "" },
   { label: "Asset", sortKey: "name" },
   { label: "Type", sortKey: "type" },
@@ -376,6 +382,31 @@ export function AssetsTable({
   useEffect(() => {
     setVisibleCount(200);
   }, [sortBy, displayedAssets.length, density]);
+
+  // Select-all-visible checkbox state. "All" = every visible asset is checked;
+  // "indeterminate" = some-but-not-all visible. Toggling either checks the
+  // current visible page (cap by visibleCount so a 50k-row dataset doesn't
+  // accidentally select everything; the bar shows the running count).
+  const visibleAssetIds = useMemo(
+    () => sortedAssets.slice(0, visibleCount).map((a) => a.id),
+    [sortedAssets, visibleCount],
+  );
+  const visibleCheckedCount = useMemo(
+    () => visibleAssetIds.filter((id) => checked.has(id)).length,
+    [visibleAssetIds, checked],
+  );
+  const allVisibleChecked =
+    visibleAssetIds.length > 0 &&
+    visibleCheckedCount === visibleAssetIds.length;
+  const someVisibleChecked =
+    visibleCheckedCount > 0 && !allVisibleChecked;
+  const handleToggleAllVisible = useCallback(() => {
+    if (allVisibleChecked) {
+      for (const id of visibleAssetIds) onCheck(id, false);
+    } else {
+      for (const id of visibleAssetIds) onCheck(id, true);
+    }
+  }, [allVisibleChecked, visibleAssetIds, onCheck]);
 
   const severityCounts = useMemo(() => {
     const counts: Record<string, number> = {};
@@ -584,6 +615,36 @@ export function AssetsTable({
           }}
         >
           {ASSET_COLUMNS.map((col, i) => {
+            // First column: bulk-select header checkbox.
+            if (i === 0) {
+              return (
+                <div
+                  key="select-all"
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                  title={
+                    allVisibleChecked
+                      ? "Deselect all visible"
+                      : "Select all visible"
+                  }
+                >
+                  <input
+                    type="checkbox"
+                    aria-label="Select all visible assets"
+                    checked={allVisibleChecked}
+                    ref={(el) => {
+                      if (el) el.indeterminate = someVisibleChecked;
+                    }}
+                    onChange={handleToggleAllVisible}
+                    onClick={(e) => e.stopPropagation()}
+                    style={{ cursor: "pointer" }}
+                  />
+                </div>
+              );
+            }
             const isSortable = !!col.sortKey;
             const isActive =
               sortBy === col.sortKey || sortBy === `${col.sortKey}-desc`;
@@ -727,14 +788,32 @@ export function AssetsTable({
                   padding: ROW_PADDING[density],
                   cursor: "pointer",
                   alignItems: "start",
-                  background:
-                    selected && asset.findings.some((f) => f.id === selected.id)
+                  background: checked.has(asset.id)
+                    ? "var(--app-input-bg)"
+                    : selected && asset.findings.some((f) => f.id === selected.id)
                       ? "var(--app-input-bg)"
                       : "transparent",
                   borderBottom: "1px solid var(--app-border-subtle)",
                   transition: "background 0.1s",
                 }}
               >
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <input
+                    type="checkbox"
+                    aria-label={`Select ${asset.name}`}
+                    checked={checked.has(asset.id)}
+                    onChange={(e) => onCheck(asset.id, e.target.checked)}
+                    onClick={(e) => e.stopPropagation()}
+                    style={{ cursor: "pointer" }}
+                  />
+                </div>
                 <button
                   className="assets-table-favorite"
                   type="button"
