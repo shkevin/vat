@@ -144,10 +144,11 @@ async def me(
     """Return the current user when a session is present.
 
     Used by the frontend to bootstrap state on page load when the JWT
-    lives only in the httpOnly cookie (no localStorage path). Reads the
-    cookie via the standard auth resolver — no special handling here.
+    lives only in the httpOnly cookie. Resolves through the standard
+    auth path with both the Authorization header AND the vat-session
+    cookie threaded through, so cookie-only sessions resolve correctly.
     """
-    from app.core.auth import _resolve_user_context
+    from app.core.auth import SESSION_COOKIE_NAME, _resolve_user_context
 
     auth_header = request.headers.get("Authorization")
     creds = None
@@ -157,7 +158,10 @@ async def me(
         creds = HTTPAuthorizationCredentials(
             scheme="Bearer", credentials=auth_header[7:]
         )
-    ctx, ok = await _resolve_user_context(creds, None, None, db)
+    session_cookie = request.cookies.get(SESSION_COOKIE_NAME)
+    ctx, ok = await _resolve_user_context(
+        creds, None, None, db, session_cookie=session_cookie
+    )
     if not ok:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated"
