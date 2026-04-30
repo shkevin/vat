@@ -19,7 +19,13 @@ export function AssetActionBar({
   selectedAssets,
   onDeselect,
 }: AssetActionBarProps) {
-  const { token, user, isAdmin } = useAuth();
+  const { token, user } = useAuth();
+  // Derive admin status from the user object directly — the AuthContext's
+  // `isAdmin` is only populated by AccessSettingsPage when that page runs,
+  // so it stays null on a normal session and the Delete control would
+  // never render. user.role === "admin" is the canonical check used
+  // throughout the rest of the app (VAT.tsx, useVulnFeeds.ts).
+  const isAdmin = user?.role === "admin";
   const auth = { token: token ?? undefined, userEmail: user?.email ?? undefined };
   const { refetch } = useVATData();
 
