@@ -14,13 +14,18 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "/api";
 /** Auth for API calls: JWT Bearer token required for protected endpoints */
 export type Auth = { token?: string | null; userEmail?: string | null };
 
-/** Fetch wrapper: on 401 with auth, clears session so AuthGuard redirects to login */
+/** Fetch wrapper: always send the session cookie (httpOnly) so the
+ * backend can authenticate without us reading a JWT from localStorage.
+ * On 401, clears in-memory session so AuthGuard redirects to login. */
 async function vatFetch(
   input: RequestInfo | URL,
   init?: RequestInit,
   auth?: Auth,
 ): Promise<Response> {
-  const res = await fetch(input, init);
+  const res = await fetch(input, {
+    credentials: "include",
+    ...init,
+  });
   if (res.status === 401 && (auth?.token || auth?.userEmail)) {
     triggerUnauthorized();
   }
@@ -1180,12 +1185,46 @@ export async function fetchAuthConfig(): Promise<{ google_enabled: boolean }> {
 }
 
 /** Exchange OAuth callback code for JWT. Code is short-lived, single-use. */
+/** Bootstrap session from the httpOnly vat-session cookie. Returns the
+ * current user when authenticated, or null on 401. Used on app start to
+ * avoid relying on localStorage. */
+export async function fetchMe(): Promise<{
+  id: string;
+  email: string;
+  role: string;
+  tenant_id: string | null;
+} | null> {
+  try {
+    const res = await fetch(`${API_BASE}/auth/me`, {
+      credentials: "include",
+    });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
+
+/** Clear the server-side session cookie. The frontend should also drop
+ * any in-memory token + legacy localStorage state alongside this call. */
+export async function logoutSession(): Promise<void> {
+  try {
+    await fetch(`${API_BASE}/auth/logout`, {
+      method: "POST",
+      credentials: "include",
+    });
+  } catch {
+    /* best effort — even if the network fails we still clear local state */
+  }
+}
+
 export async function exchangeCode(code: string): Promise<{
   user: { id: string; email: string; role: string; tenant_id: string | null };
   token: string;
 }> {
   const res = await fetch(`${API_BASE}/auth/exchange-code`, {
     method: "POST",
+    credentials: "include",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ code }),
   });
@@ -1214,6 +1253,7 @@ export async function login(
 }> {
   const res = await fetch(`${API_BASE}/auth/login`, {
     method: "POST",
+    credentials: "include",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ username, password }),
   });
