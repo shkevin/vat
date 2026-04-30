@@ -2,6 +2,7 @@
 
 import logging
 from datetime import datetime, timezone
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -777,9 +778,9 @@ async def _ensure_linear_labels(db: AsyncSession) -> dict:
                 "Linear labels ensured: %d resolved for team", len(existing)
             )
         return {"created": len(existing), "errors": []}
-    except Exception as e:
-        logging.getLogger(__name__).warning("Failed to ensure Linear labels: %s", e)
-        return {"created": 0, "errors": [str(e)]}
+    except Exception:
+        logging.getLogger(__name__).exception("Failed to ensure Linear labels")
+        return {"created": 0, "errors": ["linear label sync failed"]}
 
 
 @router.put("/linear/credentials")
@@ -919,23 +920,48 @@ async def get_admin_keys(
     keys = await list_admin_keys(db)
     return {
         "keys": [
-            {"id": k.id, "keyPrefix": k.key_prefix, "createdAt": k.created_at}
+            {
+                "id": k.id,
+                "keyPrefix": k.key_prefix,
+                "tenantId": k.tenant_id,
+                "crossTenant": k.cross_tenant,
+                "legacy": k.legacy,
+                "createdAt": k.created_at,
+            }
             for k in keys
         ],
     }
 
 
+class AdminKeyCreateRequest(BaseModel):
+    tenant_id: Optional[str] = Field(default=None, max_length=64)
+    cross_tenant: bool = False
+
+
 @router.post("/admin-keys")
 async def post_admin_key(
+    body: AdminKeyCreateRequest,
     db: AsyncSession = Depends(get_db),
     _ctx: UserContext = Depends(require_admin),
 ):
-    """Create new admin API key. Key shown once; use as VAT_ADMIN_TOKEN. Admin only."""
-    key_id, full_key, key_prefix, message = await create_admin_key(db)
+    """Create new admin API key. Caller must specify tenant_id OR cross_tenant=True.
+
+    Key shown once; use as VAT_ADMIN_TOKEN. Admin only.
+    """
+    try:
+        key_id, full_key, key_prefix, message = await create_admin_key(
+            db,
+            tenant_id=body.tenant_id,
+            cross_tenant=body.cross_tenant,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     return {
         "id": key_id,
         "key": full_key,
         "keyPrefix": key_prefix,
+        "tenantId": body.tenant_id,
+        "crossTenant": body.cross_tenant,
         "message": message,
     }
 

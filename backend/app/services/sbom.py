@@ -593,21 +593,26 @@ async def import_cyclonedx_sbom_like_ingest(
 async def list_sbom_packages(
     db: AsyncSession,
     component: Optional[str] = None,
+    *,
     tenant_id: Optional[str] = None,
+    cross_tenant: bool = False,
     limit: int = 500,
 ) -> list[dict]:
-    """List SBOM packages with optional filters.
-    When tenant_id is set, includes packages where tenant_id matches OR tenant_id IS NULL (global packages).
-    """
-    from sqlalchemy import or_
+    """List SBOM packages.
 
+    Tenant scoping is fail-closed: when ``cross_tenant`` is False and
+    ``tenant_id`` is None, returns no rows. The previous behavior (showing
+    all NULL-tenant packages to every caller) leaked across tenants and is
+    no longer supported. Cross-tenant access requires the caller to opt in
+    explicitly (admin keys created with ``cross_tenant=True``).
+    """
     q = select(SbomPackage)
     if component:
         q = q.where(SbomPackage.component.ilike(f"%{component}%"))
-    if tenant_id:
-        q = q.where(
-            or_(SbomPackage.tenant_id == tenant_id, SbomPackage.tenant_id.is_(None))
-        )
+    if not cross_tenant:
+        if tenant_id is None:
+            return []
+        q = q.where(SbomPackage.tenant_id == tenant_id)
     q = q.limit(limit)
     result = await db.execute(q)
     rows = result.scalars().all()

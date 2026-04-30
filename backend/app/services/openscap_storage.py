@@ -120,17 +120,20 @@ async def store_openscap_scan_result(
 
 async def list_openscap_scan_results(
     db: AsyncSession,
+    *,
     tenant_id: Optional[str] = None,
+    cross_tenant: bool = False,
 ) -> list[OpenSCAPScanResult]:
-    """List OpenSCAP scan results for export. When tenant_id set, includes tenant + global (NULL) results."""
+    """List OpenSCAP scan results.
+
+    Fail-closed tenant scoping: when ``cross_tenant`` is False and ``tenant_id``
+    is None the result set is empty.
+    """
     q = select(OpenSCAPScanResult).order_by(OpenSCAPScanResult.asset_id)
-    if tenant_id:
-        q = q.where(
-            or_(
-                OpenSCAPScanResult.tenant_id == tenant_id,
-                OpenSCAPScanResult.tenant_id.is_(None),
-            )
-        )
+    if not cross_tenant:
+        if tenant_id is None:
+            return []
+        q = q.where(OpenSCAPScanResult.tenant_id == tenant_id)
     result = await db.execute(q)
     rows = list(result.scalars().all())
 

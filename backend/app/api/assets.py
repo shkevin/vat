@@ -8,7 +8,12 @@ from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import delete, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.auth import get_current_user_context, require_admin, require_reviewer
+from app.core.auth import (
+    get_current_user_context,
+    require_admin,
+    require_reviewer,
+    tenant_filter,
+)
 from app.core.config import get_settings
 from app.core.database import get_db
 from app.models.asset import Asset
@@ -387,7 +392,7 @@ async def list_assets(
     Discover canonical asset ids for CI/source targeting.
     Returns persisted assets plus findings-derived assets.
     """
-    assets = await get_assets_with_findings(db, tenant_id=ctx.tenant_id, limit=limit)
+    assets = await get_assets_with_findings(db, ctx=ctx, limit=limit)
     out = []
     for a in assets:
         aid = (a.get("id") or "").strip()
@@ -424,10 +429,7 @@ async def delete_asset(
     findings_q = delete(Finding).where(
         (Finding.image == asset_id) | (Finding.component == asset_id)
     )
-    if ctx.tenant_id is not None:
-        findings_q = findings_q.where(
-            (Finding.tenant_id == ctx.tenant_id) | (Finding.tenant_id.is_(None))
-        )
+    findings_q = findings_q.where(tenant_filter(Finding, ctx))
     findings_result = await db.execute(findings_q)
     findings_deleted = findings_result.rowcount or 0
 
@@ -471,11 +473,7 @@ async def bulk_delete_assets(
             findings_q = delete(Finding).where(
                 (Finding.image == aid) | (Finding.component == aid)
             )
-            if ctx.tenant_id is not None:
-                findings_q = findings_q.where(
-                    (Finding.tenant_id == ctx.tenant_id)
-                    | (Finding.tenant_id.is_(None))
-                )
+            findings_q = findings_q.where(tenant_filter(Finding, ctx))
             findings_result = await db.execute(findings_q)
             f_deleted = findings_result.rowcount or 0
             asset_result = await db.execute(delete(Asset).where(Asset.id == aid))
@@ -603,10 +601,7 @@ async def group_asset_into_target(
                 match_ors.append(Finding.image.ilike(pat, escape="\\"))
                 match_ors.append(Finding.component.ilike(pat, escape="\\"))
         q = select(Finding).where(or_(*match_ors))
-        if ctx.tenant_id is not None:
-            q = q.where(
-                or_(Finding.tenant_id == ctx.tenant_id, Finding.tenant_id.is_(None))
-            )
+        q = q.where(tenant_filter(Finding, ctx))
         result = await db.execute(q)
         raw_rows = list(result.scalars().all())
         rows: list[Finding] = []
@@ -678,10 +673,7 @@ async def group_asset_into_target(
                     Finding.component == canonical_target,
                 )
             )
-            if ctx.tenant_id is not None:
-                candidates_q = candidates_q.where(
-                    or_(Finding.tenant_id == ctx.tenant_id, Finding.tenant_id.is_(None))
-                )
+            candidates_q = candidates_q.where(tenant_filter(Finding, ctx))
             candidate_rows = list((await db.execute(candidates_q)).scalars().all())
 
             source_key = source_asset_id.strip().lower()

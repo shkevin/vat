@@ -9,7 +9,7 @@ import uuid
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta, timezone
 from urllib.parse import quote
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -17,6 +17,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.version import get_vat_backend_version
 from app.models.audit_event import AuditEvent
 from app.services.assets_service import get_assets_with_findings
+
+if TYPE_CHECKING:
+    from app.schemas.auth import UserContext
 from app.services.findings_service import (
     enrich_findings_with_source_group_severity,
     list_findings,
@@ -640,7 +643,7 @@ def _build_executive_summary_html(
 
 async def build_export_bundle(
     db: AsyncSession,
-    tenant_id: Optional[str] = None,
+    ctx: "UserContext",
     options: Optional[ExportBundleOptions] = None,
 ) -> bytes:
     """
@@ -666,10 +669,11 @@ async def build_export_bundle(
     archived_filter: Optional[bool] = None if opts.include_archived else False
     findings = await list_findings(
         db,
-        tenant_id=tenant_id,
+        ctx=ctx,
         archived=archived_filter,
         limit=0,
     )
+    tenant_id = ctx.tenant_id
     rows = [finding_to_api_dict_with_group_key(f) for f in findings]
     rows = await enrich_findings_with_source_group_severity(db, rows)
 
@@ -680,7 +684,12 @@ async def build_export_bundle(
     assets = await get_assets_with_findings(db, findings_dicts=rows)
     vat_data = {"findings": rows, "assets": assets}
 
-    packages = await list_sbom_packages(db, tenant_id=tenant_id, limit=10000)
+    packages = await list_sbom_packages(
+        db,
+        tenant_id=ctx.tenant_id,
+        cross_tenant=ctx.cross_tenant,
+        limit=10000,
+    )
     cyclonedx = _build_cyclonedx_bom(packages)
     per_asset_packages: dict[str, list[dict]] = {}
     for p in packages:
@@ -737,7 +746,11 @@ async def build_export_bundle(
         extract_xccdf_rule_results,
     )
 
-    openscap_results = await list_openscap_scan_results(db, tenant_id=tenant_id)
+    openscap_results = await list_openscap_scan_results(
+        db,
+        tenant_id=ctx.tenant_id,
+        cross_tenant=ctx.cross_tenant,
+    )
     stig_manifest: list[dict] = []
     stig_rule_rows: list[dict[str, Any]] = []
     for row in openscap_results:

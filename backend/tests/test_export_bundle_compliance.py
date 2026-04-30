@@ -8,6 +8,7 @@ import hashlib
 import io
 import json
 import zipfile
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -87,9 +88,10 @@ async def test_build_export_bundle_compliance_artifacts_and_manifest_hashes(monk
     )
 
     db = MagicMock()
+    ctx = SimpleNamespace(tenant_id="tenant-a", cross_tenant=False)
     data = await build_export_bundle(
         db,
-        tenant_id="tenant-a",
+        ctx=ctx,
         options=ExportBundleOptions(include_audit_events=True),
     )
     assert data.startswith(b"PK")
@@ -173,9 +175,10 @@ async def test_build_export_bundle_skips_audit_when_disabled(monkeypatch):
     )
 
     db = MagicMock()
+    ctx = SimpleNamespace(tenant_id="tenant-a", cross_tenant=False)
     await build_export_bundle(
         db,
-        tenant_id=None,
+        ctx=ctx,
         options=ExportBundleOptions(include_audit_events=False),
     )
     spy.assert_not_called()

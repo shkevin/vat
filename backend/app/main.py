@@ -15,7 +15,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 
 from fastapi import FastAPI
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 
 from app.core.pii_filter import PIIFilter
 
@@ -128,11 +128,11 @@ async def lifespan(app: FastAPI):
             async with async_session() as db:
                 keys = await list_admin_keys(db)
                 if not keys:
-                    _key_id, full_key, key_prefix, _msg = await create_admin_key(db)
+                    _key_id, full_key, key_prefix, _msg = await create_admin_key(
+                        db, cross_tenant=True
+                    )
                     token_path.write_text(f"VAT_ADMIN_TOKEN={full_key}\n")
-                    token_path.chmod(
-                        0o644
-                    )  # Readable by host user for docker compose env_file
+                    token_path.chmod(0o600)  # Owner-only; scanner reads via mounted volume
                     logger.info(
                         "Dev: created scanner admin token (prefix %s) at data/.vat-scanner-token",
                         key_prefix,
@@ -169,6 +169,28 @@ app = FastAPI(
     description="Authoritative source of record for vulnerability and security findings",
     version="0.1.0",
 )
+
+@app.exception_handler(Exception)
+async def _unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    """Catch-all so uncaught exceptions never leak SQL fragments / file paths /
+    upstream tokens to clients. Logs the full traceback server-side keyed by
+    the request trace id; the client gets a generic 500 + the trace id so ops
+    can correlate without the user needing to repro.
+    """
+    trace_id = getattr(request.state, "trace_id", None)
+    logger = logging.getLogger("app.unhandled")
+    logger.error(
+        "Unhandled exception during %s %s (trace_id=%s)",
+        request.method,
+        request.url.path,
+        trace_id,
+        exc_info=exc,
+    )
+    body: dict[str, str] = {"detail": "internal error"}
+    if trace_id:
+        body["traceId"] = trace_id
+    return JSONResponse(status_code=500, content=body)
+
 
 app.add_middleware(TraceIdMiddleware)
 app.add_middleware(RequestObservabilityMiddleware)

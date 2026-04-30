@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, Request, Response
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.auth import get_current_user_context
+from app.core.auth import get_current_user_context, tenant_filter
 from app.core.database import get_db
 from app.models.asset import Asset
 from app.models.asset_alias import AssetAlias
@@ -30,7 +30,7 @@ router = APIRouter()
 async def _vat_data_etag(
     db: AsyncSession,
     *,
-    tenant_id: Optional[str],
+    ctx: UserContext,
     archived: Optional[bool],
     slim: bool,
     full: bool,
@@ -44,11 +44,7 @@ async def _vat_data_etag(
     """
     finding_q = select(
         func.max(Finding.updated_at), func.count(Finding.id)
-    )
-    if tenant_id is not None:
-        finding_q = finding_q.where(
-            (Finding.tenant_id == tenant_id) | (Finding.tenant_id.is_(None))
-        )
+    ).where(tenant_filter(Finding, ctx))
     if archived is not None:
         finding_q = finding_q.where(Finding.archived == archived)
     f_max, f_count = (await db.execute(finding_q)).one()
@@ -64,7 +60,8 @@ async def _vat_data_etag(
             str(f_count or 0),
             str(a_max),
             str(al_max.isoformat()) if al_max else "",
-            str(tenant_id or ""),
+            str(ctx.tenant_id or ""),
+            "X" if ctx.cross_tenant else "S",
             str(archived),
             str(slim),
             str(full),
@@ -104,7 +101,7 @@ async def get_vat_data(
     # plus the request shape. Mutations bump it; identical re-requests 304
     # with no body. Cuts the 45s polling traffic to near-zero on idle clusters.
     etag = await _vat_data_etag(
-        db, tenant_id=ctx.tenant_id, archived=archived, slim=slim, full=full
+        db, ctx=ctx, archived=archived, slim=slim, full=full
     )
     if request.headers.get("if-none-match") == etag:
         return Response(
@@ -123,7 +120,7 @@ async def get_vat_data(
     t_start = time.perf_counter()
     findings = await list_findings(
         db,
-        tenant_id=ctx.tenant_id,
+        ctx=ctx,
         archived=archived,
         status=status,
         severity=severity,

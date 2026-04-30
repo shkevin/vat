@@ -56,7 +56,7 @@ async def get_export_bundle(
         audit_date_to=audit_date_to,
         audit_limit=audit_limit,
     )
-    data = await build_export_bundle(db, tenant_id=ctx.tenant_id, options=options)
+    data = await build_export_bundle(db, ctx=ctx, options=options)
     # Export bundle generation should always produce a system audit event, even
     # when there were no prior audit rows.
     try:

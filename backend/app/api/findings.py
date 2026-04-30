@@ -47,6 +47,17 @@ from app.tasks.sync_tasks import trigger_sync_worker
 router = APIRouter()
 
 
+def _finding_visible(ctx: UserContext, finding: Finding) -> bool:
+    """Tenant-scope check for a single finding. Fails closed when the caller
+    has no tenant and is not cross-tenant: a NULL-tenant finding (legacy
+    webhook ingest) is no longer visible to arbitrary callers."""
+    if ctx.cross_tenant:
+        return True
+    if ctx.tenant_id is None:
+        return False
+    return finding.tenant_id == ctx.tenant_id
+
+
 class CorrelationEdgeActionRequest(BaseModel):
     reason: str = Field(default="manual action", max_length=256)
 
@@ -94,7 +105,7 @@ async def get_findings(
     """
     findings = await list_findings(
         db,
-        tenant_id=ctx.tenant_id,
+        ctx=ctx,
         archived=archived,
         status=status,
         severity=severity,
@@ -128,7 +139,7 @@ async def get_findings_groups(
     scan_limit = get_settings().finding_groups_scan_limit
     findings = await list_findings(
         db,
-        tenant_id=ctx.tenant_id,
+        ctx=ctx,
         archived=archived,
         status=status,
         severity=severity,
@@ -186,7 +197,7 @@ async def post_bulk_update(
         body.ids,
         body.status,
         body.justification,
-        tenant_id=ctx.tenant_id,
+        ctx=ctx,
         user=user,
     )
     return {"updated": len(findings), "message": f"Updated {len(findings)} findings"}
@@ -200,12 +211,7 @@ async def get_finding_by_id(
 ):
     """Get a single finding by ID."""
     finding = await get_finding(db, finding_id)
-    if (
-        finding
-        and ctx.tenant_id
-        and finding.tenant_id
-        and finding.tenant_id != ctx.tenant_id
-    ):
+    if finding and not _finding_visible(ctx, finding):
         raise HTTPException(status_code=404, detail="Finding not found")
     if not finding:
         raise HTTPException(status_code=404, detail="Finding not found")
@@ -222,12 +228,7 @@ async def patch_finding(
     """Update a finding. Accepts camelCase from frontend. Sync to tracker/source enqueued."""
     user = ctx.email or ctx.raw_identity
     finding = await get_finding(db, finding_id)
-    if (
-        finding
-        and ctx.tenant_id
-        and finding.tenant_id
-        and finding.tenant_id != ctx.tenant_id
-    ):
+    if finding and not _finding_visible(ctx, finding):
         raise HTTPException(status_code=404, detail="Finding not found")
     data = body.model_dump(exclude_unset=True)
     finding = await update_finding(db, finding_id, data, user=user)
@@ -246,12 +247,7 @@ async def post_archive_finding(
     """Archive a finding with a reason."""
     user = ctx.email or ctx.raw_identity
     finding = await get_finding(db, finding_id)
-    if (
-        finding
-        and ctx.tenant_id
-        and finding.tenant_id
-        and finding.tenant_id != ctx.tenant_id
-    ):
+    if finding and not _finding_visible(ctx, finding):
         raise HTTPException(status_code=404, detail="Finding not found")
     finding = await archive_finding(db, finding_id, body.reason, user=user)
     if not finding:
@@ -269,12 +265,7 @@ async def post_revert_finding(
     """Revert finding to previous status. Reason required. PRD §5.4.3."""
     user = ctx.email or ctx.raw_identity
     finding = await get_finding(db, finding_id)
-    if (
-        finding
-        and ctx.tenant_id
-        and finding.tenant_id
-        and finding.tenant_id != ctx.tenant_id
-    ):
+    if finding and not _finding_visible(ctx, finding):
         raise HTTPException(status_code=404, detail="Finding not found")
     finding = await revert_finding(db, finding_id, body.reason, user=user)
     if not finding:
@@ -294,12 +285,7 @@ async def post_unarchive_finding(
     """Unarchive a finding."""
     user = ctx.email or ctx.raw_identity
     finding = await get_finding(db, finding_id)
-    if (
-        finding
-        and ctx.tenant_id
-        and finding.tenant_id
-        and finding.tenant_id != ctx.tenant_id
-    ):
+    if finding and not _finding_visible(ctx, finding):
         raise HTTPException(status_code=404, detail="Finding not found")
     finding = await unarchive_finding(db, finding_id, user=user)
     if not finding:
@@ -316,12 +302,7 @@ async def post_override_fingerprint(
     """Override fingerprint when dedup incorrectly merged. PRD §5.1.2."""
     user = ctx.email or ctx.raw_identity
     finding = await get_finding(db, finding_id)
-    if (
-        finding
-        and ctx.tenant_id
-        and finding.tenant_id
-        and finding.tenant_id != ctx.tenant_id
-    ):
+    if finding and not _finding_visible(ctx, finding):
         raise HTTPException(status_code=404, detail="Finding not found")
     finding = await override_fingerprint(db, finding_id, user=user)
     if not finding:

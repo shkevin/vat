@@ -8,10 +8,11 @@ Attestation and audit entries use authenticated identity:
 - Webhooks (Aikido, Linear) use system attribution; tracker decisions are posted by VAT
 """
 
-from typing import Optional
+from typing import Any, Optional
 
 from fastapi import Depends, Header, HTTPException, status
 from fastapi.security import APIKeyHeader, HTTPAuthorizationCredentials, HTTPBearer
+from sqlalchemy import false as sql_false
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
@@ -61,21 +62,27 @@ async def _resolve_user_context(
                     tenant_id=payload.get("tenant_id"),
                     role=payload.get("role", "reviewer"),
                     raw_identity=payload.get("sub", ""),
+                    cross_tenant=False,
                 ),
                 True,
             )
 
-        # 2. Admin API key (vat_ prefix) — grants admin role for automation
-        from app.services.admin_keys import validate_admin_key
+        # 2. Admin API key (vat_ prefix) — grants admin role for automation.
+        # Tenant binding from the key entry is authoritative: a key bound to a
+        # tenant produces a tenant-scoped context; cross-tenant requires the
+        # key to be explicitly created with cross_tenant=True.
+        from app.services.admin_keys import resolve_admin_key
 
-        if await validate_admin_key(db, authorization.credentials):
+        resolved = await resolve_admin_key(db, authorization.credentials)
+        if resolved is not None:
             return (
                 UserContext(
-                    user_id="admin-key",
+                    user_id=f"admin-key:{resolved.key_id}",
                     email="admin-api-key@vat.local",
-                    tenant_id=None,
+                    tenant_id=resolved.tenant_id,
                     role="admin",
-                    raw_identity="admin-api-key",
+                    raw_identity=f"admin-api-key:{resolved.key_id}",
+                    cross_tenant=resolved.cross_tenant,
                 ),
                 True,
             )
@@ -94,6 +101,7 @@ async def _resolve_user_context(
                     tenant_id=user.tenant_id,
                     role=user.role,
                     raw_identity=x_vat_user.strip(),
+                    cross_tenant=False,
                 ),
                 True,
             )
@@ -106,6 +114,7 @@ async def _resolve_user_context(
             tenant_id=None,
             role="read_only",
             raw_identity=identity,
+            cross_tenant=False,
         ),
         False,
     )
@@ -185,3 +194,26 @@ async def require_admin(
             detail="Admin role required",
         )
     return ctx
+
+
+def tenant_filter(model: Any, ctx: UserContext) -> Any:
+    """Return a SQLAlchemy WHERE clause that scopes ``model`` to ``ctx``'s tenant.
+
+    Fail-closed semantics:
+    - ``cross_tenant=True`` callers (admin keys bound to all tenants) get a
+      pass-through condition that does not filter.
+    - tenant-scoped callers get ``model.tenant_id == ctx.tenant_id``.
+    - callers with neither (``tenant_id=None`` and ``cross_tenant=False``) get
+      a literal-false condition so the query returns no rows. Returning
+      everything here is what the previous ``IS NULL`` bypass did, and it
+      leaked data across tenants.
+
+    Use as ``q = q.where(tenant_filter(Finding, ctx))``.
+    """
+    if ctx.cross_tenant:
+        # No tenant constraint — caller is explicitly authorized cross-tenant.
+        return model.tenant_id.is_(model.tenant_id) | model.tenant_id.is_(None)
+    if ctx.tenant_id is None:
+        # Fail closed.
+        return sql_false()
+    return model.tenant_id == ctx.tenant_id

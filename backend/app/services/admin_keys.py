@@ -1,7 +1,15 @@
-"""Admin API key service — long-lived keys for automation (scripts, CI)."""
+"""Admin API key service — long-lived keys for automation (scripts, CI).
+
+Keys can be tenant-bound (default) or cross-tenant. A tenant-bound key produces
+a ``UserContext`` with ``tenant_id`` set; a cross-tenant key produces
+``cross_tenant=True``. Legacy keys created before tenant binding existed have
+neither field set; they are treated as cross-tenant for back-compat and a
+warning is logged on validation so operators know to rotate them.
+"""
 
 import hashlib
 import hmac
+import logging
 import secrets
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -11,6 +19,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.settings_model import SettingsKV
+
+logger = logging.getLogger(__name__)
 
 ADMIN_KEYS_KEY = "admin_api_keys"
 KEY_PREFIX = "vat_"
@@ -78,20 +88,47 @@ async def _save_store(db: AsyncSession, store: dict) -> None:
 class AdminKeyInfo:
     id: str
     key_prefix: str
+    tenant_id: Optional[str] = None
+    cross_tenant: bool = False
     created_at: Optional[str] = None
+    legacy: bool = False
 
 
-async def create_admin_key(db: AsyncSession) -> tuple[str, str, str, str]:
+@dataclass
+class ResolvedAdminKey:
+    """Result of validating an admin key. ``legacy=True`` means the key entry
+    pre-dates tenant binding and should be rotated."""
+
+    key_id: str
+    tenant_id: Optional[str]
+    cross_tenant: bool
+    legacy: bool
+
+
+async def create_admin_key(
+    db: AsyncSession,
+    *,
+    tenant_id: Optional[str] = None,
+    cross_tenant: bool = False,
+) -> tuple[str, str, str, str]:
     """
-    Create a new admin API key.
-    Returns (key_id, full_key, key_prefix, message).
+    Create a new admin API key. Pass exactly one of ``tenant_id`` (tenant-bound)
+    or ``cross_tenant=True`` (cross-tenant). Returns (key_id, full_key,
+    key_prefix, message).
     """
+    if cross_tenant and tenant_id is not None:
+        raise ValueError("cross_tenant keys must not be bound to a tenant_id")
+    if not cross_tenant and not tenant_id:
+        raise ValueError("admin key requires either tenant_id or cross_tenant=True")
+
     full_key, key_hash, key_prefix = generate_admin_key()
     store = await _get_store(db)
     key_id = _next_id(store)
     store[key_id] = {
         "keyHash": key_hash,
         "keyPrefix": key_prefix,
+        "tenantId": tenant_id,
+        "crossTenant": bool(cross_tenant),
         "createdAt": _now(),
     }
     await _save_store(db, store)
@@ -116,35 +153,64 @@ async def revoke_admin_key(db: AsyncSession, key_id: str) -> bool:
 async def list_admin_keys(db: AsyncSession) -> list[AdminKeyInfo]:
     """List all admin keys (no secrets)."""
     store = await _get_store(db)
-    return [
-        AdminKeyInfo(
-            id=key_id,
-            key_prefix=info.get("keyPrefix", KEY_PREFIX),
-            created_at=info.get("createdAt"),
+    out: list[AdminKeyInfo] = []
+    for key_id, info in store.items():
+        if not isinstance(info, dict) or not info.get("keyHash"):
+            continue
+        legacy = "tenantId" not in info and "crossTenant" not in info
+        out.append(
+            AdminKeyInfo(
+                id=key_id,
+                key_prefix=info.get("keyPrefix", KEY_PREFIX),
+                tenant_id=info.get("tenantId"),
+                cross_tenant=bool(info.get("crossTenant", legacy)),
+                created_at=info.get("createdAt"),
+                legacy=legacy,
+            )
         )
-        for key_id, info in store.items()
-        if isinstance(info, dict) and info.get("keyHash")
-    ]
+    return out
 
 
-async def validate_admin_key(db: AsyncSession, key: str) -> bool:
-    """
-    Validate admin API key. Returns True if valid (grants admin role).
+async def resolve_admin_key(db: AsyncSession, key: str) -> Optional[ResolvedAdminKey]:
+    """Validate ``key`` and return its resolved scope. Returns None when invalid.
+
+    A key entry without ``tenantId``/``crossTenant`` (created before tenant
+    binding) is treated as ``cross_tenant=True`` and ``legacy=True``; callers
+    should log/surface this so operators rotate the key.
     """
     if not key or not key.strip():
-        return False
+        return None
     key = key.strip()
     if not key.startswith(KEY_PREFIX):
-        return False
+        return None
 
     key_hash = _hash_key(key)
     store = await _get_store(db)
 
-    for info in store.values():
+    for key_id, info in store.items():
         if not isinstance(info, dict):
             continue
         stored_hash = info.get("keyHash")
-        if stored_hash and _constant_time_compare(key_hash, stored_hash):
-            return True
+        if not stored_hash or not _constant_time_compare(key_hash, stored_hash):
+            continue
+        legacy = "tenantId" not in info and "crossTenant" not in info
+        cross_tenant = bool(info.get("crossTenant", legacy))
+        tenant_id = info.get("tenantId") if not cross_tenant else None
+        if legacy:
+            logger.warning(
+                "admin key %s is legacy (no tenant binding); treating as cross_tenant. Rotate to a tenant-bound or explicit cross-tenant key.",
+                key_id,
+            )
+        return ResolvedAdminKey(
+            key_id=key_id,
+            tenant_id=tenant_id,
+            cross_tenant=cross_tenant,
+            legacy=legacy,
+        )
 
-    return False
+    return None
+
+
+async def validate_admin_key(db: AsyncSession, key: str) -> bool:
+    """Back-compat wrapper that returns True when the key resolves."""
+    return await resolve_admin_key(db, key) is not None

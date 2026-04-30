@@ -91,21 +91,45 @@ async def test_create_revoke_list_validate(monkeypatch):
         lambda: ("vat_new", admin_keys._hash_key("vat_new"), "vat_ne"),
     )
 
-    key_id, full_key, key_prefix, msg = await admin_keys.create_admin_key(SimpleNamespace())
+    # Cross-tenant key (legacy automation use case).
+    key_id, full_key, key_prefix, msg = await admin_keys.create_admin_key(
+        SimpleNamespace(), cross_tenant=True
+    )
     assert key_id == "ak_3"
     assert full_key == "vat_new"
     assert key_prefix == "vat_ne"
     assert "not be shown again" in msg
     assert saved["ak_3"]["createdAt"] == "2026-03-21T00:00:00Z"
+    assert saved["ak_3"]["crossTenant"] is True
+    assert saved["ak_3"]["tenantId"] is None
 
+    # create_admin_key requires explicit scope.
+    with pytest.raises(ValueError):
+        await admin_keys.create_admin_key(SimpleNamespace())
+    with pytest.raises(ValueError):
+        await admin_keys.create_admin_key(
+            SimpleNamespace(), tenant_id="t1", cross_tenant=True
+        )
+
+    # Legacy stored entry (no tenantId/crossTenant fields) is treated as
+    # cross-tenant for back-compat and surfaced as legacy=True.
     listed = await admin_keys.list_admin_keys(SimpleNamespace())
-    assert {(x.id, x.key_prefix) for x in listed} == {("ak_1", "vat_go")}
+    assert {(x.id, x.key_prefix, x.cross_tenant, x.legacy) for x in listed} == {
+        ("ak_1", "vat_go", True, True)
+    }
 
     assert await admin_keys.validate_admin_key(SimpleNamespace(), "") is False
     assert await admin_keys.validate_admin_key(SimpleNamespace(), "  ") is False
     assert await admin_keys.validate_admin_key(SimpleNamespace(), "bad-prefix") is False
     assert await admin_keys.validate_admin_key(SimpleNamespace(), "vat_wrong") is False
     assert await admin_keys.validate_admin_key(SimpleNamespace(), " vat_good ") is True
+
+    resolved = await admin_keys.resolve_admin_key(SimpleNamespace(), "vat_good")
+    assert resolved is not None
+    assert resolved.key_id == "ak_1"
+    assert resolved.cross_tenant is True
+    assert resolved.legacy is True
+    assert resolved.tenant_id is None
 
     assert await admin_keys.revoke_admin_key(SimpleNamespace(), "missing") is False
     assert await admin_keys.revoke_admin_key(SimpleNamespace(), "ak_1") is True

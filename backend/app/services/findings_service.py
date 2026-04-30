@@ -8,8 +8,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from datetime import datetime
 
+from app.core.auth import tenant_filter
 from app.core.config import get_settings
 from app.models.finding import Finding, FindingType, Severity, Status, SuppressionScope
+from app.schemas.auth import UserContext
 from app.services.sync_service import (
     SOURCE_IGNORE_STATUSES,
     TRACKER_DECISION_STATUSES,
@@ -112,7 +114,7 @@ async def enrich_findings_with_source_group_severity(
 async def list_findings(
     db: AsyncSession,
     *,
-    tenant_id: Optional[str] = None,
+    ctx: Optional[UserContext] = None,
     archived: Optional[bool] = None,
     status: Optional[str] = None,
     severity: Optional[str] = None,
@@ -152,9 +154,8 @@ async def list_findings(
             defer(Finding.regression_of),
             defer(Finding.audit),
         )
-    if tenant_id is not None:
-        # Include findings for this tenant OR global (tenant_id=None) so bootstrap/webhook findings are visible
-        q = q.where((Finding.tenant_id == tenant_id) | (Finding.tenant_id.is_(None)))
+    if ctx is not None:
+        q = q.where(tenant_filter(Finding, ctx))
     if archived is not None:
         q = q.where(Finding.archived == archived)
     if status:
@@ -512,13 +513,13 @@ async def bulk_update_findings(
     status: str,
     justification: str,
     *,
-    tenant_id: Optional[str] = None,
+    ctx: Optional[UserContext] = None,
     user: str = "security@co.com",
 ) -> list[Finding]:
     """Bulk update findings to a new status. Returns list of updated findings."""
     q = select(Finding).where(Finding.id.in_(ids))
-    if tenant_id is not None:
-        q = q.where(Finding.tenant_id == tenant_id)
+    if ctx is not None:
+        q = q.where(tenant_filter(Finding, ctx))
     result = await db.execute(q)
     findings = list(result.scalars().all())
     new_status = _status_to_enum(status)

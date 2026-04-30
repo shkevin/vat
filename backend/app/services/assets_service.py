@@ -1,6 +1,6 @@
 """Assets service — combine Asset records with findings-derived assets."""
 
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -10,6 +10,9 @@ from app.models.asset_digest_conflict import AssetDigestConflict
 from app.models.asset_observed_tag import AssetObservedTag
 from app.models.finding import Finding
 from app.schemas.finding import FindingRead
+
+if TYPE_CHECKING:
+    from app.schemas.auth import UserContext
 from app.services.asset_resolver import infer_asset_kind
 from app.services.asset_type_infer import infer_asset_type_from_findings
 from app.services.container_ref_normalization import (
@@ -296,7 +299,7 @@ async def get_assets_with_findings(
     db: AsyncSession,
     *,
     findings_dicts: Optional[list[dict]] = None,
-    tenant_id: Optional[str] = None,
+    ctx: Optional["UserContext"] = None,
     archived: Optional[bool] = None,
     status: Optional[str] = None,
     severity: Optional[str] = None,
@@ -322,7 +325,7 @@ async def get_assets_with_findings(
 
         findings = await list_findings(
             db,
-            tenant_id=tenant_id,
+            ctx=ctx,
             archived=archived,
             status=status,
             severity=severity,
