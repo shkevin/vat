@@ -49,6 +49,40 @@ _token_cache: dict[str, tuple[str, float]] = {}  # key -> (token, expires_at)
 _rate_limit_last: list[float] = [0.0]
 _rate_limit_lock = asyncio.Lock()
 
+# Module-level shared httpx client. Per-call AsyncClient() instances pay
+# TCP+TLS handshake on every request (~50-200ms each); a pooled client
+# reuses connections. Transport-level retries=3 absorbs single connect
+# blips (DNS hiccups, TCP RST) without bubbling up to callers.
+_aikido_http_client: Optional[httpx.AsyncClient] = None
+_aikido_http_lock = asyncio.Lock()
+
+
+def _aikido_client() -> httpx.AsyncClient:
+    """Lazy module-level httpx client for Aikido. Per-request `timeout=`
+    overrides the default. Each uvicorn worker / Celery prefork worker
+    gets its own client bound to that worker's event loop.
+    """
+    global _aikido_http_client
+    if _aikido_http_client is None or _aikido_http_client.is_closed:
+        # Default timeout = 60s; callers pass timeout= for longer/shorter
+        # bounds. retries=3 at transport layer handles ConnectError /
+        # ReadTimeout reconnects on a single retry, without callers needing
+        # to track attempt counts.
+        _aikido_http_client = httpx.AsyncClient(
+            timeout=httpx.Timeout(60.0),
+            transport=httpx.AsyncHTTPTransport(retries=3),
+            limits=httpx.Limits(max_connections=10, max_keepalive_connections=5),
+        )
+    return _aikido_http_client
+
+
+async def aclose_aikido_client() -> None:
+    """Best-effort shutdown helper. Called from app lifespan."""
+    global _aikido_http_client
+    if _aikido_http_client is not None and not _aikido_http_client.is_closed:
+        await _aikido_http_client.aclose()
+    _aikido_http_client = None
+
 
 async def _acquire_rate_limit_slot() -> None:
     """Wait until we can make another Aikido API request (min gap between requests)."""
@@ -1383,17 +1417,18 @@ async def _get_oauth_token(client_id: str, client_secret: str, region: str) -> s
     token_url = f"{base_url}/api/oauth/token"
     credentials = base64.b64encode(f"{client_id}:{client_secret}".encode()).decode()
 
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        resp = await client.post(
-            token_url,
-            headers={
-                "Authorization": f"Basic {credentials}",
-                "Content-Type": "application/x-www-form-urlencoded",
-            },
-            content="grant_type=client_credentials",
-        )
-        resp.raise_for_status()
-        data = resp.json()
+    client = _aikido_client()
+    resp = await client.post(
+        token_url,
+        headers={
+            "Authorization": f"Basic {credentials}",
+            "Content-Type": "application/x-www-form-urlencoded",
+        },
+        content="grant_type=client_credentials",
+        timeout=30.0,
+    )
+    resp.raise_for_status()
+    data = resp.json()
 
     token = data["access_token"]
     expires_in = data.get("expires_in", 3600)
@@ -1430,23 +1465,24 @@ async def fetch_aikido_issues(
     base_url = _get_base_url(region)
     export_url = f"{base_url}/api/public/v1/issues/export"
 
+    client = _aikido_client()
     max_retries = 3
     for attempt in range(max_retries):
         await _acquire_rate_limit_slot()
-        async with httpx.AsyncClient(timeout=120.0) as client:
-            resp = await client.get(
-                export_url,
-                headers={"Authorization": f"Bearer {token}"},
-            )
-            if resp.status_code == 429:
-                retry_after = int(resp.headers.get("Retry-After", 60))
-                if attempt < max_retries - 1:
-                    await asyncio.sleep(retry_after)
-                    continue
-                resp.raise_for_status()
+        resp = await client.get(
+            export_url,
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=120.0,
+        )
+        if resp.status_code == 429:
+            retry_after = int(resp.headers.get("Retry-After", 60))
+            if attempt < max_retries - 1:
+                await asyncio.sleep(retry_after)
+                continue
             resp.raise_for_status()
-            data = resp.json()
-            break
+        resp.raise_for_status()
+        data = resp.json()
+        break
     # Aikido may return { issues: [...] } or direct array
     if isinstance(data, list):
         return data
@@ -1473,19 +1509,21 @@ async def _aikido_api_get(
     base_url = _get_base_url(region)
     url = f"{base_url}/api/public/v1{path}"
 
+    client = _aikido_client()
     max_retries = 3
     for attempt in range(max_retries):
         await _acquire_rate_limit_slot()
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            resp = await client.get(url, headers={"Authorization": f"Bearer {token}"})
-            if resp.status_code == 429:
-                retry_after = int(resp.headers.get("Retry-After", 60))
-                if attempt < max_retries - 1:
-                    await asyncio.sleep(retry_after)
-                    continue
-                resp.raise_for_status()
+        resp = await client.get(
+            url, headers={"Authorization": f"Bearer {token}"}, timeout=60.0
+        )
+        if resp.status_code == 429:
+            retry_after = int(resp.headers.get("Retry-After", 60))
+            if attempt < max_retries - 1:
+                await asyncio.sleep(retry_after)
+                continue
             resp.raise_for_status()
-            return resp.json()
+        resp.raise_for_status()
+        return resp.json()
 
 
 async def _aikido_api_get_maybe_json(
@@ -1516,34 +1554,26 @@ async def _aikido_api_get_maybe_json(
         base_url = _get_base_url(region)
         url = f"{base_url}/api/public/v1{path}"
         await _acquire_rate_limit_slot()
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            resp = await client.get(
-                url,
-                headers={
-                    "Authorization": f"Bearer {token}",
-                    "Accept": "application/json",
-                },
-            )
-            if resp.status_code == 429:
-                await asyncio.sleep(int(resp.headers.get("Retry-After", 60)))
-                await _acquire_rate_limit_slot()
-                resp = await client.get(
-                    url,
-                    headers={
-                        "Authorization": f"Bearer {token}",
-                        "Accept": "application/json",
-                    },
-                )
-            if resp.status_code != 200:
-                return None
-            if not (resp.content or b"").strip():
-                return None
-            try:
-                return resp.json()
-            except Exception:
-                # Fallback to text payload for non-JSON exports (CSV)
-                text = (resp.text or "").strip()
-                return text or None
+        client = _aikido_client()
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/json",
+        }
+        resp = await client.get(url, headers=headers, timeout=timeout)
+        if resp.status_code == 429:
+            await asyncio.sleep(int(resp.headers.get("Retry-After", 60)))
+            await _acquire_rate_limit_slot()
+            resp = await client.get(url, headers=headers, timeout=timeout)
+        if resp.status_code != 200:
+            return None
+        if not (resp.content or b"").strip():
+            return None
+        try:
+            return resp.json()
+        except Exception:
+            # Fallback to text payload for non-JSON exports (CSV)
+            text = (resp.text or "").strip()
+            return text or None
     except Exception as e:
         logger.debug("Aikido optional GET %s failed: %s", path, e)
         return None
@@ -1616,46 +1646,37 @@ async def _aikido_api_post_request(
         base_url = _get_base_url(region)
         url = f"{base_url}/api/public/v1{path}"
         await _acquire_rate_limit_slot()
-        async with httpx.AsyncClient(timeout=timeout) as client:
+        client = _aikido_client()
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/json, */*",
+            "Content-Type": "application/json",
+        }
+        resp = await client.post(url, headers=headers, json=json_body, timeout=timeout)
+        if resp.status_code == 429:
+            await asyncio.sleep(int(resp.headers.get("Retry-After", 60)))
+            await _acquire_rate_limit_slot()
             resp = await client.post(
-                url,
-                headers={
-                    "Authorization": f"Bearer {token}",
-                    "Accept": "application/json, */*",
-                    "Content-Type": "application/json",
-                },
-                json=json_body,
+                url, headers=headers, json=json_body, timeout=timeout
             )
-            if resp.status_code == 429:
-                await asyncio.sleep(int(resp.headers.get("Retry-After", 60)))
-                await _acquire_rate_limit_slot()
-                resp = await client.post(
-                    url,
-                    headers={
-                        "Authorization": f"Bearer {token}",
-                        "Accept": "application/json, */*",
-                        "Content-Type": "application/json",
-                    },
-                    json=json_body,
-                )
-            ct = (resp.headers.get("content-type") or "").split(";")[0].strip().lower()
-            raw_bytes = resp.content or b""
-            snippet = ""
-            if raw_bytes.strip():
+        ct = (resp.headers.get("content-type") or "").split(";")[0].strip().lower()
+        raw_bytes = resp.content or b""
+        snippet = ""
+        if raw_bytes.strip():
+            try:
+                snippet = (resp.text or "")[:1200]
+            except Exception:
+                snippet = f"<non-text body, {len(raw_bytes)} bytes>"
+        parsed: Any | None = None
+        if raw_bytes.strip():
+            try:
+                parsed = resp.json()
+            except Exception:
                 try:
-                    snippet = (resp.text or "")[:1200]
+                    parsed = json.loads(resp.text)
                 except Exception:
-                    snippet = f"<non-text body, {len(raw_bytes)} bytes>"
-            parsed: Any | None = None
-            if raw_bytes.strip():
-                try:
-                    parsed = resp.json()
-                except Exception:
-                    try:
-                        parsed = json.loads(resp.text)
-                    except Exception:
-                        parsed = None
-            return resp.status_code, ct, snippet, parsed
+                    parsed = None
+        return resp.status_code, ct, snippet, parsed
     except Exception as e:
         logger.debug("Aikido POST %s failed: %s", path, e)
         return 0, "", str(e)[:500], None
@@ -1814,23 +1835,26 @@ async def _aikido_api_put(
     base_url = _get_base_url(region)
     url = f"{base_url}/api/public/v1{path}"
 
+    client = _aikido_client()
     max_retries = 3
     for attempt in range(max_retries):
         await _acquire_rate_limit_slot()
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            kwargs = {"headers": {"Authorization": f"Bearer {token}"}}
-            if json_body is not None:
-                kwargs["headers"]["Content-Type"] = "application/json"
-                kwargs["json"] = json_body
-            resp = await client.put(url, **kwargs)
-            if resp.status_code == 429:
-                retry_after = int(resp.headers.get("Retry-After", 60))
-                if attempt < max_retries - 1:
-                    await asyncio.sleep(retry_after)
-                    continue
-                resp.raise_for_status()
+        kwargs: dict[str, Any] = {
+            "headers": {"Authorization": f"Bearer {token}"},
+            "timeout": 30.0,
+        }
+        if json_body is not None:
+            kwargs["headers"]["Content-Type"] = "application/json"
+            kwargs["json"] = json_body
+        resp = await client.put(url, **kwargs)
+        if resp.status_code == 429:
+            retry_after = int(resp.headers.get("Retry-After", 60))
+            if attempt < max_retries - 1:
+                await asyncio.sleep(retry_after)
+                continue
             resp.raise_for_status()
-            return
+        resp.raise_for_status()
+        return
 
 
 async def ignore_issue_aikido(

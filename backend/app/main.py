@@ -161,6 +161,17 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning("Sync queue startup check failed (non-fatal): %s", e)
     yield
+    # Graceful shutdown — close pooled httpx clients so we don't leak
+    # sockets when uvicorn signals SIGTERM. Best-effort: a missed close
+    # is reclaimed by the OS, so we never block shutdown on these.
+    try:
+        from app.adapters.aikido import aclose_aikido_client
+        from app.adapters.linear import aclose_linear_client
+
+        await aclose_aikido_client()
+        await aclose_linear_client()
+    except Exception as e:
+        logger.warning("HTTP client shutdown failed (non-fatal): %s", e)
 
 
 app = FastAPI(

@@ -485,6 +485,33 @@ def _parse_vat_block_key_value(
     }
 
 
+_linear_http_client: Optional[httpx.AsyncClient] = None
+
+
+def _linear_client() -> httpx.AsyncClient:
+    """Lazy module-level httpx client for Linear (pool reuse + transport
+    retries on connect blips). Per-request ``timeout=`` overrides the
+    default. The previous per-call AsyncClient() instances paid TLS
+    handshake on every GraphQL request.
+    """
+    global _linear_http_client
+    if _linear_http_client is None or _linear_http_client.is_closed:
+        _linear_http_client = httpx.AsyncClient(
+            timeout=httpx.Timeout(60.0),
+            transport=httpx.AsyncHTTPTransport(retries=3),
+            limits=httpx.Limits(max_connections=10, max_keepalive_connections=5),
+        )
+    return _linear_http_client
+
+
+async def aclose_linear_client() -> None:
+    """Best-effort shutdown helper. Called from app lifespan."""
+    global _linear_http_client
+    if _linear_http_client is not None and not _linear_http_client.is_closed:
+        await _linear_http_client.aclose()
+    _linear_http_client = None
+
+
 @register_tracker_adapter("linear")
 class LinearAdapter:
     """Linear GraphQL adapter."""
@@ -562,38 +589,41 @@ class LinearAdapter:
         if variables:
             payload["variables"] = variables
         last_error = None
+        client = _linear_client()
         for attempt in range(2):
-            async with httpx.AsyncClient(timeout=60.0) as client:
-                resp = await client.post(
-                    self._graphql_url, json=payload, headers=self._headers()
-                )
-                data = resp.json() if resp.content else {}
-                errors = data.get("errors", [])
-                # Check for rate limit (Linear returns 400 with RATELIMITED code)
-                if errors and any(
-                    e.get("extensions", {}).get("code") == "RATELIMITED" for e in errors
-                ):
-                    reset_ms = resp.headers.get("X-RateLimit-Requests-Reset")
-                    delay = 65  # Default 65s if no header
-                    if reset_ms:
-                        import time
+            resp = await client.post(
+                self._graphql_url,
+                json=payload,
+                headers=self._headers(),
+                timeout=60.0,
+            )
+            data = resp.json() if resp.content else {}
+            errors = data.get("errors", [])
+            # Check for rate limit (Linear returns 400 with RATELIMITED code)
+            if errors and any(
+                e.get("extensions", {}).get("code") == "RATELIMITED" for e in errors
+            ):
+                reset_ms = resp.headers.get("X-RateLimit-Requests-Reset")
+                delay = 65  # Default 65s if no header
+                if reset_ms:
+                    import time
 
-                        delay = max(5, (int(reset_ms) / 1000) - time.time())
-                    logger.warning(
-                        "Linear API rate limited, retrying in %.0fs (attempt %d/2)",
-                        delay,
-                        attempt + 1,
-                    )
-                    await asyncio.sleep(min(delay, 120))
-                    last_error = RuntimeError(f"Linear API errors: {errors}")
-                    continue
-                if resp.status_code >= 400:
-                    body = resp.text[:1000] if resp.text else str(errors)
-                    logger.warning("Linear API HTTP %d: %s", resp.status_code, body)
-                    resp.raise_for_status()
-                if errors:
-                    raise RuntimeError(f"Linear API errors: {errors}")
-                return data.get("data", {})
+                    delay = max(5, (int(reset_ms) / 1000) - time.time())
+                logger.warning(
+                    "Linear API rate limited, retrying in %.0fs (attempt %d/2)",
+                    delay,
+                    attempt + 1,
+                )
+                await asyncio.sleep(min(delay, 120))
+                last_error = RuntimeError(f"Linear API errors: {errors}")
+                continue
+            if resp.status_code >= 400:
+                body = resp.text[:1000] if resp.text else str(errors)
+                logger.warning("Linear API HTTP %d: %s", resp.status_code, body)
+                resp.raise_for_status()
+            if errors:
+                raise RuntimeError(f"Linear API errors: {errors}")
+            return data.get("data", {})
         if last_error:
             raise last_error
         return {}
