@@ -79,15 +79,37 @@ def _aikido_creds_key(source_id: str | None) -> str:
 
 
 async def get_aikido_credentials(
-    db: AsyncSession, source_id: str | None = None
+    db: AsyncSession, source_id: str | None = None, *, strict: bool = False
 ) -> dict:
-    """Return Aikido credentials from DB or env: client_id, client_secret, region, webhook_secret.
-    When source_id is provided, uses per-source credentials. Falls back to legacy global key if per-source empty."""
+    """Return Aikido credentials from DB or env: client_id, client_secret,
+    region, webhook_secret, tenant_id.
+
+    When ``source_id`` is provided, uses per-source credentials. By default
+    falls back to the legacy global key if per-source is empty (sync flows).
+
+    ``strict=True`` disables that fallback — required for webhook handlers
+    so a webhook signed by source Y's secret cannot be HMAC-validated
+    against source X's by routing through the global creds. Returns an
+    empty creds dict when strict and per-source is unconfigured.
+    """
     s = get_config()
     creds: dict = {}
     if source_id:
         creds = await _get_credentials(db, _aikido_creds_key(source_id))
-        if not creds or (not creds.get("client_id") and not creds.get("clientId")):
+        per_source_present = bool(creds and (creds.get("client_id") or creds.get("clientId")))
+        if not per_source_present:
+            if strict:
+                # Per-source webhook with no per-source creds — refuse to fall
+                # back. Caller will emit 503; operator must configure the
+                # source explicitly before its webhook URL is reachable.
+                return {
+                    "client_id": None,
+                    "client_secret": None,
+                    "region": s.aikido_region or "eu",
+                    "webhook_secret": None,
+                    "tenant_id": None,
+                    "sync_back_enabled": True,
+                }
             creds = await _get_credentials(db, AIKIDO_CREDENTIALS)
     else:
         creds = await _get_credentials(db, AIKIDO_CREDENTIALS)
@@ -102,6 +124,12 @@ async def get_aikido_credentials(
         "webhook_secret": creds.get("webhook_secret")
         or creds.get("webhookSecret")
         or s.aikido_webhook_secret,
+        # Tenant binding for webhook ingest (M16). Per-source creds can
+        # carry tenant_id / tenantId; absent for legacy global config.
+        # Passed into ingest_finding so the resulting Finding row is
+        # tenant-scoped from the get-go instead of NULL-tenant (which the
+        # tenant_filter helper now refuses to surface).
+        "tenant_id": creds.get("tenant_id") or creds.get("tenantId"),
         "sync_back_enabled": creds.get("sync_back_enabled", True),
     }
 

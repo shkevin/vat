@@ -423,6 +423,7 @@ async def _ingest_from_parser(
     )
     created = 0
     merged = 0
+    failed = 0
     raw_evidence_ref: Optional[str] = None
     if parser_id in ("openscap", "openscap_oval") and isinstance(raw, bytes):
         raw_evidence_ref = compute_evidence_sha256(raw)
@@ -562,6 +563,7 @@ async def _ingest_from_parser(
             else:
                 merged += 1
         except Exception as e:
+            failed += 1
             logger.warning("Ingest failed for %s: %s", getattr(p, "cve_id", "?"), e)
             if rollup.enabled:
                 await rollup.record_failure(
@@ -640,12 +642,16 @@ async def _ingest_from_parser(
     result = {
         "created": created,
         "merged": merged,
+        "failed": failed,
         "sbomCreated": sbom_created,
         "sbomUpdated": sbom_updated,
         "normalizedTagUpdates": normalized_tag_updates,
         "source": source,
         "traceId": trace_id,
-        "message": f"Ingested {created} new, {merged} merged findings",
+        "message": (
+            f"Ingested {created} new, {merged} merged findings"
+            + (f" ({failed} failed)" if failed else "")
+        ),
     }
     if parser_id in ("openscap", "openscap_oval"):
         logger.info(

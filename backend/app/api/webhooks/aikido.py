@@ -86,8 +86,15 @@ def _configured(creds: dict) -> bool:
 async def aikido_webhook_per_source(
     source_id: str, request: Request, db: AsyncSession = Depends(get_db)
 ):
-    """Receive Aikido issue.created, issue.updated, issue.closed events. Per-source credentials."""
-    creds = await get_aikido_credentials(db, source_id)
+    """Receive Aikido issue.created/.updated/.closed for ``source_id``.
+
+    strict=True: refuses to fall back to global creds. A webhook signed
+    by source Y's secret can no longer be HMAC-validated against source
+    X's just because X has no per-source webhook_secret configured.
+    Returns 503 (Aikido not configured) when per-source creds are
+    missing — operator must configure the source explicitly first.
+    """
+    creds = await get_aikido_credentials(db, source_id, strict=True)
     return await _handle_aikido_webhook(request, db, creds, aikido_source_id=source_id)
 
 
@@ -255,6 +262,14 @@ async def _handle_aikido_webhook(
     issue_for_trace = data.get("issue") if isinstance(data.get("issue"), dict) else data
     trace_id = aikido_issue_trace_id(aikido_source_id, issue_for_trace or data)
 
+    # M16: stamp tenant_id from per-source creds onto the ingested
+    # finding so it lands tenant-scoped. Falls back to None when the
+    # operator hasn't bound this Aikido source to a tenant — which
+    # combined with C2's fail-closed tenant_filter means the finding is
+    # invisible to per-tenant readers until a tenant is configured. That
+    # is the correct conservative default — better unrouted than leaked.
+    creds_tenant_id = creds.get("tenant_id") if isinstance(creds, dict) else None
+
     async with async_session() as session:
         if not await claim_webhook(
             session, idempotency_key, "aikido", event, data
@@ -265,6 +280,7 @@ async def _handle_aikido_webhook(
             session,
             payload,
             source_name="Aikido",
+            tenant_id=creds_tenant_id,
             aikido_source_id=aikido_source_id,
             trace_id=trace_id,
             parser_id="aikido",
