@@ -567,6 +567,21 @@ function AssetLoadoutsSection() {
     return loadouts.filter((l) => l.name.toLowerCase().includes(q));
   }, [loadouts, searchQuery]);
 
+  // The "current loadout" is whichever one's asset-id set matches the active
+  // favoriteAssetIds exactly. There is no explicit selected-id stored —
+  // applyLoadout simply sets favoriteEntries — so we derive the active
+  // loadout from the data. If the user has added/removed favorites since
+  // applying a loadout, none match and we show the count fallback.
+  const activeLoadout = useMemo(() => {
+    if (favoriteAssetIds.size === 0) return null;
+    for (const l of loadouts) {
+      const ids = l.assetIds ?? [];
+      if (ids.length !== favoriteAssetIds.size) continue;
+      if (ids.every((id) => favoriteAssetIds.has(id))) return l;
+    }
+    return null;
+  }, [loadouts, favoriteAssetIds]);
+
   const handleSaveNew = useCallback(() => {
     const name = saveName.trim();
     if (name && favoriteEntries.length > 0) {
@@ -673,11 +688,58 @@ function AssetLoadoutsSection() {
               overflow: "hidden",
               textOverflow: "ellipsis",
               whiteSpace: "nowrap",
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              minWidth: 0,
             }}
           >
-            {loadouts.length === 0
-              ? "No loadouts"
-              : `${loadouts.length} loadout${loadouts.length !== 1 ? "s" : ""}`}
+            {activeLoadout ? (
+              <>
+                <span
+                  aria-hidden
+                  style={{
+                    flexShrink: 0,
+                    width: 6,
+                    height: 6,
+                    borderRadius: "50%",
+                    background: "var(--ui-accent)",
+                    boxShadow:
+                      "0 0 0 2px color-mix(in srgb, var(--ui-accent) 25%, transparent)",
+                  }}
+                />
+                <span
+                  style={{
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                    fontWeight: 600,
+                  }}
+                  title={activeLoadout.name}
+                >
+                  {activeLoadout.name}
+                </span>
+                <span
+                  style={{
+                    flexShrink: 0,
+                    color: "var(--app-muted)",
+                    fontSize: 10,
+                  }}
+                >
+                  · {activeLoadout.assetIds.length}
+                </span>
+              </>
+            ) : loadouts.length === 0 ? (
+              <span style={{ color: "var(--app-muted)" }}>No loadouts</span>
+            ) : favoriteAssetIds.size > 0 ? (
+              <span style={{ color: "var(--app-muted)" }}>
+                Custom selection · {favoriteAssetIds.size}
+              </span>
+            ) : (
+              <span style={{ color: "var(--app-muted)" }}>
+                Select loadout ({loadouts.length} saved)
+              </span>
+            )}
           </span>
           <span
             style={{ flexShrink: 0, color: "var(--app-muted)", fontSize: 10 }}
@@ -857,23 +919,48 @@ function AssetLoadoutsSection() {
                         type="button"
                         onClick={() => handleApply(loadout)}
                         aria-label={`Apply loadout ${loadout.name}`}
+                        aria-current={
+                          activeLoadout?.id === loadout.id ? "true" : undefined
+                        }
                         style={{
                           flex: 1,
                           minWidth: 0,
                           padding: "5px 8px",
                           fontSize: 11,
                           textAlign: "left",
-                          background: "var(--app-bg)",
-                          border: "1px solid var(--app-border)",
+                          background:
+                            activeLoadout?.id === loadout.id
+                              ? "color-mix(in srgb, var(--ui-accent) 18%, transparent)"
+                              : "var(--app-bg)",
+                          border:
+                            activeLoadout?.id === loadout.id
+                              ? "1px solid color-mix(in srgb, var(--ui-accent) 50%, transparent)"
+                              : "1px solid var(--app-border)",
                           borderRadius: 4,
                           color: "var(--app-fg)",
                           cursor: "pointer",
                           overflow: "hidden",
                           textOverflow: "ellipsis",
                           whiteSpace: "nowrap",
+                          fontWeight:
+                            activeLoadout?.id === loadout.id ? 600 : 400,
                           ...sans,
                         }}
                       >
+                        {activeLoadout?.id === loadout.id && (
+                          <span
+                            aria-hidden
+                            style={{
+                              display: "inline-block",
+                              width: 5,
+                              height: 5,
+                              borderRadius: "50%",
+                              background: "var(--ui-accent)",
+                              marginRight: 6,
+                              verticalAlign: "middle",
+                            }}
+                          />
+                        )}
                         {loadout.name}
                         <span
                           style={{ color: "var(--app-muted)", marginLeft: 4 }}
