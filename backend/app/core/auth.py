@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.jwt import decode_token
+from app.core.log_context import set_tenant_id, set_user_id
 from app.schemas.auth import UserContext
 from app.services.user_service import get_user_by_email
 
@@ -138,6 +139,10 @@ async def get_current_user_context(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Authentication required",
         )
+    # Bind to LogContext so subsequent log lines on this request carry
+    # tenant/user attribution.
+    set_tenant_id(ctx.tenant_id)
+    set_user_id(ctx.user_id or None)
     return ctx
 
 
@@ -152,6 +157,8 @@ async def get_user_context_optional(
     Use for endpoints that allow optional audit attribution (e.g. SBOM upload).
     """
     ctx, _ = await _resolve_user_context(authorization, x_api_key, x_vat_user, db)
+    set_tenant_id(ctx.tenant_id)
+    set_user_id(ctx.user_id or None)
     return ctx
 
 

@@ -10,6 +10,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import require_admin
+from app.core.config import get_settings
 from app.core.database import get_db
 from app.schemas.auth import UserContext
 from app.services.audit_events import emit_audit_event, new_trace_id
@@ -26,6 +27,26 @@ class SeedRequest(BaseModel):
     users: list[dict] = []
 
 
+def _require_seed_enabled() -> None:
+    """Block /api/seed in production unless explicitly opted in.
+
+    The endpoint provisions users with raw passwords via direct text() SQL
+    and bypasses the validated POST /api/users flow. Even though admin-
+    gated, leaving it reachable on prod is an unnecessary footgun. To
+    enable on prod (one-time migration / disaster recovery), set
+    VAT_ENABLE_SEED_API=true in the deployment env and roll the pod.
+    """
+    settings = get_settings()
+    if settings.env == "production" and not settings.enable_seed_api:
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "Seed API disabled in production. Set VAT_ENABLE_SEED_API=true "
+                "to opt in (use POST /api/users for normal user provisioning)."
+            ),
+        )
+
+
 @router.post("")
 async def seed_all(
     body: SeedRequest,
@@ -36,6 +57,7 @@ async def seed_all(
     Load seed data: findings, SBOM, tenants, users.
     Admin only. For development and demo use.
     """
+    _require_seed_enabled()
     result = {
         "findings": 0,
         "sbom_created": 0,

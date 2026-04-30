@@ -17,10 +17,17 @@ from starlette.requests import Request
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse, PlainTextResponse
 
+from app.core.log_context import LogContextFilter, set_trace_id
 from app.core.pii_filter import PIIFilter
 
-# Apply PII redaction to app logs (PRD §7.3)
-logging.getLogger("app").addFilter(PIIFilter())
+# Apply PII redaction + per-request context (trace_id/tenant_id/user_id)
+# to app logs (PRD §7.3). Also attach to "uvicorn" and root so access logs
+# emitted by the server pick up trace_id when the middleware has run.
+_log_context_filter = LogContextFilter()
+for _logger_name in ("app", "uvicorn", "uvicorn.access", ""):
+    _lgr = logging.getLogger(_logger_name)
+    _lgr.addFilter(PIIFilter() if _logger_name == "app" else logging.Filter())
+    _lgr.addFilter(_log_context_filter)
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api import (
@@ -82,11 +89,18 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 
 
 class TraceIdMiddleware(BaseHTTPMiddleware):
-    """Attach request trace id for observability/audit correlation."""
+    """Attach request trace id for observability/audit correlation.
+
+    Also publishes the trace id into the LogContext ContextVar so any
+    log call on this request thread inherits it without explicit
+    plumbing. Tenant/user id are filled in by the auth dependency when
+    it resolves the UserContext.
+    """
 
     async def dispatch(self, request: Request, call_next):
         trace_id = request.headers.get("X-Trace-Id") or uuid.uuid4().hex
         request.state.trace_id = trace_id
+        set_trace_id(trace_id)
         return await call_next(request)
 
 

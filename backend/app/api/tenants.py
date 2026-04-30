@@ -72,12 +72,26 @@ DEFAULT_TENANT_ID = "t-default"
 @router.delete("/{tenant_id}", status_code=204)
 async def delete_tenant(
     tenant_id: str,
+    force: bool = False,
     db: AsyncSession = Depends(get_db),
     _ctx: UserContext = Depends(require_admin),
 ):
-    """Delete a tenant. Admin only. Users in this tenant become unassigned (tenant_id=None)."""
+    """Delete a tenant. Admin only.
+
+    Refuses to delete when the tenant still owns findings, audit events,
+    or asset loadouts — those rows would otherwise be orphaned with a
+    pointer to a vanished tenant id, invisible to other tenants but
+    silently revivable if the id is ever reused. Pass ``?force=true`` to
+    delete anyway (legacy/test escape hatch); orphans are still left in
+    place — explicit cleanup is the caller's responsibility.
+
+    Users in this tenant always have their tenant_id set to None.
+    """
     from sqlalchemy import update
 
+    from app.models.audit_event import AuditEvent
+    from app.models.asset_loadout import AssetLoadout
+    from app.models.finding import Finding
     from app.models.user import User
 
     result = await db.execute(select(Tenant).where(Tenant.id == tenant_id))
@@ -92,6 +106,31 @@ async def delete_tenant(
             raise HTTPException(
                 status_code=400,
                 detail="Cannot delete the default tenant while there is only one admin.",
+            )
+    if not force:
+        # Block deletion when dependent rows exist; surface counts so the
+        # operator knows what migration is needed before retrying with force=true.
+        finding_count = await db.scalar(
+            select(func.count()).select_from(Finding).where(Finding.tenant_id == tenant_id)
+        )
+        audit_count = await db.scalar(
+            select(func.count())
+            .select_from(AuditEvent)
+            .where(AuditEvent.tenant_id == tenant_id)
+        )
+        loadout_count = await db.scalar(
+            select(func.count())
+            .select_from(AssetLoadout)
+            .where(AssetLoadout.tenant_id == tenant_id)
+        )
+        if (finding_count or 0) + (audit_count or 0) + (loadout_count or 0) > 0:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"Tenant has dependent rows: findings={finding_count}, "
+                    f"audit_events={audit_count}, loadouts={loadout_count}. "
+                    "Migrate or delete them first, or pass ?force=true to override."
+                ),
             )
     # Unassign users from this tenant before deleting
     await db.execute(

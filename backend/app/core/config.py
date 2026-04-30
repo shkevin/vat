@@ -223,6 +223,11 @@ class Settings(BaseSettings):
     # Security: X-VAT-User header allows impersonation — only enable for dev/testing
     allow_dev_headers: bool = False  # VAT_ALLOW_DEV_HEADERS=true for local dev only
 
+    # /api/seed bulk-provisions users (raw password) and findings via direct
+    # text() SQL — bypasses the validated POST /api/users / /api/findings
+    # flows. Refused in production unless explicitly opted in.
+    enable_seed_api: bool = False  # VAT_ENABLE_SEED_API=true to allow on prod
+
     # Logging: show httpx HTTP request logs (Linear, Aikido, etc.). Default False to avoid log flood.
     log_http_requests: bool = False  # VAT_LOG_HTTP_REQUESTS=true for debug
 
