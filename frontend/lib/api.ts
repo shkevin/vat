@@ -211,16 +211,42 @@ export async function fetchVATData(
   if (params?.full !== undefined) search.set("full", String(params.full));
 
   const url = `${API_BASE}/vat-data${search.toString() ? `?${search}` : ""}`;
-  const res = await vatFetch(
-    url,
-    { headers: authHeaders(auth?.token, auth?.userEmail) },
-    auth,
-  );
+  // ETag-keyed conditional fetch: send the most recent ETag we saw for
+  // this URL shape so the backend can short-circuit with 304 when nothing
+  // mutated. We cache the {etag, body} pair in module-local memory keyed
+  // by URL — the 45s React Query polling interval is the dominant traffic
+  // source and almost always 304s.
+  const cached = _vatDataEtagCache.get(url);
+  const headers = new Headers(authHeaders(auth?.token, auth?.userEmail));
+  if (cached?.etag) headers.set("If-None-Match", cached.etag);
+
+  const res = await vatFetch(url, { headers }, auth);
+  if (res.status === 304 && cached) {
+    return cached.body;
+  }
   if (!res.ok) {
     throw new Error(`API error: ${res.status} ${res.statusText}`);
   }
-  return res.json();
+  const body = (await res.json()) as VATDataResponse;
+  const etag = res.headers.get("etag");
+  if (etag) {
+    _vatDataEtagCache.set(url, { etag, body });
+  }
+  return body;
 }
+
+/** Module-local ETag/body cache for /api/vat-data. Bounded so a long-lived
+ * tab with many filter combos doesn't grow without bound. */
+const _vatDataEtagCache = new Map<string, { etag: string; body: VATDataResponse }>();
+const _ETAG_CACHE_MAX = 16;
+const _origMapSet = _vatDataEtagCache.set.bind(_vatDataEtagCache);
+_vatDataEtagCache.set = (k, v) => {
+  if (_vatDataEtagCache.size >= _ETAG_CACHE_MAX && !_vatDataEtagCache.has(k)) {
+    const oldest = _vatDataEtagCache.keys().next().value;
+    if (oldest) _vatDataEtagCache.delete(oldest);
+  }
+  return _origMapSet(k, v);
+};
 
 /** Fetch system audit events. Endpoint requires admin permissions. */
 export async function fetchAuditEvents(

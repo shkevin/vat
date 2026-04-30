@@ -1,15 +1,20 @@
 """VAT data API — findings + assets in one response."""
 
+import hashlib
 import json
 import logging
 import time
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Response
+from fastapi import APIRouter, Depends, Request, Response
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import get_current_user_context
 from app.core.database import get_db
+from app.models.asset import Asset
+from app.models.asset_alias import AssetAlias
+from app.models.finding import Finding
 from app.schemas.auth import UserContext
 from app.services.assets_service import get_assets_with_findings
 from app.services.findings_service import (
@@ -22,8 +27,55 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+async def _vat_data_etag(
+    db: AsyncSession,
+    *,
+    tenant_id: Optional[str],
+    archived: Optional[bool],
+    slim: bool,
+    full: bool,
+) -> str:
+    """Derive a content-keyed ETag from the most recent mutation timestamps.
+
+    Any finding/asset/alias change bumps the ETag — readers always get
+    the freshest data when something mutates, and 304 the rest of the
+    time. ``query_signature`` mixes the request shape so different filter
+    combinations don't share a key.
+    """
+    finding_q = select(
+        func.max(Finding.updated_at), func.count(Finding.id)
+    )
+    if tenant_id is not None:
+        finding_q = finding_q.where(
+            (Finding.tenant_id == tenant_id) | (Finding.tenant_id.is_(None))
+        )
+    if archived is not None:
+        finding_q = finding_q.where(Finding.archived == archived)
+    f_max, f_count = (await db.execute(finding_q)).one()
+    a_max = (
+        await db.execute(select(func.max(Asset.id)))
+    ).scalar() or ""
+    al_max = (
+        await db.execute(select(func.max(AssetAlias.updated_at)))
+    ).scalar()
+    sig = "|".join(
+        [
+            str(f_max.isoformat()) if f_max else "",
+            str(f_count or 0),
+            str(a_max),
+            str(al_max.isoformat()) if al_max else "",
+            str(tenant_id or ""),
+            str(archived),
+            str(slim),
+            str(full),
+        ]
+    )
+    return 'W/"' + hashlib.sha256(sig.encode()).hexdigest()[:16] + '"'
+
+
 @router.get("")
 async def get_vat_data(
+    request: Request,
     db: AsyncSession = Depends(get_db),
     ctx: UserContext = Depends(get_current_user_context),
     archived: Optional[bool] = None,
@@ -41,11 +93,28 @@ async def get_vat_data(
     include_zero_assets: bool = True,
     include_asset_findings: bool = False,
     full: bool = False,
+    slim: bool = True,
 ):
     """
     Return findings and assets in one response.
     Assets include integration-created records (e.g. Aikido repos with 0 findings).
     """
+    # ETag short-circuit: a content-derived weak ETag built from
+    # (max(findings.updated_at), count, max(asset_id), max(alias.updated_at))
+    # plus the request shape. Mutations bump it; identical re-requests 304
+    # with no body. Cuts the 45s polling traffic to near-zero on idle clusters.
+    etag = await _vat_data_etag(
+        db, tenant_id=ctx.tenant_id, archived=archived, slim=slim, full=full
+    )
+    if request.headers.get("if-none-match") == etag:
+        return Response(
+            status_code=304,
+            headers={
+                "ETag": etag,
+                "Cache-Control": "private, must-revalidate",
+            },
+        )
+
     page = max(1, page)
     page_size = max(1, min(page_size, 2000))
     effective_limit = 0 if full else (limit if limit > 0 else page_size)
@@ -65,9 +134,10 @@ async def get_vat_data(
         search_fields=search_fields,
         limit=effective_limit,
         offset=offset,
+        slim=slim,
     )
     t_list = time.perf_counter()
-    rows = [finding_to_api_dict_with_group_key(f) for f in findings]
+    rows = [finding_to_api_dict_with_group_key(f, slim=slim) for f in findings]
     t_serialize_findings = time.perf_counter()
     rows = await enrich_findings_with_source_group_severity(db, rows)
     t_enrich = time.perf_counter()
@@ -114,5 +184,9 @@ async def get_vat_data(
     return Response(
         content=body,
         media_type="application/json",
-        headers={"X-VAT-Timing": json.dumps(timing)},
+        headers={
+            "X-VAT-Timing": json.dumps(timing),
+            "ETag": etag,
+            "Cache-Control": "private, must-revalidate",
+        },
     )

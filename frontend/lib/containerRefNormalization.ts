@@ -129,9 +129,25 @@ let _containerAliasPairs: Array<[string, string]> = (() => {
   return parseContainerAssetPathAliases(raw);
 })();
 
+type _CacheClearer = () => void;
+const _cacheClearers: _CacheClearer[] = [];
+
+/** Register a callback to invalidate downstream caches when alias rules change.
+ * Used by assetUtils.containerImageGroupKey to flush its memo. */
+export function _registerAliasRulesObserver(fn: _CacheClearer): void {
+  _cacheClearers.push(fn);
+}
+
 /** Replace the in-memory alias rules. Pass the same string the backend env carries. */
 export function setContainerAssetPathAliases(raw: string | undefined): void {
   _containerAliasPairs = parseContainerAssetPathAliases(raw);
+  for (const fn of _cacheClearers) {
+    try {
+      fn();
+    } catch {
+      // ignore individual clearer failures
+    }
+  }
 }
 
 /**

@@ -147,6 +147,99 @@ class FindingRead(BaseModel):
     first_detected_at: Optional[datetime] = None
     closed_at: Optional[datetime] = None
 
+    def to_slim_api_dict(self) -> dict:
+        """Slim variant of ``to_api_dict`` for list responses.
+
+        Drops fields that the list-level views never read but cost a lot
+        in payload size and hydration time:
+        - ``audit`` (large array; only the first ts is used as a fallback,
+          surfaced separately as ``firstAuditTs``)
+        - ``description``, ``justification``, ``compensatingControls``,
+          ``reviewerNote`` (free-form prose, only DetailPanel reads them)
+        - ``snippetMasked``, ``archivedReason`` (DetailPanel only)
+        - ``regressionOf`` (DetailPanel only)
+        - ``sources`` is slimmed to ``{name, importedAt}`` per entry
+          (verbose match-detail metadata is not read on lists)
+        - ``externalLinks`` is slimmed to ``{kind, url}`` per entry
+          (the list iteration only finds the first source link)
+
+        Kept: every field the FindingsTable, AssetsTable, ReportBuilder,
+        ActivityFeed, and useVATData aggregations actually reference at
+        the list scope. ``attestation`` stays because the waiver-expiry
+        filter inspects it for every finding.
+        """
+        slim_sources = [
+            {"name": s.get("name"), "importedAt": s.get("importedAt")}
+            for s in (self.sources or [])
+            if isinstance(s, dict)
+        ]
+        slim_links = [
+            {"kind": link.get("kind"), "url": link.get("url")}
+            for link in _external_links_to_camel(self.external_links or [])
+            if isinstance(link, dict)
+        ]
+        # Note: audit is intentionally not surfaced here. The list-level
+        # report adapter falls back to firstDetectedAt -> created when
+        # audit is missing. Detail panel re-fetches with the full shape.
+        return {
+            "id": self.id,
+            "findingType": self.finding_type.value,
+            "fingerprintId": self.fingerprint_id,
+            "cveId": self.cve_id,
+            "severity": self.severity.value,
+            "status": STATUS_DISPLAY.get(self.status.value, self.status.value),
+            "componentBase": self.component_base,
+            "component": self.component,
+            "image": self.image,
+            "branch": self.branch,
+            "tag": self.tag,
+            "imageDigest": self.image_digest,
+            "title": self.title,
+            "source": self.source,
+            "team": self.team,
+            "owner": self.owner,
+            "trackerId": self.tracker_id,
+            "externalLinks": slim_links,
+            "controlRef": self.control_ref,
+            "slaDue": self.sla_due,
+            "cvss": self.cvss,
+            "epss": self.epss,
+            "trackerComment": self.tracker_comment,
+            "sources": slim_sources,
+            "suppressionScope": self.suppression_scope.value
+            if self.suppression_scope
+            else None,
+            "attestation": self.attestation,
+            "regressionCount": self.regression_count,
+            "previousStatus": STATUS_DISPLAY.get(
+                self.previous_status or "", self.previous_status
+            )
+            if self.previous_status
+            else None,
+            "archived": self.archived,
+            "archivedAt": self.archived_at.isoformat() if self.archived_at else None,
+            "sourceFileUrl": self.source_file_url,
+            "sourceIssueGroupId": self.source_issue_group_id,
+            "aikidoSourceId": self.aikido_source_id,
+            "filePath": self.file_path,
+            "line": self.line,
+            "ruleId": self.rule_id,
+            "cweId": self.cwe_id,
+            "ecosystem": self.ecosystem,
+            "secretType": self.secret_type,
+            "resource": self.resource,
+            "benchmarkId": self.benchmark_id,
+            "benchmarkFamily": self.benchmark_family,
+            "correlationKey": self.correlation_key,
+            "correlationConfidence": self.correlation_confidence,
+            "correlatedTo": self.correlated_to,
+            "created": self.created_at.isoformat() if self.created_at else None,
+            "firstDetectedAt": self.first_detected_at.isoformat()
+            if self.first_detected_at
+            else None,
+            "closedAt": self.closed_at.isoformat() if self.closed_at else None,
+        }
+
     def to_api_dict(self) -> dict:
         """Convert to camelCase dict for frontend API."""
         return {

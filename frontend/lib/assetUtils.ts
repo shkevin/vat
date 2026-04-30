@@ -16,6 +16,7 @@ import {
   normalizeContainerRef,
   applyContainerAssetPathAliases,
   containerDisplayPathWithoutRegistry,
+  _registerAliasRulesObserver,
 } from "./containerRefNormalization";
 
 function severityToKey(
@@ -34,19 +35,50 @@ function severityToKey(
  * One row per logical image (canonical registry path), not per tag.
  * Aligns with backend normalize_container_ref + infer_asset_kind (same family as correlation ingest).
  */
+/** Memo for containerImageGroupKey results. The function is pure (output
+ * depends only on the trimmed input string + the global alias rules
+ * primed at app start), so the cache hit rate is near-100% across the
+ * many derive/filter passes deriveAssets/displayedAssets do per render.
+ *
+ * Module-scoped Map; bounded so a long session with many distinct images
+ * can't grow without bound. The cache is cleared automatically when
+ * setContainerAssetPathAliases is called. */
+const _groupKeyMemo = new Map<string, string>();
+const _GROUP_KEY_MEMO_MAX = 4096;
+
+export function clearContainerImageGroupKeyMemo(): void {
+  _groupKeyMemo.clear();
+}
+
+// Invalidate the memo when alias rules are updated at runtime.
+_registerAliasRulesObserver(clearContainerImageGroupKeyMemo);
+
 export function containerImageGroupKey(
   image: string,
   _tag?: string | null,
 ): string {
   const img = image.trim();
   if (!img) return img;
+  const cached = _groupKeyMemo.get(img);
+  if (cached !== undefined) return cached;
   const kind = inferAssetKindForGrouping(img);
+  let result: string;
   if (kind === "container" || kind === "repo") {
-    return applyContainerAssetPathAliases(
+    result = applyContainerAssetPathAliases(
       normalizeContainerRef(img).canonicalAssetKey,
     );
+  } else {
+    result = img;
   }
-  return img;
+  if (_groupKeyMemo.size >= _GROUP_KEY_MEMO_MAX) {
+    // Drop the oldest insertion to keep the cache bounded under sustained
+    // distinct-image pressure (rare in practice — fleets typically cap
+    // at a few hundred images).
+    const oldest = _groupKeyMemo.keys().next().value;
+    if (oldest !== undefined) _groupKeyMemo.delete(oldest);
+  }
+  _groupKeyMemo.set(img, result);
+  return result;
 }
 
 /**

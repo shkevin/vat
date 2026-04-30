@@ -123,13 +123,35 @@ async def list_findings(
     search_fields: Optional[str] = None,
     limit: int = 0,  # 0 = no limit (callers enforce UI caps)
     offset: int = 0,
+    slim: bool = False,
 ) -> list[Finding]:
-    """List findings with optional filters."""
+    """List findings with optional filters.
+
+    ``slim=True`` defers SQLAlchemy hydration of the heavy free-form/JSONB
+    columns (description, justification, compensating_controls, reviewer_note,
+    snippet_masked, archived_reason, regression_of, audit). On a 20k-row
+    result this measurably cuts both the network roundtrip and Python-side
+    deserialization. The detail-panel single-row path keeps the full eager
+    load.
+    """
     settings = get_settings()
     effective_limit = (
         min(limit, settings.finding_max_limit) if limit > 0 else 0
     )
     q = select(Finding)
+    if slim:
+        from sqlalchemy.orm import defer
+
+        q = q.options(
+            defer(Finding.description),
+            defer(Finding.justification),
+            defer(Finding.compensating_controls),
+            defer(Finding.reviewer_note),
+            defer(Finding.snippet_masked),
+            defer(Finding.archived_reason),
+            defer(Finding.regression_of),
+            defer(Finding.audit),
+        )
     if tenant_id is not None:
         # Include findings for this tenant OR global (tenant_id=None) so bootstrap/webhook findings are visible
         q = q.where((Finding.tenant_id == tenant_id) | (Finding.tenant_id.is_(None)))

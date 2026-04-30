@@ -213,13 +213,19 @@ def get_finding_group_key(f: Finding) -> str:
     return f"other:{f.id}#{asset}"
 
 
-def finding_to_api_dict_with_group_key(f: Finding) -> dict:
+def finding_to_api_dict_with_group_key(f: Finding, *, slim: bool = False) -> dict:
     """
     API/export shape: ``FindingRead.to_api_dict()`` plus server-derived ``groupKey``.
     Use for list/detail responses, VAT bundle, and exports so clients share one source.
+
+    ``slim=True`` selects ``to_slim_api_dict()`` instead — drops free-form prose
+    fields (description, justification, comp. controls, reviewer note,
+    snippetMasked, audit, regressionOf, archivedReason) that the list-level
+    views never read. Detail panel re-fetches the full row when opened.
     """
     from app.schemas.finding import FindingRead
 
-    d = FindingRead.model_validate(f).to_api_dict()
+    read = FindingRead.model_validate(f)
+    d = read.to_slim_api_dict() if slim else read.to_api_dict()
     d["groupKey"] = get_finding_group_key(f)
     return d
