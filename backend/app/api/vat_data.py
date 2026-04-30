@@ -1,8 +1,11 @@
 """VAT data API — findings + assets in one response."""
 
+import json
+import logging
+import time
 from typing import Optional
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import get_current_user_context
@@ -15,6 +18,7 @@ from app.services.findings_service import (
 )
 from app.services.grouping import finding_to_api_dict_with_group_key
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
@@ -47,6 +51,7 @@ async def get_vat_data(
     effective_limit = 0 if full else (limit if limit > 0 else page_size)
     offset = 0 if effective_limit == 0 else (page - 1) * effective_limit
 
+    t_start = time.perf_counter()
     findings = await list_findings(
         db,
         tenant_id=ctx.tenant_id,
@@ -61,8 +66,11 @@ async def get_vat_data(
         limit=effective_limit,
         offset=offset,
     )
+    t_list = time.perf_counter()
     rows = [finding_to_api_dict_with_group_key(f) for f in findings]
+    t_serialize_findings = time.perf_counter()
     rows = await enrich_findings_with_source_group_severity(db, rows)
+    t_enrich = time.perf_counter()
 
     assets = []
     if include_assets:
@@ -72,8 +80,9 @@ async def get_vat_data(
             include_zero_assets=include_zero_assets,
             include_findings=include_asset_findings,
         )
+    t_assets = time.perf_counter()
 
-    return {
+    payload = {
         "findings": rows,
         "assets": assets,
         "meta": {
@@ -85,3 +94,25 @@ async def get_vat_data(
             "includeAssetFindings": include_asset_findings,
         },
     }
+    body = json.dumps(payload, default=str)
+    t_json = time.perf_counter()
+
+    timing = {
+        "list_findings_ms": round((t_list - t_start) * 1000, 1),
+        "serialize_findings_ms": round((t_serialize_findings - t_list) * 1000, 1),
+        "enrich_findings_ms": round((t_enrich - t_serialize_findings) * 1000, 1),
+        "build_assets_ms": round((t_assets - t_enrich) * 1000, 1),
+        "json_encode_ms": round((t_json - t_assets) * 1000, 1),
+        "total_ms": round((t_json - t_start) * 1000, 1),
+        "findings_count": len(rows),
+        "assets_count": len(assets),
+        "payload_kb": round(len(body) / 1024, 1),
+        "full": full,
+    }
+    logger.info("vat_data timing: %s", json.dumps(timing))
+
+    return Response(
+        content=body,
+        media_type="application/json",
+        headers={"X-VAT-Timing": json.dumps(timing)},
+    )
