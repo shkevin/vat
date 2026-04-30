@@ -228,6 +228,15 @@ class Settings(BaseSettings):
     # flows. Refused in production unless explicitly opted in.
     enable_seed_api: bool = False  # VAT_ENABLE_SEED_API=true to allow on prod
 
+    # OAuth /api/auth/oauth/token brute-force lockout. After
+    # ``oauth_token_lockout_threshold`` failed exchanges for the same
+    # client_id within ``oauth_token_lockout_window_sec`` seconds, the
+    # client_id is locked out for the remainder of the window. Fail-open
+    # against Redis outages (the lockout store cannot block legitimate
+    # auth in a degraded mode).
+    oauth_token_lockout_threshold: int = 10
+    oauth_token_lockout_window_sec: int = 300
+
     # Logging: show httpx HTTP request logs (Linear, Aikido, etc.). Default False to avoid log flood.
     log_http_requests: bool = False  # VAT_LOG_HTTP_REQUESTS=true for debug
 
