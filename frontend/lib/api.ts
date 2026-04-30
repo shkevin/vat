@@ -14,17 +14,43 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "/api";
 /** Auth for API calls: JWT Bearer token required for protected endpoints */
 export type Auth = { token?: string | null; userEmail?: string | null };
 
+/** Read the vat-csrf cookie set at session-establishment time. Used to
+ * echo back as X-VAT-CSRF on state-changing requests so the backend's
+ * double-submit CSRF middleware can verify the request originated from
+ * this browser session. */
+function readCsrfToken(): string | null {
+  if (typeof document === "undefined") return null;
+  const match = document.cookie.match(/(?:^|;\s*)vat-csrf=([^;]+)/);
+  return match ? decodeURIComponent(match[1]) : null;
+}
+
+const CSRF_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+
 /** Fetch wrapper: always send the session cookie (httpOnly) so the
  * backend can authenticate without us reading a JWT from localStorage.
+ * On state-changing methods, also echo the CSRF cookie as a header so
+ * the backend's CSRFMiddleware can validate the double-submit token.
  * On 401, clears in-memory session so AuthGuard redirects to login. */
 async function vatFetch(
   input: RequestInfo | URL,
   init?: RequestInit,
   auth?: Auth,
 ): Promise<Response> {
+  const method = (init?.method || "GET").toUpperCase();
+  let headers: HeadersInit | undefined = init?.headers;
+  if (CSRF_METHODS.has(method)) {
+    const csrf = readCsrfToken();
+    if (csrf) {
+      // Merge with whatever headers the caller passed without losing them.
+      const merged = new Headers(headers || {});
+      merged.set("X-VAT-CSRF", csrf);
+      headers = merged;
+    }
+  }
   const res = await fetch(input, {
     credentials: "include",
     ...init,
+    headers,
   });
   if (res.status === 401 && (auth?.token || auth?.userEmail)) {
     triggerUnauthorized();

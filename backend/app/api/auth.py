@@ -45,27 +45,37 @@ GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 # CSRF; a future step adds a CSRF token for state-changing requests as
 # belt-and-suspenders.
 SESSION_COOKIE_NAME = "vat-session"
+CSRF_COOKIE_NAME = "vat-csrf"
 
 
 def _set_session_cookie(response, token: str) -> None:
-    """Attach the JWT as an httpOnly session cookie. The frontend continues
-    to receive the token in the JSON body for back-compat during the
-    migration; new frontend code should rely on the cookie and not persist
-    the token to localStorage."""
+    """Attach the JWT as an httpOnly session cookie + a non-httpOnly CSRF
+    companion. The CSRF cookie is the double-submit token the frontend
+    echoes as ``X-VAT-CSRF`` on state-changing requests; the middleware
+    verifies the header matches the cookie. SameSite=Lax already
+    defeats most CSRF; this is belt-and-suspenders."""
     settings = get_settings()
+    cookie_kwargs = {
+        "max_age": settings.jwt_expire_hours * 3600,
+        "secure": settings.env == "production",
+        "samesite": "lax",
+        "path": "/",
+    }
     response.set_cookie(
-        SESSION_COOKIE_NAME,
-        token,
-        max_age=settings.jwt_expire_hours * 3600,
-        httponly=True,
-        secure=settings.env == "production",
-        samesite="lax",
-        path="/",
+        SESSION_COOKIE_NAME, token, httponly=True, **cookie_kwargs
+    )
+    # CSRF token is intentionally NOT httpOnly — the frontend reads it.
+    # Knowing the token is fine: an attacker cross-origin can't read the
+    # cookie (Lax + same-origin policy), so they can't construct a
+    # matching X-VAT-CSRF header.
+    response.set_cookie(
+        CSRF_COOKIE_NAME, secrets.token_urlsafe(32), httponly=False, **cookie_kwargs
     )
 
 
 def _clear_session_cookie(response) -> None:
     response.delete_cookie(SESSION_COOKIE_NAME, path="/")
+    response.delete_cookie(CSRF_COOKIE_NAME, path="/")
 
 
 class AuthConfigResponse(BaseModel):

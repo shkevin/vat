@@ -88,6 +88,65 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         return response
 
 
+class CSRFMiddleware(BaseHTTPMiddleware):
+    """Double-submit CSRF protection for cookie-authenticated requests.
+
+    Browsers attach the httpOnly vat-session cookie automatically on
+    cross-site form submits; SameSite=Lax already blocks most CSRF, but
+    a same-site malicious script (e.g. compromised subdomain) could
+    still ride the cookie. The fix: require an X-VAT-CSRF header on
+    state-changing requests whose value matches the non-httpOnly
+    vat-csrf cookie. An attacker on another origin cannot read the
+    cookie (Lax + same-origin), so they cannot forge the header.
+
+    Skipped when:
+      - method is GET/HEAD/OPTIONS (no state change)
+      - request carries Authorization: Bearer (non-browser caller —
+        ingest, admin keys, machine-to-machine — those are not
+        susceptible to cookie-confused-deputy)
+      - path is in ``CSRF_EXEMPT_PREFIXES`` (ingest / webhook / oauth
+        token endpoints meant for non-browser clients)
+    """
+
+    CSRF_EXEMPT_PREFIXES = (
+        "/api/ingest",
+        "/api/sbom/import",
+        "/api/oauth/token",
+        "/api/auth/login",  # bootstrap — no cookie yet
+        "/api/auth/exchange-code",  # bootstrap — no cookie yet
+        "/api/auth/google/",  # OAuth redirect flow
+        "/webhook/",
+        "/health",
+    )
+
+    async def dispatch(self, request: Request, call_next):
+        method = request.method.upper()
+        if method in ("GET", "HEAD", "OPTIONS"):
+            return await call_next(request)
+        # Authorization header → non-browser caller, skip CSRF.
+        if request.headers.get("authorization"):
+            return await call_next(request)
+        path = request.url.path
+        if any(path.startswith(p) for p in self.CSRF_EXEMPT_PREFIXES):
+            return await call_next(request)
+        # Only enforce when a session cookie is present (otherwise the
+        # request is anonymous and downstream auth will reject it
+        # anyway).
+        session = request.cookies.get("vat-session")
+        if not session:
+            return await call_next(request)
+        cookie_token = request.cookies.get("vat-csrf")
+        header_token = request.headers.get("x-vat-csrf")
+        if not cookie_token or not header_token or cookie_token != header_token:
+            from fastapi.responses import JSONResponse
+
+            return JSONResponse(
+                status_code=403,
+                content={"detail": "CSRF token missing or mismatch"},
+            )
+        return await call_next(request)
+
+
 class TraceIdMiddleware(BaseHTTPMiddleware):
     """Attach request trace id for observability/audit correlation.
 
@@ -238,6 +297,7 @@ async def _unhandled_exception_handler(request: Request, exc: Exception) -> JSON
 app.add_middleware(TraceIdMiddleware)
 app.add_middleware(RequestObservabilityMiddleware)
 app.add_middleware(SecurityHeadersMiddleware)
+app.add_middleware(CSRFMiddleware)
 _cors_origins = [o.strip() for o in get_settings().cors_origins.split(",") if o.strip()]
 app.add_middleware(
     CORSMiddleware,
