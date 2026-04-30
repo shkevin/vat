@@ -686,6 +686,24 @@ async def post_ingest(
     X-VAT-Image-Digest: canonical ``sha256:…`` for the container artifact (same for all parsers on that image).
     """
     with IngestLatencyTimer():
+        # Reject oversize payloads up front. Content-Length is advisory but
+        # scanner tooling sets it; absent header → reject when streaming would
+        # be ambiguous, since the rest of the handler reads the body fully.
+        max_bytes = get_settings().ingest_max_bytes
+        cl_header = request.headers.get("content-length")
+        if cl_header is not None:
+            try:
+                cl = int(cl_header)
+            except ValueError:
+                raise HTTPException(
+                    status_code=400, detail="invalid Content-Length header"
+                )
+            if cl > max_bytes:
+                raise HTTPException(
+                    status_code=413,
+                    detail=f"ingest payload exceeds {max_bytes} bytes",
+                )
+
         auth_source, _ = ingest_auth
         asset_override = (request.headers.get("X-VAT-Asset") or "").strip() or None
         tag_override = (request.headers.get("X-VAT-Tag") or "").strip() or None

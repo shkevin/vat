@@ -151,9 +151,15 @@ class Settings(BaseSettings):
     # Batch create: Linear issueBatchCreate; max issues per batch (Linear may limit)
     tracker_create_batch_size: int = 15
 
-    # Ingest API (push sources: Trivy, CI)
-    require_ingest_auth: bool = False  # When True, ingest endpoints require API key
+    # Ingest API (push sources: Trivy, CI). Default fail-closed: ingest endpoints
+    # require an ingest API key. Set VAT_REQUIRE_INGEST_AUTH=false only for
+    # contained dev/test environments where the network is trusted.
+    require_ingest_auth: bool = True
     ingest_api_key: Optional[str] = None  # Global fallback key (VAT_INGEST_API_KEY)
+    # Hard cap on POST /api/ingest payload size. Scanner reports rarely exceed
+    # ~50MB even for big SBOM/SARIF bundles; the cap is generous but bounded
+    # so a single client cannot OOM the worker. Override via VAT_INGEST_MAX_BYTES.
+    ingest_max_bytes: int = 100 * 1024 * 1024
     # Activity feed roll-ups for high-volume ingest streams.
     # Set ingest_rollup_window_seconds=0 to disable roll-ups and emit per-finding events.
     ingest_rollup_window_seconds: int = 20
@@ -233,4 +239,27 @@ def get_settings() -> Settings:
             "VAT_SECRET_KEY must be set to a secure value in production. "
             'Generate with: python -c "import secrets; print(secrets.token_hex(32))"'
         )
+    # H5: VAT_ALLOW_DEV_HEADERS lets any caller send X-VAT-User: someone@x.com
+    # and become that user. Refuse to start in production with this enabled.
+    if s.env == "production" and s.allow_dev_headers:
+        raise ValueError(
+            "VAT_ALLOW_DEV_HEADERS must not be enabled when env=production. "
+            "Dev-header impersonation bypasses authentication."
+        )
+    # H17: CORS allow_credentials=True with origin "*" or empty string lets any
+    # site read responses with cookies attached. Reject misconfiguration up
+    # front rather than silently accepting it.
+    cors_entries = [o.strip() for o in s.cors_origins.split(",") if o.strip()]
+    bad = [o for o in cors_entries if o == "*" or o == "null"]
+    if bad:
+        raise ValueError(
+            f"VAT_CORS_ORIGINS rejected wildcard/null entries: {bad}. "
+            "Use explicit https:// origins only."
+        )
+    if s.env == "production":
+        non_https = [o for o in cors_entries if not o.startswith("https://")]
+        if non_https:
+            raise ValueError(
+                f"VAT_CORS_ORIGINS must be https:// in production: {non_https}"
+            )
     return s
