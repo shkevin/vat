@@ -1,6 +1,6 @@
 """Export API — full bundle download (assets, findings, SBOM, Executive Summary)."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 import logging
 
 from fastapi import APIRouter, Depends, Query
@@ -82,7 +82,7 @@ async def get_export_bundle(
     except Exception:
         await db.rollback()
         logger.exception("failed to emit export.bundle.generated audit event")
-    date_str = datetime.utcnow().strftime("%Y-%m-%d")
+    date_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     filename = f"vat-export-{date_str}.zip"
     return Response(
         content=data,
