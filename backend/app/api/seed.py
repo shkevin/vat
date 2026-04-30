@@ -1,5 +1,7 @@
 """Seed API — for loading development/demo data via script."""
 
+import logging
+
 import bcrypt
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -124,9 +126,11 @@ async def seed_all(
             **result,
             "message": f"Seeded {result['findings']} findings, {result['sbom_created']}+{result['sbom_updated']} SBOM packages, {result['tenants']} tenants, {result['users']} users",
         }
-    except IntegrityError as e:
+    except IntegrityError:
         await db.rollback()
-        raise HTTPException(status_code=409, detail=str(e.orig) if e.orig else str(e))
-    except Exception as e:
+        logging.getLogger(__name__).exception("seed: integrity error during seed_all")
+        raise HTTPException(status_code=409, detail="conflict during seed")
+    except Exception:
         await db.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
+        logging.getLogger(__name__).exception("seed: unexpected error during seed_all")
+        raise HTTPException(status_code=500, detail="internal error")

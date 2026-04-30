@@ -20,6 +20,7 @@ from app.core.jwt import (
 )
 from app.models.user import AUTH_METHOD_LOCAL, Tenant
 from app.services.user_service import (
+    perform_dummy_verify,
     get_google_tenant,
     get_user_by_email,
     get_user_by_email_in_google_tenant,
@@ -121,6 +122,9 @@ async def login(
         # Allow email as well as user id (seed admin uses id "admin", email admin@vat.local).
         user = await get_user_by_email(db, ident)
     if not user:
+        # Spend the same ~100ms a real verify would so an attacker can't
+        # distinguish "no such user" from "wrong password" by latency.
+        perform_dummy_verify()
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid username or password",
@@ -206,7 +210,9 @@ async def google_callback(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Missing code"
         )
     redirect_uri = f"{settings.public_url.rstrip('/')}/api/auth/google/callback"
-    async with httpx.AsyncClient() as client:
+    # Bound the upstream call so a stalled Google response cannot pin a
+    # request worker open indefinitely.
+    async with httpx.AsyncClient(timeout=10.0) as client:
         token_res = await client.post(
             GOOGLE_TOKEN_URL,
             data={
@@ -219,13 +225,13 @@ async def google_callback(
             headers={"Content-Type": "application/x-www-form-urlencoded"},
         )
     if token_res.status_code != 200:
-        logger.warning("Google token exchange failed: %s", token_res.text)
+        logger.warning("Google token exchange failed: %s", token_res.status_code)
         return RedirectResponse(url=f"{frontend_url}/login?error=oauth_failed")
     token_data = token_res.json()
     access_token = token_data.get("access_token")
     if not access_token:
         return RedirectResponse(url=f"{frontend_url}/login?error=oauth_failed")
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(timeout=10.0) as client:
         userinfo_res = await client.get(
             GOOGLE_USERINFO_URL,
             headers={"Authorization": f"Bearer {access_token}"},

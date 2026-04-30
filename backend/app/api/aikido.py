@@ -86,7 +86,7 @@ async def aikido_debug_sample(
     try:
         raw_issues = await fetch_aikido_issues(credentials=creds)
     except Exception as e:
-        raise HTTPException(status_code=502, detail=str(e)) from e
+        logger.exception("aikido upstream call failed"); raise HTTPException(status_code=502, detail="aikido upstream error") from e
     if not raw_issues:
         return {"message": "No issues from Aikido", "keys": []}
     first = raw_issues[0]
@@ -153,7 +153,7 @@ async def aikido_debug_branches(
     try:
         raw_issues = await fetch_aikido_issues(credentials=creds)
     except Exception as e:
-        raise HTTPException(status_code=502, detail=str(e)) from e
+        logger.exception("aikido upstream call failed"); raise HTTPException(status_code=502, detail="aikido upstream error") from e
 
     repo_filter = repo.lower()
 
@@ -254,7 +254,7 @@ async def aikido_debug_branch_mapping(
         raw_issues = await fetch_aikido_issues(credentials=creds)
         repos = await fetch_aikido_code_repositories(credentials=creds)
     except Exception as e:
-        raise HTTPException(status_code=502, detail=str(e)) from e
+        logger.exception("aikido upstream call failed"); raise HTTPException(status_code=502, detail="aikido upstream error") from e
 
     repo_map: dict = {}
     for r in repos or []:
@@ -338,7 +338,7 @@ async def aikido_debug_repos(
     try:
         repos = await fetch_aikido_code_repositories(credentials=creds)
     except Exception as e:
-        raise HTTPException(status_code=502, detail=str(e)) from e
+        logger.exception("aikido upstream call failed"); raise HTTPException(status_code=502, detail="aikido upstream error") from e
     if not repos:
         return {"message": "No code repositories", "repos": []}
     # Filter kamiwaza-related and show full structure of first few
@@ -523,7 +523,7 @@ async def aikido_sync_dashboard(
         data = await sync_aikido_dashboard(creds, db, source_id=source_id)
     except Exception as e:
         logger.exception("Aikido sync failed")
-        raise HTTPException(status_code=502, detail=str(e)) from e
+        logger.exception("aikido upstream call failed"); raise HTTPException(status_code=502, detail="aikido upstream error") from e
     return {
         "message": "Dashboard sync complete",
         "issues": len(data.get("issues", [])),
@@ -576,7 +576,7 @@ async def aikido_backfill_first_detected(
         raw_issues = await fetch_aikido_issues(credentials=creds)
     except Exception as e:
         logger.exception("Aikido backfill fetch failed")
-        raise HTTPException(status_code=502, detail=str(e)) from e
+        logger.exception("aikido upstream call failed"); raise HTTPException(status_code=502, detail="aikido upstream error") from e
 
     repo_map: dict = {}
     repo_id_to_name: dict = {}
@@ -687,7 +687,7 @@ async def aikido_bootstrap(
         raw_issues = await fetch_aikido_issues(credentials=creds)
     except Exception as e:
         logger.exception("Aikido bootstrap fetch failed")
-        raise HTTPException(status_code=502, detail=str(e)) from e
+        logger.exception("aikido upstream call failed"); raise HTTPException(status_code=502, detail="aikido upstream error") from e
 
     # Keep findings global (tenant_id=None) so they're visible to all users/tenants
     tenant_id: str | None = None

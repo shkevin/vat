@@ -5,6 +5,13 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.user import AUTH_METHOD_GOOGLE, User
 
+# Constant-time bcrypt cost on the not-found path. Generated once at import
+# time so the dummy verify takes the same ~100ms as a real one regardless of
+# whether the username exists. Used by ``perform_dummy_verify``.
+_DUMMY_PASSWORD_HASH = bcrypt.hashpw(
+    b"vat-dummy-not-a-real-password", bcrypt.gensalt()
+)
+
 
 async def get_user_by_id(db: AsyncSession, user_id: str) -> User | None:
     """Look up user by id. Returns None if not found."""
@@ -22,6 +29,19 @@ def verify_password(plain: str, password_hash: str | None) -> bool:
         return bcrypt.checkpw(plain.encode("utf-8"), password_hash.encode("utf-8"))
     except Exception:
         return False
+
+
+def perform_dummy_verify() -> None:
+    """Run a bcrypt verify against a precomputed dummy hash so the user-not-found
+    login path takes roughly the same wall time as a real verify. Result is
+    discarded; this is purely for timing parity to defeat username enumeration.
+    """
+    try:
+        bcrypt.checkpw(b"vat-dummy-not-a-real-password", _DUMMY_PASSWORD_HASH)
+    except Exception:
+        # bcrypt failures are silent — the goal is to spend CPU time, not to
+        # surface errors. The real auth check (or 401) handles the response.
+        pass
 
 
 async def get_user_by_email(db: AsyncSession, email: str) -> User | None:

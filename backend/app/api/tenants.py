@@ -1,5 +1,7 @@
 """Tenants API — CRUD for multi-tenant management."""
 
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -36,9 +38,12 @@ async def create_tenant(
     try:
         await db.commit()
         await db.refresh(tenant)
-    except Exception as e:
+    except Exception:
         await db.rollback()
-        raise HTTPException(status_code=409, detail=str(e))
+        logging.getLogger(__name__).exception(
+            "tenants.create_tenant failed for id=%s", body.id
+        )
+        raise HTTPException(status_code=409, detail="conflict creating tenant")
     return TenantRead.model_validate(tenant)
 
 

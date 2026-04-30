@@ -1,5 +1,6 @@
 """Users API — CRUD for user provisioning."""
 
+import logging
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -48,9 +49,12 @@ async def create_user(
     try:
         await db.commit()
         await db.refresh(user)
-    except Exception as e:
+    except Exception:
         await db.rollback()
-        raise HTTPException(status_code=409, detail=str(e))
+        logging.getLogger(__name__).exception(
+            "users.create_user failed for id=%s", body.id
+        )
+        raise HTTPException(status_code=409, detail="conflict creating user")
     return UserRead.model_validate(user)
 
 
