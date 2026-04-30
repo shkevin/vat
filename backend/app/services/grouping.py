@@ -218,14 +218,101 @@ def finding_to_api_dict_with_group_key(f: Finding, *, slim: bool = False) -> dic
     API/export shape: ``FindingRead.to_api_dict()`` plus server-derived ``groupKey``.
     Use for list/detail responses, VAT bundle, and exports so clients share one source.
 
-    ``slim=True`` selects ``to_slim_api_dict()`` instead — drops free-form prose
-    fields (description, justification, comp. controls, reviewer note,
-    snippetMasked, audit, regressionOf, archivedReason) that the list-level
-    views never read. Detail panel re-fetches the full row when opened.
+    ``slim=True`` builds the dict directly from the ORM object without
+    Pydantic validation, avoiding access to deferred columns
+    (description/justification/etc.) that would otherwise trigger a
+    MissingGreenlet error under async SQLAlchemy. The non-slim path keeps
+    the full FindingRead validation for correctness on the detail/export
+    surface where every column is loaded eagerly.
     """
-    from app.schemas.finding import FindingRead
+    if slim:
+        from app.schemas.finding import STATUS_DISPLAY, _external_links_to_camel
 
-    read = FindingRead.model_validate(f)
-    d = read.to_slim_api_dict() if slim else read.to_api_dict()
+        sources = list(f.sources or [])
+        slim_sources = [
+            {"name": s.get("name"), "importedAt": s.get("importedAt")}
+            for s in sources
+            if isinstance(s, dict)
+        ]
+        slim_links = [
+            {"kind": link.get("kind"), "url": link.get("url")}
+            for link in _external_links_to_camel(list(f.external_links or []))
+            if isinstance(link, dict)
+        ]
+        # tracker_id derives from the first tracker-flavored external link;
+        # mirror the property logic in FindingRead for parity.
+        tracker_id = None
+        for link in f.external_links or []:
+            if not isinstance(link, dict):
+                continue
+            if link.get("kind") in ("tracker", "linear"):
+                tracker_id = link.get("issue_id") or link.get("issueId")
+                if tracker_id:
+                    break
+        suppression_scope = (
+            f.suppression_scope.value
+            if getattr(f, "suppression_scope", None) is not None
+            else None
+        )
+        d = {
+            "id": f.id,
+            "findingType": f.finding_type.value,
+            "fingerprintId": f.fingerprint_id,
+            "cveId": f.cve_id,
+            "severity": f.severity.value,
+            "status": STATUS_DISPLAY.get(f.status.value, f.status.value),
+            "componentBase": f.component_base,
+            "component": f.component,
+            "image": f.image,
+            "branch": f.branch,
+            "tag": f.tag,
+            "imageDigest": f.image_digest,
+            "title": f.title,
+            "source": f.source,
+            "team": f.team,
+            "owner": f.owner,
+            "trackerId": tracker_id,
+            "externalLinks": slim_links,
+            "controlRef": f.control_ref,
+            "slaDue": f.sla_due,
+            "cvss": f.cvss,
+            "epss": f.epss,
+            "trackerComment": bool(f.tracker_comment),
+            "sources": slim_sources,
+            "suppressionScope": suppression_scope,
+            "attestation": f.attestation,
+            "regressionCount": f.regression_count or 0,
+            "previousStatus": STATUS_DISPLAY.get(
+                f.previous_status or "", f.previous_status
+            )
+            if f.previous_status
+            else None,
+            "archived": bool(f.archived),
+            "archivedAt": f.archived_at.isoformat() if f.archived_at else None,
+            "sourceFileUrl": f.source_file_url,
+            "sourceIssueGroupId": f.source_issue_group_id,
+            "aikidoSourceId": f.aikido_source_id,
+            "filePath": f.file_path,
+            "line": f.line,
+            "ruleId": f.rule_id,
+            "cweId": f.cwe_id,
+            "ecosystem": f.ecosystem,
+            "secretType": f.secret_type,
+            "resource": f.resource,
+            "benchmarkId": f.benchmark_id,
+            "benchmarkFamily": f.benchmark_family,
+            "correlationKey": f.correlation_key,
+            "correlationConfidence": f.correlation_confidence,
+            "correlatedTo": f.correlated_to,
+            "created": f.created_at.isoformat() if f.created_at else None,
+            "firstDetectedAt": f.first_detected_at.isoformat()
+            if f.first_detected_at
+            else None,
+            "closedAt": f.closed_at.isoformat() if f.closed_at else None,
+        }
+    else:
+        from app.schemas.finding import FindingRead
+
+        d = FindingRead.model_validate(f).to_api_dict()
     d["groupKey"] = get_finding_group_key(f)
     return d
