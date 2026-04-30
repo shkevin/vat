@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { useFocusTrap } from "@/hooks/useFocusTrap";
 import { mono, sans } from "@/lib/styles";
 import {
   createAdminKey,
@@ -1227,8 +1228,11 @@ function ConfirmModal({
       setLoading(false);
     }
   };
+  const dialogRef = useFocusTrap<HTMLDivElement>(true);
   return (
     <div
+      ref={dialogRef}
+      tabIndex={-1}
       role="dialog"
       aria-modal="true"
       aria-labelledby="confirm-title"
@@ -1363,8 +1367,11 @@ function AddTenantModal({
     }
   };
 
+  const dialogRef = useFocusTrap<HTMLDivElement>(true);
   return (
     <div
+      ref={dialogRef}
+      tabIndex={-1}
       role="dialog"
       aria-modal="true"
       aria-labelledby="add-tenant-title"
@@ -1558,8 +1565,11 @@ function AddUserModal({
     }
   };
 
+  const dialogRef = useFocusTrap<HTMLDivElement>(true);
   return (
     <div
+      ref={dialogRef}
+      tabIndex={-1}
       role="dialog"
       aria-modal="true"
       aria-labelledby="add-user-title"

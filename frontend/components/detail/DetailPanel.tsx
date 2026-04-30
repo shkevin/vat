@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { useFocusTrap } from "@/hooks/useFocusTrap";
 
 /** Collapsible section for supporting metadata */
 function CollapsibleSection({
@@ -99,6 +100,11 @@ export function DetailPanel({
   groupFindings = false,
   selectedSourceIndex,
 }: DetailPanelProps) {
+  // Focus trap: while the panel is mounted (it acts as a modal dialog),
+  // Tab cycles within it and Esc-close returns focus to whatever opened
+  // the panel. The hook is always-on here because the panel only mounts
+  // when a finding is selected.
+  const dialogRef = useFocusTrap<HTMLDivElement>(true);
   const descriptionText =
     (finding.description ?? "").trim() || displayTitle(finding);
   const [jus, setJus] = useState(finding.justification ?? "");
@@ -260,8 +266,11 @@ export function DetailPanel({
 
   return (
     <div
+      ref={dialogRef}
       role="dialog"
+      aria-modal="true"
       aria-label={`Finding details: ${finding.cveId}`}
+      tabIndex={-1}
       className="detail-panel"
     >
       {finding.archived && (
