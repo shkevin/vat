@@ -4,8 +4,7 @@ import { useState, useMemo, useCallback, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ChevronDown, ChevronUp } from "lucide-react";
-import { BulkBar } from "@/components/findings/BulkBar";
-import { AssetBulkBar } from "@/components/assets/AssetBulkBar";
+import { AssetActionBar } from "@/components/assets/AssetActionBar";
 import { useUserPreferences } from "@/contexts/UserPreferencesContext";
 import { useVATData } from "@/contexts/VATDataContext";
 import {
@@ -459,7 +458,16 @@ export function AssetsTable({
     return out;
   }, [displayedAssets, effectiveGroupFindings]);
 
+  // Resolve the checked Set to actual Asset objects for the docked action bar.
+  // Pulling from sortedAssets (the full-set memo) so checks survive scroll
+  // virtualization and search filters within the same loadout view.
+  const selectedAssets = useMemo(
+    () => sortedAssets.filter((a) => checked.has(a.id)),
+    [sortedAssets, checked],
+  );
+
   return (
+    <>
     <div
       className="assets-table-shell"
       style={{
@@ -576,20 +584,12 @@ export function AssetsTable({
           }}
         />
 
-        {checked.size > 0 && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            <AssetBulkBar
-              count={checked.size}
-              selectedAssetIds={Array.from(checked)}
-              onDeselect={onDeselectAll}
-            />
-            <BulkBar
-              count={checked.size}
-              onAction={onBulkAction}
-              onDeselect={onDeselectAll}
-            />
-          </div>
-        )}
+        {/* Asset bulk actions are rendered in a docked floating bar — see
+         * AssetActionBar at the bottom of this component. The legacy
+         * finding-level BulkBar is intentionally not shown here: applying
+         * a status (e.g. False Positive) to every finding inside an asset
+         * is unsafe at the asset-list scope. Use the FindingsTable inside
+         * an asset's detail view for finding-level bulk operations. */}
       </div>
 
       <div
@@ -926,5 +926,10 @@ export function AssetsTable({
         </div>
       </div>
     </div>
+    <AssetActionBar
+      selectedAssets={selectedAssets}
+      onDeselect={onDeselectAll}
+    />
+    </>
   );
 }
