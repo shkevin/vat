@@ -454,6 +454,10 @@ export function useVATDataCore(): UseVATDataReturn {
   const queryClient = useQueryClient();
   const userEmail = user?.email ?? undefined;
   const auth = { token: token ?? undefined, userEmail };
+  // queryKey scope: stable per-user id, NOT the bearer JWT. Token rotation
+  // shouldn't thrash the cache, and DevTools / persistence shouldn't leak
+  // the bearer.
+  const userScope = user?.id ?? "anon";
   const [snapshot] = useState(() => loadVatSnapshot());
   const [findings, setFindings] = useState<Finding[]>(
     () => snapshot?.findings ?? [],
@@ -816,8 +820,7 @@ export function useVATDataCore(): UseVATDataReturn {
 
   const vatQueryKey = [
     "vat-data",
-    token ?? "",
-    userEmail ?? "",
+    userScope,
     showArchived,
     showEmptyAssets,
   ] as const;
@@ -863,14 +866,14 @@ export function useVATDataCore(): UseVATDataReturn {
   });
 
   const settingsQuery = useQuery({
-    queryKey: ["vat-settings", token ?? "", userEmail ?? ""],
+    queryKey: ["vat-settings", userScope],
     enabled: Boolean(token || userEmail),
     queryFn: async () => fetchSettings(auth),
     staleTime: 60_000,
   });
 
   const sbomQuery = useQuery({
-    queryKey: ["vat-sbom", token ?? "", userEmail ?? ""],
+    queryKey: ["vat-sbom", userScope],
     enabled: Boolean(token || userEmail),
     queryFn: async () => fetchSbomPackages({ limit: 1000 }, auth),
     staleTime: 5 * 60_000,

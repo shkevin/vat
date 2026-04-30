@@ -24,16 +24,20 @@ export function useVulnFeeds(params?: UseVulnFeedsParams) {
   const queryClient = useQueryClient();
   const auth = { token: token ?? undefined, userEmail: user?.email };
   const isAdmin = user?.role === "admin";
+  // Use a per-user cache scope. Including the JWT in queryKey leaks the
+  // bearer to React Query DevTools / persistQueryClient and thrashes the
+  // cache on every token rotation. The user id is stable across rotations.
+  const userScope = user?.id ?? "anon";
 
   const summaryQuery = useQuery({
-    queryKey: ["vuln-feeds-summary", token ?? "", user?.email ?? ""],
+    queryKey: ["vuln-feeds-summary", userScope],
     enabled: Boolean(token || user?.email),
     queryFn: () => fetchVulnFeedSummary(auth),
     refetchInterval: 60_000,
   });
 
   const runsQuery = useQuery({
-    queryKey: ["vuln-feeds-runs", token ?? "", user?.email ?? ""],
+    queryKey: ["vuln-feeds-runs", userScope],
     enabled: Boolean(token || user?.email),
     queryFn: () => fetchVulnFeedRuns({ limit: 50 }, auth),
     refetchInterval: 60_000,
@@ -42,8 +46,7 @@ export function useVulnFeeds(params?: UseVulnFeedsParams) {
   const recordsQuery = useQuery({
     queryKey: [
       "vuln-feeds-records",
-      token ?? "",
-      user?.email ?? "",
+      userScope,
       params?.source ?? "",
       params?.severity ?? "",
       params?.search ?? "",
