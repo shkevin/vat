@@ -4,6 +4,8 @@
  */
 
 const STORAGE_KEY = "vat-asset-filters";
+// Bump SCHEMA_VERSION when AssetFilterState shape changes incompatibly.
+const SCHEMA_VERSION = 1;
 
 export interface AssetFilterState {
   status: string[];
@@ -34,7 +36,16 @@ export function loadFiltersFromStorage(
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return null;
-    const all = JSON.parse(raw) as Record<string, AssetFilterState>;
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    if (parsed?.__v !== SCHEMA_VERSION) {
+      try {
+        localStorage.removeItem(STORAGE_KEY);
+      } catch {
+        /* ignore */
+      }
+      return null;
+    }
+    const all = parsed as unknown as Record<string, AssetFilterState>;
     const stored = all[assetId];
     if (!stored || typeof stored !== "object") return null;
     return {
@@ -59,15 +70,31 @@ export function saveFiltersToStorage(
   try {
     const { search: _search, ...stateWithoutSearch } = state;
     const raw = localStorage.getItem(STORAGE_KEY);
-    const all: Record<string, AssetFilterState> = raw
-      ? (JSON.parse(raw) as Record<string, AssetFilterState>)
-      : {};
+    let all: Record<string, AssetFilterState> = {};
+    if (raw) {
+      try {
+        const parsed = JSON.parse(raw) as Record<string, unknown>;
+        if (parsed?.__v === SCHEMA_VERSION) {
+          // Strip __v before treating the rest as per-asset state.
+          const { __v: _v, ...rest } = parsed as { __v: unknown } & Record<
+            string,
+            AssetFilterState
+          >;
+          all = rest;
+        }
+      } catch {
+        /* ignore — fall through to fresh map */
+      }
+    }
     all[assetId] = {
       ...DEFAULT_FILTER_STATE,
       ...all[assetId],
       ...stateWithoutSearch,
     };
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(all));
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({ __v: SCHEMA_VERSION, ...all }),
+    );
   } catch {
     /* ignore */
   }

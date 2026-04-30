@@ -506,8 +506,11 @@ async def ingest_finding(
         await db.refresh(existing)
         return existing, False
 
-    # Create new finding
-    finding_id = f"f-{fp[:8]}"
+    # Create new finding. ID space widened from fp[:8] (32-bit, ~65k birthday
+    # collision) to fp[:16] (64-bit) so the unique-PK insert can't start
+    # spuriously failing once the table grows past mid-five-figures.
+    # Existing IDs are not migrated; the ID column accepts both lengths.
+    finding_id = f"f-{fp[:16]}"
     sla_due = _compute_sla_due(finding_type, severity)
 
     source_issue_group_id = getattr(payload, "source_issue_group_id", None)

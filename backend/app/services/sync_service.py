@@ -950,7 +950,15 @@ async def unlink_deleted_linear_issues(db: AsyncSession) -> int:
     if not creds.get("api_key") or not creds.get("team_id"):
         return 0
 
-    stmt = select(Finding).where(Finding.archived == False)
+    # Bounded scan — full table walks every Beat tick blew up memory once
+    # the cluster crossed ~50k findings. Pages drain naturally across ticks.
+    scan_limit = get_settings().linear_unlink_scan_limit
+    stmt = (
+        select(Finding)
+        .where(Finding.archived == False)
+        .order_by(Finding.id)
+        .limit(scan_limit)
+    )
     result = await db.execute(stmt)
     findings = list(result.scalars().all())
     # Collect (finding, issue_uuid) for findings with linear link that has issue_uuid
@@ -1196,8 +1204,16 @@ async def link_linear_issues_to_findings(
     if not group_key_to_issue and not cve_to_issue and not title_to_issue:
         return {"linked": 0, "fetched": fetched}
 
-    # Fetch unarchived findings; match by group_key first (backend groups), then CVE/title fallback
-    stmt = select(Finding).where(Finding.archived == False)
+    # Fetch unarchived findings; match by group_key first (backend groups),
+    # then CVE/title fallback. Bounded to the link scan limit so a 100k-row
+    # findings table doesn't pin Beat in memory for the full tick.
+    scan_limit = get_settings().linear_link_scan_limit
+    stmt = (
+        select(Finding)
+        .where(Finding.archived == False)
+        .order_by(Finding.id)
+        .limit(scan_limit)
+    )
     result = await db.execute(stmt)
     findings = list(result.scalars().all())
     push_min_severity = await get_tracker_push_min_severity(db)

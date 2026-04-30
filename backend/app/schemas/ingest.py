@@ -2,7 +2,7 @@
 
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.schemas.vat import VatFindingSchema, VatFindingType, VatSeverity
 
@@ -13,7 +13,16 @@ CanonicalSeverity = VatSeverity
 
 
 class CanonicalIngestRequest(BaseModel):
-    """API request body for POST /api/ingest."""
+    """API request body for POST /api/ingest.
+
+    ``extra='forbid'`` rejects any unknown top-level field. If a future
+    schema add accidentally collides with a server-only column name (e.g.
+    ``id``, ``tenant_id``, ``fingerprint_id``), unknown supply is now a
+    422 instead of silently being dropped — surfacing the contract drift
+    early.
+    """
+
+    model_config = ConfigDict(extra="forbid")
 
     name: Optional[str] = Field(
         default=None, max_length=128, description="Report name for audit"

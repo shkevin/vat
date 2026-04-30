@@ -6,10 +6,13 @@ scanner integrations can be added in one place with minimal ingest branching.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import Any, Callable
 
 from app.parsers.base import IngestParser
+
+logger = logging.getLogger(__name__)
 from app.parsers.canonical import CanonicalParser
 from app.parsers.cyclonedx import CyclonedxParser
 from app.parsers.gitleaks import GitleaksParser
@@ -87,6 +90,7 @@ def _extract_openscap_asset(raw: Any) -> str | None:
                 if addr.text:
                     return addr.text.strip() or None
     except Exception:
+        logger.debug("openscap: asset extraction failed", exc_info=True)
         return None
     return None
 
@@ -105,6 +109,7 @@ def _extract_openscap_oval_asset(raw: Any) -> str | None:
                 if text:
                     return text
     except Exception:
+        logger.debug("openscap_oval: asset extraction failed", exc_info=True)
         return None
     return None
 

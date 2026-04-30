@@ -4,6 +4,10 @@
  */
 
 const STORAGE_KEY = "vat-dashboard-filters";
+// Bump SCHEMA_VERSION when DashboardFilterState shape changes incompatibly.
+// Old payloads from a previous version are dropped on read instead of
+// surfacing as silent runtime errors (e.g. Set(undefined)) post-deploy.
+const SCHEMA_VERSION = 1;
 
 export interface DashboardFilterState {
   tab: string;
@@ -28,6 +32,16 @@ export function loadDashboardFiltersFromStorage(): Partial<DashboardFilterState>
     if (!raw) return null;
     const stored = JSON.parse(raw) as Record<string, unknown>;
     if (!stored || typeof stored !== "object") return null;
+    if (stored.__v !== SCHEMA_VERSION) {
+      // Older / unversioned payload — drop it. The user starts the next
+      // session with default filters instead of corrupted partial state.
+      try {
+        localStorage.removeItem(STORAGE_KEY);
+      } catch {
+        /* ignore */
+      }
+      return null;
+    }
     return {
       tab: typeof stored.tab === "string" ? stored.tab : undefined,
       status: Array.isArray(stored.status)
@@ -68,7 +82,7 @@ export function saveDashboardFiltersToStorage(
 ): void {
   if (typeof window === "undefined") return;
   try {
-    const toStore: Record<string, unknown> = {};
+    const toStore: Record<string, unknown> = { __v: SCHEMA_VERSION };
     if (state.tab != null) toStore.tab = state.tab;
     // search is intentionally not persisted; reset on refresh
     if (state.status != null) toStore.status = state.status;

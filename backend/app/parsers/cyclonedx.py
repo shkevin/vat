@@ -47,6 +47,7 @@ def _parse_purl_version(purl: str) -> str:
     try:
         return purl.split("@")[-1].split("?")[0]
     except Exception:
+        logger.debug("cyclonedx: purl version parse failed for %r", purl, exc_info=True)
         return ""
 
 

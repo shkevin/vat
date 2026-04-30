@@ -1,11 +1,31 @@
 """Celery application for VAT sync worker."""
 
 import logging
+import os
+import random
 
 from celery import Celery
 from celery.schedules import crontab
 
 from app.core.config import get_settings
+
+
+def _jitter(base_seconds: float, frac: float = 0.05) -> float:
+    """Apply a small ±frac (default ±5%) perturbation to an interval at boot.
+
+    Celery's interval scheduler has no per-tick jitter, so multiple Beat
+    replicas (or repeated reboots) all sync on the same minute boundary
+    and stampede the same task at the same instant. Jittering the base
+    interval per process lets the schedules drift apart naturally without
+    a custom scheduler. NOTE: multi-replica Beat still needs
+    RedBeat / k8s leader election for true singleton semantics; this only
+    softens accidental alignment.
+    """
+    # Seed per-process so repeated calls within one boot return the same
+    # offset (so tests / introspection see a stable value), but different
+    # processes drift apart.
+    rng = random.Random(os.getpid())
+    return base_seconds * (1.0 + rng.uniform(-frac, frac))
 
 settings = get_settings()
 
@@ -47,18 +67,18 @@ _vuln_feed_interval_hours = max(1, get_settings().vuln_feed_refresh_interval_hou
 app.conf.beat_schedule = {
     "process-sync-queue": {
         "task": "app.tasks.sync_tasks.process_sync_queue",
-        "schedule": 120.0,  # seconds
+        "schedule": _jitter(120.0),
         "options": {"queue": "vat-sync"},
         "kwargs": {"limit": _process_limit, "backfill_limit": _backfill_limit},
     },
     "poll-linear": {
         "task": "app.tasks.sync_tasks.poll_linear",
-        "schedule": float(_poll_interval),
+        "schedule": _jitter(float(_poll_interval)),
         "options": {"queue": "vat-sync"},
     },
     "reconcile-linear": {
         "task": "app.tasks.sync_tasks.reconcile_linear",
-        "schedule": float(_reconcile_interval),
+        "schedule": _jitter(float(_reconcile_interval)),
         "options": {"queue": "vat-sync"},
     },
     # Previous UTC day anchor (00:30 UTC); disable via VAT_AUDIT_DAILY_CHECKPOINT_ENABLED=false

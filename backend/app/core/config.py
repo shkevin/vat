@@ -143,6 +143,10 @@ class Settings(BaseSettings):
     # Sync queue: process/backfill limits per beat run. Increase for faster drain when backlog is large.
     linear_sync_process_limit: int = 200
     linear_sync_backfill_limit: int = 200
+    # Per-tick caps on full-table walks so Beat doesn't pull every Finding
+    # row into memory each interval. The pages drain over multiple ticks.
+    linear_unlink_scan_limit: int = 2000
+    linear_link_scan_limit: int = 2000
 
     # Tracker batch updates (generic — used by Linear, future Jira, etc.)
     # Reduces API calls when syncing many corrections; each adapter enforces its own limits

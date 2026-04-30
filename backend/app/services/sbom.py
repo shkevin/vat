@@ -1,12 +1,15 @@
 """SBOM service — CycloneDX import, dedup by name+version. PRD §5.8."""
 
 import hashlib
+import logging
 import re
 from datetime import datetime, timezone
 from typing import Optional
 from urllib.parse import quote, unquote
 
 import httpx
+
+logger = logging.getLogger(__name__)
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -497,7 +500,9 @@ async def import_sbom(
                         db, finding, trace_id=None, source_id=source, parser_id="cyclonedx"
                     )
                 except Exception:
-                    pass
+                    logger.exception(
+                        "sbom: correlation linking failed for new finding %s", finding.id
+                    )
             else:
                 if effective_tag and (
                     force_finding_tag_override
@@ -531,7 +536,10 @@ async def import_sbom(
                             parser_id="cyclonedx",
                         )
                     except Exception:
-                        pass
+                        logger.exception(
+                            "sbom: correlation linking failed for existing finding %s",
+                            existing_finding.id,
+                        )
 
     await db.commit()
 
@@ -544,7 +552,7 @@ async def import_sbom(
         await auto_merge_assets_by_digest(db, created_by=f"sbom-import:{source}")
         await db.commit()
     except Exception:
-        pass
+        logger.exception("sbom: auto_merge_assets_by_digest failed")
 
     return created, updated
 
