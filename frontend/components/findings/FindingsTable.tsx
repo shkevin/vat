@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { FindingRow } from "./FindingRow";
 import { BulkBar } from "./BulkBar";
 import { useUserPreferences } from "@/contexts/UserPreferencesContext";
@@ -11,6 +11,19 @@ const HEADER_PADDING = {
   default: "6px 14px",
   comfortable: "10px 14px",
 } as const;
+
+// Estimated row height per density. Padding (top+bottom) + the 24px
+// content line. Used to compute the visible window and the top/bottom
+// spacer heights that preserve scrollbar accuracy. If a row ends up
+// slightly taller (e.g. an unusually long tag set wraps) the window
+// just renders one extra row above/below — overscan absorbs the drift.
+const ROW_HEIGHT = {
+  compact: 32,
+  default: 40,
+  comfortable: 48,
+} as const;
+
+const OVERSCAN_ROWS = 8;
 import type { Finding } from "@/types";
 import type { Source } from "@/types";
 
@@ -44,14 +57,58 @@ export function FindingsTable({
 }: FindingsTableProps) {
   const { preferences } = useUserPreferences();
   const density = preferences.tableDensity ?? "default";
-  const [visibleCount, setVisibleCount] = useState(250);
+  const rowHeight = ROW_HEIGHT[density];
+
+  // Virtualization state. scrollTop and containerHeight together determine
+  // which rows are currently in (or near) the viewport. The previous
+  // implementation mounted up to `visibleCount` rows growing-only, which
+  // at 10k+ findings ballooned the DOM and pinned the main thread on
+  // filter changes. Now the mounted DOM never exceeds viewport+overscan.
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [scrollTop, setScrollTop] = useState(0);
+  const [containerHeight, setContainerHeight] = useState(0);
+
   useEffect(() => {
-    setVisibleCount(250);
+    const el = containerRef.current;
+    if (!el) return;
+    const update = () => setContainerHeight(el.clientHeight);
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  // Reset scroll position when the underlying list changes shape, so a
+  // filter change doesn't leave the user scrolled past the new end.
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    if (el.scrollTop !== 0) {
+      el.scrollTop = 0;
+      setScrollTop(0);
+    }
   }, [displayed.length, density]);
-  const visibleRows = useMemo(
-    () => displayed.slice(0, visibleCount),
-    [displayed, visibleCount],
-  );
+
+  const { windowRows, topSpacer, bottomSpacer } = useMemo(() => {
+    const total = displayed.length;
+    if (total === 0 || containerHeight === 0) {
+      return { windowRows: displayed, topSpacer: 0, bottomSpacer: 0 };
+    }
+    const firstIdx = Math.max(
+      0,
+      Math.floor(scrollTop / rowHeight) - OVERSCAN_ROWS,
+    );
+    const lastIdx = Math.min(
+      total,
+      Math.ceil((scrollTop + containerHeight) / rowHeight) + OVERSCAN_ROWS,
+    );
+    return {
+      windowRows: displayed.slice(firstIdx, lastIdx),
+      topSpacer: firstIdx * rowHeight,
+      bottomSpacer: Math.max(0, (total - lastIdx) * rowHeight),
+    };
+  }, [displayed, scrollTop, containerHeight, rowHeight]);
+
   return (
     <div>
       <div
@@ -117,6 +174,7 @@ export function FindingsTable({
         ))}
       </div>
       <div
+        ref={containerRef}
         style={{
           border: "1px solid var(--app-border-subtle)",
           borderRadius: "0 0 4px 4px",
@@ -124,10 +182,10 @@ export function FindingsTable({
           maxHeight: "62vh",
         }}
         onScroll={(event) => {
-          const target = event.currentTarget;
-          if (target.scrollTop + target.clientHeight >= target.scrollHeight - 120) {
-            setVisibleCount((prev) => Math.min(prev + 200, displayed.length));
-          }
+          // Single setState per scroll frame; React batches the update and
+          // the windowed slice recomputes via useMemo without forcing every
+          // mounted row to reconcile.
+          setScrollTop(event.currentTarget.scrollTop);
         }}
       >
         {displayed.length === 0 ? (
@@ -143,32 +201,22 @@ export function FindingsTable({
             No findings match current filters.
           </div>
         ) : (
-          visibleRows.map((f) => (
-            <FindingRow
-              key={f.id}
-              finding={f}
-              sources={sources}
-              density={density}
-              selected={selected?.id === f.id}
-              checked={checked.has(f.id)}
-              onCheck={(v) => onCheck(f.id, v)}
-              onClick={() => onSelect(f)}
-            />
-          ))
-        )}
-        {displayed.length > visibleRows.length && (
-          <div
-            style={{
-              ...mono,
-              fontSize: 10,
-              color: "var(--app-muted)",
-              padding: "8px 14px",
-              textAlign: "center",
-            }}
-          >
-            Showing {visibleRows.length} of {displayed.length} findings. Scroll to
-            load more.
-          </div>
+          <>
+            {topSpacer > 0 && <div style={{ height: topSpacer }} />}
+            {windowRows.map((f) => (
+              <FindingRow
+                key={f.id}
+                finding={f}
+                sources={sources}
+                density={density}
+                selected={selected?.id === f.id}
+                checked={checked.has(f.id)}
+                onCheck={(v) => onCheck(f.id, v)}
+                onClick={() => onSelect(f)}
+              />
+            ))}
+            {bottomSpacer > 0 && <div style={{ height: bottomSpacer }} />}
+          </>
         )}
       </div>
     </div>
