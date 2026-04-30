@@ -147,6 +147,67 @@ class FindingRead(BaseModel):
     first_detected_at: Optional[datetime] = None
     closed_at: Optional[datetime] = None
 
+    @classmethod
+    def _slim_from_orm(cls, f: "Finding") -> "FindingRead":
+        """Construct a FindingRead from an ORM Finding **without touching deferred
+        columns**. Uses ``model_construct`` (Pydantic v2) which skips validation
+        and only sets the fields we pass — so columns like ``audit``,
+        ``description``, ``justification`` etc. that ``list_findings(slim=True)``
+        defers are never accessed. Much faster than ``model_validate`` for
+        the slim list path and avoids the MissingGreenlet error from async
+        SQLAlchemy lazy-loading deferred columns.
+        """
+        return cls.model_construct(
+            id=f.id,
+            finding_type=f.finding_type,
+            fingerprint_id=f.fingerprint_id,
+            cve_id=f.cve_id,
+            severity=f.severity,
+            status=f.status,
+            component_base=f.component_base,
+            component=f.component,
+            image=f.image,
+            branch=f.branch,
+            tag=f.tag,
+            image_digest=f.image_digest,
+            title=f.title,
+            source=f.source,
+            team=f.team,
+            owner=f.owner,
+            tracker_id=None,  # property derived inside to_slim_api_dict via external_links
+            control_ref=f.control_ref,
+            sla_due=f.sla_due,
+            cvss=f.cvss,
+            epss=f.epss,
+            tracker_comment=bool(f.tracker_comment),
+            sources=list(f.sources or []),
+            suppression_scope=f.suppression_scope,
+            attestation=f.attestation,
+            regression_count=f.regression_count or 0,
+            previous_status=f.previous_status,
+            archived=bool(f.archived),
+            archived_at=f.archived_at,
+            source_file_url=f.source_file_url,
+            source_issue_group_id=f.source_issue_group_id,
+            aikido_source_id=f.aikido_source_id,
+            external_links=list(f.external_links or []),
+            file_path=f.file_path,
+            line=f.line,
+            rule_id=f.rule_id,
+            cwe_id=f.cwe_id,
+            ecosystem=f.ecosystem,
+            secret_type=f.secret_type,
+            resource=f.resource,
+            benchmark_id=f.benchmark_id,
+            benchmark_family=f.benchmark_family,
+            correlation_key=f.correlation_key,
+            correlation_confidence=f.correlation_confidence,
+            correlated_to=f.correlated_to,
+            created_at=f.created_at,
+            first_detected_at=f.first_detected_at,
+            closed_at=f.closed_at,
+        )
+
     def to_slim_api_dict(self) -> dict:
         """Slim variant of ``to_api_dict`` for list responses.
 
