@@ -10,10 +10,12 @@ import React, {
 import { fetchMe, logoutSession } from "@/lib/api";
 import { setOnUnauthorized } from "@/lib/onUnauthorized";
 
+// User profile is cached in localStorage purely to avoid a render flash
+// while /api/auth/me roundtrips. The JWT itself never lands here.
 const STORAGE_KEY = "vat-user";
-// Legacy: pre-cookie sessions stored the JWT here. We no longer write
-// to it; the entry is purged on first load below. The cookie path is
-// the only credential surface for new sessions.
+// Legacy keys from pre-cookie sessions. We never read them anymore;
+// purge on bootstrap so old browsers stop carrying around a stale JWT
+// in DOM-readable storage.
 const LEGACY_TOKEN_KEY = "vat-token";
 
 export interface VATUser {
@@ -25,16 +27,16 @@ export interface VATUser {
 
 interface AuthContextValue {
   user: VATUser | null;
-  /** Legacy in-memory token, present only for sessions migrated from the
-   * old localStorage path. New cookie sessions return null here. The API
-   * client falls back to the cookie automatically when token is null. */
+  /** Always null after the C11 phase 2 migration. The browser session
+   * lives in the httpOnly vat-session cookie, not in JS-readable state.
+   * Kept on the type for back-compat with any caller that still reads
+   * it (callers should migrate to relying on the cookie). */
   token: string | null;
   setUser: (user: VATUser | null, token?: string | null) => void;
   userEmail: string | null;
   isAdmin: boolean | null;
   setIsAdmin: (v: boolean | null) => void;
-  /** True once we've attempted to restore session (cookie + localStorage
-   * fallback). Don't redirect before this. */
+  /** True once we've attempted to bootstrap session via /api/auth/me. */
   initialized: boolean;
 }
 
@@ -42,56 +44,44 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUserState] = useState<VATUser | null>(null);
-  const [token, setTokenState] = useState<string | null>(null);
   const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
   const [initialized, setInitialized] = useState(false);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
     let cancelled = false;
+    // One-shot purge of the legacy JWT-in-localStorage path. Old
+    // sessions that used to depend on vat-token are gone after this
+    // bootstrap; they'll either be picked up by the cookie path
+    // (fetchMe succeeds) or the user gets redirected to /login.
+    try {
+      localStorage.removeItem(LEGACY_TOKEN_KEY);
+    } catch {
+      /* ignore */
+    }
     (async () => {
-      // 1. Prefer the cookie session — fetchMe sends the httpOnly
-      //    vat-session cookie via credentials: "include". This is the
-      //    authoritative path for new sessions; the JWT is never read
-      //    into JS and so cannot be exfiltrated by a DOM XSS sink.
       const me = await fetchMe();
       if (cancelled) return;
       if (me?.id && me?.email) {
-        setUserState({
+        const u: VATUser = {
           id: me.id,
           email: me.email,
           role: me.role,
           tenant_id: me.tenant_id,
-        });
-        setTokenState(null);
-        // Clear legacy token from any pre-migration session — server
-        // accepts cookie now, so this entry is no longer needed.
+        };
+        setUserState(u);
         try {
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(me));
-          localStorage.removeItem(LEGACY_TOKEN_KEY);
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(u));
         } catch {
-          /* ignore quota / storage-disabled errors */
+          /* ignore quota errors */
         }
-        setInitialized(true);
-        return;
-      }
-
-      // 2. Cookie miss — fall back to the legacy localStorage path so
-      //    sessions issued before this change still resolve. Once the
-      //    next API call refreshes auth via the cookie path, this
-      //    fallback becomes inert.
-      const storedUser = localStorage.getItem(STORAGE_KEY);
-      const storedToken = localStorage.getItem(LEGACY_TOKEN_KEY);
-      if (storedUser && storedToken) {
+      } else {
+        // Cookie missed — clear any stale cached profile so AuthGuard
+        // sees a clean unauthenticated state.
         try {
-          const parsed = JSON.parse(storedUser) as VATUser;
-          if (parsed?.id && parsed?.email) {
-            setUserState(parsed);
-            setTokenState(storedToken);
-          }
-        } catch {
           localStorage.removeItem(STORAGE_KEY);
-          localStorage.removeItem(LEGACY_TOKEN_KEY);
+        } catch {
+          /* ignore */
         }
       }
       setInitialized(true);
@@ -104,40 +94,39 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     setOnUnauthorized(() => {
       setUserState(null);
-      setTokenState(null);
       if (typeof window !== "undefined") {
-        localStorage.removeItem(STORAGE_KEY);
-        localStorage.removeItem(LEGACY_TOKEN_KEY);
+        try {
+          localStorage.removeItem(STORAGE_KEY);
+          localStorage.removeItem(LEGACY_TOKEN_KEY);
+        } catch {
+          /* ignore */
+        }
       }
-      // Best-effort cookie clear so the browser doesn't keep sending a
-      // server-rejected cookie. Fire-and-forget; AuthGuard will redirect
-      // regardless of the response.
       void logoutSession();
     });
     return () => setOnUnauthorized(null);
   }, []);
 
-  const setUser = useCallback((u: VATUser | null, t?: string | null) => {
+  const setUser = useCallback((u: VATUser | null, _token?: string | null) => {
     if (u === null) {
       setUserState(null);
-      setTokenState(null);
       if (typeof window !== "undefined") {
-        localStorage.removeItem(STORAGE_KEY);
-        localStorage.removeItem(LEGACY_TOKEN_KEY);
+        try {
+          localStorage.removeItem(STORAGE_KEY);
+          localStorage.removeItem(LEGACY_TOKEN_KEY);
+        } catch {
+          /* ignore */
+        }
       }
       void logoutSession();
     } else {
       setUserState(u);
-      // Token from the login/exchange-code response is held in memory
-      // only — NOT written to localStorage anymore. The httpOnly cookie
-      // already persists the session across reloads.
-      const tok = t !== undefined ? t : null;
-      setTokenState(tok);
+      // The token argument is ignored — the cookie carries the session.
+      // Keeping the parameter on the signature for back-compat with
+      // callers that still pass it (login form, OAuth code exchange).
       if (typeof window !== "undefined") {
         try {
           localStorage.setItem(STORAGE_KEY, JSON.stringify(u));
-          // Defensive: purge any stale legacy token left over from a
-          // prior session that predates this change.
           localStorage.removeItem(LEGACY_TOKEN_KEY);
         } catch {
           /* ignore */
@@ -151,7 +140,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     <AuthContext.Provider
       value={{
         user,
-        token,
+        token: null,
         setUser,
         userEmail: user?.email ?? null,
         isAdmin,
