@@ -1,7 +1,5 @@
 """OAuth client credentials for ingest — per-source client_id/client_secret."""
 
-import hashlib
-import hmac
 import secrets
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -10,6 +8,8 @@ from typing import Optional
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.key_hashing import hash_key as _hash_secret
+from app.core.key_hashing import verify_key
 from app.models.settings_model import SettingsKV
 
 INGEST_OAUTH_CLIENTS_KEY = "ingest_oauth_clients"
@@ -18,14 +18,6 @@ OAUTH_CLIENT_ID_PREFIX = "vat_oauth_"
 
 def _now() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-
-
-def _hash_secret(secret: str) -> str:
-    return hashlib.sha256(secret.encode()).hexdigest()
-
-
-def _constant_time_compare(a: str, b: str) -> bool:
-    return hmac.compare_digest(a, b)
 
 
 async def _get_clients_store(db: AsyncSession) -> dict:
@@ -114,14 +106,13 @@ async def validate_oauth_client(
     if not key.startswith(OAUTH_CLIENT_ID_PREFIX):
         return None
 
-    secret_hash = _hash_secret(client_secret)
     store = await _get_clients_store(db)
 
     for source_id, info in store.items():
         if not isinstance(info, dict):
             continue
-        if info.get("clientId") == key and _constant_time_compare(
-            secret_hash, info.get("clientSecretHash", "")
+        if info.get("clientId") == key and verify_key(
+            client_secret, info.get("clientSecretHash", "")
         ):
             return (source_id, f"ingest:{source_id}")
 

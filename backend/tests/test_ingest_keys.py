@@ -21,7 +21,10 @@ def test_generate_key_format():
     assert full_key.startswith("vat_")
     assert len(full_key) == 4 + 64  # vat_ + 32 bytes hex
     assert key_prefix.startswith("vat_")
-    assert len(key_hash) == 64  # sha256 hex
+    # Hash format: "v2:<64 hex>" — HMAC-SHA256 with pepper from secret_key.
+    # Legacy unprefixed sha256 hashes still validate via verify_key.
+    assert key_hash.startswith("v2:")
+    assert len(key_hash) == 3 + 64
 
 
 @pytest.mark.asyncio

@@ -7,8 +7,6 @@ neither field set; they are treated as cross-tenant for back-compat and a
 warning is logged on validation so operators know to rotate them.
 """
 
-import hashlib
-import hmac
 import logging
 import secrets
 from dataclasses import dataclass
@@ -18,7 +16,17 @@ from typing import Optional
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.key_hashing import hash_key as _hash_key
+from app.core.key_hashing import verify_key
 from app.models.settings_model import SettingsKV
+
+# Re-exported for back-compat with existing unit tests; new code should
+# use hmac.compare_digest directly or verify_key.
+import hmac as _hmac
+
+
+def _constant_time_compare(a: str, b: str) -> bool:
+    return _hmac.compare_digest(a, b)
 
 logger = logging.getLogger(__name__)
 
@@ -29,14 +37,6 @@ KEY_PREFIX_LEN = 6  # "vat_a1" for display
 
 def _now() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-
-
-def _hash_key(key: str) -> str:
-    return hashlib.sha256(key.encode()).hexdigest()
-
-
-def _constant_time_compare(a: str, b: str) -> bool:
-    return hmac.compare_digest(a, b)
 
 
 def generate_admin_key() -> tuple[str, str, str]:
@@ -184,14 +184,13 @@ async def resolve_admin_key(db: AsyncSession, key: str) -> Optional[ResolvedAdmi
     if not key.startswith(KEY_PREFIX):
         return None
 
-    key_hash = _hash_key(key)
     store = await _get_store(db)
 
     for key_id, info in store.items():
         if not isinstance(info, dict):
             continue
         stored_hash = info.get("keyHash")
-        if not stored_hash or not _constant_time_compare(key_hash, stored_hash):
+        if not stored_hash or not verify_key(key, stored_hash):
             continue
         legacy = "tenantId" not in info and "crossTenant" not in info
         cross_tenant = bool(info.get("crossTenant", legacy))

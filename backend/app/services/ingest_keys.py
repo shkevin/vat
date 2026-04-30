@@ -1,7 +1,5 @@
 """Ingest API key service — generate, hash, validate, store. Design doc 2026-02-24."""
 
-import hashlib
-import hmac
 import secrets
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -10,7 +8,16 @@ from typing import Optional
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.key_hashing import hash_key as _hash_key
+from app.core.key_hashing import verify_key
 from app.models.settings_model import SettingsKV
+
+import hmac as _hmac
+
+
+def _constant_time_compare(a: str, b: str) -> bool:
+    """Back-compat helper for callers/tests that imported this directly."""
+    return _hmac.compare_digest(a, b)
 
 INGEST_KEYS_KEY = "ingest_api_keys"
 KEY_PREFIX = "vat_"
@@ -19,16 +26,6 @@ KEY_PREFIX_LEN = 6  # "vat_a1" for display
 
 def _now() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-
-
-def _hash_key(key: str) -> str:
-    """SHA-256 hash of key for storage."""
-    return hashlib.sha256(key.encode()).hexdigest()
-
-
-def _constant_time_compare(a: str, b: str) -> bool:
-    """Constant-time comparison to avoid timing attacks."""
-    return hmac.compare_digest(a, b)
 
 
 def generate_key() -> tuple[str, str, str]:
@@ -169,14 +166,13 @@ async def validate_key(db: AsyncSession, key: str) -> Optional[tuple[str, str]]:
     if not key.startswith(KEY_PREFIX):
         return None
 
-    key_hash = _hash_key(key)
     store = await _get_keys_store(db)
 
     for source_id, info in store.items():
         if not isinstance(info, dict):
             continue
         stored_hash = info.get("keyHash")
-        if stored_hash and _constant_time_compare(key_hash, stored_hash):
+        if stored_hash and verify_key(key, stored_hash):
             return (source_id, f"ingest:{source_id}")
 
     return None
