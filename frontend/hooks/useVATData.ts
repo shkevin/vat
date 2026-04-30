@@ -67,6 +67,46 @@ import type {
 // would otherwise bust localStorage at fleet scale. Bumped to v2 so old
 // oversized v1 entries (silently rejected by previous size cap) don't leak in.
 const VAT_SNAPSHOT_KEY = "vat:lastFindingsSnapshot:v2";
+
+/** localStorage key for persisted sidebar filter state. v1 = first persisted shape;
+ * bump if the schema changes incompatibly. */
+const SIDEBAR_STATE_KEY = "vat:sidebarState:v1";
+
+interface PersistedSidebarState {
+  showArchived?: boolean | "both";
+  needsJustification?: boolean;
+  search?: string;
+  searchFields?: string[]; // serialized Set
+  filterFindingStatuses?: string[];
+  filterABC?: string[];
+  filterVerifiedRange?: [number, number];
+  filterORARange?: [number, number];
+  filterAssetTypes?: string[];
+  onlyFavorites?: boolean;
+  showEmptyAssets?: boolean;
+}
+
+function loadSidebarState(): PersistedSidebarState {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = window.localStorage.getItem(SIDEBAR_STATE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object") return {};
+    return parsed as PersistedSidebarState;
+  } catch {
+    return {};
+  }
+}
+
+function saveSidebarState(s: PersistedSidebarState): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(SIDEBAR_STATE_KEY, JSON.stringify(s));
+  } catch {
+    // ignore quota / serialization issues — sidebar state is best-effort
+  }
+}
 // Caps tuned for ~14k-finding deployments after the v2 slim projection. Pre-v2
 // any deployment with >1500 findings silently failed to persist a snapshot, so
 // every page refresh blanked to "Loading VAT" while waiting on the full fetch.
@@ -429,26 +469,44 @@ export function useVATDataCore(): UseVATDataReturn {
   const [selected, setSelected] = useState<Finding | null>(null);
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const [view, setView] = useState("findings");
-  const [search, setSearch] = useState("");
-  const [searchFields, setSearchFields] = useState<Set<string>>(new Set());
-  const [showArchived, setShowArchived] = useState<boolean | "both">(false);
-  const [needsJustification, setNeedsJustification] = useState(false);
+  // Sidebar filter state hydrates from localStorage on first render so the
+  // selected loadout / filters / archive toggle persist across refresh and
+  // navigation between routes. Saving happens in the effect below so every
+  // setter is automatically persisted without each call site needing to
+  // know about storage.
+  const [_sidebarInit] = useState(() => loadSidebarState());
+  const [search, setSearch] = useState(() => _sidebarInit.search ?? "");
+  const [searchFields, setSearchFields] = useState<Set<string>>(
+    () => new Set(_sidebarInit.searchFields ?? []),
+  );
+  const [showArchived, setShowArchived] = useState<boolean | "both">(
+    () => _sidebarInit.showArchived ?? false,
+  );
+  const [needsJustification, setNeedsJustification] = useState(
+    () => _sidebarInit.needsJustification ?? false,
+  );
 
   const [filterFindingStatuses, setFilterFindingStatuses] = useState<
     Set<string>
-  >(new Set());
-  const [filterABC, setFilterABC] = useState<Set<string>>(new Set());
+  >(() => new Set(_sidebarInit.filterFindingStatuses ?? []));
+  const [filterABC, setFilterABC] = useState<Set<string>>(
+    () => new Set(_sidebarInit.filterABC ?? []),
+  );
   const [filterVerifiedRange, setFilterVerifiedRange] = useState<
     [number, number]
-  >([0, 100]);
-  const [filterORARange, setFilterORARange] = useState<[number, number]>([
-    0, 100,
-  ]);
-  const [filterAssetTypes, setFilterAssetTypes] = useState<Set<string>>(
-    new Set(),
+  >(() => _sidebarInit.filterVerifiedRange ?? [0, 100]);
+  const [filterORARange, setFilterORARange] = useState<[number, number]>(
+    () => _sidebarInit.filterORARange ?? [0, 100],
   );
-  const [onlyFavorites, setOnlyFavorites] = useState(false);
-  const [showEmptyAssets, setShowEmptyAssets] = useState(false);
+  const [filterAssetTypes, setFilterAssetTypes] = useState<Set<string>>(
+    () => new Set(_sidebarInit.filterAssetTypes ?? []),
+  );
+  const [onlyFavorites, setOnlyFavorites] = useState(
+    () => _sidebarInit.onlyFavorites ?? false,
+  );
+  const [showEmptyAssets, setShowEmptyAssets] = useState(
+    () => _sidebarInit.showEmptyAssets ?? false,
+  );
   const [favoriteEntries, setFavoriteEntries] = useState<FavoriteEntry[]>(
     () => {
       if (typeof window === "undefined") return [];
@@ -460,6 +518,74 @@ export function useVATDataCore(): UseVATDataReturn {
     () => new Set(favoriteEntries.map((e) => e.assetId)),
     [favoriteEntries],
   );
+
+  // Persist sidebar filter state on every change so refresh + navigation
+  // between routes keeps the user's selection (loadout toggle, asset-type
+  // filters, range sliders, etc.). Sets are serialized to arrays. Saving
+  // is best-effort — quota errors silently no-op.
+  useEffect(() => {
+    saveSidebarState({
+      showArchived,
+      needsJustification,
+      search,
+      searchFields: Array.from(searchFields),
+      filterFindingStatuses: Array.from(filterFindingStatuses),
+      filterABC: Array.from(filterABC),
+      filterVerifiedRange,
+      filterORARange,
+      filterAssetTypes: Array.from(filterAssetTypes),
+      onlyFavorites,
+      showEmptyAssets,
+    });
+  }, [
+    showArchived,
+    needsJustification,
+    search,
+    searchFields,
+    filterFindingStatuses,
+    filterABC,
+    filterVerifiedRange,
+    filterORARange,
+    filterAssetTypes,
+    onlyFavorites,
+    showEmptyAssets,
+  ]);
+
+  // Cross-tab sync: when another tab updates the sidebar state, mirror it.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const onStorage = (e: StorageEvent) => {
+      if (e.key !== SIDEBAR_STATE_KEY || !e.newValue) return;
+      try {
+        const next = JSON.parse(e.newValue) as PersistedSidebarState;
+        if (typeof next.showArchived !== "undefined")
+          setShowArchived(next.showArchived);
+        if (typeof next.needsJustification === "boolean")
+          setNeedsJustification(next.needsJustification);
+        if (typeof next.search === "string") setSearch(next.search);
+        if (Array.isArray(next.searchFields))
+          setSearchFields(new Set(next.searchFields));
+        if (Array.isArray(next.filterFindingStatuses))
+          setFilterFindingStatuses(new Set(next.filterFindingStatuses));
+        if (Array.isArray(next.filterABC))
+          setFilterABC(new Set(next.filterABC));
+        if (Array.isArray(next.filterVerifiedRange))
+          setFilterVerifiedRange(next.filterVerifiedRange);
+        if (Array.isArray(next.filterORARange))
+          setFilterORARange(next.filterORARange);
+        if (Array.isArray(next.filterAssetTypes))
+          setFilterAssetTypes(new Set(next.filterAssetTypes));
+        if (typeof next.onlyFavorites === "boolean")
+          setOnlyFavorites(next.onlyFavorites);
+        if (typeof next.showEmptyAssets === "boolean")
+          setShowEmptyAssets(next.showEmptyAssets);
+      } catch {
+        // ignore malformed updates
+      }
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, []);
 
   /** Sync favorites from localStorage (e.g. after another tab changes them or on focus) */
   const syncFavoritesFromStorage = useCallback(() => {
