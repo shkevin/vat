@@ -147,8 +147,8 @@ export function LoadoutPickerPopover({
         bottom,
         width: POPOVER_WIDTH,
         maxHeight: POPOVER_MAX_HEIGHT,
-        background: "var(--app-surface, #fff)",
-        border: "1px solid var(--app-border, #ccc)",
+        background: "var(--ui-surface-1)",
+        border: "1px solid var(--ui-border)",
         borderRadius: 8,
         boxShadow: "0 8px 24px rgba(0,0,0,0.18)",
         display: "flex",
@@ -159,10 +159,10 @@ export function LoadoutPickerPopover({
       <div
         style={{
           padding: "10px 12px",
-          borderBottom: "1px solid var(--app-border-subtle, #eee)",
+          borderBottom: "1px solid var(--ui-border-subtle)",
           fontSize: 12,
           fontWeight: 600,
-          color: "var(--app-muted, #666)",
+          color: "var(--ui-text-muted)",
         }}
       >
         Add {selectedAssetIds.length} asset
@@ -179,9 +179,11 @@ export function LoadoutPickerPopover({
           style={{
             margin: "8px 12px",
             padding: "6px 8px",
-            border: "1px solid var(--app-border, #ccc)",
+            border: "1px solid var(--ui-border)",
             borderRadius: 4,
             fontSize: 13,
+            background: "var(--ui-surface-2)",
+            color: "var(--ui-text-primary)",
           }}
         />
       )}
@@ -198,7 +200,7 @@ export function LoadoutPickerPopover({
             style={{
               padding: 16,
               fontSize: 12,
-              color: "var(--app-muted, #888)",
+              color: "var(--ui-text-muted)",
               textAlign: "center",
             }}
           >
@@ -224,19 +226,23 @@ export function LoadoutPickerPopover({
                   background: "transparent",
                   border: "none",
                   cursor: busy ? "wait" : "pointer",
-                  borderBottom: "1px solid var(--app-border-subtle, #f0f0f0)",
+                  borderBottom: "1px solid var(--ui-border-subtle)",
                   fontSize: 13,
                 }}
                 onMouseEnter={(e) => {
                   e.currentTarget.style.background =
-                    "var(--app-input-bg, #f5f5f5)";
+                    "color-mix(in srgb, var(--ui-surface-2) 70%, transparent)";
                 }}
                 onMouseLeave={(e) => {
                   e.currentTarget.style.background = "transparent";
                 }}
               >
-                <span style={{ fontWeight: 600 }}>{l.name}</span>
-                <span style={{ fontSize: 11, color: "var(--app-muted, #888)" }}>
+                <span
+                  style={{ fontWeight: 600, color: "var(--ui-text-primary)" }}
+                >
+                  {l.name}
+                </span>
+                <span style={{ fontSize: 11, color: "var(--ui-text-muted)" }}>
                   {l.assetIds.length} asset
                   {l.assetIds.length === 1 ? "" : "s"}
                   {busy && " · adding…"}
@@ -250,7 +256,7 @@ export function LoadoutPickerPopover({
         <div
           style={{
             padding: 12,
-            borderTop: "1px solid var(--app-border-subtle, #eee)",
+            borderTop: "1px solid var(--ui-border-subtle)",
             display: "flex",
             flexDirection: "column",
             gap: 8,
@@ -265,9 +271,11 @@ export function LoadoutPickerPopover({
             autoFocus
             style={{
               padding: "6px 8px",
-              border: "1px solid var(--app-border, #ccc)",
+              border: "1px solid var(--ui-border)",
               borderRadius: 4,
               fontSize: 13,
+              background: "var(--ui-surface-2)",
+              color: "var(--ui-text-primary)",
             }}
             onKeyDown={(e) => {
               if (e.key === "Enter") handleCreate();
@@ -297,14 +305,17 @@ export function LoadoutPickerPopover({
               style={{
                 flex: 1,
                 padding: "6px 12px",
-                border: "none",
                 borderRadius: 4,
-                background: "var(--app-accent, #2563eb)",
-                color: "var(--app-accent-fg, #fff)",
+                background:
+                  "color-mix(in srgb, var(--ui-accent) 24%, transparent)",
+                color: "var(--ui-accent)",
+                border:
+                  "1px solid color-mix(in srgb, var(--ui-accent) 45%, transparent)",
                 fontSize: 13,
                 fontWeight: 600,
                 cursor:
                   busyId !== null || !newName.trim() ? "not-allowed" : "pointer",
+                opacity: busyId !== null || !newName.trim() ? 0.5 : 1,
               }}
             >
               {busyId === "__new__" ? "Creating…" : "Create"}
@@ -320,10 +331,10 @@ export function LoadoutPickerPopover({
               disabled={busyId !== null}
               style={{
                 padding: "6px 12px",
-                border: "1px solid var(--app-border, #ccc)",
+                border: "1px solid var(--ui-border)",
                 borderRadius: 4,
                 background: "transparent",
-                color: "inherit",
+                color: "var(--ui-text-secondary)",
                 fontSize: 13,
                 cursor: "pointer",
               }}
@@ -338,13 +349,13 @@ export function LoadoutPickerPopover({
           onClick={() => setCreating(true)}
           style={{
             padding: "10px 12px",
-            borderTop: "1px solid var(--app-border-subtle, #eee)",
+            borderTop: "1px solid var(--ui-border-subtle)",
             background: "transparent",
             border: "none",
             cursor: "pointer",
             textAlign: "left",
             fontSize: 13,
-            color: "var(--app-accent, #2563eb)",
+            color: "var(--ui-accent)",
             fontWeight: 600,
           }}
         >
@@ -357,8 +368,8 @@ export function LoadoutPickerPopover({
           style={{
             padding: "6px 12px",
             fontSize: 12,
-            color: "var(--app-error, #b00020)",
-            borderTop: "1px solid var(--app-border-subtle, #eee)",
+            color: "var(--ui-danger)",
+            borderTop: "1px solid var(--ui-border-subtle)",
           }}
         >
           {error}

@@ -107,6 +107,23 @@ export function AssetActionBar({
 
   if (count === 0) return null;
 
+  // Pill action bar — uses the app's --ui-* theme tokens so it tracks the
+  // active theme (light / dark / variants) the same way the rest of the
+  // surface does, instead of hardcoded fallbacks that flashed wrong on
+  // non-default themes.
+  const pillBtnBase: React.CSSProperties = {
+    padding: "6px 14px",
+    borderRadius: 999,
+    fontSize: 13,
+    fontWeight: 600,
+    cursor: "pointer",
+    transition: "background var(--motion-fast, 150ms) ease, color var(--motion-fast, 150ms) ease",
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 6,
+    whiteSpace: "nowrap",
+  };
+
   return (
     <>
       <div
@@ -119,11 +136,11 @@ export function AssetActionBar({
           transform: "translateX(-50%)",
           minWidth: 480,
           maxWidth: "calc(100vw - 32px)",
-          background: "var(--app-surface, #ffffff)",
-          color: "var(--app-fg)",
-          border: "1px solid var(--app-border, #ccc)",
+          background: "var(--ui-surface-1)",
+          color: "var(--ui-text-primary)",
+          border: "1px solid var(--ui-border)",
           borderRadius: 999,
-          boxShadow: "0 12px 32px rgba(0,0,0,0.22)",
+          boxShadow: "0 12px 32px color-mix(in srgb, var(--ui-text-primary) 28%, transparent)",
           padding: "8px 8px 8px 16px",
           display: "flex",
           alignItems: "center",
@@ -139,7 +156,8 @@ export function AssetActionBar({
             alignItems: "center",
             gap: 8,
             paddingRight: 12,
-            borderRight: "1px solid var(--app-border-subtle, #e5e5e5)",
+            borderRight: "1px solid var(--ui-border-subtle)",
+            color: "var(--ui-text-primary)",
           }}
         >
           <strong>{count} selected</strong>
@@ -154,7 +172,7 @@ export function AssetActionBar({
               cursor: "pointer",
               padding: "2px 6px",
               fontSize: 16,
-              color: "var(--app-muted, #888)",
+              color: "var(--ui-text-muted)",
               borderRadius: 4,
               lineHeight: 1,
             }}
@@ -163,40 +181,48 @@ export function AssetActionBar({
           </button>
         </div>
 
-        {/* Primary action */}
+        {/* Primary action — accent-tinted pill matching Btn primary variant */}
         <button
           ref={addBtnRef}
           type="button"
           onClick={handleOpenPicker}
           style={{
-            padding: "6px 14px",
-            border: "none",
-            borderRadius: 999,
-            background: "var(--app-accent, #2563eb)",
-            color: "var(--app-accent-fg, #fff)",
-            fontWeight: 600,
-            fontSize: 13,
-            cursor: "pointer",
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 6,
+            ...pillBtnBase,
+            background:
+              "color-mix(in srgb, var(--ui-accent) 24%, transparent)",
+            color: "var(--ui-accent)",
+            border:
+              "1px solid color-mix(in srgb, var(--ui-accent) 45%, transparent)",
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background =
+              "color-mix(in srgb, var(--ui-accent) 34%, transparent)";
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background =
+              "color-mix(in srgb, var(--ui-accent) 24%, transparent)";
           }}
         >
           + Add to loadout
         </button>
 
-        {/* Secondary actions */}
+        {/* Secondary action — ghost pill */}
         <button
           type="button"
           onClick={handleExportCsv}
           style={{
-            padding: "6px 12px",
-            border: "1px solid var(--app-border, #ccc)",
-            borderRadius: 999,
+            ...pillBtnBase,
             background: "transparent",
-            color: "inherit",
-            fontSize: 13,
-            cursor: "pointer",
+            color: "var(--ui-text-secondary)",
+            border: "1px solid var(--ui-border-subtle)",
+            fontWeight: 500,
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background =
+              "color-mix(in srgb, var(--ui-surface-2) 80%, transparent)";
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = "transparent";
           }}
         >
           Export CSV
@@ -208,7 +234,7 @@ export function AssetActionBar({
             style={{
               marginLeft: "auto",
               paddingLeft: 12,
-              borderLeft: "1px solid var(--app-border-subtle, #e5e5e5)",
+              borderLeft: "1px solid var(--ui-border-subtle)",
               display: "flex",
               alignItems: "center",
               gap: 8,
@@ -218,14 +244,20 @@ export function AssetActionBar({
               type="button"
               onClick={() => setConfirmOpen(true)}
               style={{
-                padding: "6px 12px",
-                border: "1px solid var(--app-danger, #b00020)",
-                borderRadius: 999,
-                background: "transparent",
-                color: "var(--app-danger, #b00020)",
-                fontSize: 13,
-                fontWeight: 600,
-                cursor: "pointer",
+                ...pillBtnBase,
+                background:
+                  "color-mix(in srgb, var(--ui-danger) 22%, transparent)",
+                color: "var(--ui-danger)",
+                border:
+                  "1px solid color-mix(in srgb, var(--ui-danger) 45%, transparent)",
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background =
+                  "color-mix(in srgb, var(--ui-danger) 30%, transparent)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background =
+                  "color-mix(in srgb, var(--ui-danger) 22%, transparent)";
               }}
             >
               Delete…
@@ -237,7 +269,7 @@ export function AssetActionBar({
           <span
             style={{
               fontSize: 12,
-              color: "var(--app-muted, #666)",
+              color: "var(--ui-text-muted)",
               marginLeft: 8,
             }}
           >

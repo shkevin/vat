@@ -73,7 +73,7 @@ export function ConfirmBulkDeleteModal({
     >
       <div
         style={{
-          background: "var(--app-surface, #fff)",
+          background: "var(--ui-surface-1)",
           borderRadius: 8,
           padding: 20,
           width: "min(560px, 92vw)",
@@ -89,7 +89,7 @@ export function ConfirmBulkDeleteModal({
             margin: "0 0 8px",
             fontSize: 16,
             fontWeight: 700,
-            color: "var(--app-fg)",
+            color: "var(--ui-text-primary)",
           }}
         >
           Delete {assets.length} asset{assets.length === 1 ? "" : "s"}?
@@ -98,7 +98,7 @@ export function ConfirmBulkDeleteModal({
           style={{
             margin: "0 0 12px",
             fontSize: 13,
-            color: "var(--app-muted, #555)",
+            color: "var(--ui-text-secondary)",
           }}
         >
           This will also delete <strong>{findingTotal} finding{findingTotal === 1 ? "" : "s"}</strong>{" "}
@@ -111,9 +111,9 @@ export function ConfirmBulkDeleteModal({
             listStyle: "none",
             margin: 0,
             padding: "8px 12px",
-            border: "1px solid var(--app-border-subtle, #eee)",
+            border: "1px solid var(--ui-border-subtle)",
             borderRadius: 4,
-            background: "var(--app-input-bg, #fafafa)",
+            background: "var(--ui-surface-2)",
             overflowY: "auto",
             maxHeight: 220,
             fontSize: 12,
@@ -132,7 +132,7 @@ export function ConfirmBulkDeleteModal({
               <span style={{ fontFamily: "var(--font-mono, monospace)" }}>
                 {a.id}
               </span>
-              <span style={{ color: "var(--app-muted, #888)" }}>
+              <span style={{ color: "var(--ui-text-muted)" }}>
                 {a.findings?.length ?? 0} finding
                 {(a.findings?.length ?? 0) === 1 ? "" : "s"}
               </span>
@@ -146,7 +146,7 @@ export function ConfirmBulkDeleteModal({
               style={{
                 display: "block",
                 fontSize: 12,
-                color: "var(--app-muted)",
+                color: "var(--ui-text-muted)",
                 marginBottom: 4,
               }}
             >
@@ -160,10 +160,12 @@ export function ConfirmBulkDeleteModal({
               style={{
                 width: "100%",
                 padding: "6px 8px",
-                border: "1px solid var(--app-border, #ccc)",
+                border: "1px solid var(--ui-border)",
                 borderRadius: 4,
                 fontSize: 13,
                 fontFamily: "var(--font-mono, monospace)",
+                background: "var(--ui-surface-2)",
+                color: "var(--ui-text-primary)",
               }}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && canConfirm) handleConfirm();
@@ -178,8 +180,9 @@ export function ConfirmBulkDeleteModal({
               marginTop: 8,
               padding: "6px 8px",
               fontSize: 12,
-              color: "var(--app-error, #b00020)",
-              background: "rgba(176,0,32,0.06)",
+              color: "var(--ui-danger)",
+              background:
+                "color-mix(in srgb, var(--ui-danger) 12%, transparent)",
               borderRadius: 4,
             }}
           >
@@ -202,10 +205,10 @@ export function ConfirmBulkDeleteModal({
             disabled={busy}
             style={{
               padding: "8px 16px",
-              border: "1px solid var(--app-border, #ccc)",
+              border: "1px solid var(--ui-border)",
               borderRadius: 4,
               background: "transparent",
-              color: "inherit",
+              color: "var(--ui-text-secondary)",
               fontSize: 13,
               cursor: "pointer",
             }}
@@ -218,13 +221,18 @@ export function ConfirmBulkDeleteModal({
             disabled={!canConfirm}
             style={{
               padding: "8px 16px",
-              border: "none",
               borderRadius: 4,
-              background: canConfirm ? "var(--app-danger, #b00020)" : "#ccc",
-              color: "#fff",
+              background: canConfirm
+                ? "color-mix(in srgb, var(--ui-danger) 24%, transparent)"
+                : "var(--ui-surface-2)",
+              color: canConfirm ? "var(--ui-danger)" : "var(--ui-text-muted)",
+              border: canConfirm
+                ? "1px solid color-mix(in srgb, var(--ui-danger) 50%, transparent)"
+                : "1px solid var(--ui-border-subtle)",
               fontSize: 13,
               fontWeight: 600,
               cursor: canConfirm ? "pointer" : "not-allowed",
+              opacity: canConfirm ? 1 : 0.65,
             }}
           >
             {busy
