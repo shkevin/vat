@@ -49,6 +49,17 @@ from app.services.otel import init_otel
 from app.services.observability import METRICS
 
 
+_BACKEND_CSP_DIRECTIVES = (
+    # API responses are usually JSON; the strict policy here serves the
+    # error pages FastAPI emits and any future static assets bound to the
+    # backend origin. No unsafe-eval anywhere — even on the API surface.
+    "default-src 'none'; "
+    "frame-ancestors 'none'; "
+    "base-uri 'none'; "
+    "form-action 'none'"
+)
+
+
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     """Add security headers to all responses."""
 
@@ -57,6 +68,13 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Content-Security-Policy"] = _BACKEND_CSP_DIRECTIVES
+        if get_settings().env == "production":
+            # HSTS: pin browsers to HTTPS for a year. Skipped in dev so a
+            # self-signed/HTTP localhost setup doesn't get hard-pinned.
+            response.headers["Strict-Transport-Security"] = (
+                "max-age=31536000; includeSubDomains"
+            )
         trace_id = getattr(request.state, "trace_id", None)
         if trace_id:
             response.headers["X-Trace-Id"] = trace_id

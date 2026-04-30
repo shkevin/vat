@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useMemo } from "react";
+import { notFound } from "next/navigation";
 import {
   buildReportHtmlFromDefinition,
   computeReportContext,
@@ -117,6 +118,11 @@ function extractBodyAndScripts(html: string): {
 }
 
 export default function TestReportPage() {
+  // Dev-only fixture: exposes eval() of mock report scripts. 404 in
+  // production so the eval surface is unreachable from the live app.
+  if (process.env.NODE_ENV === "production") {
+    notFound();
+  }
   const containerRef = useRef<HTMLDivElement>(null);
 
   const reportHtml = useMemo(() => {
