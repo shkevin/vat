@@ -7,7 +7,7 @@ import secrets
 from urllib.parse import urlencode
 
 import httpx
-from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response, status
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -38,6 +38,35 @@ logger = logging.getLogger(__name__)
 
 GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 
+# Browser session cookie. httpOnly so XSS cannot read the JWT (the previous
+# localStorage path was reachable from any DOM injection sink). Secure in
+# production. SameSite=Lax allows the OAuth-callback redirect to land with
+# the cookie attached on top-level navigations while still defeating most
+# CSRF; a future step adds a CSRF token for state-changing requests as
+# belt-and-suspenders.
+SESSION_COOKIE_NAME = "vat-session"
+
+
+def _set_session_cookie(response, token: str) -> None:
+    """Attach the JWT as an httpOnly session cookie. The frontend continues
+    to receive the token in the JSON body for back-compat during the
+    migration; new frontend code should rely on the cookie and not persist
+    the token to localStorage."""
+    settings = get_settings()
+    response.set_cookie(
+        SESSION_COOKIE_NAME,
+        token,
+        max_age=settings.jwt_expire_hours * 3600,
+        httponly=True,
+        secure=settings.env == "production",
+        samesite="lax",
+        path="/",
+    )
+
+
+def _clear_session_cookie(response) -> None:
+    response.delete_cookie(SESSION_COOKIE_NAME, path="/")
+
 
 class AuthConfigResponse(BaseModel):
     google_enabled: bool
@@ -54,10 +83,14 @@ class ExchangeCodeResponse(BaseModel):
 
 
 @router.post("/exchange-code", response_model=ExchangeCodeResponse)
-async def exchange_code(body: ExchangeCodeRequest):
+async def exchange_code(body: ExchangeCodeRequest, response: Response):
     """
     Exchange OAuth callback code for JWT. Code is short-lived (60s), single-use.
     Called by frontend after redirect from Google OAuth callback.
+
+    Sets an httpOnly session cookie alongside the JSON token. New frontend
+    code should rely on the cookie; legacy code reading the JSON token
+    keeps working during the migration.
     """
     token = decode_oauth_exchange_code(body.code)
     if not token:
@@ -71,6 +104,7 @@ async def exchange_code(body: ExchangeCodeRequest):
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid token",
         )
+    _set_session_cookie(response, token)
     return ExchangeCodeResponse(
         token=token,
         user={
@@ -80,6 +114,50 @@ async def exchange_code(body: ExchangeCodeRequest):
             "tenant_id": payload.get("tenant_id"),
         },
     )
+
+
+@router.post("/logout")
+async def logout(response: Response):
+    """Clear the session cookie. Returns 204; the client should also
+    purge any in-memory or legacy localStorage token alongside this.
+    """
+    _clear_session_cookie(response)
+    response.status_code = status.HTTP_204_NO_CONTENT
+    return response
+
+
+@router.get("/me")
+async def me(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """Return the current user when a session is present.
+
+    Used by the frontend to bootstrap state on page load when the JWT
+    lives only in the httpOnly cookie (no localStorage path). Reads the
+    cookie via the standard auth resolver — no special handling here.
+    """
+    from app.core.auth import _resolve_user_context
+
+    auth_header = request.headers.get("Authorization")
+    creds = None
+    if auth_header and auth_header.lower().startswith("bearer "):
+        from fastapi.security import HTTPAuthorizationCredentials
+
+        creds = HTTPAuthorizationCredentials(
+            scheme="Bearer", credentials=auth_header[7:]
+        )
+    ctx, ok = await _resolve_user_context(creds, None, None, db)
+    if not ok:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated"
+        )
+    return {
+        "id": ctx.user_id,
+        "email": ctx.email,
+        "role": ctx.role,
+        "tenant_id": ctx.tenant_id,
+    }
 
 
 @router.get("/config", response_model=AuthConfigResponse)
@@ -110,6 +188,7 @@ class LoginResponse(BaseModel):
 @router.post("/login", response_model=LoginResponse)
 async def login(
     body: LoginRequest,
+    response: Response,
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -154,6 +233,7 @@ async def login(
         tenant_id=user.tenant_id,
         role=user.role,
     )
+    _set_session_cookie(response, token)
     return LoginResponse(
         user={
             "id": user.id,

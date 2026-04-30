@@ -10,7 +10,7 @@ Attestation and audit entries use authenticated identity:
 
 from typing import Any, Optional
 
-from fastapi import Depends, Header, HTTPException, status
+from fastapi import Cookie, Depends, Header, HTTPException, status
 from fastapi.security import APIKeyHeader, HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import false as sql_false
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -24,6 +24,11 @@ from app.services.user_service import get_user_by_email
 
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 bearer_scheme = HTTPBearer(auto_error=False)
+
+# Browser session cookie set by /api/auth/login and /api/auth/exchange-code.
+# Read here as a secondary credential source so frontend code can move off
+# localStorage without breaking existing Authorization-header callers.
+SESSION_COOKIE_NAME = "vat-session"
 
 
 def _identity_from_headers(
@@ -47,10 +52,16 @@ async def _resolve_user_context(
     x_api_key: Optional[str],
     x_vat_user: Optional[str],
     db: AsyncSession,
+    session_cookie: Optional[str] = None,
 ) -> tuple[UserContext, bool]:
     """
     Resolve user context. Returns (context, is_authenticated).
     X-VAT-User only used when VAT_ALLOW_DEV_HEADERS=true (dev/testing only).
+
+    Resolution order: Authorization header (Bearer JWT or admin key),
+    then the ``vat-session`` cookie (browser sessions). The cookie path
+    accepts only valid JWTs, never admin keys — admin keys are an
+    automation surface and shouldn't ride on browser cookies.
     """
     # 1. JWT Bearer token — validate and use claims directly
     if authorization and authorization.credentials:
@@ -88,9 +99,26 @@ async def _resolve_user_context(
                 True,
             )
 
+    # 2. Browser session cookie (set by /api/auth/login + /exchange-code).
+    # Admin keys are intentionally NOT accepted here — only signed JWTs.
+    if session_cookie:
+        payload = decode_token(session_cookie)
+        if payload:
+            return (
+                UserContext(
+                    user_id=payload.get("user_id", payload.get("sub", "")),
+                    email=payload.get("sub", ""),
+                    tenant_id=payload.get("tenant_id"),
+                    role=payload.get("role", "reviewer"),
+                    raw_identity=payload.get("sub", ""),
+                    cross_tenant=False,
+                ),
+                True,
+            )
+
     identity = _identity_from_headers(authorization, x_api_key, x_vat_user)
 
-    # 2. X-VAT-User: only when explicitly enabled (dev/testing)
+    # 3. X-VAT-User: only when explicitly enabled (dev/testing)
     settings = get_settings()
     if settings.allow_dev_headers and x_vat_user and "@" in x_vat_user.strip():
         user = await get_user_by_email(db, x_vat_user.strip())
@@ -125,6 +153,7 @@ async def get_current_user_context(
     authorization: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme),
     x_api_key: Optional[str] = Depends(api_key_header),
     x_vat_user: Optional[str] = Header(None, alias="X-VAT-User"),
+    vat_session: Optional[str] = Cookie(default=None, alias=SESSION_COOKIE_NAME),
     db: AsyncSession = Depends(get_db),
 ) -> UserContext:
     """
@@ -132,7 +161,7 @@ async def get_current_user_context(
     Use get_user_context_optional for endpoints that allow anonymous (e.g. SBOM audit).
     """
     ctx, is_authenticated = await _resolve_user_context(
-        authorization, x_api_key, x_vat_user, db
+        authorization, x_api_key, x_vat_user, db, session_cookie=vat_session
     )
     if not is_authenticated:
         raise HTTPException(
@@ -150,13 +179,16 @@ async def get_user_context_optional(
     authorization: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme),
     x_api_key: Optional[str] = Depends(api_key_header),
     x_vat_user: Optional[str] = Header(None, alias="X-VAT-User"),
+    vat_session: Optional[str] = Cookie(default=None, alias=SESSION_COOKIE_NAME),
     db: AsyncSession = Depends(get_db),
 ) -> UserContext:
     """
     Resolve user context without raising. Returns anonymous context if unauthenticated.
     Use for endpoints that allow optional audit attribution (e.g. SBOM upload).
     """
-    ctx, _ = await _resolve_user_context(authorization, x_api_key, x_vat_user, db)
+    ctx, _ = await _resolve_user_context(
+        authorization, x_api_key, x_vat_user, db, session_cookie=vat_session
+    )
     set_tenant_id(ctx.tenant_id)
     set_user_id(ctx.user_id or None)
     return ctx
