@@ -472,11 +472,14 @@ async def ingest_finding(
                     "note": "Scanner re-detected previously resolved finding",
                 }
             )
+        # Single-transaction ingest: only flush between steps so subsequent
+        # queries see in-progress changes; the caller commits once after we
+        # return. A crash mid-pipeline rolls back cleanly instead of leaving
+        # orphan observations or correlation edges without their finding.
         await _record_container_asset_observations(
             db, payload, scan_session_id=scan_session_id
         )
-        await db.commit()
-        await db.refresh(existing)
+        await db.flush()
         await _upsert_observation(
             db,
             finding_id=existing.id,
@@ -489,7 +492,7 @@ async def ingest_finding(
         await upsert_identifier_facts_for_finding(
             db, finding=existing, source=source_name
         )
-        await db.commit()
+        await db.flush()
         if get_settings().correlation_linking_enabled:
             await apply_correlation_linking(
                 db,
@@ -498,8 +501,9 @@ async def ingest_finding(
                 source_id=source_name,
                 parser_id=parser_id,
             )
-            await db.commit()
-            await db.refresh(existing)
+            await db.flush()
+        await db.commit()
+        await db.refresh(existing)
         return existing, False
 
     # Create new finding
@@ -592,8 +596,9 @@ async def ingest_finding(
     await _record_container_asset_observations(
         db, payload, scan_session_id=scan_session_id
     )
-    await db.commit()
-    await db.refresh(finding)
+    # Flush so the new Finding row is visible to subsequent SELECTs in this
+    # transaction (correlation linking, observation upsert, identifier facts).
+    await db.flush()
     await _upsert_observation(
         db,
         finding_id=finding.id,
@@ -604,7 +609,7 @@ async def ingest_finding(
         raw_evidence_ref=raw_evidence_ref,
     )
     await upsert_identifier_facts_for_finding(db, finding=finding, source=source_name)
-    await db.commit()
+    await db.flush()
     if get_settings().correlation_linking_enabled:
         await apply_correlation_linking(
             db,
@@ -613,14 +618,17 @@ async def ingest_finding(
             source_id=source_name,
             parser_id=parser_id,
         )
-        await db.commit()
-        await db.refresh(finding)
+        await db.flush()
 
     if auto_sync_to_tracker:
         from app.services.sync_service import maybe_enqueue_tracker_for_new_finding
 
         await maybe_enqueue_tracker_for_new_finding(db, finding, auto_sync=True)
-        await db.commit()
-        await db.refresh(finding)
+        await db.flush()
+
+    # Single commit at the end — observations, identifier facts, correlation
+    # edges, audit events, and the SyncEvent enqueue are now all-or-nothing.
+    await db.commit()
+    await db.refresh(finding)
 
     return finding, True

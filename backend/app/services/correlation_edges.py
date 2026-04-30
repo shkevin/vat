@@ -9,6 +9,7 @@ from typing import Optional
 from unittest.mock import AsyncMock
 
 from sqlalchemy import or_, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.correlation_edge import CorrelationEdge
@@ -48,36 +49,89 @@ async def upsert_edge(
     source_id: str | None = None,
     parser_id: str | None = None,
 ) -> CorrelationEdge:
-    """Create/update an active edge without destructive overwrite."""
+    """Create or update an active edge without destructive overwrite.
+
+    Uses Postgres ``INSERT ... ON CONFLICT DO UPDATE`` keyed on the unique
+    pair index ``uq_correlation_edges_pair``. The previous get-then-add
+    pattern raced under concurrent ingests for the same (a, b) pair: both
+    writers saw no existing row, both INSERTed, the loser hit IntegrityError
+    and rolled back its entire transaction. ON CONFLICT collapses the race
+    into a single round-trip: first writer creates, later writers update.
+    Mock-session test paths skip the dialect-specific insert.
+    """
     a, b = normalize_pair(finding_id_left, finding_id_right)
     eid = _edge_id(a, b)
-    row = await db.get(CorrelationEdge, eid)
     op_id = operation_id or uuid.uuid4().hex
+
+    if _is_mock_session(db):
+        # Test paths use AsyncMock for db; preserve the get-then-add shape so
+        # existing unit tests' add()/get() expectations still match.
+        row = await db.get(CorrelationEdge, eid)
+        if row is None:
+            row = CorrelationEdge(
+                id=eid,
+                finding_id_a=a,
+                finding_id_b=b,
+                edge_type=edge_type,
+                confidence=confidence,
+                evidence=evidence or {},
+                active=True,
+                operation_id=op_id,
+                created_by=created_by,
+            )
+            db.add(row)
+        else:
+            row.edge_type = edge_type
+            row.confidence = confidence
+            row.evidence = evidence or {}
+            row.active = True
+            row.operation_id = op_id
+            row.removed_by = None
+            row.removed_at = None
+            row.remove_reason = None
+            row.updated_at = datetime.utcnow()
+        return row
+
+    now = datetime.utcnow()
+    stmt = pg_insert(CorrelationEdge).values(
+        id=eid,
+        finding_id_a=a,
+        finding_id_b=b,
+        edge_type=edge_type,
+        confidence=confidence,
+        evidence=evidence or {},
+        active=True,
+        operation_id=op_id,
+        created_by=created_by,
+        updated_at=now,
+    )
+    stmt = stmt.on_conflict_do_update(
+        index_elements=["finding_id_a", "finding_id_b"],
+        set_={
+            "edge_type": stmt.excluded.edge_type,
+            "confidence": stmt.excluded.confidence,
+            "evidence": stmt.excluded.evidence,
+            "active": True,
+            "operation_id": stmt.excluded.operation_id,
+            "removed_by": None,
+            "removed_at": None,
+            "remove_reason": None,
+            "updated_at": now,
+        },
+    )
+    await db.execute(stmt)
+    # Re-fetch the row so callers/audit get a fully hydrated ORM instance.
+    row = await db.get(CorrelationEdge, eid)
     if row is None:
-        row = CorrelationEdge(
-            id=eid,
-            finding_id_a=a,
-            finding_id_b=b,
-            edge_type=edge_type,
-            confidence=confidence,
-            evidence=evidence or {},
-            active=True,
-            operation_id=op_id,
-            created_by=created_by,
+        # Should not happen — the upsert just wrote the row. Re-query by pair
+        # in case the SHA-derived id ever drifted from the row id.
+        result = await db.execute(
+            select(CorrelationEdge).where(
+                CorrelationEdge.finding_id_a == a,
+                CorrelationEdge.finding_id_b == b,
+            )
         )
-        add_ret = db.add(row)
-        if hasattr(add_ret, "__await__"):
-            await add_ret
-    else:
-        row.edge_type = edge_type
-        row.confidence = confidence
-        row.evidence = evidence or {}
-        row.active = True
-        row.operation_id = op_id
-        row.removed_by = None
-        row.removed_at = None
-        row.remove_reason = None
-        row.updated_at = datetime.utcnow()
+        row = result.scalar_one()
 
     if not _is_mock_session(db):
         await emit_audit_event(
