@@ -11,13 +11,15 @@ from fastapi import Request
 def verify_hmac(
     secret: Optional[str], payload: bytes, signature: Optional[str]
 ) -> bool:
-    """Verify HMAC-SHA256 signature. If secret not configured, skip (operator choice).
-    Linear sends raw hex digest; Stripe/GitHub use 'sha256=' prefix. Supports both."""
-    if not secret:
-        return True
-    if not signature:
+    """Verify HMAC-SHA256 signature. Fail closed: a missing secret or signature
+    is treated as a verification failure. Operators must configure a webhook
+    secret per source/tracker before inbound webhooks will be accepted.
+
+    Linear sends raw hex digest; Stripe/GitHub use 'sha256=' prefix. Supports both.
+    """
+    if not secret or not signature:
         return False
-    sig = (signature or "").strip()
+    sig = signature.strip()
     expected = hmac.new(secret.encode(), payload, hashlib.sha256).hexdigest()
     return hmac.compare_digest(sig, expected) or hmac.compare_digest(
         sig, f"sha256={expected}"

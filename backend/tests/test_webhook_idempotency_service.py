@@ -1,11 +1,10 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 
 import pytest
 
-from app.models.webhook_event import WebhookEvent
 from app.services import webhook_idempotency
 
 
@@ -25,6 +24,13 @@ def test_compute_idempotency_key_is_stable_and_64():
     assert k1 != webhook_idempotency.compute_idempotency_key("linear", "Issue", "a", "c")
 
 
+def test_payload_hash_normalizes_key_order():
+    h1 = webhook_idempotency._payload_hash({"a": 1, "z": 9})
+    h2 = webhook_idempotency._payload_hash({"z": 9, "a": 1})
+    assert h1 == h2
+    assert webhook_idempotency._payload_hash(None) is None
+
+
 @pytest.mark.asyncio
 async def test_is_duplicate_webhook():
     db = SimpleNamespace(execute=AsyncMock(return_value=_Result(None)))
@@ -35,27 +41,30 @@ async def test_is_duplicate_webhook():
 
 
 @pytest.mark.asyncio
-async def test_record_webhook_processed_with_and_without_payload():
-    db = SimpleNamespace(add=MagicMock())
-    await webhook_idempotency.record_webhook_processed(
-        db,
-        "idem-1",
-        "linear",
-        "IssueUpdated",
-        {"z": 1, "a": 2},
-        {"ok": True},
+async def test_claim_webhook_returns_true_on_first_insert():
+    """ON CONFLICT DO NOTHING RETURNING id returns the new row's id when this
+    caller wins the race."""
+    db = SimpleNamespace(execute=AsyncMock(return_value=_Result("uuid-1")))
+    claimed = await webhook_idempotency.claim_webhook(
+        db, "idem-1", "linear", "IssueUpdated", {"a": 1}, {"ok": True}
     )
-    added = db.add.call_args.args[0]
-    assert isinstance(added, WebhookEvent)
-    assert added.idempotency_key == "idem-1"
-    assert added.source == "linear"
-    assert added.event_type == "IssueUpdated"
-    assert added.payload_hash is not None
-    assert added.result == {"ok": True}
+    assert claimed is True
+    db.execute.assert_awaited_once()
 
-    db2 = SimpleNamespace(add=MagicMock())
+
+@pytest.mark.asyncio
+async def test_claim_webhook_returns_false_on_conflict():
+    """When another writer already inserted the key, returning() yields no
+    row and the caller must skip the side effect."""
+    db = SimpleNamespace(execute=AsyncMock(return_value=_Result(None)))
+    claimed = await webhook_idempotency.claim_webhook(db, "idem-1", "linear")
+    assert claimed is False
+
+
+@pytest.mark.asyncio
+async def test_record_webhook_processed_executes_insert():
+    db = SimpleNamespace(execute=AsyncMock())
     await webhook_idempotency.record_webhook_processed(
-        db2, "idem-2", "linear", "IssueUpdated", None, None
+        db, "idem-1", "linear", "IssueUpdated", {"a": 1}, {"ok": True}
     )
-    added2 = db2.add.call_args.args[0]
-    assert added2.payload_hash is None
+    db.execute.assert_awaited_once()

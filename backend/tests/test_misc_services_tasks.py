@@ -342,6 +342,7 @@ async def test_linear_poll_service_happy_and_error(monkeypatch):
     monkeypatch.setattr(linear_poll_service, "get_all_linear_tracker_issue_ids", _tracked)
     monkeypatch.setattr(linear_poll_service, "LinearAdapter", _Adapter)
     monkeypatch.setattr(linear_poll_service, "is_duplicate_webhook", AsyncMock(return_value=False))
+    monkeypatch.setattr(linear_poll_service, "claim_webhook", AsyncMock(return_value=True))
     monkeypatch.setattr(linear_poll_service, "apply_vat_parsed_update", AsyncMock(return_value={"finding_id": "f1"}))
     monkeypatch.setattr(linear_poll_service, "post_canonical_if_enabled", AsyncMock())
     monkeypatch.setattr(

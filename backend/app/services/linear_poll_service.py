@@ -14,6 +14,7 @@ from app.services.linear_parsed_service import (
 )
 from app.services.webhook_idempotency import (
     compute_idempotency_key,
+    claim_webhook,
     is_duplicate_webhook,
 )
 
@@ -111,12 +112,18 @@ async def poll_linear_for_updates(db: AsyncSession, *, force: bool = False) -> d
                 idempotency_key = compute_idempotency_key(
                     "linear", "Issue.update.description", issue_id, description[:200]
                 )
-                if not await is_duplicate_webhook(db, idempotency_key):
-                    data = {
-                        "source": "poll",
-                        "issue_id": issue_id,
-                        "type": "description",
-                    }
+                data = {
+                    "source": "poll",
+                    "issue_id": issue_id,
+                    "type": "description",
+                }
+                if await claim_webhook(
+                    db,
+                    idempotency_key,
+                    "linear",
+                    "Issue.update.description",
+                    data,
+                ):
                     result = await apply_vat_parsed_update(
                         db,
                         parsed_desc,
@@ -129,7 +136,9 @@ async def poll_linear_for_updates(db: AsyncSession, *, force: bool = False) -> d
                     if result.get("finding_id"):
                         descriptions_processed += 1
                         await post_canonical_if_enabled(adapter, issue_id, parsed_desc)
-                await db.commit()
+                    await db.commit()
+                else:
+                    await db.rollback()
 
             # 2. Parse each comment
             comments_data = issue.get("comments") or {}
@@ -164,9 +173,6 @@ async def poll_linear_for_updates(db: AsyncSession, *, force: bool = False) -> d
                     comment_id or issue_id,
                     created_at or issue_uuid,
                 )
-                if await is_duplicate_webhook(db, idempotency_key):
-                    continue
-
                 parsed = {
                     "cve_id": comment_update.cve_id,
                     "status": comment_update.status,
@@ -178,6 +184,12 @@ async def poll_linear_for_updates(db: AsyncSession, *, force: bool = False) -> d
                     "issue_id": issue_id,
                     "comment_id": comment_id,
                 }
+                if not await claim_webhook(
+                    db, idempotency_key, "linear", "Comment.create", data
+                ):
+                    await db.rollback()
+                    continue
+
                 result = await apply_vat_parsed_update(
                     db,
                     parsed,

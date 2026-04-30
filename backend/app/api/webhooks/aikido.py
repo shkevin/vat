@@ -19,6 +19,7 @@ from app.services.aikido_full_sync import aikido_issue_trace_id
 from app.services.ingest import ingest_finding
 from app.services.webhook_idempotency import (
     compute_idempotency_key,
+    claim_webhook,
     is_duplicate_webhook,
     record_webhook_processed,
 )
@@ -112,7 +113,19 @@ async def _handle_aikido_webhook(
     body = await request.body()
     sig = request.headers.get(SIGNATURE_HEADER)
     webhook_secret = creds.get("webhook_secret")
-    if webhook_secret and not verify_hmac(webhook_secret, body, sig):
+    if not webhook_secret:
+        # Fail closed: configured Aikido source must have a webhook secret before
+        # inbound deliveries can be trusted. Returning 503 (not 401) makes the
+        # missing-config state visible to ops without leaking that "no secret"
+        # would have been accepted before.
+        logger.warning(
+            "Aikido webhook rejected: webhook_secret not configured for source"
+        )
+        return Response(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            content="Aikido webhook secret not configured",
+        )
+    if not verify_hmac(webhook_secret, body, sig):
         return Response(
             status_code=status.HTTP_401_UNAUTHORIZED, content="Invalid signature"
         )
@@ -135,10 +148,14 @@ async def _handle_aikido_webhook(
         or ""
     )
     idempotency_key = compute_idempotency_key("aikido", event, issue_id, str(ts))
+    # Fast-path duplicate filter; the authoritative claim happens inside the
+    # side-effect session below so a rollback releases it.
     if await is_duplicate_webhook(db, idempotency_key):
         return {"received": True, "event": event, "duplicate": True}
     if not AikidoAdapter().get_capabilities().supports_inbound_sync:
+        # No side effect; record completion best-effort (idempotent).
         await record_webhook_processed(db, idempotency_key, "aikido", event, data)
+        await db.commit()
         return {
             "received": True,
             "event": event,
@@ -178,6 +195,15 @@ async def _handle_aikido_webhook(
                 issue.get("id") or issue.get("issue_id") or ""
             ).strip()
         async with async_session() as session:
+            # Atomic claim — if another delivery beat us between the fast-path
+            # check above and now, this returns False and we abort without
+            # double-applying the side effect.
+            if not await claim_webhook(
+                session, idempotency_key, "aikido", event, data
+            ):
+                await session.rollback()
+                return {"received": True, "event": event, "duplicate": True}
+
             from app.services.dedup import make_fingerprint
 
             existing = None
@@ -208,23 +234,13 @@ async def _handle_aikido_webhook(
                 )
                 existing.audit = audit
                 await session.commit()
-                await record_webhook_processed(
-                    session,
-                    idempotency_key,
-                    "aikido",
-                    event,
-                    data,
-                    {"finding_id": existing.id},
-                )
                 return {
                     "received": True,
                     "event": event,
                     "finding_id": existing.id,
                     "status": "Resolved",
                 }
-            await record_webhook_processed(
-                session, idempotency_key, "aikido", event, data
-            )
+            await session.commit()
             return {"received": True, "event": event, "finding_id": None}
 
     adapter = AikidoAdapter(credentials=creds)
@@ -240,6 +256,11 @@ async def _handle_aikido_webhook(
     trace_id = aikido_issue_trace_id(aikido_source_id, issue_for_trace or data)
 
     async with async_session() as session:
+        if not await claim_webhook(
+            session, idempotency_key, "aikido", event, data
+        ):
+            await session.rollback()
+            return {"received": True, "event": event, "duplicate": True}
         finding, created = await ingest_finding(
             session,
             payload,
@@ -249,14 +270,6 @@ async def _handle_aikido_webhook(
             parser_id="aikido",
         )
         await session.refresh(finding)
-        await record_webhook_processed(
-            session,
-            idempotency_key,
-            "aikido",
-            event,
-            data,
-            {"finding_id": finding.id, "created": created},
-        )
         await session.commit()
 
     return {

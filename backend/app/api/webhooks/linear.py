@@ -1,6 +1,7 @@
 """Linear webhook handler. PRD §5.9, §8.4. Comment.create for [VAT] blocks; Issue.update for watched label inject, description parse, and template re-injection."""
 
 import json
+import logging
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Request, Response, status
@@ -21,10 +22,12 @@ from app.services.watched_label_inject import (
 )
 from app.services.webhook_idempotency import (
     compute_idempotency_key,
+    claim_webhook,
     is_duplicate_webhook,
     record_webhook_processed,
 )
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 # Linear sends Linear-Signature; X-VAT-Signature supported for legacy
@@ -51,7 +54,13 @@ async def linear_webhook(request: Request, db: AsyncSession = Depends(get_db)):
         sig = request.headers.get(h)
         if sig:
             break
-    if webhook_secret and not verify_hmac(webhook_secret, body, sig):
+    if not webhook_secret:
+        logger.warning("Linear webhook rejected: webhook_secret not configured")
+        return Response(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            content="Linear webhook secret not configured",
+        )
+    if not verify_hmac(webhook_secret, body, sig):
         return Response(
             status_code=status.HTTP_401_UNAUTHORIZED, content="Invalid signature"
         )
@@ -89,20 +98,16 @@ async def linear_webhook(request: Request, db: AsyncSession = Depends(get_db)):
             idempotency_key = compute_idempotency_key(
                 "linear", "Issue.update.label", issue_id, ts
             )
-            if not await is_duplicate_webhook(db, idempotency_key):
-                async with async_session() as session:
+            async with async_session() as session:
+                if await claim_webhook(
+                    session, idempotency_key, "linear", "Issue.update", data
+                ):
                     label_result = await handle_issue_label_update(
                         session, data_body, updated_from
                     )
-                    if label_result is not None:
-                        await record_webhook_processed(
-                            session,
-                            idempotency_key,
-                            "linear",
-                            "Issue.update",
-                            data,
-                            label_result,
-                        )
+                    await session.commit()
+                else:
+                    await session.rollback()
 
         # 2. Description parse — when issue body is edited with [VAT] block (e.g. AI/developer updates)
         desc_result = None
@@ -114,9 +119,15 @@ async def linear_webhook(request: Request, db: AsyncSession = Depends(get_db)):
                 idempotency_key = compute_idempotency_key(
                     "linear", "Issue.update.description", issue_id, new_desc[:200] + ts
                 )
-                if not await is_duplicate_webhook(db, idempotency_key):
-                    adapter = LinearAdapter(api_key=api_key, team_id=team_id)
-                    async with async_session() as session:
+                adapter = LinearAdapter(api_key=api_key, team_id=team_id)
+                async with async_session() as session:
+                    if await claim_webhook(
+                        session,
+                        idempotency_key,
+                        "linear",
+                        "Issue.update.description",
+                        data,
+                    ):
                         desc_result = await apply_vat_parsed_update(
                             session,
                             parsed,
@@ -126,28 +137,31 @@ async def linear_webhook(request: Request, db: AsyncSession = Depends(get_db)):
                             "Issue.update.description",
                             data,
                         )
-                    if desc_result.get("finding_id"):
-                        await post_canonical_if_enabled(adapter, issue_id, parsed)
+                        await session.commit()
+                    else:
+                        await session.rollback()
+                if desc_result and desc_result.get("finding_id"):
+                    await post_canonical_if_enabled(adapter, issue_id, parsed)
             else:
                 # 3. Template re-injection — when template was removed or altered
                 idempotency_key = compute_idempotency_key(
                     "linear", "Issue.update.reinject", issue_id, new_desc[:100] + ts
                 )
-                if not await is_duplicate_webhook(db, idempotency_key):
-                    adapter = LinearAdapter(api_key=api_key, team_id=team_id)
-                    async with async_session() as session:
+                adapter = LinearAdapter(api_key=api_key, team_id=team_id)
+                async with async_session() as session:
+                    if await claim_webhook(
+                        session,
+                        idempotency_key,
+                        "linear",
+                        "Issue.update.reinject",
+                        data,
+                    ):
                         reinject_result = await handle_template_reinject(
                             session, adapter, issue_obj, issue_id, new_desc
                         )
-                        if reinject_result:
-                            await record_webhook_processed(
-                                session,
-                                idempotency_key,
-                                "linear",
-                                "Issue.update.reinject",
-                                data,
-                                reinject_result,
-                            )
+                        await session.commit()
+                    else:
+                        await session.rollback()
 
         # 4. State change to closed/canceled — reopen if VAT finding not yet handled (prevent drift)
         reopen_result = None
@@ -158,9 +172,15 @@ async def linear_webhook(request: Request, db: AsyncSession = Depends(get_db)):
                 idempotency_key = compute_idempotency_key(
                     "linear", "Issue.update.state", issue_id, str(new_state_id) + ts
                 )
-                if not await is_duplicate_webhook(db, idempotency_key):
-                    adapter = LinearAdapter(api_key=api_key, team_id=team_id)
-                    async with async_session() as session:
+                adapter = LinearAdapter(api_key=api_key, team_id=team_id)
+                async with async_session() as session:
+                    if await claim_webhook(
+                        session,
+                        idempotency_key,
+                        "linear",
+                        "Issue.update.state",
+                        data,
+                    ):
                         reopen_result = await handle_tracker_issue_closed_without_vat(
                             session,
                             adapter,
@@ -170,17 +190,9 @@ async def linear_webhook(request: Request, db: AsyncSession = Depends(get_db)):
                             api_key,
                             team_id,
                         )
-                        await record_webhook_processed(
-                            session,
-                            idempotency_key,
-                            "linear",
-                            "Issue.update.state",
-                            data,
-                            {
-                                "reopened": reopen_result.get("reopened"),
-                                "finding_id": reopen_result.get("finding_id"),
-                            },
-                        )
+                        await session.commit()
+                    else:
+                        await session.rollback()
 
         return {
             "received": True,
@@ -219,8 +231,6 @@ async def linear_webhook(request: Request, db: AsyncSession = Depends(get_db)):
     idempotency_key = compute_idempotency_key(
         "linear", action, comment_id or issue_id, comment_ts or issue_uuid
     )
-    if await is_duplicate_webhook(db, idempotency_key):
-        return {"received": True, "event": action, "parsed": True, "duplicate": True}
 
     parsed = {
         "cve_id": cve_id,
@@ -229,9 +239,18 @@ async def linear_webhook(request: Request, db: AsyncSession = Depends(get_db)):
         "compensating_controls": comment_update.compensating_controls or "",
     }
     async with async_session() as session:
+        if not await claim_webhook(session, idempotency_key, "linear", action, data):
+            await session.rollback()
+            return {
+                "received": True,
+                "event": action,
+                "parsed": True,
+                "duplicate": True,
+            }
         result = await apply_vat_parsed_update(
             session, parsed, issue_id, issue_uuid, idempotency_key, action, data
         )
+        await session.commit()
     if result.get("finding_id"):
         await post_canonical_if_enabled(adapter, issue_id, parsed)
     return result
