@@ -1666,7 +1666,7 @@ function renderIssueList(
     })
     .join("");
   const attrs = sectionFilterAttrs(ctx);
-  return `<div class="section"><div${attrs}><h2>Issue Inventory (${issues.length} of ${ctx.filteredIssues.length})</h2><table class="issue-inventory-table"><thead><tr><th>ID</th><th>Title</th><th>Severity</th><th>Source</th><th>Asset Type</th><th>Asset</th><th class="text-right">Age</th><th class="sortable sortable-status" data-sort-col="status">Status</th><th>Tasks</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
+  return `<div class="section"><div${attrs} data-report-aggregate="issue-list" data-limit="${limit}"><h2>Issue Inventory</h2><table class="issue-inventory-table"><thead><tr><th>ID</th><th>Title</th><th>Severity</th><th>Source</th><th>Asset Type</th><th>Asset</th><th class="text-right">Age</th><th class="sortable sortable-status" data-sort-col="status">Status</th><th>Tasks</th></tr></thead><tbody></tbody></table></div></div>`;
 }
 
 function renderContainerBars(

@@ -717,6 +717,8 @@ interface ReportDataIssue {
   t?: string;
   /** CVE id (used by Top Vulnerabilities recompute on filter change). */
   cve?: string;
+  /** Issue ID for issue-list managed section rendering. */
+  id?: number;
 }
 
 /** Build payload for client-side aggregate widget updates (summary, trend). */
@@ -785,6 +787,7 @@ function buildReportDataPayload(
         at,
         t: i.title ?? undefined,
         cve: i.cve_id ?? undefined,
+        id: i.issue_id ?? undefined,
       };
     });
   const fullIssues = toPayload(context.filteredIssues);
@@ -914,6 +917,7 @@ function buildReportFilterBar(
     var root = document.querySelector(".report-filterable-root");
     if (!root) { elsCache = []; sectionsCache = []; return; }
     elsCache = Array.prototype.slice.call(root.querySelectorAll(filterableSelector));
+    elsCache = elsCache.filter(function(el) { return !el.closest('[data-report-aggregate]'); });
     sectionsCache = Array.prototype.slice.call(root.querySelectorAll(".section"));
     var parentSet = new Set();
     elsCache.forEach(function(el) {
@@ -1081,6 +1085,50 @@ function buildReportFilterBar(
   function applyFilterImmediate() {
     var root = document.querySelector(".report-filterable-root");
     if (!root) return;
+    var allSev = (cfg.severities || []).length;
+    var allAssetType = (cfg.assetTypes || []).length;
+    var allAsset = (cfg.assets || []).length;
+    var allBranch = (cfg.branches || []).length;
+    var allScanner = (cfg.scanners || []).length;
+    var noSevFilter = allSev === 0 || state.severity.size === 0 || state.severity.size === allSev;
+    var noAssetTypeFilter = allAssetType === 0 || state.assetType.size === 0 || state.assetType.size === allAssetType;
+    var noAssetFilter = allAsset === 0 || state.asset.size === 0 || state.asset.size === allAsset;
+    var noBranchFilter = allBranch === 0 || state.branch.size === 0 || state.branch.size === allBranch;
+    // Scanner filter semantics:
+    // - all selected => no filter
+    // - none selected => show no rows/issues
+    var noScannerFilter = allScanner === 0 || state.scanner.size === allScanner;
+    // CSS-based filtering for severity + asset type (fast path)
+    var vatFStyle = document.getElementById("vat-f");
+    if (vatFStyle) {
+      var cssRules = "";
+      if (!noSevFilter && state.severity.size > 0) {
+        var sevSelectors = Array.from(state.severity).map(function(sev) {
+          return ':not([data-filter-severity~="' + sev + '"])';
+        }).join("");
+        cssRules += ".report-filterable-root [data-filter-severity]" + sevSelectors + "{display:none!important}";
+      }
+      if (!noAssetTypeFilter && state.assetType.size > 0) {
+        var atSelectors = Array.from(state.assetType).map(function(at) {
+          return ':not([data-filter-asset-type="' + at + '"])';
+        }).join("");
+        cssRules += ".report-filterable-root [data-filter-asset-type]" + atSelectors + "{display:none!important}";
+      }
+      vatFStyle.textContent = cssRules;
+    }
+    var onlyCssFilters = noAssetFilter && noBranchFilter && noScannerFilter;
+    if (onlyCssFilters) {
+      renderChips();
+      if (window.__vatReportNotifyHeight) window.__vatReportNotifyHeight();
+      if (reportData) {
+        if (aggregateTimer) clearTimeout(aggregateTimer);
+        aggregateTimer = setTimeout(function() {
+          aggregateTimer = null;
+          updateAggregateWidgets();
+        }, 0);
+      }
+      return;
+    }
     visibilityCache.clear();
     sectionVisibilityCache.clear();
     if (elsCache && elsCache.length === 0) {
@@ -1095,19 +1143,6 @@ function buildReportFilterBar(
       rootNext = root.nextSibling;
       rootParent.removeChild(root);
     }
-    var allSev = (cfg.severities || []).length;
-    var allAssetType = (cfg.assetTypes || []).length;
-    var allAsset = (cfg.assets || []).length;
-    var allBranch = (cfg.branches || []).length;
-    var allScanner = (cfg.scanners || []).length;
-    var noSevFilter = allSev === 0 || state.severity.size === 0 || state.severity.size === allSev;
-    var noAssetTypeFilter = allAssetType === 0 || state.assetType.size === 0 || state.assetType.size === allAssetType;
-    var noAssetFilter = allAsset === 0 || state.asset.size === 0 || state.asset.size === allAsset;
-    var noBranchFilter = allBranch === 0 || state.branch.size === 0 || state.branch.size === allBranch;
-    // Scanner filter semantics:
-    // - all selected => no filter
-    // - none selected => show no rows/issues
-    var noScannerFilter = allScanner === 0 || state.scanner.size === allScanner;
     function inferScannerMatchForElement(sevList, assetTypeRaw, repoList, branchList, containerList) {
       if (!reportData || !reportData.issues || reportData.issues.length === 0) return true;
       return reportData.issues.some(function(i) {
@@ -1199,11 +1234,6 @@ function buildReportFilterBar(
       aggregateTimer = setTimeout(function() {
         aggregateTimer = null;
         updateAggregateWidgets();
-        // Invalidate cache: updateAggregateWidgets replaces tbody/ul innerHTML,
-        // detaching elements that applyFilterImmediate cached. Clearing forces a
-        // fresh DOM query on the next filter change so CSS show/hide hits the
-        // live elements, not detached ghosts.
-        elsCache = null; sectionsCache = null; hasDescendantCache = null;
       }, 0);
     }
   }
@@ -1278,11 +1308,12 @@ function buildReportFilterBar(
       return n > 0 ? '<td class="text-right mono ' + cls + '">' + n + '</td>' : '<td class="text-right mono">-</td>';
     }
     function countsForRepoName(repoName) {
+      var candidates = getIssuesForNormRepo((repoName + "").trim().toLowerCase());
       var c = blankCounts();
       if (countMode === "groups") {
         var byGroup = {};
-        openIssues.forEach(function(i) {
-          if (!i.r || isContainerOrVm(i.r) || !repoMatchesRepo(i.r, repoName)) return;
+        candidates.forEach(function(i) {
+          if (!i.r || isContainerOrVm(i.r)) return;
           var gid = i.g != null ? i.g : (i.r + "|" + i.d + "|" + (i.s || ""));
           var sev = normSev(i);
           if (byGroup[gid]) return;
@@ -1292,8 +1323,8 @@ function buildReportFilterBar(
           c[byGroup[k].sev] = (c[byGroup[k].sev] || 0) + 1;
         });
       } else {
-        openIssues.forEach(function(i) {
-          if (!i.r || isContainerOrVm(i.r) || !repoMatchesRepo(i.r, repoName)) return;
+        candidates.forEach(function(i) {
+          if (!i.r || isContainerOrVm(i.r)) return;
           var sev = normSev(i);
           c[sev] = (c[sev] || 0) + 1;
         });
@@ -1301,11 +1332,13 @@ function buildReportFilterBar(
       return c;
     }
     function countsForContainerName(containerName) {
+      var nr = normContainerName(containerName);
+      var candidates = getIssuesForNormRepo(nr);
       var c = blankCounts();
       if (countMode === "groups") {
         var byGroup = {};
-        openIssues.forEach(function(i) {
-          if (!i.r || !repoMatchesContainer(i.r, containerName)) return;
+        candidates.forEach(function(i) {
+          if (!i.r) return;
           var gid = i.g != null ? i.g : (i.r + "|" + i.d + "|" + (i.s || ""));
           var sev = normSev(i);
           if (byGroup[gid]) return;
@@ -1315,8 +1348,8 @@ function buildReportFilterBar(
           c[byGroup[k].sev] = (c[byGroup[k].sev] || 0) + 1;
         });
       } else {
-        openIssues.forEach(function(i) {
-          if (!i.r || !repoMatchesContainer(i.r, containerName)) return;
+        candidates.forEach(function(i) {
+          if (!i.r) return;
           var sev = normSev(i);
           c[sev] = (c[sev] || 0) + 1;
         });
@@ -1520,6 +1553,28 @@ function buildReportFilterBar(
       var detail2 = grid.querySelector(".kpi-card:nth-child(2) .kpi-detail"); if (detail2) detail2.textContent = counts.critical + " critical";
       var detail4 = grid.querySelector(".kpi-card:nth-child(4) .kpi-detail"); if (detail4) detail4.textContent = avgMttr !== undefined ? "days" : "No data";
     });
+    // Pre-index open issues by normalized repo name for O(1) lookup in risk tables
+    var openIssuesByNormRepo = {};
+    openIssues.forEach(function(i) {
+        if (!i.r) return;
+        var nr = (i.r + '').trim().toLowerCase();
+        var colonIdx = nr.lastIndexOf(':');
+        if (colonIdx > 0 && nr.slice(colonIdx + 1).indexOf('/') < 0) nr = nr.slice(0, colonIdx);
+        if (!openIssuesByNormRepo[nr]) openIssuesByNormRepo[nr] = [];
+        openIssuesByNormRepo[nr].push(i);
+    });
+    function getIssuesForNormRepo(normName) {
+        var exact = openIssuesByNormRepo[normName] || [];
+        if (exact.length > 0) return exact;
+        // fuzzy suffix match fallback
+        var result = [];
+        Object.keys(openIssuesByNormRepo).forEach(function(nr) {
+            if (nr.endsWith('/' + normName) || normName.endsWith('/' + nr)) {
+                result = result.concat(openIssuesByNormRepo[nr]);
+            }
+        });
+        return result;
+    }
     document.querySelectorAll("[data-report-aggregate=repo-risk]").forEach(function(section) {
       var tbody = section.querySelector("table tbody");
       if (!tbody) return;
@@ -1569,6 +1624,51 @@ function buildReportFilterBar(
           '</tr>';
       }).join("");
       tbody.innerHTML = rows;
+    });
+    document.querySelectorAll("[data-report-aggregate=issue-list]").forEach(function(section) {
+      var tbody = section.querySelector("table tbody");
+      if (!tbody) return;
+      var limitAttr = parseInt(section.getAttribute("data-limit") || "200", 10) || 200;
+      var sevOrder = { critical: 4, high: 3, medium: 2, low: 1, info: 0 };
+      var sorted = filtered.slice().sort(function(a, b) {
+        var aOpen = isOpenStatus(a.st) ? 1 : 0;
+        var bOpen = isOpenStatus(b.st) ? 1 : 0;
+        if (aOpen !== bOpen) return bOpen - aOpen;
+        return (sevOrder[normSev(b)] || 0) - (sevOrder[normSev(a)] || 0);
+      });
+      var sliced = sorted.slice(0, Math.min(limitAttr, sorted.length));
+      var rows = sliced.map(function(i) {
+        var sev = normSev(i);
+        var sevBadgeCls = sev === "critical" ? "badge-critical" : sev === "high" ? "badge-high" : sev === "medium" ? "badge-medium" : "badge-low";
+        var sevLabel = sev.charAt(0).toUpperCase() + sev.slice(1);
+        var source = displaySourceName(i.scanner) || i.scanner || "-";
+        var assetType = i.at || "Other";
+        var asset = i.r || "-";
+        var ageDays = i.d ? Math.max(0, Math.round((Date.now() - new Date(i.d).getTime()) / 86400000)) : null;
+        var containerAttr = (function() {
+          if (!i.r) return "";
+          var containers2 = ((reportData.containers && reportData.containers.length) ? reportData.containers : []);
+          for (var ci = 0; ci < containers2.length; ci++) {
+            if (repoMatchesContainer(i.r, containers2[ci])) return ' data-filter-container="' + escAttr(containers2[ci]) + '"';
+          }
+          return "";
+        })();
+        var sortStatus = isOpenStatus(i.st) ? "open" : "closed";
+        return '<tr data-filter-severity="' + escAttr(sev) + '" data-filter-repo="' + escAttr(i.r) + '" data-filter-branch="' + escAttr(i.b) + '" data-filter-asset-type="' + escAttr(assetType) + '" data-filter-scanner="' + escAttr(source) + '" data-sort-status="' + sortStatus + '"' + containerAttr + '>' +
+          '<td class="mono">' + escHtml(i.id || '') + '</td>' +
+          '<td>' + escHtml(i.t || '') + '</td>' +
+          '<td><span class="badge ' + sevBadgeCls + '">' + sevLabel + '</span></td>' +
+          '<td class="mono">' + escHtml(source) + '</td>' +
+          '<td>' + escHtml(assetType) + '</td>' +
+          '<td class="mono">' + escHtml(asset) + '</td>' +
+          '<td class="text-right mono">' + (ageDays !== null ? ageDays + 'd' : '-') + '</td>' +
+          '<td>' + escHtml(i.st || '') + '</td>' +
+          '<td>-</td>' +
+          '</tr>';
+      }).join("");
+      tbody.innerHTML = rows;
+      var h2 = section.querySelector("h2");
+      if (h2) h2.textContent = "Issue Inventory (" + sliced.length + " of " + filtered.length + ")";
     });
     document.querySelectorAll("[data-report-aggregate=trend-stacked]").forEach(function(trendSection) {
       if (trendBase.length === 0) return;
@@ -2634,6 +2734,7 @@ function buildReportDocumentShell(
   }
   ${brand.bodyBg ? `.viz-donut text { fill: ${bodyFg} !important; }` : ""}
 </style>
+<style id="vat-f"></style>
 </head>
 <body>
   ${
