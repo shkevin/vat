@@ -877,6 +877,7 @@ function buildReportFilterBar(
   };
   var labels = { severity: "Severity", assetType: "Asset type", asset: "Asset", branch: "Branch", scanner: "Scanner" };
   var filterableSelector = "[data-filter-severity],[data-filter-asset-type],[data-filter-repo],[data-filter-branch],[data-filter-container],[data-filter-scanner]";
+  function displaySourceName(n) { var s = (n || "").replace(/^(vat-local-|folder-scan-)/i, "").trim(); return s || n || ""; }
   function repoMatchesRepo(issueRepo, repoName) {
     if (!issueRepo || !repoName) return false;
     var a = (issueRepo + "").trim().toLowerCase();
@@ -965,7 +966,7 @@ function buildReportFilterBar(
         if (i.at) base.assetType[i.at] = (base.assetType[i.at] || 0) + 1;
         if (i.r) { assets.forEach(function(a) { if (repoMatchesRepo(i.r, a) || repoMatchesContainer(i.r, a)) base.asset[a] = (base.asset[a] || 0) + 1; }); }
         if (i.b) base.branch[i.b] = (base.branch[i.b] || 0) + 1;
-        var scanner = (i.scanner || "Unknown");
+        var scanner = displaySourceName(i.scanner) || "Unknown";
         base.scanner[scanner] = (base.scanner[scanner] || 0) + 1;
       });
       return base;
@@ -1009,7 +1010,7 @@ function buildReportFilterBar(
         assets.forEach(function(a) { if (repoMatchesRepo(i.r, a) || repoMatchesContainer(i.r, a)) counts.asset[a] = (counts.asset[a] || 0) + 1; });
       }
       if (i.b) counts.branch[i.b] = (counts.branch[i.b] || 0) + 1;
-      var scanner = (i.scanner || "Unknown");
+      var scanner = displaySourceName(i.scanner) || "Unknown";
       counts.scanner[scanner] = (counts.scanner[scanner] || 0) + 1;
     });
     return counts;
@@ -1098,7 +1099,7 @@ function buildReportFilterBar(
     function inferScannerMatchForElement(sevList, assetTypeRaw, repoList, branchList, containerList) {
       if (!reportData || !reportData.issues || reportData.issues.length === 0) return true;
       return reportData.issues.some(function(i) {
-        var scanner = (i.scanner || "Unknown");
+        var scanner = displaySourceName(i.scanner) || "Unknown";
         if (!state.scanner.has(scanner)) return false;
         var sev = normSev(i);
         if (sevList.length > 0 && sevList.indexOf(sev) < 0) return false;
@@ -1360,7 +1361,7 @@ function buildReportFilterBar(
     function matchScannerForIssue(i) {
       if (state.scanner.size === 0) return false;
       if (noScannerFilter) return true;
-      var scanner = (i.scanner || "Unknown");
+      var scanner = displaySourceName(i.scanner) || "Unknown";
       return state.scanner.has(scanner);
     }
     var filtered = reportData.issues.filter(function(i) {
@@ -1382,6 +1383,7 @@ function buildReportFilterBar(
     var counts = useServerCounts ? reportData.serverCounts : countBySeverity(openIssues);
     function oraPenalty(c) { var p = (c.critical||0)*10 + (c.high||0)*4; p += Math.min((c.medium||0)*0.5, 30); p += Math.min((c.low||0)*0.25, 10); return p; }
     function oraScoreFor(c) { return Math.max(0, Math.min(100, Math.round(100 - oraPenalty(c)))); }
+    function toReportRisk(c) { return Math.max(0, Math.min(100, Math.round(100 - oraScoreFor(c)))); }
     // Per-asset average ORA, inverted for stakeholder readout. The flat
     // aggregate version saturates instantly at fleet scale; this matches the
     // server-side computeFleetRiskScore so re-renders after a filter click
@@ -2076,7 +2078,7 @@ function buildReportFilterBar(
           repo: it.r || "Unknown",
           age: ageDays,
           score: it.sc || 0,
-          scanner: it.scanner || "Unknown",
+          scanner: displaySourceName(it.scanner) || "Unknown",
           branch: it.b || "",
         };
       });
