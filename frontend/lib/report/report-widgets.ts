@@ -638,15 +638,16 @@ function svgTrendStacked(trends: TrendDataPoint[], w = 560, h = 160): string {
     })
     .join("");
   const legendX = 10;
-  const legend = TREND_STACKED_LABELS.map((label, i) => {
-    const ly = pad.top - 2 + i * 14;
-    return `<circle cx="${legendX}" cy="${ly}" r="4" fill="${
-      TREND_STACKED_COLORS[i]
-    }"/><text x="${legendX + 10}" y="${
-      ly + 4
-    }" text-anchor="start" font-size="10" fill="#475569">${label}</text>`;
-  }).join("");
-  const trendLegendLy = pad.top - 2 + 4 * 14;
+  const activeSevIdxs = TREND_STACKED_KEYS
+    .map((k, i) => ({ i, k }))
+    .filter(({ k }) => trends.some((t) => (t[k] ?? 0) > 0));
+  const legend = activeSevIdxs
+    .map(({ i }, slot) => {
+      const ly = pad.top - 2 + slot * 14;
+      return `<circle cx="${legendX}" cy="${ly}" r="4" fill="${TREND_STACKED_COLORS[i]}"/><text x="${legendX + 10}" y="${ly + 4}" text-anchor="start" font-size="10" fill="#475569">${TREND_STACKED_LABELS[i]}</text>`;
+    })
+    .join("");
+  const trendLegendLy = pad.top - 2 + activeSevIdxs.length * 14;
   const trendLegend =
     n >= 2
       ? `<line x1="${legendX}" y1="${trendLegendLy}" x2="${
