@@ -1187,6 +1187,11 @@ function buildReportFilterBar(
       aggregateTimer = setTimeout(function() {
         aggregateTimer = null;
         updateAggregateWidgets();
+        // Invalidate cache: updateAggregateWidgets replaces tbody/ul innerHTML,
+        // detaching elements that applyFilterImmediate cached. Clearing forces a
+        // fresh DOM query on the next filter change so CSS show/hide hits the
+        // live elements, not detached ghosts.
+        elsCache = null; sectionsCache = null; hasDescendantCache = null;
       }, 0);
     }
   }
