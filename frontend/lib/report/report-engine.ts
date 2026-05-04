@@ -416,6 +416,16 @@ export function computeReportContext(
   if (filters.branchFilter) {
     issues = issues.filter((i) => i.branch === filters.branchFilter);
   }
+  // Apply severity filter before the trend/period-comparison snapshot so that
+  // the trend chart and period-over-period badges only reflect selected severities.
+  // Date filter is applied later so trend data spans full history (not just the
+  // current report window).
+  if (filters.severityFilter.length > 0) {
+    const allowed = new Set(filters.severityFilter.map((s) => s.toLowerCase()));
+    issues = issues.filter((i) =>
+      allowed.has((i.severity ?? "").toLowerCase()),
+    );
+  }
   const { dateFrom, dateTo } = resolveDateFilters(filters);
   const countMode = filters.countMode ?? "groups";
   const issuesForTrend = [...issues];
@@ -429,6 +439,14 @@ export function computeReportContext(
           }
           if (filters.branchFilter) {
             all = all.filter((i) => i.branch === filters.branchFilter);
+          }
+          if (filters.severityFilter.length > 0) {
+            const allowed = new Set(
+              filters.severityFilter.map((s) => s.toLowerCase()),
+            );
+            all = all.filter((i) =>
+              allowed.has((i.severity ?? "").toLowerCase()),
+            );
           }
           return all;
         })()
@@ -480,12 +498,6 @@ export function computeReportContext(
     const to = new Date(dateTo + "T23:59:59.999Z").getTime();
     issues = issues.filter(
       (i) => new Date(i.first_detected_at).getTime() <= to,
-    );
-  }
-  if (filters.severityFilter.length > 0) {
-    const allowed = new Set(filters.severityFilter.map((s) => s.toLowerCase()));
-    issues = issues.filter((i) =>
-      allowed.has((i.severity ?? "").toLowerCase()),
     );
   }
 
