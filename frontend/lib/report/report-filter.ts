@@ -25,18 +25,11 @@ export function getReportFilterConfig(
   context: ReportContext,
 ): ReportFilterConfig {
   const severityOrder = ["critical", "high", "medium", "low", "info"] as const;
-  const severitiesWithCount = severityOrder.filter(
+  const severities = severityOrder.filter(
     (s) => (context.counts[s] ?? 0) > 0,
   );
-  // Always include critical, high, medium, low when we have any issues, so users can filter by
-  // severity even if counts are incomplete or pre-filtered. Prevents "only showing low" when
-  // higher severities exist but were excluded from the filter bar.
-  const standardSeverities = ["critical", "high", "medium", "low"] as const;
   const hasIssues =
     (context.openIssues ?? 0) > 0 || (context.filteredIssues?.length ?? 0) > 0;
-  const severities = hasIssues
-    ? [...new Set([...standardSeverities, ...severitiesWithCount])]
-    : severitiesWithCount;
   const assetTypes: string[] = [];
   const mix = context.assetMix;
   if ((mix?.code ?? 0) > 0) assetTypes.push("Code");
