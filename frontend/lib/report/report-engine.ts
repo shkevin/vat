@@ -1774,16 +1774,16 @@ function buildReportFilterBar(
         var xLabels = xLabelIndices.map(function(i) { var t = trends[i]; var x = pad.left + i * (barW + gap) + barW / 2; return '<text x="' + x + '" y="' + (h - 6) + '" text-anchor="middle" font-size="9" fill="#64748b">' + t.date + '</text>'; }).join("");
         var legendSlot = 0; var legend = keys.map(function(lbl, i) { var hasData = trends.some(function(t) { return (t[keys[i]] || 0) > 0; }); if (!hasData) return ""; var ly = pad.top - 2 + legendSlot * 14; legendSlot++; return '<circle cx="10" cy="' + ly + '" r="4" fill="' + colors[i] + '"/><text x="20" y="' + (ly + 4) + '" text-anchor="start" font-size="10" fill="#475569">' + lbl + '</text>'; }).join("");
         var regressionLine = ""; var trendLegendEntry = "";
-        if (typeof regression !== "undefined" && n >= 2) {
-          try {
-            var regData = trends.map(function(t, ri) { return [ri, t.total]; });
-            var regResult = regression.linear(regData);
-            var regSteps = Math.max(n * 4, 16); var regPts = [];
-            for (var rk = 0; rk <= regSteps; rk++) { var ri = (rk / regSteps) * (n - 1); var rv = Math.max(0, regResult.predict(ri)[1]); var rx = pad.left + ri * (barW + gap) + barW / 2; var ry = pad.top + chartH - (rv / yMax) * chartH; regPts.push(rx + "," + ry); }
-            regressionLine = '<path d="M ' + regPts.join(" L ") + '" fill="none" stroke="#fbbf24" stroke-width="2" stroke-dasharray="4 2" stroke-linecap="round" stroke-linejoin="round"/>';
-            var tly = pad.top - 2 + legendSlot * 14;
-            trendLegendEntry = '<line x1="10" y1="' + tly + '" x2="22" y2="' + tly + '" stroke="#fbbf24" stroke-width="2" stroke-dasharray="4 2"/><text x="26" y="' + (tly + 4) + '" text-anchor="start" font-size="10" fill="#475569">Trend</text>';
-          } catch(e) {}
+        if (n >= 2) {
+          var sumX=0,sumY=0,sumXY=0,sumX2=0;
+          for (var ri=0;ri<n;ri++){sumX+=ri;sumY+=trends[ri].total;sumXY+=ri*trends[ri].total;sumX2+=ri*ri;}
+          var slope=(n*sumXY-sumX*sumY)/(n*sumX2-sumX*sumX);
+          var intercept=(sumY-slope*sumX)/n;
+          var regSteps=Math.max(n*4,16); var regPts=[];
+          for (var rk=0;rk<=regSteps;rk++){var ri=(rk/regSteps)*(n-1);var rv=Math.max(0,slope*ri+intercept);var rx=pad.left+ri*(barW+gap)+barW/2;var ry=pad.top+chartH-(rv/yMax)*chartH;regPts.push(rx+","+ry);}
+          regressionLine='<path d="M '+regPts.join(" L ")+'" fill="none" stroke="#fbbf24" stroke-width="2" stroke-dasharray="4 2" stroke-linecap="round" stroke-linejoin="round"/>';
+          var tly=pad.top-2+legendSlot*14;
+          trendLegendEntry='<line x1="10" y1="'+tly+'" x2="22" y2="'+tly+'" stroke="#fbbf24" stroke-width="2" stroke-dasharray="4 2"/><text x="26" y="'+(tly+4)+'" text-anchor="start" font-size="10" fill="#475569">Trend</text>';
         }
         var hoverCss = segIds.map(function(id) { return '.viz-trend-stacked-container:has(.viz-trend-stacked [data-segment="' + id + '"]:hover) .viz-trend-stacked-overlay [data-for="' + id + '"]{opacity:1}'; }).join("");
         var svg = '<svg viewBox="0 0 ' + w + ' ' + h + '" class="viz-trend-stacked" width="100%" height="100%" preserveAspectRatio="xMidYMid meet">' + legend + trendLegendEntry + axisLine + yAxisLine + barRects.join("") + regressionLine + yLabels + xLabels + '</svg>';
