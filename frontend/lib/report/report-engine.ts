@@ -3076,7 +3076,7 @@ export const REPORT_PRESETS: ReportPreset[] = [
       filters: {
         repoFilter: [],
         branchFilter: null,
-        severityFilter: [],
+        severityFilter: ["critical", "high"],
         dateRangePreset: 365,
         dateFrom: null,
         dateTo: null,
