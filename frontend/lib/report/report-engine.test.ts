@@ -160,6 +160,50 @@ describe("trend stacked dropdown filters", () => {
     expect(html).not.toContain("var weekOpen = openAtWeek.filter");
     expect(html).toContain("countBySeverityTrend(openAtWeek)");
   });
+
+  it("suppresses baseline-less +100% spikes in summary period deltas", () => {
+    const findings: Finding[] = [
+      mkFinding("f1", "CVE-2024-1112", "pkg-b 1.0.0", "pkg-b"),
+    ];
+    const data = toVATDashboardData(findings, [], "VAT", {
+      groupFindings: true,
+    });
+    const definition = createDefaultReportDefinition("VAT");
+    // Enable period comparison path in the client script.
+    definition.filters.dateFrom = "2026-01-01";
+    definition.filters.dateTo = "2026-05-01";
+    const ctx = computeReportContext(data, definition.filters);
+    const html = buildReportHtmlFromDefinition(ctx, definition, {
+      preview: true,
+    });
+    expect(html).not.toContain("b === 0 ? (a > 0 ? 100 : 0)");
+    expect(html).toContain(
+      'function pct(a,b) { return b === 0 ? 0 : Math.round(((a - b) / b) * 100); }',
+    );
+    expect(html).toContain(
+      'function dir(a,b) { return b === 0 ? "flat" : a > b ? "up" : a < b ? "down" : "flat"; }',
+    );
+  });
+
+  it("aligns trend top-bar current open with summary open when trend filters are all selected", () => {
+    const findings: Finding[] = [
+      mkFinding("f1", "CVE-2024-1113", "pkg-c 1.0.0", "pkg-c"),
+    ];
+    const data = toVATDashboardData(findings, [], "VAT", {
+      groupFindings: true,
+    });
+    const definition = createDefaultReportDefinition("VAT");
+    const ctx = computeReportContext(data, definition.filters);
+    const html = buildReportHtmlFromDefinition(ctx, definition, {
+      preview: true,
+    });
+    expect(html).toContain(
+      "var trendUsesAllDimensions = (!trendSevSet || trendSevSet.size === 0) && (!trendTypesSet || trendTypesSet.size === 0);",
+    );
+    expect(html).toContain(
+      "var trendCurrDisplay = (trendUsesAllDimensions && trendCountMode === countMode) ? summaryOpenVal : trendCurr;",
+    );
+  });
 });
 
 describe("report adapter severity source of truth", () => {

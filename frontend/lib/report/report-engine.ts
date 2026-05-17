@@ -1468,8 +1468,8 @@ function buildReportFilterBar(
         function openAt(d) { var ts = d.getTime(); return filtered.filter(function(i) { var det = new Date(i.d); if (isNaN(det.getTime()) || det.getTime() > ts) return false; var cls = i.c ? new Date(i.c) : null; return !cls || isNaN(cls.getTime()) || cls.getTime() > ts; }); }
         var currOpen = openAt(to).filter(function(i) { return isOpenStatus(i.st); });
         var prevOpen = openAt(from).filter(function(i) { return isOpenStatus(i.st); });
-        function pct(a,b) { return b === 0 ? (a > 0 ? 100 : 0) : Math.round(((a - b) / b) * 100); }
-        function dir(a,b) { return a > b ? "up" : a < b ? "down" : "flat"; }
+        function pct(a,b) { return b === 0 ? 0 : Math.round(((a - b) / b) * 100); }
+        function dir(a,b) { return b === 0 ? "flat" : a > b ? "up" : a < b ? "down" : "flat"; }
         var currCnt = countBySeverity(currOpen);
         var prevCnt = countBySeverity(prevOpen);
         var currRisk = toReportRisk(currCnt);
@@ -1496,7 +1496,10 @@ function buildReportFilterBar(
           : null;
         var currTotal = countTotal(currOpen);
         var prevTotal = countTotal(prevOpen);
-        pc = { riskScore: prevRisk === 0 && currRisk > 0 ? { pctChange: 100, direction: "up" } : prevRisk === 0 ? null : { pctChange: Math.round(((currRisk - prevRisk) / prevRisk) * 100), direction: currRisk > prevRisk ? "up" : currRisk < prevRisk ? "down" : "flat" }, openIssues: { pctChange: pct(currTotal, prevTotal), direction: dir(currTotal, prevTotal) }, criticalHigh: { pctChange: pct(currCnt.critical + currCnt.high, prevCnt.critical + prevCnt.high), direction: dir(currCnt.critical + currCnt.high, prevCnt.critical + prevCnt.high) }, mttr: mttrCh };
+        var riskCh = (currTotal > 0 || prevTotal > 0)
+          ? { pctChange: pct(currRisk, prevRisk), direction: dir(currRisk, prevRisk) }
+          : null;
+        pc = { riskScore: riskCh, openIssues: { pctChange: pct(currTotal, prevTotal), direction: dir(currTotal, prevTotal) }, criticalHigh: { pctChange: pct(currCnt.critical + currCnt.high, prevCnt.critical + prevCnt.high), direction: dir(currCnt.critical + currCnt.high, prevCnt.critical + prevCnt.high) }, mttr: mttrCh };
       }
     }
     var avgMttr = (function() {
@@ -1808,12 +1811,18 @@ function buildReportFilterBar(
       var resLast = resolvedLastWeek;
       var newThis = newThisWeek;
       var newLast = newLastWeek;
+      var trendUsesAllDimensions = (!trendSevSet || trendSevSet.size === 0) && (!trendTypesSet || trendTypesSet.size === 0);
+      // Keep trend "Current open issues" aligned with executive summary when the trend
+      // pills are at "all" (no trend-specific scoping). If the user scopes trend pills,
+      // show the trend-scoped current value instead.
+      var summaryOpenVal = useServerCounts ? reportData.totalOpen : countTotal(openIssues);
+      var trendCurrDisplay = (trendUsesAllDimensions && trendCountMode === countMode) ? summaryOpenVal : trendCurr;
       // No-baseline guard: pre-fix returned +100% when prev === 0, which
       // falsely showed a +100% increase on every KPI for fresh datasets where
       // nothing existed at the start of the comparison window. Carry a
       // "hasBaseline" flag so the badge can be suppressed entirely.
       var openHasBaseline = trendPrev > 0;
-      var openPct = openHasBaseline ? Math.round(((trendCurr - trendPrev) / trendPrev) * 100) : 0;
+      var openPct = openHasBaseline ? Math.round(((trendCurrDisplay - trendPrev) / trendPrev) * 100) : 0;
       var resolvedHasBaseline = resLast > 0;
       var resolvedPct = resolvedHasBaseline ? Math.round(((resThis - resLast) / resLast) * 100) : 0;
       var newHasBaseline = newLast > 0;
@@ -1835,7 +1844,7 @@ function buildReportFilterBar(
             trendEl.style.color = isGood ? "#22c55e" : "#ef4444";
           }
         };
-        setVal(".kpi-card:nth-child(1) .value", trendCurr.toLocaleString(), openPct, trendCurr <= trendPrev, openHasBaseline);
+        setVal(".kpi-card:nth-child(1) .value", trendCurrDisplay.toLocaleString(), openPct, trendCurrDisplay <= trendPrev, openHasBaseline);
         setVal(".kpi-card:nth-child(2) .value", resThis.toLocaleString(), resolvedPct, resThis >= resLast, resolvedHasBaseline);
         setVal(".kpi-card:nth-child(3) .value", newThis.toLocaleString(), newPct, newThis <= newLast, newHasBaseline);
         var d1 = trendTopBar.querySelector(".kpi-card:nth-child(1) .detail"); if (d1) d1.textContent = "vs " + trendPrev.toLocaleString() + " previous period";
