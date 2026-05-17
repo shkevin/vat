@@ -663,6 +663,7 @@ export default function VAT({ config }: VATProps) {
         onApply={refetch}
         applyLabel="Apply"
         waiverExpiringCount={waiverExpiring}
+        exportAssetIds={displayedAssets.map((asset) => asset.id)}
         activityFeed={
           view === "report" ? null : (
             <ActivityFeedPanel

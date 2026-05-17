@@ -200,6 +200,8 @@ class ExportBundleOptions:
     finding_date_from: Optional[str] = None
     finding_date_to: Optional[str] = None
     include_audit_events: bool = True
+    apply_asset_filter: bool = False
+    asset_ids: Optional[list[str]] = None
     audit_date_from: Optional[str] = None
     audit_date_to: Optional[str] = None
     audit_limit: int = 20000
@@ -230,6 +232,27 @@ def _filter_findings_by_date_range(
             continue
         out.append(r)
     return out
+
+
+def _filter_findings_and_assets_by_asset_ids(
+    rows: list[dict],
+    assets: list[dict],
+    *,
+    asset_ids: set[str],
+) -> tuple[list[dict], list[dict]]:
+    """Restrict export payload to a provided set of asset IDs."""
+    scoped_assets = [a for a in assets if str(a.get("id") or "") in asset_ids]
+    finding_ids: set[str] = set()
+    for asset in scoped_assets:
+        for fid in asset.get("findingIds") or []:
+            if fid is not None:
+                finding_ids.add(str(fid))
+        for finding in asset.get("findings") or []:
+            f_id = finding.get("id") if isinstance(finding, dict) else None
+            if f_id is not None:
+                finding_ids.add(str(f_id))
+    scoped_rows = [r for r in rows if str(r.get("id") or "") in finding_ids]
+    return scoped_rows, scoped_assets
 
 
 def _flat_str(v: Any) -> str:
@@ -682,6 +705,13 @@ async def build_export_bundle(
     rows = _filter_findings_by_date_range(rows, date_from=slice_from, date_to=slice_to)
 
     assets = await get_assets_with_findings(db, findings_dicts=rows)
+    if opts.apply_asset_filter:
+        selected_asset_ids = {str(aid) for aid in (opts.asset_ids or []) if str(aid)}
+        rows, assets = _filter_findings_and_assets_by_asset_ids(
+            rows,
+            assets,
+            asset_ids=selected_asset_ids,
+        )
     vat_data = {"findings": rows, "assets": assets}
 
     packages = await list_sbom_packages(

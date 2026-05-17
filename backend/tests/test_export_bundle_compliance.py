@@ -21,10 +21,10 @@ from app.services.export_service import (
 )
 
 
-def _waiver_finding() -> Finding:
+def _waiver_finding(finding_id: str = "wf1", image: str = "api:latest") -> Finding:
     ts = datetime(2025, 1, 10, 12, 0, 0, tzinfo=timezone.utc)
     return Finding(
-        id="wf1",
+        id=finding_id,
         finding_type=FindingType.SCA,
         fingerprint_id="fp_waiver_1",
         cve_id="CVE-2024-99999",
@@ -32,7 +32,7 @@ def _waiver_finding() -> Finding:
         status=Status.RiskAccepted,
         title="Test waiver row",
         component="openssl 3",
-        image="api:latest",
+        image=image,
         control_ref="CC6.6",
         attestation={
             "approver": "Sam Reviewer",
@@ -182,6 +182,63 @@ async def test_build_export_bundle_skips_audit_when_disabled(monkeypatch):
         options=ExportBundleOptions(include_audit_events=False),
     )
     spy.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_build_export_bundle_scopes_to_selected_assets(monkeypatch):
+    async def mock_list_findings(*_a, **_k):
+        return [
+            _waiver_finding("wf1", "asset-a"),
+            _waiver_finding("wf2", "asset-b"),
+        ]
+
+    monkeypatch.setattr(
+        "app.services.export_service.list_findings",
+        mock_list_findings,
+    )
+    monkeypatch.setattr(
+        "app.services.export_service.enrich_findings_with_source_group_severity",
+        AsyncMock(side_effect=lambda _db, rows: rows),
+    )
+    monkeypatch.setattr(
+        "app.services.export_service.get_assets_with_findings",
+        AsyncMock(
+            return_value=[
+                {"id": "asset-a", "name": "asset-a", "findingIds": ["wf1"], "findings": []},
+                {"id": "asset-b", "name": "asset-b", "findingIds": ["wf2"], "findings": []},
+            ]
+        ),
+    )
+    monkeypatch.setattr(
+        "app.services.export_service.list_sbom_packages",
+        AsyncMock(return_value=[]),
+    )
+    monkeypatch.setattr(
+        "app.services.export_service.list_openscap_scan_results",
+        AsyncMock(return_value=[]),
+    )
+    monkeypatch.setattr(
+        "app.services.export_service.load_audit_events_for_export",
+        AsyncMock(return_value=[]),
+    )
+
+    db = MagicMock()
+    ctx = SimpleNamespace(tenant_id="tenant-a", cross_tenant=False)
+    data = await build_export_bundle(
+        db,
+        ctx=ctx,
+        options=ExportBundleOptions(
+            apply_asset_filter=True,
+            asset_ids=["asset-a"],
+            include_audit_events=False,
+        ),
+    )
+    zf = zipfile.ZipFile(io.BytesIO(data), "r")
+    names = zf.namelist()
+    prefix = [n for n in names if n.startswith("vat-export-")][0].split("/")[0]
+    payload = json.loads(zf.read(f"{prefix}/assets-findings.json").decode())
+    assert [f["id"] for f in payload["findings"]] == ["wf1"]
+    assert [a["id"] for a in payload["assets"]] == ["asset-a"]
 
 
 def test_build_waiver_records_filters_status():

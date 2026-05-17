@@ -33,6 +33,14 @@ async def get_export_bundle(
     include_audit_events: bool = Query(
         True, description="Embed system audit-events.json in the bundle"
     ),
+    apply_asset_filter: bool = Query(
+        False,
+        description="When true, scope export bundle to provided asset_id values",
+    ),
+    asset_id: list[str] | None = Query(
+        None,
+        description="Repeatable asset id filter; applies only when apply_asset_filter=true",
+    ),
     audit_date_from: str | None = Query(None, description="ISO datetime: audit event lower bound"),
     audit_date_to: str | None = Query(None, description="ISO datetime: audit event upper bound"),
     audit_limit: int = Query(20000, ge=1, le=50000, description="Max audit rows in bundle"),
@@ -52,6 +60,8 @@ async def get_export_bundle(
         finding_date_from=finding_date_from,
         finding_date_to=finding_date_to,
         include_audit_events=include_audit_events,
+        apply_asset_filter=apply_asset_filter,
+        asset_ids=asset_id,
         audit_date_from=audit_date_from,
         audit_date_to=audit_date_to,
         audit_limit=audit_limit,

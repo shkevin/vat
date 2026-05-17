@@ -52,6 +52,7 @@ interface VATLayoutProps {
   applyLabel?: string;
   alertCount: number;
   waiverExpiringCount?: number;
+  exportAssetIds?: string[];
   activityFeed?: React.ReactNode;
   children: React.ReactNode;
 }
@@ -83,6 +84,7 @@ export function VATLayout({
   onNeedsJustificationToggle,
   alertCount,
   waiverExpiringCount = 0,
+  exportAssetIds,
   activityFeed,
   onApply,
   applyLabel,
@@ -133,6 +135,7 @@ export function VATLayout({
             onSearchChange={onSearchChange}
             alertCount={alertCount}
             waiverExpiringCount={waiverExpiringCount}
+            exportAssetIds={exportAssetIds}
             hideSearch={view === "findings"}
             showFilterButton={isSidebarCollapsed}
             onFilterClick={() => setSidebarOpen(true)}

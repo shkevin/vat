@@ -34,6 +34,8 @@ interface AppBannerProps {
   /** When true, shows a filter button (for mobile). Callback when clicked. */
   showFilterButton?: boolean;
   onFilterClick?: () => void;
+  /** Currently displayed asset IDs; when provided export is scoped to this set. */
+  exportAssetIds?: string[];
 }
 
 export function AppBanner({
@@ -48,6 +50,7 @@ export function AppBanner({
   hideSearch,
   showFilterButton,
   onFilterClick,
+  exportAssetIds,
 }: AppBannerProps) {
   const { user, token } = useAuth();
   const [exportLoading, setExportLoading] = useState(false);
@@ -58,13 +61,16 @@ export function AppBanner({
     setExportLoading(true);
     setExportError(null);
     try {
-      await downloadExportBundle({ token, userEmail: user.email });
+      await downloadExportBundle(
+        { token, userEmail: user.email },
+        { assetIds: exportAssetIds },
+      );
     } catch (e) {
       setExportError(e instanceof Error ? e.message : "Export failed");
     } finally {
       setExportLoading(false);
     }
-  }, [user, token]);
+  }, [user, token, exportAssetIds]);
 
   return (
     <div
@@ -284,7 +290,9 @@ export function AppBanner({
             type="button"
             onClick={handleExport}
             disabled={exportLoading}
-            title="Download full export (assets, findings, SBOM, Executive Summary)"
+            title={`Download export for current filtered scope (${
+              exportAssetIds?.length ?? 0
+            } assets)`}
             style={{
               ...sans,
               display: "flex",
@@ -303,6 +311,21 @@ export function AppBanner({
             <Download size={16} />
             {exportLoading ? "Exporting…" : "Export"}
           </button>
+        )}
+        {user && exportAssetIds !== undefined && (
+          <span
+            style={{
+              fontSize: 11,
+              color: "var(--app-muted)",
+              maxWidth: 220,
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+            }}
+            title={`Current scope: ${exportAssetIds.length} filtered assets`}
+          >
+            Scope: {exportAssetIds.length} assets
+          </span>
         )}
         {exportError && (
           <span

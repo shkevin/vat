@@ -1083,11 +1083,18 @@ export async function revokeAdminKey(
 /** Download full export bundle (assets, findings, SBOM, Executive Summary). Triggers browser download. */
 export async function downloadExportBundle(
   auth?: Auth,
-  options?: { includeAuditEvents?: boolean },
+  options?: { includeAuditEvents?: boolean; assetIds?: string[] },
 ): Promise<void> {
   const params = new URLSearchParams();
   if (options?.includeAuditEvents === false) {
     params.set("include_audit_events", "false");
+  }
+  if (options?.assetIds !== undefined) {
+    // Apply export scope to the currently filtered asset set (including loadouts/favorites).
+    params.set("apply_asset_filter", "true");
+    for (const assetId of options.assetIds) {
+      params.append("asset_id", assetId);
+    }
   }
   const qs = params.toString();
   const url = `${API_BASE}/export/bundle${qs ? `?${qs}` : ""}`;
