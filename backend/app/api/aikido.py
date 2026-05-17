@@ -25,6 +25,7 @@ from app.core.auth import require_admin, require_reviewer
 from app.core.database import async_session, get_db
 from app.schemas.auth import UserContext
 from app.models.finding import Finding
+from app.models.settings_model import SettingsKV
 from app.services.ingest import ingest_finding, _parse_iso_datetime
 from app.services.dedup import make_fingerprint
 from app.services.aikido_dashboard_sync import (
@@ -52,6 +53,7 @@ def _default_slot() -> dict:
 
 
 _aikido_sync_status_by_source: dict[str, dict] = {}
+AIKIDO_SYNC_STATUS_PREFIX = "aikido_sync_status:"
 
 
 def _slot_for(source_id: str | None) -> dict:
@@ -60,6 +62,58 @@ def _slot_for(source_id: str | None) -> dict:
     if key not in _aikido_sync_status_by_source:
         _aikido_sync_status_by_source[key] = _default_slot()
     return _aikido_sync_status_by_source[key]
+
+
+def _sync_status_key(source_id: str | None) -> str:
+    sid = source_id if source_id else "default"
+    return f"{AIKIDO_SYNC_STATUS_PREFIX}{sid}"
+
+
+def _slot_snapshot(slot: dict) -> dict:
+    return {
+        "status": slot.get("status", "idle"),
+        "message": slot.get("message"),
+        "started_at": slot.get("started_at"),
+        "step": int(slot.get("step", 0) or 0),
+        "total": int(slot.get("total", 0) or 0),
+        "label": slot.get("label"),
+        "source_id": slot.get("source_id"),
+    }
+
+
+async def _upsert_sync_status(db: AsyncSession, source_id: str | None, slot: dict) -> None:
+    key = _sync_status_key(source_id)
+    snapshot = _slot_snapshot(slot)
+    r = await db.execute(select(SettingsKV).where(SettingsKV.key == key))
+    row = r.scalar_one_or_none()
+    if row:
+        row.value = snapshot
+        row.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
+    else:
+        db.add(
+            SettingsKV(
+                key=key,
+                value=snapshot,
+                updated_at=datetime.now(timezone.utc).replace(tzinfo=None),
+            )
+        )
+
+
+async def _persist_sync_status(source_id: str | None, slot: dict) -> None:
+    async with async_session() as session:
+        await _upsert_sync_status(session, source_id, slot)
+        await session.commit()
+
+
+async def _read_persisted_sync_status(
+    db: AsyncSession, source_id: str | None
+) -> dict | None:
+    key = _sync_status_key(source_id)
+    r = await db.execute(select(SettingsKV).where(SettingsKV.key == key))
+    row = r.scalar_one_or_none()
+    if not row or not isinstance(row.value, dict):
+        return None
+    return row.value
 
 
 def _now() -> str:
@@ -409,18 +463,20 @@ async def aikido_sync_status(
 ):
     """Return current Aikido sync status for the given source_id. Each source tracks independently."""
     slot = _slot_for(source_id)
+    persisted = await _read_persisted_sync_status(db, source_id)
+    current = persisted if persisted else _slot_snapshot(slot)
     last_synced_at = None
     cached = await get_aikido_dashboard_cached(db, source_id)
     if cached and isinstance(cached.get("fetchedAt"), str):
         last_synced_at = cached["fetchedAt"]
     return {
-        "status": slot["status"],
-        "message": slot.get("message"),
-        "started_at": slot.get("started_at"),
-        "step": slot.get("step", 0),
-        "total": slot.get("total", 0),
-        "label": slot.get("label"),
-        "source_id": slot.get("source_id"),
+        "status": current.get("status", "idle"),
+        "message": current.get("message"),
+        "started_at": current.get("started_at"),
+        "step": current.get("step", 0),
+        "total": current.get("total", 0),
+        "label": current.get("label"),
+        "source_id": current.get("source_id"),
         "lastSyncedAt": last_synced_at,
     }
 
@@ -461,11 +517,14 @@ async def aikido_sync(
     slot["total"] = 0
     slot["label"] = None
     slot["source_id"] = source_id
+    await _upsert_sync_status(db, source_id, slot)
+    await db.commit()
 
     def _on_progress(step: int, total: int, label: str) -> None:
         slot["step"] = step
         slot["total"] = total
         slot["label"] = label
+        asyncio.create_task(_persist_sync_status(source_id, slot))
 
     async def _bg():
         try:
@@ -484,10 +543,12 @@ async def aikido_sync(
                 slot["message"] = (
                     "Sync complete. Refresh the Report tab to see updated data."
                 )
+            await _persist_sync_status(source_id, slot)
         except Exception as e:
             logger.exception("Background Aikido sync failed: %s", e)
             slot["status"] = "error"
             slot["message"] = str(e)[:500]
+            await _persist_sync_status(source_id, slot)
 
     asyncio.create_task(_bg())
     return {
