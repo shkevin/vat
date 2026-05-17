@@ -8,6 +8,10 @@ import {
   putAikidoCredentials,
   syncAikido,
 } from "@/lib/api";
+import {
+  shouldInitializeAikidoSyncStatus,
+  shouldPollAikidoSyncStatus,
+} from "@/lib/aikidoSyncStatusGate";
 import { useAuth } from "@/contexts/AuthContext";
 import { useVATData } from "@/contexts/VATDataContext";
 import type { Tracker } from "@/types";
@@ -83,7 +87,8 @@ export function AikidoSettingsPage({
 
   // Check sync status on load — each source tracks independently
   useEffect(() => {
-    if (!status?.oauthConfigured || !token) return;
+    if (!shouldInitializeAikidoSyncStatus(!!status?.oauthConfigured, token))
+      return;
     let cancelled = false;
     fetchAikidoSyncStatus(auth, sourceId)
       .then((s) => {
@@ -118,7 +123,7 @@ export function AikidoSettingsPage({
 
   // Poll sync status while syncing — each source tracks independently
   useEffect(() => {
-    if (!syncing || !token) return;
+    if (!shouldPollAikidoSyncStatus(syncing, token)) return;
     const interval = setInterval(async () => {
       try {
         const s = await fetchAikidoSyncStatus(auth, sourceId);
