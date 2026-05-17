@@ -13,6 +13,7 @@ from typing import Any, Optional
 from fastapi import Cookie, Depends, Header, HTTPException, status
 from fastapi.security import APIKeyHeader, HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import false as sql_false
+from sqlalchemy import true as sql_true
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
@@ -251,7 +252,7 @@ def tenant_filter(model: Any, ctx: UserContext) -> Any:
     """
     if ctx.cross_tenant:
         # No tenant constraint — caller is explicitly authorized cross-tenant.
-        return model.tenant_id.is_(model.tenant_id) | model.tenant_id.is_(None)
+        return sql_true()
     if ctx.tenant_id is None:
         # Fail closed.
         return sql_false()
