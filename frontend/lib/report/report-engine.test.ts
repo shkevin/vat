@@ -144,6 +144,22 @@ describe("trend stacked dropdown filters", () => {
     });
     expect(html).not.toContain("&& !useServerCounts");
   });
+
+  it("keeps historical trend buckets based on closure date, not current status", () => {
+    const findings: Finding[] = [
+      mkFinding("f1", "CVE-2024-1111", "pkg-a 1.0.0", "pkg-a"),
+    ];
+    const data = toVATDashboardData(findings, [], "VAT", {
+      groupFindings: true,
+    });
+    const definition = createDefaultReportDefinition("VAT");
+    const ctx = computeReportContext(data, definition.filters);
+    const html = buildReportHtmlFromDefinition(ctx, definition, {
+      preview: true,
+    });
+    expect(html).not.toContain("var weekOpen = openAtWeek.filter");
+    expect(html).toContain("countBySeverityTrend(openAtWeek)");
+  });
 });
 
 describe("report adapter severity source of truth", () => {

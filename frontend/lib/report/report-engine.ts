@@ -1798,9 +1798,8 @@ function buildReportFilterBar(
           var det = new Date(i.d); if (isNaN(det.getTime()) || det.getTime() > bucketEnd.getTime()) return false;
           var cls = i.c ? new Date(i.c) : null; return !cls || isNaN(cls.getTime()) || cls.getTime() > bucketEnd.getTime();
         });
-        var weekOpen = openAtWeek.filter(function(i) { return isOpenStatus(i.st); });
-        var c = countBySeverityTrend(weekOpen);
-        trends.push({ date: label, critical: c.critical, high: c.high, medium: c.medium, low: c.low, total: countTotalTrend(weekOpen) });
+        var c = countBySeverityTrend(openAtWeek);
+        trends.push({ date: label, critical: c.critical, high: c.high, medium: c.medium, low: c.low, total: countTotalTrend(openAtWeek) });
       }
       trends = trends.filter(function(t){ return t.total > 0; });
       var trendCurr = trends.length > 0 ? trends[trends.length - 1].total : 0;
@@ -1846,7 +1845,8 @@ function buildReportFilterBar(
       var wrap = trendSection.querySelector(".viz-trend-stacked-wrap");
       if (wrap && trends.length > 0) {
         var w = 560; var h = 160; var maxTotal = Math.max(1, Math.max.apply(null, trends.map(function(t) { return t.total; })));
-        var yMax = maxTotal <= 10 ? 10 : maxTotal <= 50 ? 50 : maxTotal <= 200 ? 200 : maxTotal <= 500 ? 500 : Math.ceil(maxTotal / 200) * 200;
+        var yStep = maxTotal <= 10 ? 1 : maxTotal <= 50 ? 10 : maxTotal <= 200 ? 50 : maxTotal <= 500 ? 100 : 200;
+        var yMax = Math.ceil(maxTotal / yStep) * yStep;
         var pad = { left: 76, right: 40, top: 24, bottom: 28 }; var chartW = w - pad.left - pad.right; var chartH = h - pad.top - pad.bottom;
         var n = trends.length; var gap = 2; var barW = Math.max(4, (chartW - (n - 1) * gap) / n);
         var colors = ["#ef4444", "#f97316", "#3b82f6", "#14b8a6"]; var keys = ["critical", "high", "medium", "low"];
