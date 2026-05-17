@@ -794,15 +794,51 @@ export function useVATDataCore(): UseVATDataReturn {
   const deleteLoadout = useCallback(
     async (id: string) => {
       try {
+        const target = loadouts.find((l) => l.id === id);
         await apiDeleteLoadout(id, auth);
         // Optimistic local-state update so the UI reflects the change immediately.
         setLoadouts((prev) => prev.filter((l) => l.id !== id));
+        // If the deleted loadout is currently applied, clear hearts and disable
+        // favorites-only mode so the view resets to the full asset set.
+        if (target) {
+          const normalizedCurrent = favoriteEntries.map((e) => ({
+            assetId: e.assetId,
+            branch: e.branch ?? "",
+            tag: e.tag ?? "",
+          }));
+          const normalizedTarget = (
+            target.entries?.length
+              ? target.entries
+              : target.assetIds.map((assetId) => ({ assetId }))
+          ).map((e) => ({
+            assetId: e.assetId,
+            branch: e.branch ?? "",
+            tag: e.tag ?? "",
+          }));
+          const sortKey = (e: { assetId: string; branch: string; tag: string }) =>
+            `${e.assetId}|${e.branch}|${e.tag}`;
+          const currentSig = normalizedCurrent
+            .slice()
+            .sort((a, b) => sortKey(a).localeCompare(sortKey(b)))
+            .map(sortKey)
+            .join(";");
+          const targetSig = normalizedTarget
+            .slice()
+            .sort((a, b) => sortKey(a).localeCompare(sortKey(b)))
+            .map(sortKey)
+            .join(";");
+          if (currentSig === targetSig) {
+            setFavoriteEntries([]);
+            saveFavoriteEntries([]);
+            setOnlyFavorites(false);
+          }
+        }
       } catch (e) {
         // eslint-disable-next-line no-console
         console.warn("deleteLoadout failed:", e);
       }
     },
-    [auth],
+    [auth, loadouts, favoriteEntries],
   );
 
   const renameLoadout = useCallback(

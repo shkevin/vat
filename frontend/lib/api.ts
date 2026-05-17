@@ -645,9 +645,8 @@ export async function fetchAikidoStatus(
 }> {
   const params = new URLSearchParams();
   if (sourceId != null) params.set("source_id", sourceId);
-  const url = `${API_BASE}/settings/aikido/status${
-    params.toString() ? `?${params}` : ""
-  }`;
+  const url = `${API_BASE}/settings/aikido/status${params.toString() ? `?${params}` : ""
+    }`;
   const res = await vatFetch(
     url,
     { headers: authHeaders(auth?.token, auth?.userEmail) },
@@ -691,9 +690,8 @@ export async function pullAikidoData(
 }> {
   const params = new URLSearchParams();
   if (options?.createTrackerIssues) params.set("create_tracker_issues", "true");
-  const url = `${API_BASE}/aikido/bootstrap${
-    params.toString() ? `?${params}` : ""
-  }`;
+  const url = `${API_BASE}/aikido/bootstrap${params.toString() ? `?${params}` : ""
+    }`;
   const res = await vatFetch(
     url,
     { method: "POST", headers: authHeaders(auth?.token, auth?.userEmail) },
@@ -722,9 +720,8 @@ export async function fetchAikidoSyncStatus(
 }> {
   const params = new URLSearchParams();
   if (sourceId != null) params.set("source_id", sourceId);
-  const url = `${API_BASE}/aikido/sync-status${
-    params.toString() ? `?${params}` : ""
-  }`;
+  const url = `${API_BASE}/aikido/sync-status${params.toString() ? `?${params}` : ""
+    }`;
   const res = await vatFetch(
     url,
     { headers: authHeaders(auth?.token, auth?.userEmail) },
@@ -1104,7 +1101,7 @@ export async function downloadExportBundle(
       headers: authHeaders(auth?.token, auth?.userEmail),
       signal:
         typeof AbortSignal !== "undefined" &&
-        typeof AbortSignal.timeout === "function"
+          typeof AbortSignal.timeout === "function"
           ? AbortSignal.timeout(300_000)
           : undefined,
     },
@@ -1166,9 +1163,8 @@ export async function fetchSbomPackages(
   const params = new URLSearchParams();
   if (options?.component) params.set("component", options.component);
   if (options?.limit != null) params.set("limit", String(options.limit));
-  const url = `${API_BASE}/sbom/packages${
-    params.toString() ? `?${params}` : ""
-  }`;
+  const url = `${API_BASE}/sbom/packages${params.toString() ? `?${params}` : ""
+    }`;
   const res = await vatFetch(
     url,
     { headers: authHeaders(auth?.token, auth?.userEmail) },

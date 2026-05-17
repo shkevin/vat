@@ -968,19 +968,30 @@ class AdminKeyCreateRequest(BaseModel):
 
 @router.post("/admin-keys")
 async def post_admin_key(
-    body: AdminKeyCreateRequest,
+    body: AdminKeyCreateRequest | None = None,
     db: AsyncSession = Depends(get_db),
-    _ctx: UserContext = Depends(require_admin),
+    ctx: UserContext = Depends(require_admin),
 ):
     """Create new admin API key. Caller must specify tenant_id OR cross_tenant=True.
 
     Key shown once; use as VAT_ADMIN_TOKEN. Admin only.
     """
+    # Back-compat and UX: allow empty/missing body. Default to a tenant-bound key
+    # for the caller's tenant when available; cross-tenant callers with no tenant
+    # context default to cross-tenant key creation.
+    tenant_id = body.tenant_id if body else None
+    cross_tenant = body.cross_tenant if body else False
+    if not cross_tenant and not tenant_id:
+        if ctx.tenant_id:
+            tenant_id = ctx.tenant_id
+        elif ctx.cross_tenant:
+            cross_tenant = True
+
     try:
         key_id, full_key, key_prefix, message = await create_admin_key(
             db,
-            tenant_id=body.tenant_id,
-            cross_tenant=body.cross_tenant,
+            tenant_id=tenant_id,
+            cross_tenant=cross_tenant,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -988,8 +999,8 @@ async def post_admin_key(
         "id": key_id,
         "key": full_key,
         "keyPrefix": key_prefix,
-        "tenantId": body.tenant_id,
-        "crossTenant": body.cross_tenant,
+        "tenantId": tenant_id,
+        "crossTenant": cross_tenant,
         "message": message,
     }
 
