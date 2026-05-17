@@ -8,10 +8,6 @@ import {
   putAikidoCredentials,
   syncAikido,
 } from "@/lib/api";
-import {
-  shouldInitializeAikidoSyncStatus,
-  shouldPollAikidoSyncStatus,
-} from "@/lib/aikidoSyncStatusGate";
 import { useAuth } from "@/contexts/AuthContext";
 import { useVATData } from "@/contexts/VATDataContext";
 import type { Tracker } from "@/types";
@@ -87,8 +83,7 @@ export function AikidoSettingsPage({
 
   // Check sync status on load — each source tracks independently
   useEffect(() => {
-    if (!shouldInitializeAikidoSyncStatus(!!status?.oauthConfigured, token))
-      return;
+    if (!sourceId) return;
     let cancelled = false;
     fetchAikidoSyncStatus(auth, sourceId)
       .then((s) => {
@@ -119,11 +114,11 @@ export function AikidoSettingsPage({
     return () => {
       cancelled = true;
     };
-  }, [status?.oauthConfigured, token, refetch, sourceId]);
+  }, [sourceId, token, refetch]);
 
   // Poll sync status while syncing — each source tracks independently
   useEffect(() => {
-    if (!shouldPollAikidoSyncStatus(syncing, token)) return;
+    if (!syncing) return;
     const interval = setInterval(async () => {
       try {
         const s = await fetchAikidoSyncStatus(auth, sourceId);
@@ -152,7 +147,7 @@ export function AikidoSettingsPage({
       }
     }, 1500);
     return () => clearInterval(interval);
-  }, [syncing, token, refetch, sourceId]);
+  }, [syncing, sourceId, token, refetch]);
 
   const copyWebhookUrl = () => {
     if (!status?.webhookUrl) return;
