@@ -6,6 +6,7 @@ from app.adapters.aikido import (
     _normalize_aikido_license_type,
     _strip_tag_from_container_name,
     aikido_container_list_item_tags,
+    fetch_aikido_containers,
     fetch_aikido_issues,
     fetch_aikido_code_repositories,
 )
@@ -37,6 +38,30 @@ async def test_aikido_fetch_repositories(aikido_respx):
     assert len(repos) == 1
     assert repos[0]["id"] == 1
     assert repos[0]["branch"] == "main"
+
+
+async def test_aikido_fetch_containers_uses_zero_based_pagination(monkeypatch):
+    """Aikido /containers paging is zero-based; page=0 must be queried first."""
+    calls: list[str] = []
+
+    async def _fake_get_safe(path: str, credentials=None):  # pragma: no cover - test double
+        calls.append(path)
+        if path == "/containers?page=0&per_page=100":
+            return {"containers": [{"id": i} for i in range(100)]}
+        if path == "/containers?page=1&per_page=100":
+            return {"containers": [{"id": 100 + i} for i in range(43)]}
+        return {"containers": []}
+
+    monkeypatch.setattr("app.adapters.aikido._aikido_api_get_safe", _fake_get_safe)
+
+    containers = await fetch_aikido_containers(
+        credentials={"client_id": "test", "client_secret": "test", "region": "eu"}
+    )
+    assert len(containers) == 143
+    assert calls[:2] == [
+        "/containers?page=0&per_page=100",
+        "/containers?page=1&per_page=100",
+    ]
 
 
 async def test_aikido_adapter_ingest():

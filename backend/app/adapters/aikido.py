@@ -1923,7 +1923,9 @@ async def fetch_aikido_containers(
 ) -> list[dict[str, Any]]:
     """Fetch containers from GET /containers (paginated)."""
     all_containers: list[dict] = []
-    page = 1
+    # Aikido list endpoints are zero-indexed (page starts at 0).
+    # Starting at 1 silently drops the first page (up to 100 containers).
+    page = 0
     per_page = 100
     while True:
         data = await _aikido_api_get_safe(
