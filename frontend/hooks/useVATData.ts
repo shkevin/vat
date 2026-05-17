@@ -806,11 +806,14 @@ export function useVATDataCore(): UseVATDataReturn {
             branch: e.branch ?? "",
             tag: e.tag ?? "",
           }));
-          const normalizedTarget = (
-            target.entries?.length
-              ? target.entries
-              : target.assetIds.map((assetId) => ({ assetId }))
-          ).map((e) => ({
+          const targetEntries: FavoriteEntry[] = target.entries?.length
+            ? target.entries
+            : target.assetIds.map((assetId) => ({
+                assetId,
+                branch: undefined,
+                tag: undefined,
+              }));
+          const normalizedTarget = targetEntries.map((e) => ({
             assetId: e.assetId,
             branch: e.branch ?? "",
             tag: e.tag ?? "",
