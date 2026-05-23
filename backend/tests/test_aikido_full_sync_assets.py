@@ -13,7 +13,10 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from app.models.asset import Asset
-from app.services.aikido_full_sync import _ensure_asset_for_aikido_finding
+from app.services.aikido_full_sync import (
+    _ensure_asset_for_aikido_finding,
+    _should_emit_aikido_ingest_progress,
+)
 
 
 def _mock_session(existing: dict[str, Asset] | None = None):
@@ -81,3 +84,15 @@ async def test_noop_when_finding_has_no_image() -> None:
     created = await _ensure_asset_for_aikido_finding(session, finding)
     assert created is False
     assert session._added == []
+
+
+def test_aikido_ingest_progress_is_rate_limited() -> None:
+    total = 1201
+
+    emitted = [
+        processed
+        for processed in range(1, total + 1)
+        if _should_emit_aikido_ingest_progress(processed, total, interval=500)
+    ]
+
+    assert emitted == [1, 500, 1000, 1201]

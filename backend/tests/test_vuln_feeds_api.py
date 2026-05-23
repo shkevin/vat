@@ -89,3 +89,38 @@ async def test_vuln_feeds_refresh_requires_admin(client, monkeypatch):
         assert res.status_code == 200
     finally:
         app.dependency_overrides.pop(require_admin, None)
+
+
+@pytest.mark.asyncio
+async def test_vuln_feeds_refresh_reports_already_running(client, monkeypatch):
+    async def fake_admin():
+        return UserContext(
+            user_id="admin",
+            email="admin@vat.local",
+            tenant_id="t-default",
+            role="admin",
+            raw_identity="admin@vat.local",
+        )
+
+    async def fake_request_enqueue(_db, *, actor_id):
+        return False, {"status": "running", "actor_id": actor_id}
+
+    def fail_if_enqueued(*_args, **_kwargs):
+        raise AssertionError("duplicate feed refresh should not be queued")
+
+    monkeypatch.setattr(
+        "app.api.vuln_feeds.request_vuln_feed_refresh_enqueue",
+        fake_request_enqueue,
+    )
+    monkeypatch.setattr(
+        "app.api.vuln_feeds.run_vuln_feed_refresh.apply_async",
+        fail_if_enqueued,
+    )
+    app.dependency_overrides[require_admin] = fake_admin
+    try:
+        res = await client.post("/api/vuln-feeds/refresh")
+        assert res.status_code == 200
+        assert res.json()["already_running"] is True
+        assert res.json()["dispatched"] is False
+    finally:
+        app.dependency_overrides.pop(require_admin, None)

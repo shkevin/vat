@@ -65,6 +65,7 @@ _reconcile_interval = max(1, _reconcile_hours) * 60 * 60
 _process_limit = get_settings().linear_sync_process_limit
 _backfill_limit = get_settings().linear_sync_backfill_limit
 _vuln_feed_interval_hours = max(1, get_settings().vuln_feed_refresh_interval_hours)
+_vuln_feed_task_expires_seconds = max(60, get_settings().vuln_feed_task_expires_seconds)
 app.conf.beat_schedule = {
     "process-sync-queue": {
         "task": "app.tasks.sync_tasks.process_sync_queue",
@@ -91,7 +92,7 @@ app.conf.beat_schedule = {
     "refresh-vuln-feeds": {
         "task": "app.tasks.vuln_feed_tasks.run_vuln_feed_refresh",
         "schedule": crontab(minute=0, hour=f"*/{_vuln_feed_interval_hours}"),
-        "options": {"queue": "vat-feeds"},
+        "options": {"queue": "vat-feeds", "expires": _vuln_feed_task_expires_seconds},
     },
     "retain-vuln-feed-history": {
         "task": "app.tasks.vuln_feed_tasks.run_vuln_feed_retention",

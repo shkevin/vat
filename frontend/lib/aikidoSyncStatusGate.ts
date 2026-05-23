@@ -43,5 +43,11 @@ export function shouldKeepAikidoSyncingAfterPollError(syncing: boolean): boolean
 
 export function getAikidoSyncPollDelayMs(consecutiveFailures: number): number {
   const failures = Math.max(0, consecutiveFailures);
-  return Math.min(1500 * 2 ** failures, 15000);
+  return Math.min(3000 * 2 ** failures, 15000);
+}
+
+export function shouldPauseAikidoSyncPolling(
+  visibilityState?: DocumentVisibilityState | string,
+): boolean {
+  return visibilityState === "hidden";
 }

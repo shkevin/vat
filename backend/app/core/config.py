@@ -202,17 +202,19 @@ class Settings(BaseSettings):
 
     # Public vulnerability feed ingestion (keyless HTTP)
     vuln_feeds_enabled: bool = True
-    vuln_feed_refresh_interval_hours: int = 1
+    vuln_feed_refresh_interval_hours: int = 6
+    vuln_feed_task_expires_seconds: int = 60 * 60
+    vuln_feed_refresh_stale_after_seconds: int = 2 * 60 * 60
     vuln_feed_request_timeout_sec: int = 30
-    vuln_feed_max_records_per_source: int = 1000
-    vuln_feed_osv_max_queries: int = 500
-    vuln_feed_recent_window_days: int = 3650
+    vuln_feed_max_records_per_source: int = 500
+    vuln_feed_osv_max_queries: int = 250
+    vuln_feed_recent_window_days: int = 730
     vuln_feed_recent_window_years: int = 0
     vuln_feed_osv_max_records_per_ecosystem: int = 400
     vuln_feed_linux_kernel_max_records: int = 120
     vuln_feed_match_include_low_confidence: bool = False
-    vuln_feed_runs_retention_days: int = 60
-    vuln_feed_records_retention_days: int = 0
+    vuln_feed_runs_retention_days: int = 30
+    vuln_feed_records_retention_days: int = 180
     vuln_feed_user_agent: str = "VAT-VulnFeeds/1.0"
     vuln_feed_osv_enabled: bool = True
     vuln_feed_cisa_enabled: bool = True

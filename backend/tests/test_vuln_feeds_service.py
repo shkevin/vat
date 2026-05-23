@@ -10,6 +10,7 @@ from app.services.vuln_feeds import (
     SOURCE_OSV,
     SOURCE_VULN_FEED_MATCH,
     _apply_feed_curation,
+    _checksum_for_feed_records,
     _infer_ecosystem_for_sbom,
     _match_strategy,
     _next_cursor,
@@ -140,6 +141,19 @@ def test_apply_feed_curation_filters_age_and_caps():
         settings.vuln_feed_recent_window_years = old_window_years
         settings.vuln_feed_max_records_per_source = old_max
         settings.vuln_feed_osv_max_records_per_ecosystem = old_osv_per_eco
+
+
+def test_feed_record_checksum_uses_normalized_records_only():
+    records = [
+        {
+            "source": SOURCE_DEBIAN,
+            "record_key": "CVE-2026-1000|openssl",
+            "vulnerability_id": "CVE-2026-1000",
+            "package_name": "openssl",
+        }
+    ]
+
+    assert _checksum_for_feed_records(records) == _checksum_for_feed_records(records)
 
 
 def test_match_strategy_labels_version_and_ecosystem():

@@ -31,6 +31,17 @@ from app.services.aikido_dashboard_sync import sync_aikido_dashboard
 logger = logging.getLogger(__name__)
 
 
+def _should_emit_aikido_ingest_progress(
+    processed: int,
+    total: int,
+    *,
+    interval: int = 500,
+) -> bool:
+    if total <= 0 or processed <= 0:
+        return False
+    return processed == 1 or processed == total or processed % max(1, interval) == 0
+
+
 async def _progress(
     on_progress: Optional[Callable[[int, int, str], None]],
     step: int,
@@ -286,9 +297,10 @@ async def run_full_sync(
     adapter = AikidoAdapter()
     created = 0
     merged = 0
+    ingest_total = len(raw_issues)
     async with async_session() as session:
         # Cross-source dedup: ingest merges by fingerprint; no delete (preserves Trivy/manual findings)
-        for raw in raw_issues:
+        for processed, raw in enumerate(raw_issues, start=1):
             try:
                 transformed = await adapter.to_vat_finding(
                     raw,
@@ -350,6 +362,13 @@ async def run_full_sync(
                     "Full sync bootstrap failed for issue %s: %s",
                     raw.get("id", "?"),
                     str(e).split("\n")[0][:200],
+                )
+            if _should_emit_aikido_ingest_progress(processed, ingest_total):
+                await _progress(
+                    on_progress,
+                    step_num,
+                    total_steps,
+                    f"Bootstrap: Ingest ({processed}/{ingest_total})",
                 )
         # Backfill image=component for findings missing image
         await session.execute(

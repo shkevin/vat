@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import re
@@ -12,13 +13,14 @@ from typing import Any, Iterable
 from urllib.parse import unquote
 
 import httpx
-from sqlalchemy import delete, desc, func, or_, select
+from sqlalchemy import delete, desc, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.models.asset import Asset
 from app.models.asset_alias import AssetAlias
 from app.models.finding import Finding, FindingType, Severity, Status
+from app.models.settings_model import SettingsKV
 from app.models.sbom import SbomPackage
 from app.models.vuln_feed_record import VulnFeedRecord
 from app.models.vuln_feed_run import VulnFeedRun
@@ -38,6 +40,8 @@ SOURCE_DEBIAN = "debian"
 SOURCE_UBUNTU = "ubuntu"
 SOURCE_ALPINE = "alpine"
 SOURCE_ALMALINUX = "almalinux"
+VULN_FEED_REFRESH_STATUS_KEY = "vuln_feed_refresh_status"
+VULN_FEED_REFRESH_LOCK_ID = 903412260501
 
 ALL_SOURCES = (
     SOURCE_OSV,
@@ -122,6 +126,10 @@ def _checksum_for_payload(value: Any) -> str:
     return hashlib.sha256(_compact_json(value).encode("utf-8")).hexdigest()
 
 
+def _checksum_for_feed_records(records: list[dict[str, Any]]) -> str:
+    return _checksum_for_payload(records)
+
+
 def _to_dt(value: Any) -> datetime | None:
     if not value or not isinstance(value, str):
         return None
@@ -143,6 +151,139 @@ def _record_key(parts: Iterable[str | None]) -> str:
 
 def _now_iso() -> str:
     return _utc_now().strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _active_feed_refresh_status(
+    value: dict[str, Any] | None,
+    *,
+    updated_at: datetime | None,
+) -> dict[str, Any] | None:
+    if not isinstance(value, dict):
+        return None
+    if value.get("status") not in {"queued", "running"}:
+        return None
+    settings = get_settings()
+    stale_after = max(60, int(settings.vuln_feed_refresh_stale_after_seconds or 0))
+    if updated_at is None or _utc_now() - updated_at <= timedelta(seconds=stale_after):
+        return value
+    return None
+
+
+async def read_vuln_feed_refresh_status(db: AsyncSession) -> dict[str, Any] | None:
+    row = await db.scalar(
+        select(SettingsKV)
+        .where(SettingsKV.key == VULN_FEED_REFRESH_STATUS_KEY)
+        .limit(1)
+    )
+    if not row:
+        return None
+    return _active_feed_refresh_status(row.value, updated_at=row.updated_at)
+
+
+async def _write_vuln_feed_refresh_status(
+    db: AsyncSession,
+    *,
+    status: str,
+    actor_id: str,
+    task_id: str | None = None,
+    message: str | None = None,
+) -> dict[str, Any]:
+    now = _utc_now()
+    value: dict[str, Any] = {
+        "status": status,
+        "actor_id": actor_id,
+        "task_id": task_id,
+        "message": message,
+        "updated_at": _now_iso(),
+    }
+    row = await db.scalar(
+        select(SettingsKV)
+        .where(SettingsKV.key == VULN_FEED_REFRESH_STATUS_KEY)
+        .limit(1)
+    )
+    if not row:
+        row = SettingsKV(key=VULN_FEED_REFRESH_STATUS_KEY, value=value, updated_at=now)
+        db.add(row)
+    else:
+        row.value = value
+        row.updated_at = now
+    await db.flush()
+    return value
+
+
+async def request_vuln_feed_refresh_enqueue(
+    db: AsyncSession,
+    *,
+    actor_id: str,
+) -> tuple[bool, dict[str, Any]]:
+    row = await db.scalar(
+        select(SettingsKV)
+        .where(SettingsKV.key == VULN_FEED_REFRESH_STATUS_KEY)
+        .limit(1)
+    )
+    active = _active_feed_refresh_status(
+        row.value if row else None,
+        updated_at=row.updated_at if row else None,
+    )
+    if active:
+        return False, active
+    return True, await _write_vuln_feed_refresh_status(
+        db,
+        status="queued",
+        actor_id=actor_id,
+        message="Vulnerability feed refresh queued.",
+    )
+
+
+async def mark_vuln_feed_refresh_running(
+    db: AsyncSession,
+    *,
+    actor_id: str,
+    task_id: str | None = None,
+) -> dict[str, Any]:
+    return await _write_vuln_feed_refresh_status(
+        db,
+        status="running",
+        actor_id=actor_id,
+        task_id=task_id,
+        message="Vulnerability feed refresh running.",
+    )
+
+
+async def mark_vuln_feed_refresh_finished(
+    db: AsyncSession,
+    *,
+    status: str,
+    actor_id: str,
+    task_id: str | None = None,
+    message: str | None = None,
+) -> dict[str, Any]:
+    return await _write_vuln_feed_refresh_status(
+        db,
+        status=status,
+        actor_id=actor_id,
+        task_id=task_id,
+        message=message,
+    )
+
+
+async def try_acquire_vuln_feed_refresh_lock(db: AsyncSession) -> bool:
+    return bool(
+        (
+            await db.execute(
+                text("SELECT pg_try_advisory_lock(:lock_id)"),
+                {"lock_id": VULN_FEED_REFRESH_LOCK_ID},
+            )
+        ).scalar_one()
+    )
+
+
+async def release_vuln_feed_refresh_lock(db: AsyncSession) -> None:
+    with contextlib.suppress(Exception):
+        await db.execute(
+            text("SELECT pg_advisory_unlock(:lock_id)"),
+            {"lock_id": VULN_FEED_REFRESH_LOCK_ID},
+        )
 
 
 def _infer_ecosystem_for_sbom(
@@ -1008,7 +1149,7 @@ async def _fetch_debian_records(client: httpx.AsyncClient) -> tuple[list[dict[st
     settings = get_settings()
     max_items = max(1, settings.vuln_feed_max_records_per_source)
     normalized = _normalize_debian(payload if isinstance(payload, dict) else {}, max_items)
-    return normalized, _checksum_for_payload(payload)
+    return normalized, _checksum_for_feed_records(normalized)
 
 
 async def _fetch_ubuntu_records(client: httpx.AsyncClient) -> tuple[list[dict[str, Any]], str]:
@@ -1018,7 +1159,7 @@ async def _fetch_ubuntu_records(client: httpx.AsyncClient) -> tuple[list[dict[st
     settings = get_settings()
     max_items = max(1, settings.vuln_feed_max_records_per_source)
     normalized = _normalize_ubuntu(payload if isinstance(payload, dict) else {}, max_items)
-    return normalized, _checksum_for_payload(payload)
+    return normalized, _checksum_for_feed_records(normalized)
 
 
 async def _fetch_alpine_records(client: httpx.AsyncClient) -> tuple[list[dict[str, Any]], str]:

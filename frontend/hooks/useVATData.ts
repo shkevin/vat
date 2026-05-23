@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import {
   keepPreviousData,
   useQuery,
@@ -29,6 +29,10 @@ import {
 } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 import { loadSettingsFromStorage, saveToStorage } from "@/lib/settingsStorage";
+import {
+  loadoutBootstrapKey,
+  shouldRunLoadoutBootstrap,
+} from "@/lib/loadoutBootstrapGate";
 import {
   DEFAULT_TRACKER,
   DEFAULT_LABELS,
@@ -453,7 +457,10 @@ export function useVATDataCore(): UseVATDataReturn {
   const { token, user } = useAuth();
   const queryClient = useQueryClient();
   const userEmail = user?.email ?? undefined;
-  const auth = { token: token ?? undefined, userEmail };
+  const auth = useMemo(
+    () => ({ token: token ?? undefined, userEmail }),
+    [token, userEmail],
+  );
   // queryKey scope: stable per-user id, NOT the bearer JWT. Token rotation
   // shouldn't thrash the cache, and DevTools / persistence shouldn't leak
   // the bearer.
@@ -677,14 +684,15 @@ export function useVATDataCore(): UseVATDataReturn {
   // any pre-existing localStorage loadouts are pushed to the backend and
   // then the localStorage entry is cleared.
   const [loadouts, setLoadouts] = useState<AssetLoadout[]>([]);
+  const loadoutBootstrapKeyRef = useRef<string | null>(null);
 
-  const dtoToLoadout = (l: LoadoutDTO): AssetLoadout => ({
+  const dtoToLoadout = useCallback((l: LoadoutDTO): AssetLoadout => ({
     id: l.id,
     name: l.name,
     assetIds: l.asset_ids ?? [],
     entries: (l.entries ?? undefined) as FavoriteEntry[] | undefined,
     savedAt: l.updated_at ?? l.created_at ?? new Date().toISOString(),
-  });
+  }), []);
 
   const refreshLoadouts = useCallback(async () => {
     if (typeof window === "undefined") return;
@@ -695,18 +703,29 @@ export function useVATDataCore(): UseVATDataReturn {
     } catch {
       // network blip — keep current state
     }
-  }, [auth, token, userEmail]);
+  }, [auth, dtoToLoadout, token, userEmail]);
 
   // One-shot localStorage → backend migration. Runs once per session when
   // the user is authenticated and the backend has no loadouts yet for them.
   useEffect(() => {
     if (typeof window === "undefined") return;
     if (!token && !userEmail) return;
+    const nextBootstrapKey = loadoutBootstrapKey(token, userEmail);
+    if (
+      !shouldRunLoadoutBootstrap(
+        loadoutBootstrapKeyRef.current,
+        nextBootstrapKey,
+      )
+    ) {
+      return;
+    }
+    loadoutBootstrapKeyRef.current = nextBootstrapKey;
     let cancelled = false;
     (async () => {
       try {
         const remote = await apiListLoadouts(auth);
         if (cancelled) return;
+        let migrated = false;
         if (remote.length === 0) {
           const local = loadAssetLoadouts();
           if (local.length > 0) {
@@ -725,6 +744,7 @@ export function useVATDataCore(): UseVATDataReturn {
                   },
                   auth,
                 );
+                migrated = true;
               } catch {
                 // skip individual migration failures; user can retry
               }
@@ -736,15 +756,21 @@ export function useVATDataCore(): UseVATDataReturn {
             }
           }
         }
-        await refreshLoadouts();
+        if (cancelled) return;
+        if (migrated) {
+          await refreshLoadouts();
+        } else {
+          setLoadouts(remote.map(dtoToLoadout));
+        }
       } catch {
+        loadoutBootstrapKeyRef.current = null;
         // initial fetch failed; will retry on next refresh
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [auth, token, userEmail, refreshLoadouts]);
+  }, [auth, dtoToLoadout, refreshLoadouts, token, userEmail]);
 
   const applyLoadout = useCallback(
     (loadout: AssetLoadout, options?: { enableOnlyFavorites?: boolean }) => {

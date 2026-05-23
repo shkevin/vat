@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import get_current_user_context, require_admin
+from app.core.config import get_settings
 from app.core.database import get_db
 from app.schemas.auth import UserContext
 from app.services.vuln_feeds import (
@@ -13,8 +14,13 @@ from app.services.vuln_feeds import (
     get_feed_records,
     get_feed_summary,
     match_sbom_with_osv,
+    mark_vuln_feed_refresh_finished,
+    mark_vuln_feed_refresh_running,
     refresh_enabled_feeds,
+    release_vuln_feed_refresh_lock,
+    request_vuln_feed_refresh_enqueue,
     top_vulnerabilities,
+    try_acquire_vuln_feed_refresh_lock,
 )
 from app.tasks.vuln_feed_tasks import run_vuln_feed_refresh
 
@@ -68,12 +74,68 @@ async def refresh_feeds(
     db: AsyncSession = Depends(get_db),
     ctx: UserContext = Depends(require_admin),
 ):
+    actor_id = ctx.email or ctx.user_id
     if use_celery:
-        run_vuln_feed_refresh.apply_async()
-        return {"dispatched": True, "message": "Vulnerability feed refresh task queued"}
-    result = await refresh_enabled_feeds(db, actor_id=ctx.email or ctx.user_id)
-    await db.commit()
-    return {"dispatched": False, **result}
+        accepted, status = await request_vuln_feed_refresh_enqueue(db, actor_id=actor_id)
+        if not accepted:
+            return {
+                "dispatched": False,
+                "already_running": True,
+                "status": status,
+                "message": "Vulnerability feed refresh is already queued or running",
+            }
+        await db.commit()
+        try:
+            run_vuln_feed_refresh.apply_async(
+                expires=max(60, get_settings().vuln_feed_task_expires_seconds)
+            )
+        except Exception as exc:
+            await mark_vuln_feed_refresh_finished(
+                db,
+                status="failed",
+                actor_id=actor_id,
+                message=str(exc)[:500],
+            )
+            await db.commit()
+            raise
+        return {
+            "dispatched": True,
+            "already_running": False,
+            "status": status,
+            "message": "Vulnerability feed refresh task queued",
+        }
+
+    acquired = await try_acquire_vuln_feed_refresh_lock(db)
+    if not acquired:
+        return {
+            "dispatched": False,
+            "already_running": True,
+            "message": "Vulnerability feed refresh is already running",
+        }
+    try:
+        await mark_vuln_feed_refresh_running(db, actor_id=actor_id)
+        try:
+            result = await refresh_enabled_feeds(db, actor_id=actor_id)
+            await mark_vuln_feed_refresh_finished(
+                db,
+                status="completed",
+                actor_id=actor_id,
+                message="Vulnerability feed refresh completed.",
+            )
+            await db.commit()
+            return {"dispatched": False, "already_running": False, **result}
+        except Exception as exc:
+            await db.rollback()
+            await mark_vuln_feed_refresh_finished(
+                db,
+                status="failed",
+                actor_id=actor_id,
+                message=str(exc)[:500],
+            )
+            await db.commit()
+            raise
+    finally:
+        await release_vuln_feed_refresh_lock(db)
 
 
 @router.post("/sbom-match")

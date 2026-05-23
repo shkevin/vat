@@ -98,6 +98,20 @@ spec:
           env:
             - name: VAT_ENV
               value: production
+            - name: VAT_VULN_FEED_REFRESH_INTERVAL_HOURS
+              value: "6"
+            - name: VAT_VULN_FEED_MAX_RECORDS_PER_SOURCE
+              value: "500"
+            - name: VAT_VULN_FEED_OSV_MAX_QUERIES
+              value: "250"
+            - name: VAT_VULN_FEED_RECENT_WINDOW_DAYS
+              value: "730"
+            - name: VAT_VULN_FEED_RECORDS_RETENTION_DAYS
+              value: "180"
+            - name: VAT_VULN_FEED_RUNS_RETENTION_DAYS
+              value: "30"
+            - name: VAT_VULN_FEED_TASK_EXPIRES_SECONDS
+              value: "3600"
           resources:
             requests:
               cpu: 100m
@@ -146,6 +160,10 @@ spec:
           env:
             - name: VAT_ENV
               value: production
+            - name: VAT_VULN_FEED_REFRESH_INTERVAL_HOURS
+              value: "6"
+            - name: VAT_VULN_FEED_TASK_EXPIRES_SECONDS
+              value: "3600"
           resources:
             requests:
               cpu: 50m

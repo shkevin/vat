@@ -64,7 +64,7 @@ spec:
             - --port
             - "8000"
             - --workers
-            - "2"
+            - "1"
           ports:
             - containerPort: 8000
               name: http
@@ -79,7 +79,7 @@ spec:
             - name: VAT_RUN_MIGRATIONS
               value: "false"
             - name: VAT_UVICORN_WORKERS
-              value: "2"
+              value: "1"
             - name: VAT_ALLOW_DEV_HEADERS
               value: "false"
             - name: VAT_AIKIDO_CONTAINER_SBOM_SYNC

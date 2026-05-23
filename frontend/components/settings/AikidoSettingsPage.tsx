@@ -14,6 +14,7 @@ import {
   getAikidoSyncPollDelayMs,
   hasRestorableAikidoSyncProgress,
   shouldKeepAikidoSyncingAfterPollError,
+  shouldPauseAikidoSyncPolling,
 } from "@/lib/aikidoSyncStatusGate";
 import type { Tracker } from "@/types";
 
@@ -130,10 +131,17 @@ export function AikidoSettingsPage({
 
     const schedule = () => {
       if (cancelled) return;
+      if (
+        typeof document !== "undefined" &&
+        shouldPauseAikidoSyncPolling(document.visibilityState)
+      ) {
+        return;
+      }
       timeout = setTimeout(poll, getAikidoSyncPollDelayMs(consecutiveFailures));
     };
 
     const poll = async () => {
+      timeout = null;
       try {
         const s = await fetchAikidoSyncStatus(auth, sourceId);
         consecutiveFailures = 0;
@@ -169,9 +177,25 @@ export function AikidoSettingsPage({
     };
 
     schedule();
+    const onVisibilityChange = () => {
+      if (
+        !cancelled &&
+        typeof document !== "undefined" &&
+        !shouldPauseAikidoSyncPolling(document.visibilityState) &&
+        !timeout
+      ) {
+        poll();
+      }
+    };
+    if (typeof document !== "undefined") {
+      document.addEventListener("visibilitychange", onVisibilityChange);
+    }
     return () => {
       cancelled = true;
       if (timeout) clearTimeout(timeout);
+      if (typeof document !== "undefined") {
+        document.removeEventListener("visibilitychange", onVisibilityChange);
+      }
     };
   }, [syncing, sourceId, token, refetch]);
 

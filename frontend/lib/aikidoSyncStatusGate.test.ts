@@ -4,6 +4,7 @@ import {
   getAikidoSyncPollDelayMs,
   hasRestorableAikidoSyncProgress,
   shouldInitializeAikidoSyncStatus,
+  shouldPauseAikidoSyncPolling,
   shouldKeepAikidoSyncingAfterPollError,
   shouldPollAikidoSyncStatus,
 } from "./aikidoSyncStatusGate";
@@ -46,8 +47,13 @@ describe("aikido sync status gating", () => {
   it("keeps sync state during transient poll errors and backs off", () => {
     expect(shouldKeepAikidoSyncingAfterPollError(true)).toBe(true);
     expect(shouldKeepAikidoSyncingAfterPollError(false)).toBe(false);
-    expect(getAikidoSyncPollDelayMs(0)).toBe(1500);
-    expect(getAikidoSyncPollDelayMs(1)).toBe(3000);
+    expect(getAikidoSyncPollDelayMs(0)).toBe(3000);
+    expect(getAikidoSyncPollDelayMs(1)).toBe(6000);
     expect(getAikidoSyncPollDelayMs(5)).toBe(15000);
+  });
+
+  it("pauses polling while the document is hidden", () => {
+    expect(shouldPauseAikidoSyncPolling("hidden")).toBe(true);
+    expect(shouldPauseAikidoSyncPolling("visible")).toBe(false);
   });
 });
