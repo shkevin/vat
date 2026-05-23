@@ -28,6 +28,7 @@ dependencies = [
     "opentelemetry-api>=1.28.0",
     "opentelemetry-sdk>=1.28.0",
     "opentelemetry-exporter-otlp>=1.28.0",
+    "ijson>=3.5.0",
 ]
 
 [tool.pytest.ini_options]

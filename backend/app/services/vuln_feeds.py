@@ -6,13 +6,15 @@ import contextlib
 import hashlib
 import json
 import re
+import tempfile
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Any, Iterable
+from typing import Any, BinaryIO, Iterable
 from urllib.parse import unquote
 
 import httpx
+import ijson
 from sqlalchemy import delete, desc, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -774,6 +776,80 @@ def _normalize_debian(payload: dict[str, Any], limit: int) -> list[dict[str, Any
     return out
 
 
+def _stream_debian_records_from_json(json_file: BinaryIO, limit: int) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    count = 0
+    max_items = max(1, limit)
+    for top_key, top_value in ijson.kvitems(json_file, "", use_float=True):
+        if count >= max_items:
+            break
+        if not isinstance(top_key, str) or not isinstance(top_value, dict):
+            continue
+
+        # Debian tracker format is package -> CVE -> advisory payload.
+        if top_key.startswith("CVE-"):
+            cve_id = top_key
+            details = top_value
+            out.append(
+                {
+                    "source": SOURCE_DEBIAN,
+                    "record_key": _record_key([cve_id]),
+                    "vulnerability_id": cve_id[:128],
+                    "aliases": [cve_id],
+                    "package_name": None,
+                    "ecosystem": "Debian",
+                    "version": None,
+                    "severity": None,
+                    "title": details.get("description")
+                    if isinstance(details.get("description"), str)
+                    else None,
+                    "details": details,
+                    "published_at": None,
+                    "modified_at": None,
+                }
+            )
+            count += 1
+            continue
+
+        package_name = top_key
+        advisories = top_value
+        for cve_id, advisory in advisories.items():
+            if count >= max_items:
+                break
+            if not isinstance(cve_id, str) or not cve_id.startswith("CVE-"):
+                continue
+            details = advisory if isinstance(advisory, dict) else {}
+            severity = None
+            releases = details.get("releases")
+            if isinstance(releases, dict):
+                for rel in releases.values():
+                    if isinstance(rel, dict):
+                        normalized_urgency = _normalize_severity(rel.get("urgency"))
+                        if normalized_urgency:
+                            severity = normalized_urgency
+                            break
+            out.append(
+                {
+                    "source": SOURCE_DEBIAN,
+                    "record_key": _record_key([cve_id, package_name]),
+                    "vulnerability_id": cve_id[:128],
+                    "aliases": [cve_id],
+                    "package_name": package_name[:256],
+                    "ecosystem": "Debian",
+                    "version": None,
+                    "severity": severity,
+                    "title": details.get("description")
+                    if isinstance(details.get("description"), str)
+                    else None,
+                    "details": details,
+                    "published_at": None,
+                    "modified_at": None,
+                }
+            )
+            count += 1
+    return out
+
+
 def _normalize_ubuntu(payload: dict[str, Any], limit: int) -> list[dict[str, Any]]:
     entries: list[dict[str, Any]]
     raw = payload.get("cves")
@@ -785,6 +861,36 @@ def _normalize_ubuntu(payload: dict[str, Any], limit: int) -> list[dict[str, Any
         entries = []
     out: list[dict[str, Any]] = []
     for row in entries[:limit]:
+        cve = row.get("id") or row.get("cve") or row.get("name")
+        if not isinstance(cve, str) or not cve.strip():
+            continue
+        out.append(
+            {
+                "source": SOURCE_UBUNTU,
+                "record_key": _record_key([cve]),
+                "vulnerability_id": cve[:128],
+                "aliases": [cve],
+                "package_name": row.get("package"),
+                "ecosystem": "Ubuntu",
+                "version": row.get("priority"),
+                "severity": _normalize_severity(row.get("priority")),
+                "title": row.get("description"),
+                "details": row,
+                "published_at": _to_dt(row.get("published")),
+                "modified_at": _to_dt(row.get("updated_at") or row.get("modified")),
+            }
+        )
+    return out
+
+
+def _stream_ubuntu_records_from_json(json_file: BinaryIO, limit: int) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    max_items = max(1, limit)
+    for row in ijson.items(json_file, "cves.item", use_float=True):
+        if len(out) >= max_items:
+            break
+        if not isinstance(row, dict):
+            continue
         cve = row.get("id") or row.get("cve") or row.get("name")
         if not isinstance(cve, str) or not cve.strip():
             continue
@@ -1143,22 +1249,32 @@ async def _fetch_redhat_records(client: httpx.AsyncClient) -> tuple[list[dict[st
 
 
 async def _fetch_debian_records(client: httpx.AsyncClient) -> tuple[list[dict[str, Any]], str]:
-    resp = await client.get("https://security-tracker.debian.org/tracker/data/json")
-    resp.raise_for_status()
-    payload = resp.json()
     settings = get_settings()
     max_items = max(1, settings.vuln_feed_max_records_per_source)
-    normalized = _normalize_debian(payload if isinstance(payload, dict) else {}, max_items)
+    with tempfile.TemporaryFile("w+b") as feed_file:
+        async with client.stream(
+            "GET", "https://security-tracker.debian.org/tracker/data/json"
+        ) as resp:
+            resp.raise_for_status()
+            async for chunk in resp.aiter_bytes():
+                if chunk:
+                    feed_file.write(chunk)
+        feed_file.seek(0)
+        normalized = _stream_debian_records_from_json(feed_file, max_items)
     return normalized, _checksum_for_feed_records(normalized)
 
 
 async def _fetch_ubuntu_records(client: httpx.AsyncClient) -> tuple[list[dict[str, Any]], str]:
-    resp = await client.get("https://ubuntu.com/security/cves.json")
-    resp.raise_for_status()
-    payload = resp.json()
     settings = get_settings()
     max_items = max(1, settings.vuln_feed_max_records_per_source)
-    normalized = _normalize_ubuntu(payload if isinstance(payload, dict) else {}, max_items)
+    with tempfile.TemporaryFile("w+b") as feed_file:
+        async with client.stream("GET", "https://ubuntu.com/security/cves.json") as resp:
+            resp.raise_for_status()
+            async for chunk in resp.aiter_bytes():
+                if chunk:
+                    feed_file.write(chunk)
+        feed_file.seek(0)
+        normalized = _stream_ubuntu_records_from_json(feed_file, max_items)
     return normalized, _checksum_for_feed_records(normalized)
 
 

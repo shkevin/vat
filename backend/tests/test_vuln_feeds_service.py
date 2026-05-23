@@ -1,5 +1,7 @@
 """Tests for vulnerability feed normalization helpers."""
 
+from io import BytesIO
+
 import pytest
 from sqlalchemy import text
 
@@ -21,6 +23,8 @@ from app.services.vuln_feeds import (
     _purl_to_osv_target,
     _severity_from_details,
     _enabled_sources,
+    _stream_debian_records_from_json,
+    _stream_ubuntu_records_from_json,
     materialize_feed_matches_to_findings,
     prune_feed_storage,
 )
@@ -158,9 +162,63 @@ def test_feed_record_checksum_uses_normalized_records_only():
     assert _checksum_for_feed_records(records) == _checksum_for_feed_records(records)
 
 
-def test_memory_heavy_os_feeds_are_disabled_by_default():
-    assert SOURCE_DEBIAN not in _enabled_sources()
-    assert SOURCE_UBUNTU not in _enabled_sources()
+def test_streamed_os_feeds_are_enabled_by_default():
+    assert SOURCE_DEBIAN in _enabled_sources()
+    assert SOURCE_UBUNTU in _enabled_sources()
+
+
+def test_stream_debian_records_from_json_file_like():
+    payload = b"""
+    {
+      "openssl": {
+        "CVE-2026-1000": {
+          "description": "OpenSSL issue",
+          "releases": {"sid": {"urgency": "high"}}
+        }
+      },
+      "curl": {
+        "CVE-2026-1001": {
+          "description": "Curl issue",
+          "releases": {"sid": {"urgency": "medium"}}
+        }
+      }
+    }
+    """
+
+    rows = _stream_debian_records_from_json(BytesIO(payload), limit=1)
+
+    assert len(rows) == 1
+    assert rows[0]["source"] == SOURCE_DEBIAN
+    assert rows[0]["record_key"] == "CVE-2026-1000|openssl"
+    assert rows[0]["severity"] == "HIGH"
+
+
+def test_stream_ubuntu_records_from_json_file_like():
+    payload = b"""
+    {
+      "cves": [
+        {
+          "id": "CVE-2026-2000",
+          "description": "Ubuntu issue",
+          "priority": "medium",
+          "package": "openssl"
+        },
+        {
+          "id": "CVE-2026-2001",
+          "description": "Second issue",
+          "priority": "low",
+          "package": "curl"
+        }
+      ]
+    }
+    """
+
+    rows = _stream_ubuntu_records_from_json(BytesIO(payload), limit=1)
+
+    assert len(rows) == 1
+    assert rows[0]["source"] == SOURCE_UBUNTU
+    assert rows[0]["record_key"] == "CVE-2026-2000"
+    assert rows[0]["severity"] == "MEDIUM"
 
 
 def test_match_strategy_labels_version_and_ecosystem():
