@@ -432,6 +432,56 @@ async def test_materialize_skips_low_confidence_by_default(db):
 
 
 @pytest.mark.asyncio
+async def test_materialize_feed_matches_honors_package_batch_size(db):
+    settings = get_settings()
+    prev_batch_size = settings.vuln_feed_materialize_package_batch_size
+    settings.vuln_feed_materialize_package_batch_size = 1
+    try:
+        await db.execute(text("DELETE FROM findings"))
+        await db.execute(text("DELETE FROM vuln_feed_records"))
+        await db.execute(text("DELETE FROM sbom_packages"))
+        await db.execute(text("DELETE FROM asset_aliases"))
+        await db.execute(
+            text(
+                """
+                INSERT INTO sbom_packages
+                (id, name, version, component, language, sources, tenant_id, created_at, updated_at)
+                VALUES
+                ('sbom-batch-1', 'openssl', '3.0.0', 'asset-batch-a', 'python', '[{"name":"manual"}]'::jsonb, NULL, NOW(), NOW()),
+                ('sbom-batch-2', 'requests', '2.31.0', 'asset-batch-b', 'python', '[{"name":"manual"}]'::jsonb, NULL, NOW(), NOW())
+                """
+            )
+        )
+        await db.execute(
+            text(
+                """
+                INSERT INTO vuln_feed_records
+                (source, record_key, vulnerability_id, aliases, package_name, ecosystem, version, severity, title, details, published_at, modified_at, fetched_at, run_id)
+                VALUES
+                ('osv', 'CVE-2026-8881|openssl|PyPI|3.0.0', 'CVE-2026-8881', '["CVE-2026-8881"]'::jsonb, 'openssl', 'PyPI', '3.0.0', 'HIGH', 'OpenSSL issue', '{}'::jsonb, NULL, NULL, NOW(), NULL),
+                ('osv', 'CVE-2026-8882|requests|PyPI|2.31.0', 'CVE-2026-8882', '["CVE-2026-8882"]'::jsonb, 'requests', 'PyPI', '2.31.0', 'MEDIUM', 'Requests issue', '{}'::jsonb, NULL, NULL, NOW(), NULL)
+                """
+            )
+        )
+        await db.commit()
+
+        result = await materialize_feed_matches_to_findings(
+            db, trace_id="trace-test-batch", actor_id="tester@vat.local"
+        )
+        await db.commit()
+
+        assert result["created"] == 2
+        assert result["matched"] == 2
+        finding_count = await db.scalar(
+            text("SELECT COUNT(*) FROM findings WHERE source = :source"),
+            {"source": SOURCE_VULN_FEED_MATCH},
+        )
+        assert finding_count == 2
+    finally:
+        settings.vuln_feed_materialize_package_batch_size = prev_batch_size
+
+
+@pytest.mark.asyncio
 async def test_prune_feed_storage_deletes_old_runs_and_records(db):
     settings = get_settings()
     prev_runs = settings.vuln_feed_runs_retention_days

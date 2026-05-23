@@ -213,6 +213,7 @@ class Settings(BaseSettings):
     vuln_feed_osv_max_records_per_ecosystem: int = 400
     vuln_feed_linux_kernel_max_records: int = 120
     vuln_feed_match_include_low_confidence: bool = False
+    vuln_feed_materialize_package_batch_size: int = 250
     vuln_feed_runs_retention_days: int = 30
     vuln_feed_records_retention_days: int = 180
     vuln_feed_user_agent: str = "VAT-VulnFeeds/1.0"

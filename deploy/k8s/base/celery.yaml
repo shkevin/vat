@@ -114,6 +114,8 @@ spec:
               value: "30"
             - name: VAT_VULN_FEED_TASK_EXPIRES_SECONDS
               value: "3600"
+            - name: VAT_VULN_FEED_MATERIALIZE_PACKAGE_BATCH_SIZE
+              value: "25"
             - name: VAT_VULN_FEED_DEBIAN_ENABLED
               value: "true"
             - name: VAT_VULN_FEED_UBUNTU_ENABLED
@@ -172,6 +174,8 @@ spec:
               value: "6"
             - name: VAT_VULN_FEED_TASK_EXPIRES_SECONDS
               value: "3600"
+            - name: VAT_VULN_FEED_MATERIALIZE_PACKAGE_BATCH_SIZE
+              value: "25"
           resources:
             requests:
               cpu: 50m

@@ -1774,6 +1774,18 @@ def _materialized_finding_payload(
     }
 
 
+def _empty_materialization_result() -> dict[str, int]:
+    return {
+        "created": 0,
+        "updated": 0,
+        "reopened": 0,
+        "resolved": 0,
+        "matched": 0,
+        "excluded_low_confidence": 0,
+        "excluded_version_mismatch": 0,
+    }
+
+
 async def materialize_feed_matches_to_findings(
     db: AsyncSession,
     *,
@@ -1782,21 +1794,7 @@ async def materialize_feed_matches_to_findings(
 ) -> dict[str, int]:
     settings = get_settings()
     include_low_confidence = bool(settings.vuln_feed_match_include_low_confidence)
-    sbom_rows = (
-        (await db.execute(select(SbomPackage).where(SbomPackage.component.is_not(None))))
-        .scalars()
-        .all()
-    )
-    if not sbom_rows:
-        return {
-            "created": 0,
-            "updated": 0,
-            "reopened": 0,
-            "resolved": 0,
-            "matched": 0,
-            "excluded_low_confidence": 0,
-            "excluded_version_mismatch": 0,
-        }
+    batch_size = max(1, int(settings.vuln_feed_materialize_package_batch_size or 250))
 
     alias_rows = (
         (await db.execute(select(AssetAlias.source_asset_id, AssetAlias.canonical_asset_id)))
@@ -1808,219 +1806,228 @@ async def materialize_feed_matches_to_findings(
         if isinstance(src, str) and isinstance(canon, str) and src.strip() and canon.strip()
     }
 
-    package_names = sorted(
-        {(row.name or "").strip().lower() for row in sbom_rows if (row.name or "").strip()}
-    )
-    if not package_names:
-        return {
-            "created": 0,
-            "updated": 0,
-            "reopened": 0,
-            "resolved": 0,
-            "matched": 0,
-            "excluded_low_confidence": 0,
-            "excluded_version_mismatch": 0,
-        }
-
-    advisory_rows = (
-        (
+    package_names = [
+        str(row[0]).strip().lower()
+        for row in (
             await db.execute(
-                select(VulnFeedRecord).where(
-                    func.lower(VulnFeedRecord.package_name).in_(package_names)
+                select(func.lower(SbomPackage.name))
+                .where(
+                    SbomPackage.component.is_not(None),
+                    SbomPackage.name.is_not(None),
                 )
+                .distinct()
+                .order_by(func.lower(SbomPackage.name))
             )
-        )
-        .scalars()
-        .all()
-    )
-    advisories_by_package: dict[str, list[VulnFeedRecord]] = {}
-    for row in advisory_rows:
-        pkg = (row.package_name or "").strip().lower()
-        if not pkg:
-            continue
-        advisories_by_package.setdefault(pkg, []).append(row)
+        ).all()
+        if isinstance(row[0], str) and str(row[0]).strip()
+    ]
+    if not package_names:
+        return _empty_materialization_result()
 
-    candidates: dict[str, dict[str, Any]] = {}
+    created = 0
+    updated = 0
+    reopened = 0
+    matched = 0
+    resolved = 0
     excluded_low_confidence = 0
     excluded_version_mismatch = 0
-    for pkg in sbom_rows:
-        package_key = (pkg.name or "").strip().lower()
-        if not package_key:
-            continue
-        asset_id_raw = (pkg.component or "").strip()
-        if not asset_id_raw:
-            continue
-        # Canonicalize first (apply container alias rules), then resolve
-        # asset_aliases so existing manual merges are honored too.
-        asset_id_canonical = _canonicalize_feed_match_image(asset_id_raw)
-        asset_id = source_to_canonical.get(
-            asset_id_canonical, asset_id_canonical
-        )
-        for advisory in advisories_by_package.get(package_key, []):
-            strategy, confidence = _match_strategy(
-                sbom_name=pkg.name,
-                sbom_version=pkg.version,
-                sbom_language=pkg.language,
-                sbom_purl=pkg.purl,
-                sbom_purl_source=getattr(pkg, "purl_source", None),
-                sbom_purl_confidence=getattr(pkg, "purl_confidence", None),
-                advisory_package=advisory.package_name,
-                advisory_ecosystem=advisory.ecosystem,
-                advisory_version=advisory.version,
-            )
-            if strategy == "version_mismatch":
-                excluded_version_mismatch += 1
-                continue
-            if strategy == "name_mismatch":
-                continue
-            if confidence == "low" and not include_low_confidence:
-                excluded_low_confidence += 1
-                continue
-            serialized = _serialize_feed_record(advisory)
-            payload = _materialized_finding_payload(
-                asset_id=asset_id,
-                sbom_pkg=pkg,
-                record=serialized,
-                advisory_source=advisory.source,
-                strategy=strategy,
-                confidence=confidence,
-            )
-            candidates[payload["fingerprint_id"]] = payload
+    active_fps: set[str] = set()
+    strategy_counts: dict[str, int] = {}
+    confidence_counts: dict[str, int] = {}
+    ensured_assets: set[str] = set()
 
-    if not candidates:
-        stale_rows = (
+    for start in range(0, len(package_names), batch_size):
+        package_batch = package_names[start : start + batch_size]
+        sbom_rows = (
             (
                 await db.execute(
-                    select(Finding).where(Finding.source == SOURCE_VULN_FEED_MATCH)
+                    select(SbomPackage).where(
+                        SbomPackage.component.is_not(None),
+                        SbomPackage.name.is_not(None),
+                        func.lower(SbomPackage.name).in_(package_batch),
+                    )
                 )
             )
             .scalars()
             .all()
         )
-        resolved = 0
-        for row in stale_rows:
-            if not _is_open_lifecycle_status(row.status):
+        if not sbom_rows:
+            continue
+
+        advisory_rows = (
+            (
+                await db.execute(
+                    select(VulnFeedRecord).where(
+                        func.lower(VulnFeedRecord.package_name).in_(package_batch)
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        advisories_by_package: dict[str, list[VulnFeedRecord]] = {}
+        for row in advisory_rows:
+            pkg = (row.package_name or "").strip().lower()
+            if not pkg:
                 continue
-            row.previous_status = row.status.value
-            row.status = Status.Resolved
+            advisories_by_package.setdefault(pkg, []).append(row)
+
+        candidates: dict[str, dict[str, Any]] = {}
+        for pkg in sbom_rows:
+            package_key = (pkg.name or "").strip().lower()
+            if not package_key:
+                continue
+            asset_id_raw = (pkg.component or "").strip()
+            if not asset_id_raw:
+                continue
+            # Canonicalize first (apply container alias rules), then resolve
+            # asset_aliases so existing manual merges are honored too.
+            asset_id_canonical = _canonicalize_feed_match_image(asset_id_raw)
+            asset_id = source_to_canonical.get(
+                asset_id_canonical, asset_id_canonical
+            )
+            for advisory in advisories_by_package.get(package_key, []):
+                strategy, confidence = _match_strategy(
+                    sbom_name=pkg.name,
+                    sbom_version=pkg.version,
+                    sbom_language=pkg.language,
+                    sbom_purl=pkg.purl,
+                    sbom_purl_source=getattr(pkg, "purl_source", None),
+                    sbom_purl_confidence=getattr(pkg, "purl_confidence", None),
+                    advisory_package=advisory.package_name,
+                    advisory_ecosystem=advisory.ecosystem,
+                    advisory_version=advisory.version,
+                )
+                if strategy == "version_mismatch":
+                    excluded_version_mismatch += 1
+                    continue
+                if strategy == "name_mismatch":
+                    continue
+                if confidence == "low" and not include_low_confidence:
+                    excluded_low_confidence += 1
+                    continue
+                serialized = _serialize_feed_record(advisory)
+                payload = _materialized_finding_payload(
+                    asset_id=asset_id,
+                    sbom_pkg=pkg,
+                    record=serialized,
+                    advisory_source=advisory.source,
+                    strategy=strategy,
+                    confidence=confidence,
+                )
+                candidates[payload["fingerprint_id"]] = payload
+
+        if not candidates:
+            await db.flush()
+            db.expunge_all()
+            continue
+
+        active_fps.update(candidates)
+        matched += len(candidates)
+        existing_rows = (
+            (
+                await db.execute(
+                    select(Finding).where(Finding.fingerprint_id.in_(candidates.keys()))
+                )
+            )
+            .scalars()
+            .all()
+        )
+        existing_by_fp = {row.fingerprint_id: row for row in existing_rows}
+
+        for fp, payload in candidates.items():
+            row = existing_by_fp.get(fp)
+            now_iso = _now_iso()
+            asset_id = str(payload.get("image") or "").strip()
+            if asset_id and asset_id not in ensured_assets:
+                await _ensure_feed_match_asset_record(db, asset_id)
+                ensured_assets.add(asset_id)
+            if row is None:
+                finding = Finding(
+                    id=f"f-{fp[:8]}",
+                    finding_type=FindingType.SCA,
+                    fingerprint_id=fp,
+                    cve_id=payload["cve_id"],
+                    severity=payload["severity"],
+                    status=Status.Open,
+                    component_base=payload["component_base"],
+                    component=payload["component"],
+                    image=payload["image"],
+                    ecosystem=payload["ecosystem"],
+                    title=payload["title"],
+                    description=payload["description"],
+                    source=payload["source"],
+                    correlation_key=payload["correlation_key"],
+                    correlation_confidence=payload["correlation_confidence"],
+                    tracker_comment=payload["tracker_comment"],
+                    sources=payload["sources"],
+                    tenant_id=payload["tenant_id"],
+                    audit=[
+                        {
+                            "ts": now_iso,
+                            "user": actor_id,
+                            "action": "Feed advisory materialized to finding",
+                            "note": payload["audit_note"],
+                        }
+                    ],
+                )
+                db.add(finding)
+                created += 1
+                continue
+
+            row.cve_id = payload["cve_id"]
+            row.severity = payload["severity"]
+            row.component_base = payload["component_base"]
+            row.component = payload["component"]
+            row.image = payload["image"]
+            row.ecosystem = payload["ecosystem"]
+            row.title = payload["title"]
+            row.description = payload["description"]
+            row.source = payload["source"]
+            row.correlation_key = payload["correlation_key"]
+            row.correlation_confidence = payload["correlation_confidence"]
+            row.tracker_comment = payload["tracker_comment"]
+            row.tenant_id = payload["tenant_id"]
+            row.sources = payload["sources"]
+            if row.status in {Status.Resolved, Status.Mitigated}:
+                row.previous_status = row.status.value
+                row.status = Status.Reopened
+                reopened += 1
             audit = list(row.audit or [])
             audit.append(
                 {
-                    "ts": _now_iso(),
+                    "ts": now_iso,
                     "user": actor_id,
-                    "action": "Feed advisory auto-resolved",
-                    "note": "No longer matched by current SBOM/feed correlation.",
+                    "action": "Feed advisory finding refreshed",
+                    "note": payload["audit_note"],
                 }
             )
             row.audit = audit
-            resolved += 1
-        return {
-            "created": 0,
-            "updated": 0,
-            "reopened": 0,
-            "resolved": resolved,
-            "matched": 0,
-            "excluded_low_confidence": excluded_low_confidence,
-            "excluded_version_mismatch": excluded_version_mismatch,
-        }
+            updated += 1
 
-    candidate_fps = sorted(candidates.keys())
-    existing_rows = (
-        (
-            await db.execute(
-                select(Finding).where(Finding.fingerprint_id.in_(candidate_fps))
-            )
-        )
-        .scalars()
-        .all()
+        for payload in candidates.values():
+            strategy = str(payload.get("correlation_key") or "")
+            confidence = str(payload.get("correlation_confidence") or "unknown")
+            if strategy:
+                strategy_tag = strategy.split(":", 4)[2] if ":" in strategy else strategy
+                strategy_counts[strategy_tag] = strategy_counts.get(strategy_tag, 0) + 1
+            confidence_counts[confidence] = confidence_counts.get(confidence, 0) + 1
+
+        await db.flush()
+        db.expunge_all()
+
+    stale_stream = await db.stream_scalars(
+        select(Finding).where(Finding.source == SOURCE_VULN_FEED_MATCH)
     )
-    existing_by_fp = {row.fingerprint_id: row for row in existing_rows}
-
-    created = 0
-    updated = 0
-    reopened = 0
-    for fp, payload in candidates.items():
-        row = existing_by_fp.get(fp)
-        now_iso = _now_iso()
-        await _ensure_feed_match_asset_record(db, payload.get("image"))
-        if row is None:
-            finding = Finding(
-                id=f"f-{fp[:8]}",
-                finding_type=FindingType.SCA,
-                fingerprint_id=fp,
-                cve_id=payload["cve_id"],
-                severity=payload["severity"],
-                status=Status.Open,
-                component_base=payload["component_base"],
-                component=payload["component"],
-                image=payload["image"],
-                ecosystem=payload["ecosystem"],
-                title=payload["title"],
-                description=payload["description"],
-                source=payload["source"],
-                correlation_key=payload["correlation_key"],
-                correlation_confidence=payload["correlation_confidence"],
-                tracker_comment=payload["tracker_comment"],
-                sources=payload["sources"],
-                tenant_id=payload["tenant_id"],
-                audit=[
-                    {
-                        "ts": now_iso,
-                        "user": actor_id,
-                        "action": "Feed advisory materialized to finding",
-                        "note": payload["audit_note"],
-                    }
-                ],
-            )
-            db.add(finding)
-            created += 1
-            continue
-
-        row.cve_id = payload["cve_id"]
-        row.severity = payload["severity"]
-        row.component_base = payload["component_base"]
-        row.component = payload["component"]
-        row.image = payload["image"]
-        row.ecosystem = payload["ecosystem"]
-        row.title = payload["title"]
-        row.description = payload["description"]
-        row.source = payload["source"]
-        row.correlation_key = payload["correlation_key"]
-        row.correlation_confidence = payload["correlation_confidence"]
-        row.tracker_comment = payload["tracker_comment"]
-        row.tenant_id = payload["tenant_id"]
-        row.sources = payload["sources"]
-        if row.status in {Status.Resolved, Status.Mitigated}:
-            row.previous_status = row.status.value
-            row.status = Status.Reopened
-            reopened += 1
-        audit = list(row.audit or [])
-        audit.append(
-            {
-                "ts": now_iso,
-                "user": actor_id,
-                "action": "Feed advisory finding refreshed",
-                "note": payload["audit_note"],
-            }
-        )
-        row.audit = audit
-        updated += 1
-
-    stale_rows = (
-        (
-            await db.execute(
-                select(Finding).where(Finding.source == SOURCE_VULN_FEED_MATCH)
-            )
-        )
-        .scalars()
-        .all()
-    )
-    resolved = 0
-    active_fps = set(candidate_fps)
-    for row in stale_rows:
+    processed_stale = 0
+    async for row in stale_stream:
         if row.fingerprint_id in active_fps:
+            with contextlib.suppress(Exception):
+                db.expunge(row)
             continue
         if not _is_open_lifecycle_status(row.status):
+            with contextlib.suppress(Exception):
+                db.expunge(row)
             continue
         row.previous_status = row.status.value
         row.status = Status.Resolved
@@ -2035,16 +2042,12 @@ async def materialize_feed_matches_to_findings(
         )
         row.audit = audit
         resolved += 1
-
-    strategy_counts: dict[str, int] = {}
-    confidence_counts: dict[str, int] = {}
-    for payload in candidates.values():
-        strategy = str(payload.get("correlation_key") or "")
-        confidence = str(payload.get("correlation_confidence") or "unknown")
-        if strategy:
-            strategy_tag = strategy.split(":", 4)[2] if ":" in strategy else strategy
-            strategy_counts[strategy_tag] = strategy_counts.get(strategy_tag, 0) + 1
-        confidence_counts[confidence] = confidence_counts.get(confidence, 0) + 1
+        processed_stale += 1
+        if processed_stale % batch_size == 0:
+            await db.flush()
+        with contextlib.suppress(Exception):
+            db.expunge(row)
+    await db.flush()
 
     await emit_audit_event(
         db,
@@ -2061,7 +2064,7 @@ async def materialize_feed_matches_to_findings(
             "updated": updated,
             "reopened": reopened,
             "resolved": resolved,
-            "matched": len(candidates),
+            "matched": matched,
             "excluded_low_confidence": excluded_low_confidence,
             "excluded_version_mismatch": excluded_version_mismatch,
             "strategy_counts": strategy_counts,
@@ -2073,7 +2076,7 @@ async def materialize_feed_matches_to_findings(
         "updated": updated,
         "reopened": reopened,
         "resolved": resolved,
-        "matched": len(candidates),
+        "matched": matched,
         "excluded_low_confidence": excluded_low_confidence,
         "excluded_version_mismatch": excluded_version_mismatch,
     }

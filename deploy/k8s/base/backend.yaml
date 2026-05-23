@@ -88,6 +88,8 @@ spec:
               value: "25"
             - name: VAT_VULN_FEEDS_ENABLED
               value: "true"
+            - name: VAT_VULN_FEED_MATERIALIZE_PACKAGE_BATCH_SIZE
+              value: "25"
           livenessProbe:
             httpGet:
               path: /health
