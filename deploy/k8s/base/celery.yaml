@@ -98,6 +98,8 @@ spec:
           env:
             - name: VAT_ENV
               value: production
+            - name: VAT_VULN_FEEDS_ENABLED
+              value: "false"
             - name: VAT_VULN_FEED_REFRESH_INTERVAL_HOURS
               value: "6"
             - name: VAT_VULN_FEED_MAX_RECORDS_PER_SOURCE
@@ -164,6 +166,8 @@ spec:
           env:
             - name: VAT_ENV
               value: production
+            - name: VAT_VULN_FEEDS_ENABLED
+              value: "false"
             - name: VAT_VULN_FEED_REFRESH_INTERVAL_HOURS
               value: "6"
             - name: VAT_VULN_FEED_TASK_EXPIRES_SECONDS
