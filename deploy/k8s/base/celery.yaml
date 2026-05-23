@@ -32,6 +32,8 @@ spec:
             - worker
             - -Q
             - vat-sync,vat-maintenance
+            - --concurrency
+            - "1"
             - -l
             - info
           envFrom:
@@ -40,6 +42,10 @@ spec:
           env:
             - name: VAT_ENV
               value: production
+            - name: VAT_AIKIDO_CONTAINER_SBOM_SYNC
+              value: "false"
+            - name: VAT_AIKIDO_CONTAINER_SBOM_MAX_CONTAINERS
+              value: "25"
           resources:
             requests:
               cpu: 100m
@@ -82,6 +88,8 @@ spec:
             - worker
             - -Q
             - vat-feeds
+            - --concurrency
+            - "1"
             - -l
             - info
           envFrom:

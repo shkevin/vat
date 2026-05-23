@@ -82,6 +82,10 @@ spec:
               value: "2"
             - name: VAT_ALLOW_DEV_HEADERS
               value: "false"
+            - name: VAT_AIKIDO_CONTAINER_SBOM_SYNC
+              value: "false"
+            - name: VAT_AIKIDO_CONTAINER_SBOM_MAX_CONTAINERS
+              value: "25"
           livenessProbe:
             httpGet:
               path: /health

@@ -82,6 +82,8 @@ class Settings(BaseSettings):
     # When licenses/export is empty, use POST /containers/sbom/generate in batches instead.
     aikido_container_sbom_bulk_generate: bool = False
     aikido_container_sbom_bulk_batch_size: int = 20
+    # Mark a persisted "running" sync as stale after this many seconds without progress.
+    aikido_sync_stale_after_seconds: int = 30 * 60
 
     # Tracker (Linear)
     linear_api_key: Optional[str] = None

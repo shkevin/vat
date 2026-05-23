@@ -39,6 +39,7 @@ app = Celery(
     broker=settings.celery_broker_url,
     backend=settings.celery_result_backend or settings.celery_broker_url,
     include=[
+        "app.tasks.aikido_tasks",
         "app.tasks.sync_tasks",
         "app.tasks.audit_tasks",
         "app.tasks.vuln_feed_tasks",
@@ -101,6 +102,7 @@ app.conf.beat_schedule = {
 
 app.conf.task_default_queue = "vat-sync"
 app.conf.task_routes = {
+    "app.tasks.aikido_tasks.*": {"queue": "vat-sync"},
     "app.tasks.sync_tasks.*": {"queue": "vat-sync"},
     "app.tasks.audit_tasks.*": {"queue": "vat-maintenance"},
     "app.tasks.vuln_feed_tasks.*": {"queue": "vat-feeds"},

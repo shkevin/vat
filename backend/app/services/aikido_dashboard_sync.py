@@ -1,6 +1,7 @@
 """Sync data from Aikido to VAT — issues, groups, containers, VMs, activity, CI scans, etc."""
 
 import logging
+import inspect
 from datetime import datetime, timezone
 
 
@@ -246,14 +247,16 @@ def _normalize_repo(raw: dict) -> dict:
     }
 
 
-def _progress(
+async def _progress(
     on_progress: Optional[Callable[[int, int, str], None]],
     step: int,
     total: int,
     label: str,
 ) -> None:
     if on_progress:
-        on_progress(step, total, label)
+        result = on_progress(step, total, label)
+        if inspect.isawaitable(result):
+            await result
 
 
 async def sync_aikido_dashboard(
@@ -280,7 +283,7 @@ async def sync_aikido_dashboard(
     total_steps = 13
     step_num = 0
 
-    _progress(on_progress, step_num := step_num + 1, total_steps, "Issues")
+    await _progress(on_progress, step_num := step_num + 1, total_steps, "Issues")
     if raw_issues_override is not None:
         raw_issues = raw_issues_override
     else:
@@ -314,46 +317,67 @@ async def sync_aikido_dashboard(
                 _repo_id_to_name[rid] = str(r["name"]).strip()
                 _repo_id_to_name[str(rid)] = str(r["name"]).strip()
 
-    _progress(on_progress, step_num := step_num + 1, total_steps, "Issue groups")
+    await _progress(
+        on_progress, step_num := step_num + 1, total_steps, "Issue groups"
+    )
     # Disabled: VAT uses its own grouping logic; Aikido groups not needed
     # issue_groups = await fetch_aikido_open_issue_groups(credentials=creds)
     issue_groups: list = []
 
-    _progress(on_progress, step_num := step_num + 1, total_steps, "Repositories")
+    await _progress(
+        on_progress, step_num := step_num + 1, total_steps, "Repositories"
+    )
     if repos_override is not None:
         repos = repos_override
     else:
         repos = await fetch_aikido_code_repositories(credentials=creds)
 
-    _progress(on_progress, step_num := step_num + 1, total_steps, "Containers")
+    await _progress(on_progress, step_num := step_num + 1, total_steps, "Containers")
     if containers_override is not None:
         containers = containers_override
     else:
         containers = await fetch_aikido_containers(credentials=creds)
 
-    _progress(on_progress, step_num := step_num + 1, total_steps, "Container SBOMs")
+    await _progress(
+        on_progress, step_num := step_num + 1, total_steps, "Container SBOMs"
+    )
     container_sbom_sync: dict = {}
     try:
+
+        async def _container_sbom_progress(done: int, total: int, label: str) -> None:
+            await _progress(
+                on_progress,
+                step_num,
+                total_steps,
+                f"{label} ({done}/{total})",
+            )
+
         container_sbom_sync = await sync_aikido_container_sboms(
-            db, creds, containers or [], source_id=source_id
+            db,
+            creds,
+            containers or [],
+            source_id=source_id,
+            on_progress=_container_sbom_progress,
         )
     except Exception as e:
         logger.warning("Aikido container SBOM sync failed: %s", e)
         container_sbom_sync = {"error": str(e)[:500]}
 
-    _progress(on_progress, step_num := step_num + 1, total_steps, "Virtual machines")
+    await _progress(
+        on_progress, step_num := step_num + 1, total_steps, "Virtual machines"
+    )
     vms = await fetch_aikido_virtual_machines(credentials=creds)
-    _progress(on_progress, step_num := step_num + 1, total_steps, "Workspace")
+    await _progress(on_progress, step_num := step_num + 1, total_steps, "Workspace")
     workspace = await fetch_aikido_workspace(credentials=creds)
-    _progress(on_progress, step_num := step_num + 1, total_steps, "Issue counts")
+    await _progress(on_progress, step_num := step_num + 1, total_steps, "Issue counts")
     issue_counts = await fetch_aikido_issue_counts(credentials=creds)
-    _progress(on_progress, step_num := step_num + 1, total_steps, "Activity log")
+    await _progress(on_progress, step_num := step_num + 1, total_steps, "Activity log")
     # Activity tracked only within VAT (Finding.audit); no Aikido activity merge to avoid drift
     activity_log: list = []
-    _progress(on_progress, step_num := step_num + 1, total_steps, "CI scans")
+    await _progress(on_progress, step_num := step_num + 1, total_steps, "CI scans")
     # ci_scans = await fetch_aikido_ci_scans(credentials=creds, limit=100)
     ci_scans: list = []
-    _progress(on_progress, step_num := step_num + 1, total_steps, "Task projects")
+    await _progress(on_progress, step_num := step_num + 1, total_steps, "Task projects")
     task_projects = await fetch_aikido_task_projects(credentials=creds)
 
     # Normalize issues (with repo_map and repo_id_to_name for Excel to match VAT)
@@ -411,11 +435,11 @@ async def sync_aikido_dashboard(
             issue_counts["total"],
         )
 
-    _progress(on_progress, step_num := step_num + 1, total_steps, "Tasks")
+    await _progress(on_progress, step_num := step_num + 1, total_steps, "Tasks")
     # tasks_by_group = await fetch_aikido_tasks_for_groups(top_group_ids, credentials=creds, max_groups=15)
     tasks_by_group: dict = {}
 
-    _progress(on_progress, step_num := step_num + 1, total_steps, "CVE details")
+    await _progress(on_progress, step_num := step_num + 1, total_steps, "CVE details")
     # CVE details (EPSS/KEV) disabled — not used in reports
     # cve_ids = list({i.get("cve_id") for i in issues if is_open(i) and i.get("cve_id") and str(i.get("cve_id")) != "N/A"})[:20]
     # for cid in cve_ids:

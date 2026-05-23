@@ -10,6 +10,11 @@ import {
 } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 import { useVATData } from "@/contexts/VATDataContext";
+import {
+  getAikidoSyncPollDelayMs,
+  hasRestorableAikidoSyncProgress,
+  shouldKeepAikidoSyncingAfterPollError,
+} from "@/lib/aikidoSyncStatusGate";
 import type { Tracker } from "@/types";
 
 interface AikidoStatus {
@@ -93,7 +98,7 @@ export function AikidoSettingsPage({
         if (s.status === "running") {
           setSyncing(true);
           setSyncResult(s.message ?? "Sync running in background…");
-          if (s.step != null && s.total != null && s.total > 0 && s.label) {
+          if (hasRestorableAikidoSyncProgress(s)) {
             setSyncStep({ step: s.step, total: s.total, label: s.label });
           } else {
             setSyncStep(null);
@@ -119,34 +124,55 @@ export function AikidoSettingsPage({
   // Poll sync status while syncing — each source tracks independently
   useEffect(() => {
     if (!syncing) return;
-    const interval = setInterval(async () => {
+    let cancelled = false;
+    let timeout: ReturnType<typeof setTimeout> | null = null;
+    let consecutiveFailures = 0;
+
+    const schedule = () => {
+      if (cancelled) return;
+      timeout = setTimeout(poll, getAikidoSyncPollDelayMs(consecutiveFailures));
+    };
+
+    const poll = async () => {
       try {
         const s = await fetchAikidoSyncStatus(auth, sourceId);
+        consecutiveFailures = 0;
         if (s.lastSyncedAt) setLastSyncedAt(s.lastSyncedAt);
         if (s.status === "success") {
+          if (cancelled) return;
           setSyncing(false);
           setSyncStep(null);
           setSyncResult(s.message ?? "Sync complete.");
           refetch({ silent: true });
         } else if (s.status === "error") {
+          if (cancelled) return;
           setSyncing(false);
           setSyncStep(null);
           setSyncError(s.message ?? "Sync failed");
           setSyncResult(null);
-        } else if (
-          s.status === "running" &&
-          s.step != null &&
-          s.total != null &&
-          s.total > 0 &&
-          s.label
-        ) {
-          setSyncStep({ step: s.step, total: s.total, label: s.label });
+        } else if (s.status === "running") {
+          if (cancelled) return;
+          setSyncResult(s.message ?? "Sync running in background…");
+          setSyncError(null);
+          if (hasRestorableAikidoSyncProgress(s)) {
+            setSyncStep({ step: s.step, total: s.total, label: s.label });
+          }
+          schedule();
         }
       } catch {
-        // Ignore poll errors
+        consecutiveFailures += 1;
+        if (shouldKeepAikidoSyncingAfterPollError(syncing)) {
+          setSyncResult((prev) => prev ?? "Sync running in background…");
+          schedule();
+        }
       }
-    }, 1500);
-    return () => clearInterval(interval);
+    };
+
+    schedule();
+    return () => {
+      cancelled = true;
+      if (timeout) clearTimeout(timeout);
+    };
   }, [syncing, sourceId, token, refetch]);
 
   const copyWebhookUrl = () => {
@@ -194,13 +220,7 @@ export function AikidoSettingsPage({
       // Sync runs in background; fetch status immediately to show first progress step
       fetchAikidoSyncStatus(auth, sourceId)
         .then((s) => {
-          if (
-            s.status === "running" &&
-            s.step != null &&
-            s.total != null &&
-            s.total > 0 &&
-            s.label
-          ) {
+          if (s.status === "running" && hasRestorableAikidoSyncProgress(s)) {
             setSyncStep({ step: s.step, total: s.total, label: s.label });
           }
         })

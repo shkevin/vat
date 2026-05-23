@@ -11,7 +11,8 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any
+import inspect
+from typing import Any, Callable
 
 from sqlalchemy import or_, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -272,8 +273,17 @@ async def _sync_sboms_licenses_export(
     stats: dict[str, int],
     *,
     max_n: int,
+    on_progress: Callable[[int, int, str], Any] | None = None,
 ) -> None:
     processed = 0
+    total_candidates: list[Any] = []
+    for c in containers or []:
+        if not isinstance(c, dict):
+            continue
+        asset_key, cid, _list_tag = _container_display_fields(c)
+        if asset_key and cid:
+            total_candidates.append(c)
+    total = min(len(total_candidates), max_n) if max_n > 0 else len(total_candidates)
     for c in containers or []:
         if not isinstance(c, dict):
             continue
@@ -284,6 +294,10 @@ async def _sync_sboms_licenses_export(
             continue
         processed += 1
         stats["containers_considered"] += 1
+        if on_progress:
+            result = on_progress(processed, total, "Container SBOMs")
+            if inspect.isawaitable(result):
+                await result
 
         raw = await fetch_aikido_container_licenses_export(cid, credentials=creds)
         if raw is None:
@@ -307,6 +321,7 @@ async def _sync_sboms_bulk_generate(
     *,
     max_n: int,
     batch_size: int,
+    on_progress: Callable[[int, int, str], Any] | None = None,
 ) -> None:
     prepared: list[dict] = []
     for c in containers or []:
@@ -323,6 +338,11 @@ async def _sync_sboms_bulk_generate(
     for i in range(0, len(prepared), bs):
         chunk = prepared[i : i + bs]
         stats["containers_considered"] += len(chunk)
+        if on_progress:
+            done = min(i + len(chunk), len(prepared))
+            result = on_progress(done, len(prepared), "Container SBOMs")
+            if inspect.isawaitable(result):
+                await result
         ids = [c["id"] for c in chunk if c.get("id") is not None]
         if not ids:
             continue
@@ -366,6 +386,7 @@ async def sync_aikido_container_sboms(
     containers: list[Any],
     *,
     source_id: str | None = None,
+    on_progress: Callable[[int, int, str], Any] | None = None,
 ) -> dict[str, int]:
     """
     For each Aikido container with an id, fetch SBOM (licenses export or bulk generate),
@@ -389,10 +410,11 @@ async def sync_aikido_container_sboms(
             stats,
             max_n=max_n,
             batch_size=s.aikido_container_sbom_bulk_batch_size,
+            on_progress=on_progress,
         )
     else:
         await _sync_sboms_licenses_export(
-            db, creds, containers, stats, max_n=max_n
+            db, creds, containers, stats, max_n=max_n, on_progress=on_progress
         )
 
     logger.info(

@@ -2,6 +2,7 @@
 
 import hashlib
 from collections import defaultdict
+import inspect
 import logging
 from typing import Any, Callable, Optional
 
@@ -30,14 +31,16 @@ from app.services.aikido_dashboard_sync import sync_aikido_dashboard
 logger = logging.getLogger(__name__)
 
 
-def _progress(
+async def _progress(
     on_progress: Optional[Callable[[int, int, str], None]],
     step: int,
     total: int,
     label: str,
 ) -> None:
     if on_progress:
-        on_progress(step, total, label)
+        result = on_progress(step, total, label)
+        if inspect.isawaitable(result):
+            await result
 
 
 def _asset_key(name: str) -> str:
@@ -109,7 +112,7 @@ async def run_full_sync(
     step_num = 0
 
     # 1. Bootstrap: create assets first (repos, then containers), then ingest issues
-    _progress(
+    await _progress(
         on_progress, step_num := step_num + 1, total_steps, "Bootstrap: Repositories"
     )
     repo_map: dict[int | str, str] = {}
@@ -178,7 +181,7 @@ async def run_full_sync(
     except Exception as e:
         logger.warning("Full sync: could not fetch/create repo assets: %s", e)
 
-    _progress(
+    await _progress(
         on_progress, step_num := step_num + 1, total_steps, "Bootstrap: Containers"
     )
     try:
@@ -249,7 +252,9 @@ async def run_full_sync(
     except Exception as e:
         logger.warning("Full sync: could not fetch/create container assets: %s", e)
 
-    _progress(on_progress, step_num := step_num + 1, total_steps, "Bootstrap: Issues")
+    await _progress(
+        on_progress, step_num := step_num + 1, total_steps, "Bootstrap: Issues"
+    )
     try:
         raw_issues = await fetch_aikido_issues(credentials=creds)
     except Exception as e:
@@ -257,7 +262,9 @@ async def run_full_sync(
         result["pull"] = {"error": str(e)}
         return result
 
-    _progress(on_progress, step_num := step_num + 1, total_steps, "Bootstrap: Ingest")
+    await _progress(
+        on_progress, step_num := step_num + 1, total_steps, "Bootstrap: Ingest"
+    )
     # Build container_name -> id for Aikido dashboard links when container_repo_id is missing
     container_name_to_id: dict[str, str] = {}
     for c in containers or []:
@@ -362,8 +369,8 @@ async def run_full_sync(
     # 2. Dashboard sync (step_num is 3 after bootstrap)
     dashboard_base = step_num
 
-    def _dashboard_progress(step: int, total: int, label: str) -> None:
-        _progress(on_progress, dashboard_base + step, total_steps, label)
+    async def _dashboard_progress(step: int, total: int, label: str) -> None:
+        await _progress(on_progress, dashboard_base + step, total_steps, label)
 
     try:
         async with async_session() as session:
@@ -390,7 +397,7 @@ async def run_full_sync(
         return result
 
     # 3. Backfill first_detected_at and closed_at
-    _progress(
+    await _progress(
         on_progress, total_steps, total_steps, "Backfill: first_detected_at, closed_at"
     )
     updated_fd = 0
