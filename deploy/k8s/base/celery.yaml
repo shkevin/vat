@@ -112,6 +112,10 @@ spec:
               value: "30"
             - name: VAT_VULN_FEED_TASK_EXPIRES_SECONDS
               value: "3600"
+            - name: VAT_VULN_FEED_DEBIAN_ENABLED
+              value: "false"
+            - name: VAT_VULN_FEED_UBUNTU_ENABLED
+              value: "false"
           resources:
             requests:
               cpu: 100m

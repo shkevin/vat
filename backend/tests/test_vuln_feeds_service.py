@@ -8,6 +8,7 @@ from app.services.vuln_feeds import (
     SOURCE_CISA_KEV,
     SOURCE_DEBIAN,
     SOURCE_OSV,
+    SOURCE_UBUNTU,
     SOURCE_VULN_FEED_MATCH,
     _apply_feed_curation,
     _checksum_for_feed_records,
@@ -19,6 +20,7 @@ from app.services.vuln_feeds import (
     _normalize_osv_results,
     _purl_to_osv_target,
     _severity_from_details,
+    _enabled_sources,
     materialize_feed_matches_to_findings,
     prune_feed_storage,
 )
@@ -154,6 +156,11 @@ def test_feed_record_checksum_uses_normalized_records_only():
     ]
 
     assert _checksum_for_feed_records(records) == _checksum_for_feed_records(records)
+
+
+def test_memory_heavy_os_feeds_are_disabled_by_default():
+    assert SOURCE_DEBIAN not in _enabled_sources()
+    assert SOURCE_UBUNTU not in _enabled_sources()
 
 
 def test_match_strategy_labels_version_and_ecosystem():

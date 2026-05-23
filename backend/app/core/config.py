@@ -219,8 +219,8 @@ class Settings(BaseSettings):
     vuln_feed_osv_enabled: bool = True
     vuln_feed_cisa_enabled: bool = True
     vuln_feed_redhat_enabled: bool = True
-    vuln_feed_debian_enabled: bool = True
-    vuln_feed_ubuntu_enabled: bool = True
+    vuln_feed_debian_enabled: bool = False
+    vuln_feed_ubuntu_enabled: bool = False
     vuln_feed_alpine_enabled: bool = True
     vuln_feed_almalinux_enabled: bool = True
 
