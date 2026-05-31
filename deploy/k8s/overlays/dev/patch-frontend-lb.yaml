@@ -10,4 +10,10 @@ metadata:
 spec:
   type: LoadBalancer
   loadBalancerIP: "10.0.40.173"
-  externalTrafficPolicy: Local
+  # Cluster (not Local): the frontend runs as a single replica, so with `Local` the
+  # MetalLB VIP only works while the announcing node is also the node hosting the pod.
+  # Speaker re-elections / pod reschedules break that alignment and the external Traefik
+  # (10.0.40.168 -> this VIP) gets connection failures => 502 Bad Gateway. `Cluster` lets
+  # any node forward to the pod cluster-wide. Client source IP is preserved by the front
+  # Traefik via X-Forwarded-For / X-Real-Ip, so we don't need `Local` to keep it.
+  externalTrafficPolicy: Cluster
