@@ -507,7 +507,16 @@ async def _ingest_from_parser(
             if asset_override:
                 p = p.model_copy(update={"image": asset_override})
             p = tag_policy.apply_to_payload(p)
-            if image_digest_override:
+            # Bundle scans (explicit X-VAT-Asset + per-image X-VAT-Source-Image): the finding's
+            # asset is the bundle, not the individual sub-image. Stamping the per-image digest
+            # would make each sub-image a distinct "container variant" of the one bundle asset,
+            # so the asset detail page scopes to a single image and hides the rest (appears empty).
+            # Keep per-image identity in `component` only; never carry the sub-image digest here.
+            bundle_mode = bool(asset_override and source_image_override)
+            if bundle_mode:
+                if getattr(p, "image_digest", None):
+                    p = p.model_copy(update={"image_digest": None})
+            elif image_digest_override:
                 existing_dig = getattr(p, "image_digest", None)
                 if not (existing_dig and str(existing_dig).strip()):
                     p = p.model_copy(update={"image_digest": image_digest_override})
