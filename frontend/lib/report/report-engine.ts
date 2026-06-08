@@ -1812,6 +1812,17 @@ function buildReportFilterBar(
       var newThis = newThisWeek;
       var newLast = newLastWeek;
       var trendUsesAllDimensions = (!trendSevSet || trendSevSet.size === 0) && (!trendTypesSet || trendTypesSet.size === 0);
+      // Truncation guard: when the report payload is capped (maxIssues), the per-issue
+      // recompute above runs on only the first N issues and undercounts "new/closed this
+      // week" (e.g. 263 shown vs 1,654 actual closures). The engine pre-computes the
+      // correct full-set metrics into serverTrendMetrics — use them when the trend isn't
+      // separately scoped (sev/type pills) or mode-shifted from the report's generation mode.
+      if (reportData.serverTrendMetrics && trendUsesAllDimensions && trendCountMode === countMode) {
+        resThis = reportData.serverTrendMetrics.resolvedThisWeek;
+        resLast = reportData.serverTrendMetrics.resolvedLastWeek;
+        newThis = reportData.serverTrendMetrics.newThisWeek;
+        newLast = reportData.serverTrendMetrics.newLastWeek;
+      }
       // Keep trend "Current open issues" aligned with executive summary when the trend
       // pills are at "all" (no trend-specific scoping). If the user scopes trend pills,
       // show the trend-scoped current value instead.

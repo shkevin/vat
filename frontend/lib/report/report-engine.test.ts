@@ -145,6 +145,26 @@ describe("trend stacked dropdown filters", () => {
     expect(html).not.toContain("&& !useServerCounts");
   });
 
+  it("prefers server full-set trend metrics for this-week KPIs (truncation guard)", () => {
+    // When the report payload is capped to maxIssues, the per-issue recompute in the
+    // client script undercounts "new/closed this week". The this-week KPIs must fall
+    // back to the engine's pre-computed full-set serverTrendMetrics.
+    const findings: Finding[] = [
+      mkFinding("f1", "CVE-2024-3001", "pkg-a 1.0.0", "pkg-a"),
+    ];
+    const data = toVATDashboardData(findings, [], "VAT", {
+      groupFindings: true,
+    });
+    const definition = createDefaultReportDefinition("VAT");
+    const ctx = computeReportContext(data, definition.filters);
+    const html = buildReportHtmlFromDefinition(ctx, definition, {
+      preview: true,
+    });
+    expect(html).toContain("reportData.serverTrendMetrics");
+    expect(html).toContain("serverTrendMetrics.resolvedThisWeek");
+    expect(html).toContain("serverTrendMetrics.newThisWeek");
+  });
+
   it("keeps historical trend buckets based on closure date, not current status", () => {
     const findings: Finding[] = [
       mkFinding("f1", "CVE-2024-1111", "pkg-a 1.0.0", "pkg-a"),
