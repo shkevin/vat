@@ -70,12 +70,15 @@ async def test_bundle_mode_drops_per_image_digest(clean_integration_tables):
     )
 
     rows = (
-        await db.execute(text("SELECT image, image_digest FROM findings"))
+        await db.execute(text("SELECT image, image_digest, tenant_id FROM findings"))
     ).all()
     assert rows, "expected ingested findings"
-    for image, digest in rows:
+    for image, digest, tenant_id in rows:
         assert image == "kamiwaza-bundle", f"finding not keyed to bundle: {image}"
         assert not digest, f"per-image digest must be cleared in bundle mode, got {digest}"
+        # Cross-tenant ingest (no tenant passed) must default to the bootstrap
+        # tenant so findings are visible to tenant-scoped UI sessions.
+        assert tenant_id == "t-default", f"expected t-default tenant, got {tenant_id}"
 
 
 @pytest.mark.asyncio

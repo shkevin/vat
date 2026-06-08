@@ -28,6 +28,11 @@ from app.services.dedup import component_base
 from app.services.sla import SLA_DAYS
 from app.parsers.image_digest import effective_image_digest
 
+# Bootstrap/default tenant. Ingests with no resolvable tenant (cross-tenant
+# admin keys) fall back to this so findings stay visible to the default org's
+# tenant-scoped UI sessions instead of being stored with a NULL tenant.
+DEFAULT_TENANT_ID = "t-default"
+
 
 async def _record_container_asset_observations(
     db: AsyncSession,
@@ -228,6 +233,11 @@ async def ingest_finding(
     Returns (finding, created) where created=True if new, False if merged.
     When created and auto_sync_to_tracker=True, enqueues tracker create_issue (source-agnostic).
     """
+    # Cross-tenant callers (e.g. the legacy admin scanner key with no tenant
+    # binding) pass tenant_id=None, which would store findings with a NULL
+    # tenant — invisible to tenant-scoped UI sessions. Default to the bootstrap
+    # tenant so ingested findings are visible in the default org.
+    tenant_id = tenant_id or DEFAULT_TENANT_ID
     policy = PARSER_IDENTITY_POLICY.get(parser_id or "", {})
     requires_explicit = bool(policy.get("requires_explicit_asset", False))
     payload, _ = resolve_asset_for_payload(
