@@ -187,7 +187,7 @@ function isOpenFinding(f: Finding): boolean {
  * (28px). Tags is column 5 — must not use a fixed narrow width or chips
  * truncate in the wrong column. */
 const ASSETS_TABLE_GRID_COLS =
-  "28px 28px 1fr 90px minmax(220px, 2.4fr) 90px 90px 90px 1fr";
+  "28px 28px minmax(280px, 3fr) 90px minmax(220px, 2fr) 90px 90px 90px 1fr";
 
 function AssetTagsCell({ asset }: { asset: Asset }) {
   const isContainer = getAssetTypeFromAsset(asset) === "container";
