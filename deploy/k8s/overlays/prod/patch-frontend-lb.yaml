@@ -1,10 +1,19 @@
 # Prod VAT frontend VIP. Point vat.kamiprod.automatedhass.com at 10.0.40.174 externally.
+#
+# NOTE: prod still fronts the app via the single MetalLB VIP and externalTrafficPolicy: Local,
+# which is the config that proved fragile on dev (VIP stale-ARP / announcing-node re-election
+# after reboots). If prod exhibits the same intermittent 502s, replicate the dev fix: front the
+# prod proxy at the NodePort across all prod node IPs with a health check, and consider
+# switching to externalTrafficPolicy: Cluster. Not changed here because prod's proxy topology
+# hasn't been verified in this session.
 apiVersion: v1
 kind: Service
 metadata:
   name: vat-frontend
   namespace: vat
+  annotations:
+    # Modern MetalLB IP request; replaces the deprecated spec.loadBalancerIP (see dev overlay).
+    metallb.universe.tf/loadBalancerIPs: "10.0.40.174"
 spec:
   type: LoadBalancer
-  loadBalancerIP: "10.0.40.174"
   externalTrafficPolicy: Local

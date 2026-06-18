@@ -1,19 +1,30 @@
-# Expose vat-frontend directly via a MetalLB VIP (same pattern as Grafana and Argo CD in this
-# cluster). Traefik is scoped to the `kamiwaza` namespace, so crossing into it would leak VAT
-# into the platform control plane; a dedicated LoadBalancer keeps the app isolated in `vat`.
-# Point vat.kamidev.automatedhass.com at 10.0.40.173 externally.
+# vat-frontend is reachable two ways:
+#   1. PRIMARY (public front door): the external Traefik VM at 10.0.40.168 load-balances across
+#      the k3s NodePort (svc 3000 -> nodePort 31587) on all three node IPs (10.0.40.60/.61/.62)
+#      with a health check. Node IPs are real, static interfaces, so this path is immune to the
+#      MetalLB L2 stale-ARP blackhole that recurred whenever MetalLB re-elected the announcing
+#      node after a reboot/rollout (the old 502 symptom). That config lives on the .168 box:
+#      /etc/traefik/conf.d/secure.yml, http service `vat`.
+#   2. SECONDARY (direct LAN access / fallback): the MetalLB VIP 10.0.40.173:3000 below.
+#
+# Traefik in this cluster is scoped to the `kamiwaza` namespace, so we do NOT route VAT through
+# an in-cluster Traefik IngressRoute (that would leak VAT into the platform control plane); a
+# dedicated LoadBalancer keeps the app isolated in `vat`.
 apiVersion: v1
 kind: Service
 metadata:
   name: vat-frontend
   namespace: vat
+  annotations:
+    # Modern MetalLB IP request. Replaces the deprecated spec.loadBalancerIP (removed from the
+    # core k8s Service API surface in 1.24+); MetalLB reads this annotation. Pinning the VIP
+    # this way is stable across MetalLB upgrades.
+    metallb.universe.tf/loadBalancerIPs: "10.0.40.173"
 spec:
   type: LoadBalancer
-  loadBalancerIP: "10.0.40.173"
-  # Cluster (not Local): the frontend runs as a single replica, so with `Local` the
-  # MetalLB VIP only works while the announcing node is also the node hosting the pod.
-  # Speaker re-elections / pod reschedules break that alignment and the external Traefik
-  # (10.0.40.168 -> this VIP) gets connection failures => 502 Bad Gateway. `Cluster` lets
-  # any node forward to the pod cluster-wide. Client source IP is preserved by the front
-  # Traefik via X-Forwarded-For / X-Real-Ip, so we don't need `Local` to keep it.
+  # Cluster (not Local): the frontend runs as a single replica, so with `Local` the VIP only
+  # works while the announcing node is also the node hosting the pod, and the NodePort front
+  # door would only answer on one node. `Cluster` lets any node forward to the pod cluster-wide
+  # (both the NodePort path and the VIP rely on this). Client source IP is preserved by the
+  # front Traefik via X-Forwarded-For / X-Real-Ip, so we don't need `Local`.
   externalTrafficPolicy: Cluster
