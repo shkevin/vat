@@ -12,6 +12,7 @@ import {
   createDefaultReportDefinition,
 } from "./report-engine";
 import { toVATDashboardData } from "./vatReportAdapter";
+import { computeTrendMetrics } from "./metrics";
 import type { Finding, Asset } from "@/types";
 
 function mkFinding(
@@ -333,5 +334,60 @@ describe("report container risk source of truth", () => {
     expect(ctx.containerRisk[0].critical).toBe(0);
     expect(ctx.containerRisk[0].low).toBe(1);
     expect(ctx.containerRisk[0].total).toBe(1);
+  });
+});
+
+describe("trend this-week counts: instances must not be group-deduped", () => {
+  const DAY = 86400000;
+  const now = Date.now();
+  const thisWeek = new Date(now).toISOString(); // today — always in the current week
+  const old = new Date(now - 30 * DAY).toISOString();
+
+  function mk(
+    id: string,
+    cve: string,
+    pkg: string,
+    status: string,
+    firstDetectedAt: string,
+    closedAt?: string,
+  ): Finding {
+    return {
+      id,
+      findingType: "SCA",
+      fingerprintId: `fp-${id}`,
+      cveId: cve,
+      severity: "High",
+      status,
+      sources: [],
+      audit: [],
+      component: pkg,
+      componentBase: pkg,
+      image: "img-x",
+      title: `${cve} in ${pkg}`,
+      firstDetectedAt,
+      closedAt,
+    } as unknown as Finding;
+  }
+
+  // Group A: 2 instances, both newly detected this week, still open.
+  // Group B: 2 instances, both closed this week.
+  const findings: Finding[] = [
+    mk("a1", "CVE-A", "pkg-a", "Open", thisWeek),
+    mk("a2", "CVE-A", "pkg-a", "Open", thisWeek),
+    mk("b1", "CVE-B", "pkg-b", "Resolved", old, thisWeek),
+    mk("b2", "CVE-B", "pkg-b", "Resolved", old, thisWeek),
+  ];
+  const data = toVATDashboardData(findings, [], "VAT", { groupFindings: true });
+
+  it("instances mode counts each finding (new=2, closed=2)", () => {
+    const m = computeTrendMetrics(data.issues, "instances");
+    expect(m.newThisWeek).toBe(2);
+    expect(m.resolvedThisWeek).toBe(2);
+  });
+
+  it("groups mode dedupes by group (new=1, closed=1)", () => {
+    const m = computeTrendMetrics(data.issues, "groups");
+    expect(m.newThisWeek).toBe(1);
+    expect(m.resolvedThisWeek).toBe(1);
   });
 });
