@@ -332,7 +332,11 @@ async def get_assets_with_findings(
     asset_records: dict[str, Asset] = {}
     if include_zero_assets:
         asset_q = select(Asset)
-        if ctx is not None:
+        # Current Asset rows are global integration inventory records and do
+        # not carry tenant_id in the live schema. Apply tenant scoping only
+        # when the model/schema supports it; tenant-scoped findings above
+        # still constrain all finding-derived assets.
+        if ctx is not None and hasattr(Asset, "tenant_id"):
             asset_q = asset_q.where(tenant_filter(Asset, ctx))
         result = await db.execute(asset_q)
         asset_records = {a.id: a for a in result.scalars().all()}

@@ -1,5 +1,11 @@
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
+
+import pytest
+
 from app.models.finding import Status
-from app.services.assets_service import _build_asset_payload
+from app.schemas.auth import UserContext
+from app.services.assets_service import _build_asset_payload, get_assets_with_findings
 from app.services.metric_semantics import (
     is_closed_disposition,
     is_open_risk,
@@ -86,3 +92,57 @@ def test_asset_payload_uses_open_risk_for_rollups() -> None:
     assert payload["overdueCount"] == 1
     assert payload["verifiedPct"] == 33.3
     assert payload["oraPct"] == 96
+
+
+@pytest.mark.asyncio
+async def test_zero_finding_assets_do_not_require_asset_tenant_column() -> None:
+    class _ScalarResult:
+        def __init__(self, rows):
+            self._rows = rows
+
+        def all(self):
+            return self._rows
+
+    class _ExecuteResult:
+        def __init__(self, rows):
+            self._rows = rows
+
+        def scalars(self):
+            return _ScalarResult(self._rows)
+
+    db = SimpleNamespace(
+        execute=AsyncMock(
+            side_effect=[
+                _ExecuteResult(
+                    [
+                        SimpleNamespace(
+                            id="zero-asset",
+                            name="Zero Asset",
+                            type="repo",
+                            branch="main",
+                            tag=None,
+                        )
+                    ]
+                ),
+                _ExecuteResult([]),
+                _ExecuteResult([]),
+            ]
+        )
+    )
+    ctx = UserContext(
+        user_id="admin",
+        email="admin@vat.local",
+        tenant_id="t-default",
+        role="admin",
+        raw_identity="admin@vat.local",
+    )
+
+    assets = await get_assets_with_findings(
+        db,
+        findings_dicts=[],
+        ctx=ctx,
+        include_zero_assets=True,
+    )
+
+    assert assets[0]["id"] == "zero-asset"
+    assert db.execute.await_count == 3
