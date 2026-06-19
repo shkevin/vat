@@ -50,3 +50,15 @@ backend/data
 # SOPS: never commit plaintext secret material or the age key
 *.plain.yaml
 age.key
+
+# Local tool caches / session state
+.azcopy/
+.claude/
+.playwright-mcp/
+
+# Local scratch artifacts / offline bundles (not source)
+*.tar.gz
+offline-*/
+asset-ids.json
+asset-ids-full.json
+kamiwaza-bundle-asset-rendered.png
