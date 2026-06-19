@@ -2,6 +2,7 @@
 
 from datetime import datetime, timezone
 import logging
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import Response
@@ -21,29 +22,43 @@ logger = logging.getLogger("uvicorn.error")
 async def get_export_bundle(
     db: AsyncSession = Depends(get_db),
     ctx: UserContext = Depends(get_current_user_context),
-    include_archived: bool = Query(
-        False, description="Include archived findings in JSON/CSV/PDF"
-    ),
-    finding_date_from: str | None = Query(
-        None, description="ISO datetime: filter findings by firstDetectedAt/created (inclusive)"
-    ),
-    finding_date_to: str | None = Query(
-        None, description="ISO datetime: filter findings by firstDetectedAt/created (inclusive)"
-    ),
-    include_audit_events: bool = Query(
-        True, description="Embed system audit-events.json in the bundle"
-    ),
-    apply_asset_filter: bool = Query(
-        False,
-        description="When true, scope export bundle to provided asset_id values",
-    ),
-    asset_id: list[str] | None = Query(
-        None,
-        description="Repeatable asset id filter; applies only when apply_asset_filter=true",
-    ),
-    audit_date_from: str | None = Query(None, description="ISO datetime: audit event lower bound"),
-    audit_date_to: str | None = Query(None, description="ISO datetime: audit event upper bound"),
-    audit_limit: int = Query(20000, ge=1, le=50000, description="Max audit rows in bundle"),
+    include_archived: Annotated[
+        bool, Query(description="Include archived findings in JSON/CSV/PDF")
+    ] = False,
+    finding_date_from: Annotated[
+        str | None,
+        Query(
+            description="ISO datetime: filter findings by firstDetectedAt/created (inclusive)"
+        ),
+    ] = None,
+    finding_date_to: Annotated[
+        str | None,
+        Query(
+            description="ISO datetime: filter findings by firstDetectedAt/created (inclusive)"
+        ),
+    ] = None,
+    include_audit_events: Annotated[
+        bool, Query(description="Embed system audit-events.json in the bundle")
+    ] = True,
+    apply_asset_filter: Annotated[
+        bool,
+        Query(description="When true, scope export bundle to provided asset_id values"),
+    ] = False,
+    asset_id: Annotated[
+        list[str] | None,
+        Query(
+            description="Repeatable asset id filter; applies only when apply_asset_filter=true"
+        ),
+    ] = None,
+    audit_date_from: Annotated[
+        str | None, Query(description="ISO datetime: audit event lower bound")
+    ] = None,
+    audit_date_to: Annotated[
+        str | None, Query(description="ISO datetime: audit event upper bound")
+    ] = None,
+    audit_limit: Annotated[
+        int, Query(ge=1, le=50000, description="Max audit rows in bundle")
+    ] = 20000,
 ):
     """
     Download a ZIP bundle containing:

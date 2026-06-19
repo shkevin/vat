@@ -5,6 +5,7 @@
 
 import type { Finding, Asset } from "@/types";
 import { getAssetTypeFromAsset } from "@/lib/assetUtils";
+import { isOpenRisk } from "@/lib/metricSemantics";
 import { displaySourceName } from "@/lib/utils";
 import { effectiveGroupKey, groupFindingsByKey } from "@/lib/findingGroupUtils";
 
@@ -227,15 +228,6 @@ export function findingsToVATReportIssueGroups(
   });
 }
 
-const ASSET_CLOSED = [
-  "Resolved",
-  "False Positive",
-  "Duplicate",
-  "Not Applicable",
-  "Approved",
-  "Suppressed",
-];
-
 function isMitigated(f: Finding): boolean {
   return (f.status ?? "").toLowerCase() === "mitigated";
 }
@@ -250,9 +242,7 @@ function severityKey(f: Finding): "critical" | "high" | "medium" | "low" {
 
 export function assetsToVATReportRepos(assets: Asset[]): VATReportRepo[] {
   return assets.map((a, i) => {
-    const openFindings = a.findings.filter(
-      (f) => !ASSET_CLOSED.includes(f.status ?? ""),
-    );
+    const openFindings = a.findings.filter((f) => isOpenRisk(f.status));
     const critical: Finding[] = [];
     const high: Finding[] = [];
     const medium: Finding[] = [];

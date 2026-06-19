@@ -2,6 +2,7 @@
 
 import { useMemo } from "react";
 import { useUserPreferences } from "@/contexts/UserPreferencesContext";
+import { groupFindingsByKey } from "@/lib/findingGroupUtils";
 import { toVATDashboardData } from "@/lib/report/vatReportAdapter";
 import { ReportBuilderView } from "./ReportBuilderView";
 import type { Finding, Asset } from "@/types";
@@ -30,6 +31,9 @@ interface ReportTabProps {
 export function ReportTab({ findings, allAssets }: ReportTabProps) {
   const { preferences } = useUserPreferences();
   const groupFindings = preferences.groupFindings ?? true;
+  const displayCount = groupFindings
+    ? groupFindingsByKey(findings).size
+    : findings.length;
 
   // Match data structure to display mode: groups = canonical grouping, instances = one per finding.
   const data = useMemo(
@@ -58,7 +62,15 @@ export function ReportTab({ findings, allAssets }: ReportTabProps) {
           </p>
         </div>
         <div className="vat-tab-hero-chips">
-          <span className="vat-tab-chip">{findings.length.toLocaleString()} items</span>
+          <span className="vat-tab-chip">
+            {displayCount.toLocaleString()}{" "}
+            {groupFindings ? "groups" : "instances"}
+          </span>
+          {groupFindings && (
+            <span className="vat-tab-chip">
+              {findings.length.toLocaleString()} instances
+            </span>
+          )}
           <span className="vat-tab-chip">
             Mode: {groupFindings ? "Grouped" : "Instances"}
           </span>

@@ -46,6 +46,12 @@ import {
   assetIdForFinding,
 } from "@/lib/assetUtils";
 import {
+  isOpenRisk,
+  isOverdueOpenRisk,
+  isRiskAccepted,
+  isVerifiedDisposition,
+} from "@/lib/metricSemantics";
+import {
   FAVORITES_KEY,
   loadFavoriteEntries,
   saveFavoriteEntries,
@@ -178,7 +184,7 @@ function toFinding(raw: Record<string, unknown>): Finding {
 /** Auto-reopen expired waivers on load (client-side) */
 function applyWaiverExpiry(findings: Finding[]): Finding[] {
   return findings.map((finding) => {
-    if (finding.status !== "Risk Accepted" || !finding.attestation?.expiresAt) {
+    if (!isRiskAccepted(finding.status) || !finding.attestation?.expiresAt) {
       return finding;
     }
     const d = daysLeft(finding.attestation.expiresAt);
@@ -1267,30 +1273,18 @@ export function useVATDataCore(): UseVATDataReturn {
     [active],
   );
   const total = active.length;
-  const open = active.filter((f) => f.status === "Open").length;
+  const open = active.filter((f) => isOpenRisk(f.status)).length;
   const inRev = reviewQueue.length;
-  const overdue = active.filter((f) => {
-    if (
-      [
-        "Resolved",
-        "False Positive",
-        "Duplicate",
-        "Not Applicable",
-        "Approved",
-        "Suppressed",
-      ].includes(f.status)
-    )
-      return false;
-    const d = daysLeft(f.slaDue);
-    return d !== null && d < 0;
-  }).length;
+  const overdue = active.filter((f) =>
+    isOverdueOpenRisk(f.status, f.slaDue),
+  ).length;
   const waiverExpiring = active.filter((f) => {
     const d = daysLeft(f.attestation?.expiresAt);
     return !!f.attestation && d !== null && d >= 0 && d <= 30;
   }).length;
 
   const waivers = useMemo(
-    () => active.filter((f) => f.status === "Risk Accepted" && f.attestation),
+    () => active.filter((f) => isRiskAccepted(f.status) && f.attestation),
     [active],
   );
 
@@ -1345,17 +1339,7 @@ export function useVATDataCore(): UseVATDataReturn {
             if (f.status === "In Review" && f.justification?.trim())
               return true;
           } else if (status === "Verified") {
-            if (
-              [
-                "Resolved",
-                "False Positive",
-                "Approved",
-                "Suppressed",
-                "Not Applicable",
-                "Duplicate",
-              ].includes(f.status)
-            )
-              return true;
+            if (isVerifiedDisposition(f.status)) return true;
           } else if (status === "Needs Rework" && f.status === "Rejected")
             return true;
           else if (status === "Needs Reverified" && f.status === "Reopened")

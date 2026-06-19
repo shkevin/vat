@@ -20,6 +20,7 @@ import {
   getAssetTypeFromAsset,
   pickLatestVersionTag,
 } from "@/lib/assetUtils";
+import { isOpenRisk } from "@/lib/metricSemantics";
 import { effectiveGroupKey } from "@/lib/findingGroupUtils";
 import { ThemedTooltip } from "@/components/ui/ThemedTooltip";
 import { mono, sans } from "@/lib/styles";
@@ -163,24 +164,6 @@ function normalizeSeverity(s: string): string {
   return s
     ? s.charAt(0).toUpperCase() + s.slice(1).toLowerCase()
     : "Informational";
-}
-
-/** Statuses treated as closed — align with report engine isOpen so Findings and Report totals match. */
-const CLOSED_STATUSES = new Set([
-  "closed",
-  "resolved",
-  "ignored",
-  "auto_ignored",
-  "false positive",
-  "suppressed",
-  "approved",
-  "duplicate",
-  "not applicable",
-  "rejected",
-]);
-function isOpenFinding(f: Finding): boolean {
-  const st = (f.status ?? "").toLowerCase().trim();
-  return !CLOSED_STATUSES.has(st);
 }
 
 /** First column is the bulk-select checkbox (28px), second is the favorite heart
@@ -416,7 +399,7 @@ export function AssetsTable({
       const seenGroups = new Set<string>();
       for (const asset of displayedAssets) {
         for (const f of asset.findings) {
-          if (!isOpenFinding(f)) continue;
+          if (!isOpenRisk(f.status)) continue;
           const gk = effectiveGroupKey(f);
           const dedupeKey = `${asset.id}:${gk}`;
           if (seenGroups.has(dedupeKey)) continue;
@@ -433,7 +416,7 @@ export function AssetsTable({
       // Only count open findings so totals align with Report Builder.
       for (const asset of displayedAssets) {
         for (const f of asset.findings) {
-          if (!isOpenFinding(f)) continue;
+          if (!isOpenRisk(f.status)) continue;
           const s = normalizeSeverity(f.severity ?? "Informational");
           const key = (SEV_ORDER as readonly string[]).includes(s)
             ? s

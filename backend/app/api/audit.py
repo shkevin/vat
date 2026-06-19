@@ -6,12 +6,12 @@ import hashlib
 import json
 from datetime import datetime, timezone
 from io import BytesIO
-from typing import Optional
+from typing import Annotated, Optional
 from zipfile import ZIP_DEFLATED, ZipFile
 
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import StreamingResponse
-from sqlalchemy import and_, select
+from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import require_admin
@@ -66,15 +66,17 @@ async def list_audit_events(
     asset_id: str | None = None,
     finding_id: str | None = None,
     event_type: str | None = None,
-    date_from: str | None = Query(default=None, description="ISO datetime"),
-    date_to: str | None = Query(default=None, description="ISO datetime"),
-    limit: int = Query(default=500, ge=1, le=5000),
+    date_from: Annotated[
+        str | None, Query(description="ISO datetime")
+    ] = None,
+    date_to: Annotated[
+        str | None, Query(description="ISO datetime")
+    ] = None,
+    limit: Annotated[int, Query(ge=1, le=5000)] = 500,
     db: AsyncSession = Depends(get_db),
     _ctx: UserContext = Depends(require_admin),
 ):
-    q = select(AuditEvent).order_by(AuditEvent.created_at.desc()).limit(limit)
-    q = _apply_filters(
-        q,
+    filter_kwargs = dict(
         trace_id=trace_id,
         source_id=source_id,
         parser_id=parser_id,
@@ -84,9 +86,15 @@ async def list_audit_events(
         date_from=date_from,
         date_to=date_to,
     )
+    total_q = _apply_filters(select(func.count(AuditEvent.id)), **filter_kwargs)
+    total = int((await db.execute(total_q)).scalar() or 0)
+    q = select(AuditEvent).order_by(AuditEvent.created_at.desc()).limit(limit)
+    q = _apply_filters(q, **filter_kwargs)
     rows = (await db.execute(q)).scalars().all()
     return {
         "count": len(rows),
+        "returnedCount": len(rows),
+        "total": total,
         "events": [
             {
                 "eventId": r.event_id,
@@ -118,9 +126,13 @@ async def export_audit_events(
     asset_id: str | None = None,
     finding_id: str | None = None,
     event_type: str | None = None,
-    date_from: str | None = Query(default=None, description="ISO datetime"),
-    date_to: str | None = Query(default=None, description="ISO datetime"),
-    limit: int = Query(default=5000, ge=1, le=20000),
+    date_from: Annotated[
+        str | None, Query(description="ISO datetime")
+    ] = None,
+    date_to: Annotated[
+        str | None, Query(description="ISO datetime")
+    ] = None,
+    limit: Annotated[int, Query(ge=1, le=20000)] = 5000,
     db: AsyncSession = Depends(get_db),
     _ctx: UserContext = Depends(require_admin),
 ):

@@ -64,6 +64,7 @@ import { useDashboardFilters } from "@/hooks/useDashboardFilters";
 import { getGroupedFindings } from "@/lib/findingGroupUtils";
 import { SEV_ORDER } from "@/lib/constants";
 import { daysLeft } from "@/lib/utils";
+import { isOpenRisk, isOverdueOpenRisk } from "@/lib/metricSemantics";
 import { mono, sans } from "@/lib/styles";
 import {
   fetchAssetMergeSuggestions,
@@ -192,25 +193,11 @@ export default function VAT({ config }: VATProps) {
     }
     const groups = getGroupedFindings(active, SEV_ORDER);
     const hasOpen = (fs: { status?: string }[]) =>
-      fs.some((f) => f.status === "Open");
+      fs.some((f) => isOpenRisk(f.status));
     const hasInRev = (fs: { status?: string }[]) =>
       fs.some((f) => f.status === "In Review");
     const hasOverdue = (fs: { status?: string; slaDue?: string }[]) =>
-      fs.some((f) => {
-        if (
-          [
-            "Resolved",
-            "False Positive",
-            "Duplicate",
-            "Not Applicable",
-            "Approved",
-            "Suppressed",
-          ].includes(f.status ?? "")
-        )
-          return false;
-        const d = daysLeft(f.slaDue);
-        return d !== null && d < 0;
-      });
+      fs.some((f) => isOverdueOpenRisk(f.status, f.slaDue));
     const hasWaiverExpiring = (
       fs: { attestation?: { expiresAt?: string } | null }[],
     ) =>

@@ -974,6 +974,21 @@ function TrackerConfigForm({
     }
   }, [edit, onTrackerChange]);
 
+  const handleRemove = useCallback(async () => {
+    if (
+      !onRemoveTracker ||
+      !confirm("Remove the task tracker? You can add it again later.")
+    )
+      return;
+    try {
+      await removeSettingsTracker(auth);
+      onRemoveTracker();
+    } catch (err) {
+      console.error("Remove tracker failed:", err);
+      alert("Failed to remove tracker. Check console for details.");
+    }
+  }, [onRemoveTracker, auth]);
+
   if (!onTrackerChange) {
     return (
       <div style={{ marginTop: 24 }}>
@@ -1028,21 +1043,6 @@ function TrackerConfigForm({
       </div>
     );
   }
-
-  const handleRemove = useCallback(async () => {
-    if (
-      !onRemoveTracker ||
-      !confirm("Remove the task tracker? You can add it again later.")
-    )
-      return;
-    try {
-      await removeSettingsTracker(auth);
-      onRemoveTracker();
-    } catch (err) {
-      console.error("Remove tracker failed:", err);
-      alert("Failed to remove tracker. Check console for details.");
-    }
-  }, [onRemoveTracker, auth]);
 
   return (
     <div style={{ marginTop: 24 }}>

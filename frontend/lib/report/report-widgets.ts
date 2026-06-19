@@ -3,6 +3,10 @@
  * No "use client" - safe to import from server (e.g. email API).
  */
 import { displaySourceName } from "@/lib/utils";
+import {
+  isClosedDisposition,
+  isRiskAccepted,
+} from "@/lib/metricSemantics";
 import type { ReportContext } from "./report-types";
 import type { WidgetType } from "./report-types";
 import type { SeverityCounts } from "./metrics";
@@ -1565,13 +1569,57 @@ function renderTrendStacked(
 }
 
 function renderOpenVsClosed(ctx: ReportContext): string {
-  const open = ctx.openIssues;
-  const closed = ctx.totalIssues - open;
-  const total = ctx.totalIssues;
-  const openPct = total > 0 ? Math.round((open / total) * 100) : 0;
-  const closedPct = total > 0 ? Math.round((closed / total) * 100) : 0;
+  type Bucket = "open" | "accepted" | "closed" | "other";
+  const classify = (issue: ReportContext["filteredIssues"][number]): Bucket => {
+    if (isOpen(issue)) return "open";
+    if (isRiskAccepted(issue.status)) return "accepted";
+    if (isClosedDisposition(issue.status)) return "closed";
+    return "other";
+  };
+  const counts = { open: 0, accepted: 0, closed: 0, other: 0 };
+  if ((ctx.countMode ?? "groups") === "groups") {
+    const byGroup = new Map<number, Set<Bucket>>();
+    for (const issue of ctx.filteredIssues) {
+      const groupId = issue.issue_group_id ?? issue.issue_id;
+      const buckets = byGroup.get(groupId) ?? new Set<Bucket>();
+      buckets.add(classify(issue));
+      byGroup.set(groupId, buckets);
+    }
+    for (const buckets of byGroup.values()) {
+      if (buckets.has("open")) counts.open++;
+      else if (buckets.has("accepted")) counts.accepted++;
+      else if (buckets.has("closed")) counts.closed++;
+      else counts.other++;
+    }
+  } else {
+    for (const issue of ctx.filteredIssues) counts[classify(issue)]++;
+  }
+  const total = counts.open + counts.accepted + counts.closed + counts.other;
+  const pct = (value: number) => (total > 0 ? Math.round((value / total) * 100) : 0);
+  const cards = [
+    `<div class="kpi-card"><div class="label">Open risk</div><div class="value" style="color:#f97316">${counts.open}</div><div class="detail">${pct(
+      counts.open,
+    )}% of total</div></div>`,
+    `<div class="kpi-card"><div class="label">Risk accepted</div><div class="value" style="color:${getPrimaryColor(
+      ctx,
+    )}">${counts.accepted}</div><div class="detail">${pct(
+      counts.accepted,
+    )}% of total</div></div>`,
+    `<div class="kpi-card"><div class="label">Closed</div><div class="value" style="color:#22c55e">${counts.closed}</div><div class="detail">${pct(
+      counts.closed,
+    )}% of total</div></div>`,
+  ];
+  if (counts.other > 0) {
+    cards.push(
+      `<div class="kpi-card"><div class="label">Other</div><div class="value" style="color:#64748b">${counts.other}</div><div class="detail">${pct(
+        counts.other,
+      )}% of total</div></div>`,
+    );
+  }
   const attrs = sectionFilterAttrs(ctx);
-  return `<div class="section"><div${attrs}><h2>Remediation Progress</h2><div class="kpi-grid" style="grid-template-columns: repeat(2, 1fr);"><div class="kpi-card"><div class="label">Open</div><div class="value" style="color:#f97316">${open}</div><div class="detail">${openPct}% of total</div></div><div class="kpi-card"><div class="label">Closed</div><div class="value" style="color:#22c55e">${closed}</div><div class="detail">${closedPct}% of total</div></div></div></div></div>`;
+  return `<div class="section"><div${attrs}><h2>Remediation Progress</h2><div class="kpi-grid" style="grid-template-columns: repeat(${cards.length}, 1fr);">${cards.join(
+    "",
+  )}</div></div></div>`;
 }
 
 function renderCriticalHighKpi(ctx: ReportContext): string {

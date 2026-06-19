@@ -1279,6 +1279,17 @@ function AddSourceContent({
   onSourcesChange?: (sources: Source[]) => void;
   onSourceAdded?: (source: Source) => void;
 }) {
+  const handleClearAll = useCallback(() => {
+    if (
+      !onSourcesChange ||
+      !confirm(
+        "Clear all sources? The flow canvas will show only sources you add.",
+      )
+    )
+      return;
+    onSourcesChange([]);
+  }, [onSourcesChange]);
+
   if (picker && onSourcesChange && onSourceAdded) {
     const info = SOURCE_TYPES[picker];
     const typeDefault: Record<string, string> = {
@@ -1300,15 +1311,6 @@ function AddSourceContent({
       adapter: info?.adapter ?? "manual",
       description: descDefault[picker] ?? "",
       parser: info?.parser ?? (picker === "manual" ? "sarif" : undefined),
-    };
-    const handleClearAll = () => {
-      if (
-        confirm(
-          "Clear all sources? The flow canvas will show only sources you add.",
-        )
-      ) {
-        onSourcesChange!([]);
-      }
     };
     return (
       <>
@@ -1390,17 +1392,6 @@ function AddSourceContent({
   const availableTypes = sourceTypes.filter(([key]) =>
     AVAILABLE_SOURCE_TYPES.includes(key as "aikido"),
   );
-
-  const handleClearAll = useCallback(() => {
-    if (
-      !onSourcesChange ||
-      !confirm(
-        "Clear all sources? The flow canvas will show only sources you add.",
-      )
-    )
-      return;
-    onSourcesChange([]);
-  }, [onSourcesChange]);
 
   return (
     <div>

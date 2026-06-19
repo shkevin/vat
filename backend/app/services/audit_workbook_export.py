@@ -11,17 +11,9 @@ from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
-STIG_RULE_ROWS_CAP = 100_000
+from app.services.metric_semantics import is_open_risk
 
-# Match export_service.ASSET_CLOSED for open vs terminal remediation backlog
-_ASSET_CLOSED = {
-    "Resolved",
-    "False Positive",
-    "Duplicate",
-    "Not Applicable",
-    "Approved",
-    "Suppressed",
-}
+STIG_RULE_ROWS_CAP = 100_000
 
 
 def _flat_str(v: Any) -> str:
@@ -115,13 +107,10 @@ def _metrics_summary(
     *,
     generated_at: datetime,
 ) -> list[dict[str, Any]]:
-    def is_open_status(s: str) -> bool:
-        return (s or "").strip() not in _ASSET_CLOSED
-
-    open_n = sum(1 for f in findings if is_open_status(f.get("status") or ""))
+    open_n = sum(1 for f in findings if is_open_risk(f.get("status") or ""))
     by_sev: dict[str, int] = {}
     for f in findings:
-        if not is_open_status(f.get("status") or ""):
+        if not is_open_risk(f.get("status") or ""):
             continue
         sev = f.get("severity") or "Unknown"
         by_sev[sev] = by_sev.get(sev, 0) + 1
@@ -526,9 +515,6 @@ def build_auditor_workbook_bytes(
     _write_sheet(wb, "Finding_Decision_Log", ad_headers, _finding_audit_log_rows(findings))
 
     # --- Remediation-style backlog (not formal eMASS POA&M) ---
-    def _open(s: str) -> bool:
-        return (s or "").strip() not in _ASSET_CLOSED
-
     poam_headers = [
         "findingId",
         "cveId",
@@ -561,7 +547,7 @@ def build_auditor_workbook_bytes(
             "firstDetectedAt": f.get("firstDetectedAt"),
         }
         for f in findings
-        if _open(f.get("status") or "")
+        if is_open_risk(f.get("status") or "")
     ]
     _write_sheet(wb, "Remediation_Backlog", poam_headers, poam_rows)
 

@@ -18,7 +18,9 @@ import {
   computeSlaCompliance,
   computeFleetRiskScore,
   computePeriodOverPeriodChange,
+  computeABCComplianceForIssues,
 } from "./metrics";
+import { computeABCCompliance } from "./ora";
 import type { VATReportIssue, VATReportIssueGroup } from "./vatReportAdapter";
 
 function mkIssue(
@@ -613,5 +615,63 @@ describe("isClosedIssue / unified resolved-vs-closed semantics", () => {
     expect(groups.total).toBe(1);
     expect(groups.exceedingSla).toBe(1);
     expect(groups.bySeverity[0]?.severity).toBe("critical");
+  });
+
+  it("computeABCComplianceForIssues uses canonical VAT open-risk semantics", () => {
+    const oldDate = "2024-01-01T00:00:00Z";
+    const issues: VATReportIssue[] = [
+      {
+        ...mkIssue(1, 1, "Risk Accepted"),
+        severity: "critical",
+        severity_score: 10,
+        first_detected_at: oldDate,
+      },
+      {
+        ...mkIssue(2, 2, "Rejected"),
+        severity: "high",
+        severity_score: 8,
+        first_detected_at: oldDate,
+      },
+      {
+        ...mkIssue(3, 3, "Resolved"),
+        severity: "critical",
+        severity_score: 10,
+        first_detected_at: oldDate,
+      },
+    ];
+
+    const abc = computeABCComplianceForIssues(issues, "instances");
+
+    expect(abc.bySeverity.critical.count).toBe(0);
+    expect(abc.bySeverity.high.count).toBe(1);
+    expect(abc.remediationOverdue).toBe(1);
+  });
+
+  it("computeABCCompliance directly excludes risk accepted and includes rejected open risk", () => {
+    const oldDate = "2024-01-01T00:00:00Z";
+    const abc = computeABCCompliance([
+      {
+        severity: "critical",
+        severityScore: 10,
+        firstDetectedAt: oldDate,
+        status: "Risk Accepted",
+      },
+      {
+        severity: "high",
+        severityScore: 8,
+        firstDetectedAt: oldDate,
+        status: "Rejected",
+      },
+      {
+        severity: "critical",
+        severityScore: 10,
+        firstDetectedAt: oldDate,
+        status: "Resolved",
+      },
+    ]);
+
+    expect(abc.bySeverity.critical.count).toBe(0);
+    expect(abc.bySeverity.high.count).toBe(1);
+    expect(abc.remediationOverdue).toBe(1);
   });
 });

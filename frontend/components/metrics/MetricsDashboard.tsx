@@ -5,6 +5,7 @@ import { AlertsPanel } from "@/components/alerts/AlertsPanel";
 import { getGroupedFindings } from "@/lib/findingGroupUtils";
 import { mono, sans } from "@/lib/styles";
 import { FINDING_TYPES, SEV_ORDER, SEV } from "@/lib/constants";
+import { isOpenRisk } from "@/lib/metricSemantics";
 import type { Alert } from "@/types";
 import type { Finding } from "@/types";
 
@@ -264,11 +265,16 @@ export function MetricsDashboard({
   onNavigate,
   groupFindings = true,
 }: MetricsDashboardProps) {
+  const openRiskFindings = useMemo(
+    () => active.filter((f) => isOpenRisk(f.status)),
+    [active],
+  );
+
   const severityCounts = useMemo(() => {
     const counts: Record<string, number> = {};
     for (const sev of SEV_ORDER) counts[sev] = 0;
     if (groupFindings) {
-      const groups = getGroupedFindings(active, SEV_ORDER);
+      const groups = getGroupedFindings(openRiskFindings, SEV_ORDER);
       for (const { findings } of groups) {
         const worst = findings.reduce((a, b) =>
           SEV_ORDER.indexOf(a.severity as (typeof SEV_ORDER)[number]) <=
@@ -283,7 +289,7 @@ export function MetricsDashboard({
         counts[key] = (counts[key] ?? 0) + 1;
       }
     } else {
-      for (const f of active) {
+      for (const f of openRiskFindings) {
         const s = normalizeSeverity(f.severity ?? "Informational");
         const key = (SEV_ORDER as readonly string[]).includes(s)
           ? s
@@ -295,11 +301,11 @@ export function MetricsDashboard({
       severity: sev,
       count: counts[sev] ?? 0,
     }));
-  }, [active, groupFindings]);
+  }, [openRiskFindings, groupFindings]);
 
   const keyMetrics = [
     { label: "Total active", value: total },
-    { label: "Open", value: open },
+    { label: "Open risk", value: open },
     { label: "In review", value: inRev, color: "var(--app-accent)" },
     { label: "SLA overdue", value: overdue, warn: true },
     {
@@ -349,17 +355,17 @@ export function MetricsDashboard({
         {Object.keys(FINDING_TYPES).map((type) => {
           const ft = FINDING_TYPES[type];
           const n = groupFindings
-            ? getGroupedFindings(active, SEV_ORDER).filter((g) =>
+            ? getGroupedFindings(openRiskFindings, SEV_ORDER).filter((g) =>
                 g.findings.some((f) => f.findingType === type),
               ).length
-            : active.filter((f) => f.findingType === type).length;
+            : openRiskFindings.filter((f) => f.findingType === type).length;
           if (!n) return null;
           return (
             <TypeCard
               key={type}
               type={type}
               count={n}
-              total={total}
+              total={open}
               color={ft.color}
               icon={ft.icon}
             />

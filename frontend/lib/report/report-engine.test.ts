@@ -36,6 +36,32 @@ function mkFinding(
   };
 }
 
+function mkReportFinding(
+  id: string,
+  status: string,
+  severity: string,
+  groupKey: string,
+  image: string,
+): Finding {
+  return {
+    id,
+    findingType: "SCA",
+    fingerprintId: `fp-${id}`,
+    cveId: `CVE-2026-${id}`,
+    severity,
+    status,
+    sources: [{ name: "trivy", importedAt: "2026-06-01T00:00:00Z" }],
+    source: "trivy",
+    audit: [],
+    component: "openssl 3.0",
+    image,
+    groupKey,
+    title: `${id} ${severity}`,
+    firstDetectedAt: "2024-01-01T00:00:00Z",
+    closedAt: status === "Resolved" ? "2026-06-01T00:00:00Z" : undefined,
+  };
+}
+
 describe("computeReportContext countMode", () => {
   const findings: Finding[] = [
     mkFinding("f1", "CVE-2024-8385", "firefox-esr 115.0", "firefox-esr"),
@@ -129,6 +155,97 @@ describe("computeReportContext countMode", () => {
   });
 });
 
+describe("computeReportContext golden VAT semantics", () => {
+  const filters = {
+    repoFilter: [],
+    branchFilter: null,
+    severityFilter: [],
+    dateFrom: null,
+    dateTo: null,
+    notes: "",
+  };
+
+  const findings: Finding[] = [
+    mkReportFinding("0001", "Open", "Critical", "g-critical", "repo-a"),
+    mkReportFinding("0002", "Risk Accepted", "Critical", "g-waived", "repo-a"),
+    mkReportFinding("0003", "Rejected", "High", "g-high", "repo-a"),
+    mkReportFinding("0004", "In Review", "Medium", "g-high", "repo-a"),
+    mkReportFinding("0005", "Resolved", "Critical", "g-closed", "repo-b"),
+    mkReportFinding("0006", "Reopened", "Low", "g-low", "repo-b"),
+  ];
+
+  it("reports grouped widgets from canonical open-risk groups", () => {
+    const data = toVATDashboardData(findings, [], "VAT", {
+      groupFindings: true,
+    });
+    const ctx = computeReportContext(data, {
+      ...filters,
+      countMode: "groups",
+    });
+
+    expect(ctx.totalIssues).toBe(5);
+    expect(ctx.openIssues).toBe(3);
+    expect(ctx.counts).toMatchObject({
+      critical: 1,
+      high: 1,
+      medium: 0,
+      low: 1,
+      info: 0,
+    });
+    expect(ctx.riskScore).toBe(7);
+    expect(ctx.repoRisk.find((r) => r.repo === "repo-a")).toMatchObject({
+      critical: 1,
+      high: 1,
+      medium: 0,
+      low: 0,
+      total: 2,
+    });
+    expect(ctx.repoRisk.find((r) => r.repo === "repo-b")).toMatchObject({
+      critical: 0,
+      high: 0,
+      medium: 0,
+      low: 1,
+      total: 1,
+    });
+    expect(ctx.scanners).toHaveLength(1);
+    expect(ctx.scanners[0]).toMatchObject({
+      scanner: "trivy",
+      critical: 1,
+      high: 1,
+      low: 1,
+      count: 3,
+    });
+  });
+
+  it("reports instance widgets from canonical open-risk instances", () => {
+    const data = toVATDashboardData(findings, [], "VAT", {
+      groupFindings: true,
+    });
+    const ctx = computeReportContext(data, {
+      ...filters,
+      countMode: "instances",
+    });
+
+    expect(ctx.totalIssues).toBe(6);
+    expect(ctx.openIssues).toBe(4);
+    expect(ctx.counts).toMatchObject({
+      critical: 1,
+      high: 1,
+      medium: 1,
+      low: 1,
+      info: 0,
+    });
+    expect(ctx.riskScore).toBe(7);
+    expect(ctx.repoRisk.find((r) => r.repo === "repo-a")).toMatchObject({
+      critical: 1,
+      high: 1,
+      medium: 1,
+      low: 0,
+      total: 3,
+    });
+  });
+});
+
 describe("trend stacked dropdown filters", () => {
   it("does not gate trend chart updates behind server counts", () => {
     const findings: Finding[] = [
@@ -180,6 +297,24 @@ describe("trend stacked dropdown filters", () => {
     });
     expect(html).not.toContain("var weekOpen = openAtWeek.filter");
     expect(html).toContain("countBySeverityTrend(openAtWeek)");
+  });
+
+  it("does not treat Rejected as closed in embedded report widget recomputation", () => {
+    const findings: Finding[] = [
+      mkFinding("f1", "CVE-2024-1111", "pkg-a 1.0.0", "pkg-a"),
+    ];
+    const data = toVATDashboardData(findings, [], "VAT", {
+      groupFindings: true,
+    });
+    const definition = createDefaultReportDefinition("VAT");
+    const ctx = computeReportContext(data, definition.filters);
+    const html = buildReportHtmlFromDefinition(ctx, definition, {
+      preview: true,
+    });
+
+    expect(html).not.toContain(
+      's === "not applicable" || s === "rejected"',
+    );
   });
 
   it("suppresses baseline-less +100% spikes in summary period deltas", () => {

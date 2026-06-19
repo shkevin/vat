@@ -25,20 +25,13 @@ from app.services.findings_service import (
     list_findings,
 )
 from app.services.grouping import finding_to_api_dict_with_group_key
+from app.services.metric_semantics import is_open_risk
 from app.services.openscap_storage import list_openscap_scan_results
 from app.services.sbom import list_sbom_packages
 
 logger = logging.getLogger(__name__)
 
 SEV_ORDER = ("Critical", "High", "Medium", "Low", "Informational")
-ASSET_CLOSED = {
-    "Resolved",
-    "False Positive",
-    "Duplicate",
-    "Not Applicable",
-    "Approved",
-    "Suppressed",
-}
 
 
 def _safe_openscap_filename(asset_id: str) -> str:
@@ -174,7 +167,7 @@ def _severity_key(sev: str) -> str:
 
 
 def _is_open(status: str) -> bool:
-    return (status or "").strip() not in ASSET_CLOSED
+    return is_open_risk(status)
 
 
 def _parse_dt(s: Optional[str]) -> Optional[datetime]:
@@ -704,7 +697,7 @@ async def build_export_bundle(
     slice_to = _parse_dt(opts.finding_date_to)
     rows = _filter_findings_by_date_range(rows, date_from=slice_from, date_to=slice_to)
 
-    assets = await get_assets_with_findings(db, findings_dicts=rows)
+    assets = await get_assets_with_findings(db, findings_dicts=rows, ctx=ctx)
     if opts.apply_asset_filter:
         selected_asset_ids = {str(aid) for aid in (opts.asset_ids or []) if str(aid)}
         rows, assets = _filter_findings_and_assets_by_asset_ids(

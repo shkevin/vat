@@ -10,6 +10,7 @@ from app.models.asset_digest_conflict import AssetDigestConflict
 from app.models.asset_observed_tag import AssetObservedTag
 from app.models.finding import Finding
 from app.schemas.finding import FindingRead
+from app.core.auth import tenant_filter
 
 if TYPE_CHECKING:
     from app.schemas.auth import UserContext
@@ -18,6 +19,11 @@ from app.services.asset_type_infer import infer_asset_type_from_findings
 from app.services.container_ref_normalization import (
     apply_container_asset_path_aliases,
     normalize_container_ref,
+)
+from app.services.metric_semantics import (
+    is_open_risk,
+    is_overdue_open_risk,
+    is_verified_disposition,
 )
 
 SEV_ORDER = ("Critical", "High", "Medium", "Low", "Informational")
@@ -191,29 +197,13 @@ def _build_asset_payload(
     for d in findings:
         status = d.get("status") or "Open"
         status_breakdown[status] = status_breakdown.get(status, 0) + 1
-        if status == "Open":
+        if is_open_risk(status):
             open_count += 1
         if status == "In Review":
             in_review_count += 1
-        if status not in (
-            "Resolved",
-            "False Positive",
-            "Duplicate",
-            "Not Applicable",
-            "Approved",
-            "Suppressed",
-        ):
-            days = _days_left(d.get("slaDue"))
-            if days is not None and days < 0:
-                overdue_count += 1
-        if status in (
-            "Resolved",
-            "False Positive",
-            "Approved",
-            "Suppressed",
-            "Not Applicable",
-            "Duplicate",
-        ):
+        if is_overdue_open_risk(status, d.get("slaDue")):
+            overdue_count += 1
+        if is_verified_disposition(status):
             verified_count += 1
         sev = (d.get("severity") or "").strip()
         idx = sev_order.index(sev) if sev in sev_order else -1
@@ -226,15 +216,7 @@ def _build_asset_payload(
     open_findings = [
         d
         for d in findings
-        if d.get("status")
-        not in (
-            "Resolved",
-            "False Positive",
-            "Duplicate",
-            "Not Applicable",
-            "Approved",
-            "Suppressed",
-        )
+        if is_open_risk(d.get("status") or "Open")
     ]
     counts = {"critical": 0, "high": 0, "medium": 0, "low": 0, "info": 0}
     for d in open_findings:
@@ -349,7 +331,10 @@ async def get_assets_with_findings(
     # Add Asset records that have no findings when requested.
     asset_records: dict[str, Asset] = {}
     if include_zero_assets:
-        result = await db.execute(select(Asset))
+        asset_q = select(Asset)
+        if ctx is not None:
+            asset_q = asset_q.where(tenant_filter(Asset, ctx))
+        result = await db.execute(asset_q)
         asset_records = {a.id: a for a in result.scalars().all()}
         for aid in asset_records:
             if aid not in by_key:

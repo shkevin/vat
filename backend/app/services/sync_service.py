@@ -1410,7 +1410,14 @@ async def get_sync_status(db: AsyncSession) -> dict:
     creds = await _credential_resolver.get_tracker_credentials(db, tracker_key)
     tracker_configured = bool(creds.get("api_key") and creds.get("team_id"))
 
-    open_statuses = [Status.Open, Status.Reopened, Status.InReview]
+    open_statuses = [
+        Status.Open,
+        Status.SyncedToTracker,
+        Status.InReview,
+        Status.Rejected,
+        Status.Mitigated,
+        Status.Reopened,
+    ]
     total_open = (
         await db.execute(
             select(func.count(Finding.id)).where(
@@ -1424,17 +1431,21 @@ async def get_sync_status(db: AsyncSession) -> dict:
     push_mode = await get_tracker_push_mode(db)
 
     # Unlinked findings (no tracker link)
-    from sqlalchemy import text
+    from sqlalchemy import bindparam, text
 
+    open_status_values = tuple(s.value for s in open_statuses)
     unlinked_stmt = text("""
         SELECT f.id FROM findings f
-        WHERE f.status IN ('Open', 'Reopened', 'InReview') AND f.archived = false
+        WHERE f.status IN :open_statuses AND f.archived = false
           AND NOT EXISTS (
             SELECT 1 FROM jsonb_array_elements(COALESCE(f.external_links, '[]'::jsonb)) AS elem
             WHERE elem->>'kind' = 'tracker' AND elem->>'adapter_key' = :tk
           )
-    """)
-    unlinked_result = await db.execute(unlinked_stmt, {"tk": tracker_key})
+    """).bindparams(bindparam("open_statuses", expanding=True))
+    unlinked_result = await db.execute(
+        unlinked_stmt,
+        {"tk": tracker_key, "open_statuses": open_status_values},
+    )
     unlinked_ids = [r[0] for r in unlinked_result.fetchall()]
 
     unlinked_meeting_severity = 0

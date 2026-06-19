@@ -4,7 +4,11 @@
  */
 
 import { computeORAScore } from "./report/ora";
-import { daysLeft } from "./utils";
+import {
+  isOpenRisk,
+  isOverdueOpenRisk,
+  isVerifiedDisposition,
+} from "./metricSemantics";
 import type { AssetType } from "./constants";
 import type { Asset, Finding } from "@/types";
 import {
@@ -265,30 +269,10 @@ export function computeMetricsFromFindings(
   if (findings.length === 0) return { verifiedPct: 100, oraPct: 100 };
   let verifiedCount = 0;
   for (const f of findings) {
-    if (
-      [
-        "Resolved",
-        "False Positive",
-        "Approved",
-        "Suppressed",
-        "Not Applicable",
-        "Duplicate",
-      ].includes(f.status ?? "")
-    )
-      verifiedCount++;
+    if (isVerifiedDisposition(f.status)) verifiedCount++;
   }
   const verifiedPct = Math.round((verifiedCount / findings.length) * 1000) / 10;
-  const openFindings = findings.filter(
-    (f) =>
-      ![
-        "Resolved",
-        "False Positive",
-        "Duplicate",
-        "Not Applicable",
-        "Approved",
-        "Suppressed",
-      ].includes(f.status ?? ""),
-  );
+  const openFindings = findings.filter((f) => isOpenRisk(f.status));
   const counts = { critical: 0, high: 0, medium: 0, low: 0, info: 0 };
   for (const f of openFindings) {
     counts[severityToKey(f.severity ?? "", f.sourceGroupSeverity)]++;
@@ -370,32 +354,10 @@ export function deriveAssets(
     let worstIdx = -1;
     for (const f of list) {
       statusBreakdown[f.status] = (statusBreakdown[f.status] ?? 0) + 1;
-      if (f.status === "Open") openCount++;
+      if (isOpenRisk(f.status)) openCount++;
       if (f.status === "In Review") inReviewCount++;
-      if (
-        ![
-          "Resolved",
-          "False Positive",
-          "Duplicate",
-          "Not Applicable",
-          "Approved",
-          "Suppressed",
-        ].includes(f.status)
-      ) {
-        const d = daysLeft(f.slaDue);
-        if (d !== null && d < 0) overdueCount++;
-      }
-      if (
-        [
-          "Resolved",
-          "False Positive",
-          "Approved",
-          "Suppressed",
-          "Not Applicable",
-          "Duplicate",
-        ].includes(f.status)
-      )
-        verifiedCount++;
+      if (isOverdueOpenRisk(f.status, f.slaDue)) overdueCount++;
+      if (isVerifiedDisposition(f.status)) verifiedCount++;
       const idx = sevOrder.indexOf(f.severity);
       if (idx >= 0 && (worstIdx < 0 || idx < worstIdx)) worstIdx = idx;
     }
@@ -403,17 +365,7 @@ export function deriveAssets(
       list.length > 0
         ? Math.round((verifiedCount / list.length) * 1000) / 10
         : 100;
-    const openFindings = list.filter(
-      (f) =>
-        ![
-          "Resolved",
-          "False Positive",
-          "Duplicate",
-          "Not Applicable",
-          "Approved",
-          "Suppressed",
-        ].includes(f.status),
-    );
+    const openFindings = list.filter((f) => isOpenRisk(f.status));
     const counts = { critical: 0, high: 0, medium: 0, low: 0, info: 0 };
     for (const f of openFindings) {
       counts[severityToKey(f.severity ?? "", f.sourceGroupSeverity)]++;

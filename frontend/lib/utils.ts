@@ -65,17 +65,7 @@ export function daysLeft(d: string | null | undefined): number | null {
 }
 
 export function slaDot(due: string | null | undefined, status: string): string {
-  if (
-    [
-      "Resolved",
-      "False Positive",
-      "Duplicate",
-      "Not Applicable",
-      "Approved",
-      "Suppressed",
-    ].includes(status)
-  )
-    return "#334155";
+  if (!isOpenRisk(status)) return "#334155";
   const d = daysLeft(due);
   if (d === null) return "#334155";
   return d < 0
@@ -98,6 +88,11 @@ export function getSlaDays(
 }
 
 import { FINDING_TYPES, LICENSE_RISK } from "./constants";
+import {
+  isOpenRisk,
+  isOverdueOpenRisk,
+  isRiskAccepted,
+} from "./metricSemantics";
 import type { Finding } from "@/types";
 
 /** Display title — when title equals numeric cveId (Aikido issue ID), show descriptive fallback. */
@@ -145,17 +140,9 @@ export function computeAlerts(
 ): Alert[] {
   const alerts: Alert[] = [];
   const active = findings.filter((f) => !f.archived);
-  const closed = [
-    "Resolved",
-    "False Positive",
-    "Duplicate",
-    "Not Applicable",
-    "Approved",
-    "Suppressed",
-  ];
 
   active
-    .filter((f) => f.status === "Risk Accepted" && f.attestation?.expiresAt)
+    .filter((f) => isRiskAccepted(f.status) && f.attestation?.expiresAt)
     .forEach((f) => {
       const exp = f.attestation?.expiresAt;
       if (exp && daysLeftFn(exp) !== null && daysLeftFn(exp)! < 0)
@@ -171,7 +158,7 @@ export function computeAlerts(
     });
 
   active
-    .filter((f) => f.status === "Risk Accepted" && f.attestation?.expiresAt)
+    .filter((f) => isRiskAccepted(f.status) && f.attestation?.expiresAt)
     .forEach((f) => {
       const exp = f.attestation?.expiresAt;
       if (!exp) return;
@@ -190,7 +177,7 @@ export function computeAlerts(
 
   active
     .filter(
-      (f) => !closed.includes(f.status || "") && f.slaDue && !f.trackerComment,
+      (f) => isOpenRisk(f.status) && f.slaDue && !f.trackerComment,
     )
     .forEach((f) => {
       const d = daysLeftFn(f.slaDue);
@@ -206,7 +193,7 @@ export function computeAlerts(
     });
 
   active
-    .filter((f) => !closed.includes(f.status || "") && f.slaDue)
+    .filter((f) => isOverdueOpenRisk(f.status, f.slaDue))
     .forEach((f) => {
       const d = daysLeftFn(f.slaDue);
       if (d !== null && d < 0)
@@ -235,7 +222,7 @@ export function computeAlerts(
     });
 
   active
-    .filter((f) => f.findingType === "Secret" && f.status === "Open")
+    .filter((f) => f.findingType === "Secret" && isOpenRisk(f.status))
     .forEach((f) => {
       alerts.push({
         type: "secret-open",

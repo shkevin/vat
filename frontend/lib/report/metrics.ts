@@ -11,6 +11,10 @@ import {
   type ABCCriteriaResult,
   type ABCIssueInput,
 } from "./ora";
+import {
+  isClosedDisposition,
+  isOpenRisk,
+} from "@/lib/metricSemantics";
 import type {
   VATReportIssue,
   VATReportIssueGroup,
@@ -136,25 +140,8 @@ export function normalizeSeverity(
   return "info";
 }
 
-/** Statuses treated as closed (not open). Includes Aikido + VAT-specific (false positive, suppressed, approved, duplicate, not applicable, rejected). */
-const EXCLUDED_OPEN_STATUSES = [
-  "closed",
-  "resolved",
-  "ignored",
-  "auto_ignored",
-  "false positive",
-  "suppressed",
-  "approved",
-  "duplicate",
-  "not applicable",
-  "rejected",
-] as const;
-
 export function isOpen(issue: VATReportIssue): boolean {
-  const st = (issue.status ?? "").toLowerCase();
-  return !EXCLUDED_OPEN_STATUSES.includes(
-    st as (typeof EXCLUDED_OPEN_STATUSES)[number],
-  );
+  return isOpenRisk(issue.status);
 }
 
 /** A finding is "closed" for reporting purposes when it has a closure timestamp
@@ -164,10 +151,7 @@ export function isOpen(issue: VATReportIssue): boolean {
  * board this period". */
 export function isClosedIssue(issue: VATReportIssue): boolean {
   if (!issue.closed_at) return false;
-  const st = (issue.status ?? "").toLowerCase();
-  return EXCLUDED_OPEN_STATUSES.includes(
-    st as (typeof EXCLUDED_OPEN_STATUSES)[number],
-  );
+  return isClosedDisposition(issue.status);
 }
 
 function isMitigated(issue: VATReportIssue): boolean {
@@ -176,10 +160,7 @@ function isMitigated(issue: VATReportIssue): boolean {
 
 function issuesForTrend(issues: VATReportIssue[]): VATReportIssue[] {
   return issues.filter((i) => {
-    const st = (i.status ?? "").toLowerCase();
-    const isExcluded = EXCLUDED_OPEN_STATUSES.includes(
-      st as (typeof EXCLUDED_OPEN_STATUSES)[number],
-    );
+    const isExcluded = !isOpenRisk(i.status);
     if (isExcluded && !i.closed_at) return false;
     return true;
   });

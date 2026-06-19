@@ -47,13 +47,15 @@ class IngestTagPolicy:
     def apply_to_payload(self, payload: VatFindingSchema) -> VatFindingSchema:
         """Apply tag policy to one finding payload.
 
-        Parser-supplied tag wins over the header — SBOM-derived per-artifact
-        tags (e.g. ``1.5.28`` extracted from CycloneDX ``metadata.component``)
-        must not be clobbered by a bundle-scope ``X-VAT-Tag`` header. Header
-        tag only fills the field when the parser left it empty.
+        In single-asset mode (asset + tag header), the header tag is
+        authoritative and normalizes every finding to one asset snapshot.
+        Otherwise parser-supplied tags win and the header tag only fills the
+        field when the parser left it empty.
         """
         if not self.header_tag:
             return payload
+        if self.force_override and self.authoritative_tag:
+            return payload.model_copy(update={"tag": self.authoritative_tag})
         existing = _clean(getattr(payload, "tag", None))
         if existing:
             return payload

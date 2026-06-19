@@ -5,6 +5,8 @@
  * ABC: SLA timelines, max counts, CVE age tolerance per severity.
  */
 
+import { isOpenRisk } from "@/lib/metricSemantics";
+
 export interface SeverityCountsLike {
   critical?: number;
   high?: number;
@@ -192,16 +194,7 @@ function daysSince(dateStr: string): number {
 export function computeABCCompliance(
   issues: ABCIssueInput[],
 ): ABCCriteriaResult {
-  const open = issues.filter(
-    (i) =>
-      ![
-        "resolved",
-        "closed",
-        "false positive",
-        "ignored",
-        "auto_ignored",
-      ].includes((i.status ?? "").toLowerCase()),
-  );
+  const open = issues.filter((i) => isOpenRisk(i.status));
 
   const bySev: Record<
     string,

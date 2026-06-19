@@ -12,6 +12,7 @@ import { FINDING_TYPES } from "@/lib/constants";
 import fixture from "@/tests/fixtures/grouping_keys.json";
 
 function fixtureToFinding(item: (typeof fixture.fixtures)[number]): Finding {
+  const optional = item as Partial<Record<keyof Finding | "expectedKey", string>>;
   return {
     id: item.id,
     findingType: item.findingType,
@@ -21,17 +22,17 @@ function fixtureToFinding(item: (typeof fixture.fixtures)[number]): Finding {
     status: "Open",
     sources: [],
     audit: [],
-    component: item.component ?? undefined,
-    componentBase: item.componentBase ?? undefined,
-    ecosystem: item.ecosystem ?? undefined,
-    title: item.title ?? undefined,
-    ruleId: item.ruleId ?? undefined,
-    cweId: item.cweId ?? undefined,
-    secretType: item.secretType ?? undefined,
-    image: item.image ?? undefined,
-    branch: item.branch ?? undefined,
-    tag: item.tag ?? undefined,
-    benchmarkFamily: item.benchmarkFamily ?? undefined,
+    component: optional.component ?? undefined,
+    componentBase: optional.componentBase ?? undefined,
+    ecosystem: optional.ecosystem ?? undefined,
+    title: optional.title ?? undefined,
+    ruleId: optional.ruleId ?? undefined,
+    cweId: optional.cweId ?? undefined,
+    secretType: optional.secretType ?? undefined,
+    image: optional.image ?? undefined,
+    branch: optional.branch ?? undefined,
+    tag: optional.tag ?? undefined,
+    benchmarkFamily: optional.benchmarkFamily ?? undefined,
   };
 }
 

@@ -931,8 +931,9 @@ function buildReportFilterBar(
     return elsCache;
   }
   var REPO_BRANCH_SEP = "|";
-  var CLOSED_STATUSES = new Set(["closed","resolved","ignored","auto_ignored","false positive","suppressed","approved","duplicate","not applicable","rejected"]);
-  function isOpenStatus(st) { var s = (st || "").toLowerCase(); return !CLOSED_STATUSES.has(s); }
+  var CLOSED_STATUSES = new Set(["closed","resolved","ignored","auto ignored","false positive","suppressed","approved","duplicate","not applicable"]);
+  function normStatus(st) { return (st || "").replace(/([a-z])([A-Z])/g, "$1 $2").replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim().toLowerCase(); }
+  function isOpenStatus(st) { var s = normStatus(st); return !!s && !CLOSED_STATUSES.has(s) && s !== "risk accepted"; }
   function normSev(i) {
     var s = (i.s || "").toLowerCase().trim();
     var sc = i.sc != null ? i.sc : 0;
@@ -1729,14 +1730,13 @@ function buildReportFilterBar(
       var lastStartTs = previousWindowStart.getTime();
       var lastEndTs = previousWindowEnd.getTime();
       var countTotalTrend = function(issues) { return trendCountMode === "groups" ? (function() { var seen = {}; return issues.filter(function(i) { var gid = i.g != null ? i.g : (i.r + "|" + i.d + "|" + (i.s||"")); if (seen[gid]) return false; seen[gid] = true; return true; }).length; })() : issues.length; };
-      // "Closed" = any status that takes the finding off the open queue (remediated,
-      // suppressed, false-positive, ignored, etc.) plus a closed_at timestamp. Mirrors
-      // EXCLUDED_OPEN_STATUSES on the server so MTTR and "Closed this week" agree.
+      // "Closed" = terminal remediation/disposition statuses plus a closed_at timestamp.
+      // Risk Accepted is its own bucket and Rejected remains open risk.
       var isClosedStatus = function(st) {
-        var s = (st||"").toLowerCase();
-        return s === "closed" || s === "resolved" || s === "ignored" || s === "auto_ignored"
+        var s = normStatus(st);
+        return s === "closed" || s === "resolved" || s === "ignored" || s === "auto ignored"
           || s === "false positive" || s === "suppressed" || s === "approved"
-          || s === "duplicate" || s === "not applicable" || s === "rejected";
+          || s === "duplicate" || s === "not applicable";
       };
       var resolvedThisWeek = 0, resolvedLastWeek = 0, newThisWeek = 0, newLastWeek = 0;
       // Mirror server computeTrendMetrics groups-mode semantics (interpretation B):
@@ -2149,8 +2149,8 @@ function buildReportFilterBar(
       var tbody = section.querySelector("tbody");
       if (!tbody) return;
       var isClosedSt = function(st) {
-        var s = (st || "").toLowerCase();
-        return s === "closed" || s === "resolved" || s === "ignored" || s === "auto_ignored" || s === "false positive" || s === "suppressed" || s === "approved" || s === "duplicate" || s === "not applicable" || s === "rejected";
+        var s = normStatus(st);
+        return s === "closed" || s === "resolved" || s === "ignored" || s === "auto ignored" || s === "false positive" || s === "suppressed" || s === "approved" || s === "duplicate" || s === "not applicable";
       };
       var raw = [];
       for (var mi = 0; mi < filtered.length; mi++) {

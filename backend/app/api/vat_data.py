@@ -32,6 +32,19 @@ async def _vat_data_etag(
     *,
     ctx: UserContext,
     archived: Optional[bool],
+    status: Optional[str],
+    severity: Optional[str],
+    source: Optional[str],
+    finding_type: Optional[str],
+    asset: Optional[str],
+    search: Optional[str],
+    search_fields: Optional[str],
+    limit: int,
+    page: int,
+    page_size: int,
+    include_assets: bool,
+    include_zero_assets: bool,
+    include_asset_findings: bool,
     slim: bool,
     full: bool,
 ) -> str:
@@ -63,6 +76,19 @@ async def _vat_data_etag(
             str(ctx.tenant_id or ""),
             "X" if ctx.cross_tenant else "S",
             str(archived),
+            str(status or ""),
+            str(severity or ""),
+            str(source or ""),
+            str(finding_type or ""),
+            str(asset or ""),
+            str(search or ""),
+            str(search_fields or ""),
+            str(limit),
+            str(page),
+            str(page_size),
+            str(include_assets),
+            str(include_zero_assets),
+            str(include_asset_findings),
             str(slim),
             str(full),
         ]
@@ -101,7 +127,24 @@ async def get_vat_data(
     # plus the request shape. Mutations bump it; identical re-requests 304
     # with no body. Cuts the 45s polling traffic to near-zero on idle clusters.
     etag = await _vat_data_etag(
-        db, ctx=ctx, archived=archived, slim=slim, full=full
+        db,
+        ctx=ctx,
+        archived=archived,
+        status=status,
+        severity=severity,
+        source=source,
+        finding_type=type,
+        asset=asset,
+        search=search,
+        search_fields=search_fields,
+        limit=limit,
+        page=page,
+        page_size=page_size,
+        include_assets=include_assets,
+        include_zero_assets=include_zero_assets,
+        include_asset_findings=include_asset_findings,
+        slim=slim,
+        full=full,
     )
     if request.headers.get("if-none-match") == etag:
         return Response(
@@ -144,6 +187,7 @@ async def get_vat_data(
         assets = await get_assets_with_findings(
             db,
             findings_dicts=rows,
+            ctx=ctx,
             include_zero_assets=include_zero_assets,
             include_findings=include_asset_findings,
         )

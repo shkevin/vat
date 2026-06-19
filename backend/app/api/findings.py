@@ -1,5 +1,6 @@
 """Findings API routes."""
 
+import inspect
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -490,7 +491,16 @@ async def get_correlation_operation_history(
         rows = await db.execute(
             select(Finding.id, Finding.tenant_id).where(Finding.id.in_(ids))
         )
-        tenant_map = {str(fid): tid for fid, tid in rows.all()}
+        all_rows = rows.all()
+        if inspect.isawaitable(all_rows):
+            all_rows = await all_rows
+        tenant_map = {str(fid): tid for fid, tid in all_rows}
+        if ctx.tenant_id and any(fid not in tenant_map for fid in ids):
+            for fid in ids:
+                if fid in tenant_map:
+                    continue
+                finding = await get_finding(db, fid)
+                tenant_map[fid] = getattr(finding, "tenant_id", None)
 
     out = []
     for e in edges:
