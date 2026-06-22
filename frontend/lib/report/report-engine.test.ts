@@ -360,6 +360,28 @@ describe("trend stacked dropdown filters", () => {
       "var trendCurrDisplay = (trendUsesAllDimensions && trendCountMode === countMode) ? summaryOpenVal : trendCurr;",
     );
   });
+
+  it("labels report periods as trend lookback while clarifying current-open KPI semantics", () => {
+    const findings: Finding[] = [
+      mkFinding("f1", "CVE-2024-1114", "pkg-d 1.0.0", "pkg-d"),
+    ];
+    const data = toVATDashboardData(findings, [], "VAT", {
+      groupFindings: true,
+    });
+    const definition = createDefaultReportDefinition("VAT");
+    definition.filters.dateFrom = "2026-01-01";
+    definition.filters.dateTo = "2026-03-31";
+    const ctx = computeReportContext(data, definition.filters);
+    const html = buildReportHtmlFromDefinition(ctx, definition, {
+      preview: true,
+    });
+
+    expect(html).toContain("Trend lookback:");
+    expect(html).toContain(
+      "KPIs and risk widgets show current open findings; trend widgets use the lookback period.",
+    );
+    expect(html).not.toContain("Date range:");
+  });
 });
 
 describe("report adapter severity source of truth", () => {
@@ -407,6 +429,58 @@ describe("report adapter severity source of truth", () => {
 });
 
 describe("report container risk source of truth", () => {
+  it("can use date range as a trend lookback without excluding older open backlog from current counts", () => {
+    const findings: Finding[] = [
+      {
+        id: "f-old-critical",
+        findingType: "SCA",
+        fingerprintId: "fp-old-critical",
+        cveId: "CVE-2025-0100",
+        severity: "Critical",
+        status: "Open",
+        sources: [],
+        audit: [],
+        image: "containers/images/demo",
+        component: "pkg-critical",
+        title: "old critical",
+        firstDetectedAt: "2025-01-01T00:00:00.000Z",
+      },
+      {
+        id: "f-new-high",
+        findingType: "SCA",
+        fingerprintId: "fp-new-high",
+        cveId: "CVE-2026-0101",
+        severity: "High",
+        status: "Open",
+        sources: [],
+        audit: [],
+        image: "containers/images/demo",
+        component: "pkg-high",
+        title: "new high",
+        firstDetectedAt: "2026-03-20T00:00:00.000Z",
+      },
+    ];
+    const data = toVATDashboardData(findings, [], "VAT", {
+      groupFindings: true,
+    });
+    const ctx = computeReportContext(data, {
+      repoFilter: [],
+      branchFilter: null,
+      severityFilter: ["critical", "high"],
+      dateFrom: "2026-03-01",
+      dateTo: "2026-04-01",
+      notes: "",
+      countMode: "instances",
+      dateFilterMode: "trendOnly",
+    });
+
+    expect(ctx.dateFrom).toBe("2026-03-01");
+    expect(ctx.dateTo).toBe("2026-04-01");
+    expect(ctx.openIssues).toBe(2);
+    expect(ctx.counts.critical).toBe(1);
+    expect(ctx.counts.high).toBe(1);
+  });
+
   it("applies report filters before computing container risk counts", () => {
     const findings: Finding[] = [
       {
@@ -462,6 +536,7 @@ describe("report container risk source of truth", () => {
       severityFilter: [],
       dateFrom: "2026-03-01",
       dateTo: "2026-03-31",
+      dateFilterMode: "detected",
       notes: "",
       countMode: "instances",
     });

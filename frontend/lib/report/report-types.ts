@@ -20,12 +20,15 @@ import type {
 
 /** Preset date range in days. null = use custom dateFrom/dateTo. */
 export type DateRangePreset = 7 | 30 | 90 | 120 | 365 | null;
+/** How report-level date bounds affect current-risk widgets. */
+export type DateFilterMode = "detected" | "trendOnly";
 
 export interface ReportFilters {
   repoFilter: string[];
   branchFilter: string | null;
   severityFilter: string[];
   dateRangePreset?: DateRangePreset;
+  dateFilterMode?: DateFilterMode;
   dateFrom: string | null;
   dateTo: string | null;
   notes: string;
@@ -166,6 +169,7 @@ export function normalizeReportDefinitionLayout(
       repoFilter,
       branchFilter,
       dateRangePreset,
+      dateFilterMode: filters.dateFilterMode ?? "trendOnly",
       external: filters.external ?? false,
       countMode: filters.countMode ?? "groups",
     },

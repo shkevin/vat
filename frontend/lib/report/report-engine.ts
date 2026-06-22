@@ -487,18 +487,20 @@ export function computeReportContext(
       effectivePeriodDays = Math.max(1, Math.round((maxT - minT) / 86400000));
     }
   }
-  if (dateFrom) {
-    const from = new Date(dateFrom + "T00:00:00.000Z").getTime();
-    issues = issues.filter(
-      (i) => new Date(i.first_detected_at).getTime() >= from,
-    );
-  }
-  if (dateTo) {
-    // Use end of day so issues on dateTo are included (midnight would exclude same-day detections)
-    const to = new Date(dateTo + "T23:59:59.999Z").getTime();
-    issues = issues.filter(
-      (i) => new Date(i.first_detected_at).getTime() <= to,
-    );
+  if ((filters.dateFilterMode ?? "trendOnly") !== "trendOnly") {
+    if (dateFrom) {
+      const from = new Date(dateFrom + "T00:00:00.000Z").getTime();
+      issues = issues.filter(
+        (i) => new Date(i.first_detected_at).getTime() >= from,
+      );
+    }
+    if (dateTo) {
+      // Use end of day so issues on dateTo are included (midnight would exclude same-day detections)
+      const to = new Date(dateTo + "T23:59:59.999Z").getTime();
+      issues = issues.filter(
+        (i) => new Date(i.first_detected_at).getTime() <= to,
+      );
+    }
   }
 
   const openIssues = issues.filter(isOpen);
@@ -2765,11 +2767,16 @@ function buildReportDocumentShell(
   ${brandHeaderHtml}
   <div class="header">
     <div class="meta">
-      ${dateRange ? `<span>Date range: ${dateRange}</span>` : ""}
+      ${dateRange ? `<span>Trend lookback: ${dateRange}</span>` : ""}
       <span>Generated: ${date}</span>
       <span>Data Source: Aikido Security</span>
       <span>Classification: Internal</span>
     </div>
+    ${
+      dateRange
+        ? '<div class="filter-note">KPIs and risk widgets show current open findings; trend widgets use the lookback period.</div>'
+        : ""
+    }
   </div>
   ${
     filterConfig
@@ -3189,6 +3196,7 @@ export const REPORT_PRESETS: ReportPreset[] = [
         branchFilter: null,
         severityFilter: [],
         dateRangePreset: 30,
+        dateFilterMode: "trendOnly",
         dateFrom: null,
         dateTo: null,
         notes: "",
@@ -3223,6 +3231,7 @@ export const REPORT_PRESETS: ReportPreset[] = [
         branchFilter: null,
         severityFilter: ["critical", "high"],
         dateRangePreset: 365,
+        dateFilterMode: "trendOnly",
         dateFrom: null,
         dateTo: null,
         notes: "",
@@ -3277,6 +3286,7 @@ export const REPORT_PRESETS: ReportPreset[] = [
         branchFilter: null,
         severityFilter: [],
         dateRangePreset: 30,
+        dateFilterMode: "trendOnly",
         dateFrom: null,
         dateTo: null,
         notes: "",
@@ -3327,6 +3337,7 @@ function filtersFromDashboardState(
     branchFilter: null,
     severityFilter: [],
     dateRangePreset: null,
+    dateFilterMode: "trendOnly",
     dateFrom: null,
     dateTo: null,
     notes: "",

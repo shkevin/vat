@@ -1861,7 +1861,7 @@ export function ReportBuilderView({
                       style={{ display: "flex", gap: 20, flexWrap: "wrap" }}
                     >
                       <div style={{ flex: 1, minWidth: 120 }}>
-                        <label className="form-label">Date range</label>
+                        <label className="form-label">Trend lookback</label>
                         <select
                           value={
                             [7, 30, 90, 120, 365].includes(
@@ -1907,6 +1907,18 @@ export function ReportBuilderView({
                           <option value="365">Last 365 days</option>
                           <option value="custom">Custom range</option>
                         </select>
+                        <p
+                          style={{
+                            ...sans,
+                            margin: "6px 0 0",
+                            fontSize: 11,
+                            color: "var(--app-fg-secondary)",
+                            lineHeight: 1.4,
+                          }}
+                        >
+                          KPIs and risk widgets show current open findings; trend
+                          widgets use this lookback period.
+                        </p>
                       </div>
                     </div>
                     {definition.filters.dateRangePreset == null &&
