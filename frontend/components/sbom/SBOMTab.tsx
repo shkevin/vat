@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo, useCallback } from "react";
+import { SearchInput } from "@/components/ui/SearchInput";
 import { mono } from "@/lib/styles";
 import { LICENSE_RISK, SAMPLE_SBOM } from "@/lib/constants";
 import type { Finding } from "@/types";
@@ -635,9 +636,9 @@ export function SBOMTab({ sbom, findings, onImport, assetId }: SBOMTabProps) {
           marginBottom: 12,
         }}
       >
-        <input
+        <SearchInput
           value={searchText}
-          onChange={(e) => setSearchText(e.target.value)}
+          onValueChange={setSearchText}
           placeholder="Search package, version, license, component..."
           style={{
             ...mono,

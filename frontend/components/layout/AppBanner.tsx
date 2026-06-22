@@ -2,6 +2,7 @@
 
 import { useState, useCallback } from "react";
 import { Bell, Download, Filter, Timer } from "lucide-react";
+import { SearchInput } from "@/components/ui/SearchInput";
 import { mono, sans } from "@/lib/styles";
 import { downloadExportBundle } from "@/lib/api";
 
@@ -222,10 +223,9 @@ export function AppBanner({
           </button>
         )}
         {!hideSearch && (
-          <input
-            type="search"
+          <SearchInput
             value={searchValue}
-            onChange={(e) => onSearchChange(e.target.value)}
+            onValueChange={onSearchChange}
             placeholder={config.searchPlaceholder}
             className="modern-input"
             style={{

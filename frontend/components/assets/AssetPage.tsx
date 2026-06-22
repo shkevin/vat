@@ -45,6 +45,7 @@ import { ThemedSelect } from "@/components/ui/ThemedSelect";
 import { MultiSelectFilter } from "@/components/ui/MultiSelectFilter";
 import { ABC_TOOLTIP, ORA_TOOLTIP } from "@/lib/constants";
 import { ThemedTooltip } from "@/components/ui/ThemedTooltip";
+import { SearchInput } from "@/components/ui/SearchInput";
 import { useAssetFilters } from "@/hooks/useAssetFilters";
 import {
   acknowledgeAssetDigestConflict,
@@ -2460,10 +2461,9 @@ export function AssetPage({ config }: AssetPageProps) {
                 selected={sourceFilter}
                 onChange={setSourceFilter}
               />
-              <input
-                type="search"
+              <SearchInput
                 value={findingsSearch}
-                onChange={(e) => setFindingsSearch(e.target.value)}
+                onValueChange={setFindingsSearch}
                 placeholder="Search CVE, title, component, team…"
                 aria-label="Search findings"
                 style={{
@@ -2865,10 +2865,10 @@ export function AssetPage({ config }: AssetPageProps) {
                     Target asset id
                   </label>
                   <div ref={targetSearchRef} style={{ position: "relative" }}>
-                    <input
+                    <SearchInput
                       value={groupTargetAssetId}
-                      onChange={(e) => {
-                        setGroupTargetAssetId(e.target.value);
+                      onValueChange={(value) => {
+                        setGroupTargetAssetId(value);
                         setTargetSearchOpen(true);
                       }}
                       onFocus={() => setTargetSearchOpen(true)}

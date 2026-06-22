@@ -23,6 +23,7 @@ import {
 import { isOpenRisk } from "@/lib/metricSemantics";
 import { effectiveGroupKey } from "@/lib/findingGroupUtils";
 import { ThemedTooltip } from "@/components/ui/ThemedTooltip";
+import { SearchInput } from "@/components/ui/SearchInput";
 import { mono, sans } from "@/lib/styles";
 
 function buildAssetUrl(
@@ -549,10 +550,9 @@ export function AssetsTable({
               );
             })}
         </div>
-        <input
-          type="search"
+        <SearchInput
           value={search}
-          onChange={(e) => onSearchChange(e.target.value)}
+          onValueChange={onSearchChange}
           placeholder={searchPlaceholder}
           aria-label="Search"
           className="modern-input"

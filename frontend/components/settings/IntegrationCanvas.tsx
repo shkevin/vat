@@ -20,6 +20,7 @@ import {
   TRACKER_TYPES,
 } from "@/lib/constants";
 import { displaySourceName } from "@/lib/utils";
+import { SearchInput } from "@/components/ui/SearchInput";
 import { AVAILABLE_SOURCE_TYPES } from "./nodes";
 import type { Source } from "@/types";
 import type { Tracker } from "@/types";
@@ -1072,13 +1073,12 @@ function ParserSelect({
         Parser (output format)
       </label>
       <div style={{ position: "relative" }}>
-        <input
-          type="text"
+        <SearchInput
           value={isOpen ? query : selected?.label ?? "SARIF"}
           title={
             !isOpen && selected?.description ? selected.description : undefined
           }
-          onChange={(e) => setQuery(e.target.value)}
+          onValueChange={setQuery}
           onFocus={() => setIsOpen(true)}
           onKeyDown={(e) => {
             if (e.key === "Escape") setIsOpen(false);

@@ -2322,7 +2322,7 @@ function buildReportFilterBar(
         var val = (opt.getAttribute("data-value") || "").toLowerCase();
         opt.style.display = !p.q || val.indexOf(p.q) >= 0 ? "" : "none";
       }
-    }, 50);
+    }, 300);
   }
   bars.forEach(function(bar) {
     bar.querySelectorAll(".report-filter-trigger").forEach(function(btn) {

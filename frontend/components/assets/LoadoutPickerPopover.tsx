@@ -9,6 +9,7 @@ import {
 } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useVATData } from "@/contexts/VATDataContext";
+import { SearchInput } from "@/components/ui/SearchInput";
 import { addLoadoutItems, createLoadout } from "@/lib/api";
 import type { AssetLoadout } from "@/lib/assetLoadoutStorage";
 
@@ -170,12 +171,11 @@ export function LoadoutPickerPopover({
       </div>
 
       {!creating && (
-        <input
+        <SearchInput
           ref={searchInputRef}
-          type="text"
           placeholder="Search loadouts…"
           value={search}
-          onChange={(e) => setSearch(e.target.value)}
+          onValueChange={setSearch}
           style={{
             margin: "8px 12px",
             padding: "6px 8px",

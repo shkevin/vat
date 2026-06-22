@@ -11,6 +11,7 @@ import {
 } from "@/lib/constants";
 import type { AssetLoadout } from "@/lib/assetLoadoutStorage";
 import { ThemedTooltip } from "@/components/ui/ThemedTooltip";
+import { SearchInput } from "@/components/ui/SearchInput";
 import { mono, sans } from "@/lib/styles";
 
 const FINDING_STATUS_OPTS = [
@@ -769,10 +770,9 @@ function AssetLoadoutsSection() {
               gap: 6,
             }}
           >
-            <input
-              type="text"
+            <SearchInput
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              onValueChange={setSearchQuery}
               onKeyDown={(e) => e.stopPropagation()}
               placeholder="Search loadouts…"
               style={{
