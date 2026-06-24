@@ -390,9 +390,16 @@ async def list_assets(
 ):
     """
     Discover canonical asset ids for CI/source targeting.
-    Returns persisted assets plus findings-derived assets.
+    Returns persisted assets only. Findings remain available separately and do
+    not recreate asset inventory rows after an admin deletes assets.
     """
-    assets = await get_assets_with_findings(db, ctx=ctx, limit=limit)
+    assets = await get_assets_with_findings(
+        db,
+        ctx=ctx,
+        limit=limit,
+        include_findings=include_findings,
+        include_finding_derived_assets=False,
+    )
     out = []
     for a in assets:
         aid = (a.get("id") or "").strip()
@@ -421,27 +428,21 @@ async def delete_asset(
     ctx: UserContext = Depends(require_admin),
 ):
     """
-    Delete an asset and all findings that belong to this asset key.
+    Delete the persisted asset row only.
 
-    Asset key matching follows the frontend grouping logic:
-    - finding.image == asset_id OR finding.component == asset_id
+    Findings, loadouts, aliases, observations, and related evidence are left
+    intact. The Assets UI is backed by persisted rows, so removing the row hides
+    the asset without deleting vulnerability evidence.
     """
-    findings_q = delete(Finding).where(
-        (Finding.image == asset_id) | (Finding.component == asset_id)
-    )
-    findings_q = findings_q.where(tenant_filter(Finding, ctx))
-    findings_result = await db.execute(findings_q)
-    findings_deleted = findings_result.rowcount or 0
-
     asset_result = await db.execute(delete(Asset).where(Asset.id == asset_id))
     asset_deleted = (asset_result.rowcount or 0) > 0
 
-    if findings_deleted == 0 and not asset_deleted:
+    if not asset_deleted:
         await db.rollback()
         raise HTTPException(status_code=404, detail="Asset not found")
 
     await db.commit()
-    return {"deleted_findings": findings_deleted, "deleted_asset": asset_deleted}
+    return {"deleted_findings": 0, "deleted_asset": asset_deleted}
 
 
 class AssetBulkDeleteRequest(BaseModel):
@@ -470,16 +471,10 @@ async def bulk_delete_assets(
             continue
         seen.add(aid)
         try:
-            findings_q = delete(Finding).where(
-                (Finding.image == aid) | (Finding.component == aid)
-            )
-            findings_q = findings_q.where(tenant_filter(Finding, ctx))
-            findings_result = await db.execute(findings_q)
-            f_deleted = findings_result.rowcount or 0
             asset_result = await db.execute(delete(Asset).where(Asset.id == aid))
             a_deleted = (asset_result.rowcount or 0) > 0
             await db.commit()
-            if not a_deleted and f_deleted == 0:
+            if not a_deleted:
                 not_found += 1
                 results.append(
                     {"asset_id": aid, "status": "not_found"}
@@ -490,7 +485,7 @@ async def bulk_delete_assets(
                     {
                         "asset_id": aid,
                         "status": "deleted",
-                        "deleted_findings": f_deleted,
+                        "deleted_findings": 0,
                         "deleted_asset": a_deleted,
                     }
                 )

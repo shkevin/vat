@@ -146,3 +146,53 @@ async def test_zero_finding_assets_do_not_require_asset_tenant_column() -> None:
 
     assert assets[0]["id"] == "zero-asset"
     assert db.execute.await_count == 3
+
+
+@pytest.mark.asyncio
+async def test_persisted_only_assets_excludes_finding_derived_groups() -> None:
+    class _ScalarResult:
+        def __init__(self, rows):
+            self._rows = rows
+
+        def all(self):
+            return self._rows
+
+    class _ExecuteResult:
+        def __init__(self, rows):
+            self._rows = rows
+
+        def scalars(self):
+            return _ScalarResult(self._rows)
+
+    db = SimpleNamespace(
+        execute=AsyncMock(
+            side_effect=[
+                _ExecuteResult(
+                    [
+                        SimpleNamespace(
+                            id="persisted-asset",
+                            name="Persisted Asset",
+                            type="container",
+                            branch=None,
+                            tag=None,
+                        )
+                    ]
+                ),
+                _ExecuteResult([]),
+                _ExecuteResult([]),
+            ]
+        )
+    )
+
+    assets = await get_assets_with_findings(
+        db,
+        findings_dicts=[
+            {"id": "f1", "image": "persisted-asset", "status": "Open", "severity": "High"},
+            {"id": "f2", "image": "derived-only", "status": "Open", "severity": "High"},
+        ],
+        include_zero_assets=True,
+        include_finding_derived_assets=False,
+    )
+
+    assert [a["id"] for a in assets] == ["persisted-asset"]
+    assert [f["id"] for f in assets[0]["findings"]] == ["f1"]

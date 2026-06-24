@@ -293,6 +293,7 @@ async def get_assets_with_findings(
     limit: int = 0,
     include_zero_assets: bool = True,
     include_findings: bool = True,
+    include_finding_derived_assets: bool = True,
 ) -> list[dict[str, Any]]:
     """
     Return assets (Asset records + findings-derived) with findings.
@@ -323,14 +324,18 @@ async def get_assets_with_findings(
             db, findings_dicts
         )
 
-    by_key: dict[str, list[dict]] = {}
+    grouped_findings: dict[str, list[dict]] = {}
     for d in findings_dicts:
         key = _asset_key_from_dict(d)
-        by_key.setdefault(key, []).append(d)
+        grouped_findings.setdefault(key, []).append(d)
+
+    by_key: dict[str, list[dict]] = (
+        dict(grouped_findings) if include_finding_derived_assets else {}
+    )
 
     # Add Asset records that have no findings when requested.
     asset_records: dict[str, Asset] = {}
-    if include_zero_assets:
+    if include_zero_assets or not include_finding_derived_assets:
         asset_q = select(Asset)
         # Current Asset rows are global integration inventory records and do
         # not carry tenant_id in the live schema. Apply tenant scoping only
@@ -341,8 +346,8 @@ async def get_assets_with_findings(
         result = await db.execute(asset_q)
         asset_records = {a.id: a for a in result.scalars().all()}
         for aid in asset_records:
-            if aid not in by_key:
-                by_key[aid] = []
+            if include_zero_assets or aid in grouped_findings:
+                by_key[aid] = grouped_findings.get(aid, [])
 
     # Build asset payloads (include type and branch from Asset record when available)
     payloads = [

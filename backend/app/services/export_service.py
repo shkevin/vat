@@ -710,6 +710,7 @@ async def build_export_bundle(
         findings_dicts=rows,
         ctx=ctx,
         include_findings=False,
+        include_finding_derived_assets=False,
     )
     if opts.apply_asset_filter:
         selected_asset_ids = {str(aid) for aid in (opts.asset_ids or []) if str(aid)}

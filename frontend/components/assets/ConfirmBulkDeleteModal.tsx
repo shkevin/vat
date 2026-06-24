@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Asset } from "@/types/index";
 
 interface ConfirmBulkDeleteModalProps {
@@ -22,12 +22,6 @@ export function ConfirmBulkDeleteModal({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const cancelRef = useRef<HTMLButtonElement>(null);
-
-  const findingTotal = useMemo(
-    () =>
-      assets.reduce((sum, a) => sum + (a.findings?.length ?? 0), 0),
-    [assets],
-  );
 
   useEffect(() => {
     cancelRef.current?.focus();
@@ -101,9 +95,8 @@ export function ConfirmBulkDeleteModal({
             color: "var(--ui-text-secondary)",
           }}
         >
-          This will also delete <strong>{findingTotal} finding{findingTotal === 1 ? "" : "s"}</strong>{" "}
-          attached to {assets.length === 1 ? "this asset" : "these assets"}. This
-          action cannot be undone.
+          This deletes only the saved asset row{assets.length === 1 ? "" : "s"}.
+          Findings, loadouts, and evidence remain intact.
         </p>
 
         <ul

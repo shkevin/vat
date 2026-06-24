@@ -993,9 +993,9 @@ export function useVATDataCore(): UseVATDataReturn {
       } as Asset;
     });
 
-    // IMPORTANT: /vat-data returns assets based on the first findings page when pagination is active.
-    // Merge backend asset metadata with frontend-derived assets from ALL loaded findings
-    // so summary cards and severity chips reflect the full loaded result set.
+    // Merge finding-derived metrics into persisted assets only. Derived-only
+    // asset groups are intentionally not appended; deleting an asset row should
+    // hide the asset card without deleting the underlying finding evidence.
     const derivedAssets = deriveAssets(withExpiry, SEV_ORDER);
     const derivedById = new Map<string, Asset>(derivedAssets.map((a) => [a.id, a]));
     const mergedAssets: Asset[] = apiAssets.map((apiAsset) => {
@@ -1013,18 +1013,6 @@ export function useVATDataCore(): UseVATDataReturn {
         oraPct: derived.oraPct,
       };
     });
-    const apiIds = new Set(apiAssets.map((a) => a.id));
-    for (const derived of derivedAssets) {
-      if (apiIds.has(derived.id)) continue;
-      mergedAssets.push({
-        ...derived,
-        name: getAssetDisplayTitle({
-          id: derived.id,
-          name: derived.name ?? derived.id,
-          type: derived.type,
-        }),
-      });
-    }
 
     setAssetsFromApi(mergedAssets);
     saveVatSnapshot(withExpiry, mergedAssets);

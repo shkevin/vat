@@ -116,8 +116,8 @@ async def _approve_merge_review(db, source_asset_id: str, target_asset_id: str) 
 
 
 @pytest.mark.asyncio
-async def test_delete_asset_removes_asset_and_findings(client, db, assets_delete_setup):
-    """DELETE /api/assets/{id} removes the asset row and matching findings for admins."""
+async def test_delete_asset_removes_only_asset_row(client, db, assets_delete_setup):
+    """DELETE /api/assets/{id} removes the asset row without deleting findings."""
     token = assets_delete_setup["admin_token"]
     res = await client.delete(
         "/api/assets/asset-delete-test",
@@ -126,13 +126,13 @@ async def test_delete_asset_removes_asset_and_findings(client, db, assets_delete
     assert res.status_code == 200
     payload = res.json()
     assert payload["deleted_asset"] is True
-    assert payload["deleted_findings"] >= 1
+    assert payload["deleted_findings"] == 0
 
     findings_count = await db.scalar(text("SELECT COUNT(*) FROM findings"))
     assets_count = await db.scalar(
         text("SELECT COUNT(*) FROM assets WHERE id = 'asset-delete-test'")
     )
-    assert findings_count == 0
+    assert findings_count >= 1
     assert assets_count == 0
 
 

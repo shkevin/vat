@@ -190,6 +190,7 @@ async def get_vat_data(
             ctx=ctx,
             include_zero_assets=include_zero_assets,
             include_findings=include_asset_findings,
+            include_finding_derived_assets=False,
         )
     t_assets = time.perf_counter()
 
