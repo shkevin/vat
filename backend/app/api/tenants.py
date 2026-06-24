@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import require_admin
 from app.core.database import get_db
+from app.core.tenancy import DEFAULT_TENANT_ID
 from app.models.user import Tenant
 from app.schemas.auth import UserContext
 from app.schemas.tenant import TenantCreate, TenantRead, TenantUpdate
@@ -64,9 +65,6 @@ async def update_tenant(
     await db.commit()
     await db.refresh(tenant)
     return TenantRead.model_validate(tenant)
-
-
-DEFAULT_TENANT_ID = "t-default"
 
 
 @router.delete("/{tenant_id}", status_code=204)

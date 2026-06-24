@@ -27,11 +27,7 @@ from app.services.container_asset_observations import (
 from app.services.dedup import component_base
 from app.services.sla import SLA_DAYS
 from app.parsers.image_digest import effective_image_digest
-
-# Bootstrap/default tenant. Ingests with no resolvable tenant (cross-tenant
-# admin keys) fall back to this so findings stay visible to the default org's
-# tenant-scoped UI sessions instead of being stored with a NULL tenant.
-DEFAULT_TENANT_ID = "t-default"
+from app.core.tenancy import DEFAULT_TENANT_ID
 
 
 async def _record_container_asset_observations(

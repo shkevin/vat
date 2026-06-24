@@ -20,6 +20,7 @@ from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.jwt import decode_token
 from app.core.log_context import set_tenant_id, set_user_id
+from app.core.tenancy import default_tenant_id
 from app.schemas.auth import UserContext
 from app.services.user_service import get_user_by_email
 
@@ -72,7 +73,7 @@ async def _resolve_user_context(
                 UserContext(
                     user_id=payload.get("user_id", payload.get("sub", "")),
                     email=payload.get("sub", ""),
-                    tenant_id=payload.get("tenant_id"),
+                    tenant_id=default_tenant_id(payload.get("tenant_id")),
                     role=payload.get("role", "reviewer"),
                     raw_identity=payload.get("sub", ""),
                     cross_tenant=False,
@@ -92,7 +93,7 @@ async def _resolve_user_context(
                 UserContext(
                     user_id=f"admin-key:{resolved.key_id}",
                     email="admin-api-key@vat.local",
-                    tenant_id=resolved.tenant_id,
+                    tenant_id=default_tenant_id(resolved.tenant_id),
                     role="admin",
                     raw_identity=f"admin-api-key:{resolved.key_id}",
                     cross_tenant=resolved.cross_tenant,
@@ -109,7 +110,7 @@ async def _resolve_user_context(
                 UserContext(
                     user_id=payload.get("user_id", payload.get("sub", "")),
                     email=payload.get("sub", ""),
-                    tenant_id=payload.get("tenant_id"),
+                    tenant_id=default_tenant_id(payload.get("tenant_id")),
                     role=payload.get("role", "reviewer"),
                     raw_identity=payload.get("sub", ""),
                     cross_tenant=False,
@@ -128,7 +129,7 @@ async def _resolve_user_context(
                 UserContext(
                     user_id=user.id,
                     email=user.email,
-                    tenant_id=user.tenant_id,
+                    tenant_id=default_tenant_id(user.tenant_id),
                     role=user.role,
                     raw_identity=x_vat_user.strip(),
                     cross_tenant=False,
@@ -236,13 +237,15 @@ async def require_admin(
     return ctx
 
 
-def tenant_filter(model: Any, ctx: UserContext) -> Any:
+def tenant_filter(_model: Any, ctx: UserContext) -> Any:
     """Return a SQLAlchemy WHERE clause that scopes ``model`` to ``ctx``'s tenant.
 
-    Fail-closed semantics:
+    Current deployment semantics:
     - ``cross_tenant=True`` callers (admin keys bound to all tenants) get a
       pass-through condition that does not filter.
-    - tenant-scoped callers get ``model.tenant_id == ctx.tenant_id``.
+    - authenticated callers with any tenant id also get a pass-through condition.
+      VAT is temporarily operated as one default tenant, so exact tenant-id
+      comparisons hide data when older rows were stamped with a non-default id.
     - callers with neither (``tenant_id=None`` and ``cross_tenant=False``) get
       a literal-false condition so the query returns no rows. Returning
       everything here is what the previous ``IS NULL`` bypass did, and it
@@ -256,4 +259,4 @@ def tenant_filter(model: Any, ctx: UserContext) -> Any:
     if ctx.tenant_id is None:
         # Fail closed.
         return sql_false()
-    return model.tenant_id == ctx.tenant_id
+    return sql_true()

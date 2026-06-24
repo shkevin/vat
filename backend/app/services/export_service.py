@@ -197,7 +197,15 @@ class ExportBundleOptions:
     asset_ids: Optional[list[str]] = None
     audit_date_from: Optional[str] = None
     audit_date_to: Optional[str] = None
-    audit_limit: int = 20000
+    audit_limit: int = 5000
+
+
+def _compact_json(data: Any, *, default: Any = None) -> str:
+    """Serialize large export payloads without pretty-print whitespace."""
+    kwargs: dict[str, Any] = {"separators": (",", ":")}
+    if default is not None:
+        kwargs["default"] = default
+    return json.dumps(data, **kwargs)
 
 
 def _finding_reference_dt(row: dict) -> Optional[datetime]:
@@ -697,7 +705,12 @@ async def build_export_bundle(
     slice_to = _parse_dt(opts.finding_date_to)
     rows = _filter_findings_by_date_range(rows, date_from=slice_from, date_to=slice_to)
 
-    assets = await get_assets_with_findings(db, findings_dicts=rows, ctx=ctx)
+    assets = await get_assets_with_findings(
+        db,
+        findings_dicts=rows,
+        ctx=ctx,
+        include_findings=False,
+    )
     if opts.apply_asset_filter:
         selected_asset_ids = {str(aid) for aid in (opts.asset_ids or []) if str(aid)}
         rows, assets = _filter_findings_and_assets_by_asset_ids(
@@ -728,19 +741,30 @@ async def build_export_bundle(
     waiver_records = _build_waiver_records(rows)
     export_warnings: list[str] = []
 
-    bundle: dict[str, bytes] = {}
+    buf = io.BytesIO()
+    zf = zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED)
+    inner_prefix = f"{root}/"
+    file_entries: list[dict[str, Any]] = []
 
     def put(rel: str, content: str | bytes) -> None:
         if isinstance(content, str):
             content = content.encode("utf-8")
-        bundle[f"{root}/{rel}"] = content
+        zf.writestr(f"{inner_prefix}{rel}", content)
+        if rel != "evidence-manifest.json":
+            file_entries.append(
+                {
+                    "path": rel,
+                    "sha256": hashlib.sha256(content).hexdigest(),
+                    "sizeBytes": len(content),
+                }
+            )
 
-    put("assets-findings.json", json.dumps(vat_data, indent=2, default=str))
+    put("assets-findings.json", _compact_json(vat_data, default=str))
     put("findings.csv", _findings_csv_bytes(rows))
-    put("waivers.json", json.dumps(waiver_records, indent=2, default=str))
+    put("waivers.json", _compact_json(waiver_records, default=str))
     put("waivers.csv", _waivers_csv_bytes(waiver_records))
     put("executive-summary-yearly.html", html_report)
-    put("sbom/sbom-cyclonedx.json", json.dumps(cyclonedx, indent=2))
+    put("sbom/sbom-cyclonedx.json", _compact_json(cyclonedx))
 
     sbom_asset_manifest: list[dict[str, str | int]] = []
     for component, rows_for_component in sorted(per_asset_packages.items()):
@@ -751,7 +775,7 @@ async def build_export_bundle(
         )
         safe_component = _safe_export_filename(component)
         rel = f"sbom/by-asset/{safe_component}.cdx.json"
-        put(rel, json.dumps(asset_bom, indent=2))
+        put(rel, _compact_json(asset_bom))
         sbom_asset_manifest.append(
             {
                 "component": component,
@@ -760,7 +784,7 @@ async def build_export_bundle(
             }
         )
     if sbom_asset_manifest:
-        put("sbom/by-asset/manifest.json", json.dumps(sbom_asset_manifest, indent=2))
+        put("sbom/by-asset/manifest.json", _compact_json(sbom_asset_manifest))
 
     from app.services.audit_workbook_export import (
         STIG_RULE_ROWS_CAP,
@@ -821,7 +845,7 @@ async def build_export_bundle(
             pass
     put("stig/README-STIG-Viewer.txt", STIG_VIEWER_README)
     if stig_manifest:
-        put("stig/manifest.json", json.dumps(stig_manifest, indent=2, default=str))
+        put("stig/manifest.json", _compact_json(stig_manifest, default=str))
 
     audit_events_for_workbook: list[dict] | None = None
     if opts.include_audit_events:
@@ -838,7 +862,7 @@ async def build_export_bundle(
             audit_events_for_workbook = []
         put(
             "audit-events.json",
-            json.dumps(audit_events_for_workbook, indent=2, default=str),
+            _compact_json(audit_events_for_workbook, default=str),
         )
 
     try:
@@ -858,23 +882,6 @@ async def build_export_bundle(
         logger.exception("auditor workbook generation failed")
         export_warnings.append(f"auditor_workbook_failed: {exc!s}")
 
-    inner_prefix = f"{root}/"
-    file_entries: list[dict[str, Any]] = []
-    for path in sorted(bundle.keys()):
-        if not path.startswith(inner_prefix):
-            continue
-        rel = path[len(inner_prefix) :]
-        if rel == "evidence-manifest.json":
-            continue
-        content = bundle[path]
-        file_entries.append(
-            {
-                "path": rel,
-                "sha256": hashlib.sha256(content).hexdigest(),
-                "sizeBytes": len(content),
-            }
-        )
-
     manifest_body = _build_evidence_manifest(
         generated_at=now,
         backend_version=backend_version,
@@ -884,9 +891,5 @@ async def build_export_bundle(
         warnings=export_warnings or None,
     )
     put("evidence-manifest.json", json.dumps(manifest_body, indent=2, default=str))
-
-    buf = io.BytesIO()
-    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        for path in sorted(bundle.keys()):
-            zf.writestr(path, bundle[path])
+    zf.close()
     return buf.getvalue()

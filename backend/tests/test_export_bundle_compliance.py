@@ -144,6 +144,57 @@ async def test_build_export_bundle_compliance_artifacts_and_manifest_hashes(monk
 
 
 @pytest.mark.asyncio
+async def test_build_export_bundle_uses_id_only_asset_payloads(monkeypatch):
+    async def mock_list_findings(*_a, **_k):
+        return [_waiver_finding("wf1", "asset-a")]
+
+    get_assets_spy = AsyncMock(
+        return_value=[
+            {
+                "id": "asset-a",
+                "name": "asset-a",
+                "findingIds": ["wf1"],
+                "findings": [],
+            }
+        ]
+    )
+    monkeypatch.setattr("app.services.export_service.list_findings", mock_list_findings)
+    monkeypatch.setattr(
+        "app.services.export_service.enrich_findings_with_source_group_severity",
+        AsyncMock(side_effect=lambda _db, rows: rows),
+    )
+    monkeypatch.setattr(
+        "app.services.export_service.get_assets_with_findings", get_assets_spy
+    )
+    monkeypatch.setattr(
+        "app.services.export_service.list_sbom_packages", AsyncMock(return_value=[])
+    )
+    monkeypatch.setattr(
+        "app.services.export_service.list_openscap_scan_results",
+        AsyncMock(return_value=[]),
+    )
+    monkeypatch.setattr(
+        "app.services.export_service.load_audit_events_for_export",
+        AsyncMock(return_value=[]),
+    )
+
+    db = MagicMock()
+    ctx = SimpleNamespace(tenant_id="tenant-a", cross_tenant=False)
+    data = await build_export_bundle(
+        db, ctx=ctx, options=ExportBundleOptions(include_audit_events=False)
+    )
+
+    get_assets_spy.assert_awaited_once()
+    assert get_assets_spy.await_args.kwargs["include_findings"] is False
+
+    zf = zipfile.ZipFile(io.BytesIO(data), "r")
+    prefix = [n for n in zf.namelist() if n.startswith("vat-export-")][0].split("/")[0]
+    payload = json.loads(zf.read(f"{prefix}/assets-findings.json").decode())
+    assert payload["assets"][0]["findingIds"] == ["wf1"]
+    assert payload["assets"][0]["findings"] == []
+
+
+@pytest.mark.asyncio
 async def test_build_export_bundle_skips_audit_when_disabled(monkeypatch):
     async def mock_list_findings(*_a, **_k):
         return []

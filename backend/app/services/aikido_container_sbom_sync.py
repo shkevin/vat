@@ -23,6 +23,7 @@ from app.adapters.aikido import (
     fetch_aikido_containers_sbom_bulk_generate,
 )
 from app.core.config import get_settings
+from app.core.tenancy import DEFAULT_TENANT_ID
 from app.models.finding import Finding
 from app.services.assets_service import _container_image_group_key
 from app.services.container_asset_observations import upsert_digest_from_external_scan
@@ -204,7 +205,7 @@ async def _ingest_container_sbom_cyclonedx(
             source="Aikido",
             asset_override=asset_key,
             source_image_override=ref_primary,
-            tenant_id=None,
+            tenant_id=DEFAULT_TENANT_ID,
         )
         stats["sbom_packages_created"] += created
         stats["sbom_packages_updated"] += updated

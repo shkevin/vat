@@ -58,7 +58,7 @@ async def get_export_bundle(
     ] = None,
     audit_limit: Annotated[
         int, Query(ge=1, le=50000, description="Max audit rows in bundle")
-    ] = 20000,
+    ] = 5000,
 ):
     """
     Download a ZIP bundle containing:

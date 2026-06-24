@@ -19,6 +19,7 @@ from app.adapters.aikido import (
     fetch_aikido_issues,
 )
 from app.core.database import async_session
+from app.core.tenancy import DEFAULT_TENANT_ID
 from app.models.asset import Asset
 from app.models.finding import Finding
 from app.services.asset_resolver import infer_asset_kind
@@ -330,7 +331,7 @@ async def run_full_sync(
                     session,
                     transformed,
                     source_name="Aikido",
-                    tenant_id=None,
+                    tenant_id=DEFAULT_TENANT_ID,
                     aikido_source_id=source_id,
                     trace_id=_aikido_trace_id(source_id, raw),
                     parser_id="aikido",

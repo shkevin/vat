@@ -15,6 +15,7 @@ from app.api.settings import get_source_config
 from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.ingest_auth import get_ingest_source
+from app.core.tenancy import DEFAULT_TENANT_ID
 from app.models.asset import Asset
 from app.parsers import (
     PARSER_IDENTITY_POLICY,
@@ -383,7 +384,12 @@ async def _ingest_from_parser(
                 )
                 try:
                     await store_openscap_scan_result(
-                        db, raw, parser_id, source, stig_asset_id, tenant_id=None
+                        db,
+                        raw,
+                        parser_id,
+                        source,
+                        stig_asset_id,
+                        tenant_id=DEFAULT_TENANT_ID,
                     )
                 except Exception as e:
                     logger.warning("Failed to store OpenSCAP scan result: %s", e)
@@ -631,7 +637,12 @@ async def _ingest_from_parser(
         if asset_id:
             try:
                 await store_openscap_scan_result(
-                    db, raw, parser_id, source, asset_id, tenant_id=None
+                    db,
+                    raw,
+                    parser_id,
+                    source,
+                    asset_id,
+                    tenant_id=DEFAULT_TENANT_ID,
                 )
             except Exception as e:
                 logger.warning("Failed to store OpenSCAP scan result: %s", e)

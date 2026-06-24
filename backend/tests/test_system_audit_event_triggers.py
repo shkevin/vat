@@ -70,6 +70,26 @@ class _ExecuteResult:
 
 
 @pytest.mark.asyncio
+async def test_list_audit_events_counts_by_event_id(monkeypatch):
+    db = MagicMock()
+    db.execute = AsyncMock(
+        side_effect=[
+            SimpleNamespace(scalar=lambda: 0),
+            _ExecuteResult([]),
+        ]
+    )
+    ctx = SimpleNamespace(email="admin@example.com", user_id="u-1")
+
+    result = await audit_api.list_audit_events(db=db, _ctx=ctx)
+
+    assert result["total"] == 0
+    count_stmt = db.execute.await_args_list[0].args[0]
+    compiled = str(count_stmt)
+    assert "audit_events.event_id" in compiled
+    assert "audit_events.id" not in compiled
+
+
+@pytest.mark.asyncio
 async def test_audit_export_emits_event_even_when_zero_rows(monkeypatch):
     db = MagicMock()
     db.execute = AsyncMock(return_value=_ExecuteResult([]))

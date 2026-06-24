@@ -30,3 +30,11 @@ def test_tenant_filter_no_tenant_non_cross_tenant_fails_closed() -> None:
     sql = str(q)
     assert "false" in sql.lower()
 
+
+def test_tenant_filter_single_default_tenant_does_not_compare_tenant_ids() -> None:
+    q = select(Finding.id).where(
+        tenant_filter(Finding, _ctx(tenant_id="some-other-tenant", cross_tenant=False))
+    )
+    sql = str(q)
+    assert "tenant_id" not in sql
+

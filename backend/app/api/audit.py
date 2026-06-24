@@ -86,7 +86,7 @@ async def list_audit_events(
         date_from=date_from,
         date_to=date_to,
     )
-    total_q = _apply_filters(select(func.count(AuditEvent.id)), **filter_kwargs)
+    total_q = _apply_filters(select(func.count(AuditEvent.event_id)), **filter_kwargs)
     total = int((await db.execute(total_q)).scalar() or 0)
     q = select(AuditEvent).order_by(AuditEvent.created_at.desc()).limit(limit)
     q = _apply_filters(q, **filter_kwargs)

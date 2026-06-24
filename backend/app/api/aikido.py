@@ -23,6 +23,7 @@ from app.api.settings import (
 from app.core.auth import require_admin, require_reviewer
 from app.core.database import async_session, get_db
 from app.core.config import get_settings
+from app.core.tenancy import DEFAULT_TENANT_ID
 from app.schemas.auth import UserContext
 from app.models.finding import Finding
 from app.services.ingest import ingest_finding, _parse_iso_datetime
@@ -649,8 +650,8 @@ async def aikido_bootstrap(
         logger.exception("Aikido bootstrap fetch failed")
         logger.exception("aikido upstream call failed"); raise HTTPException(status_code=502, detail="aikido upstream error") from e
 
-    # Keep findings global (tenant_id=None) so they're visible to all users/tenants
-    tenant_id: str | None = None
+    # VAT is currently deployed as a single default tenant.
+    tenant_id: str | None = DEFAULT_TENANT_ID
 
     # Build code_repo_id -> branch and code_repo_id -> name from Aikido repos
     repo_map: dict[int | str, str] = {}
@@ -736,7 +737,8 @@ async def aikido_bootstrap(
                 )
 
     # Backfill: set image=component for findings with no image (fixes old data)
-    # Also clear tenant_id on Aikido findings so they're visible to all users/tenants
+    # Keep Aikido findings on the default tenant so they remain visible in the
+    # single-tenant UI after bootstrap resyncs.
     async with async_session() as session:
         await session.execute(
             update(Finding)
@@ -744,7 +746,9 @@ async def aikido_bootstrap(
             .values(image=Finding.component)
         )
         await session.execute(
-            update(Finding).where(Finding.source == "Aikido").values(tenant_id=None)
+            update(Finding)
+            .where(Finding.source == "Aikido")
+            .values(tenant_id=DEFAULT_TENANT_ID)
         )
         await session.commit()
 
