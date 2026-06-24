@@ -39,6 +39,7 @@ from app.services.asset_aliases import (
 from app.services.asset_merge_suggestions import suggest_asset_merge_targets
 from app.services.asset_resolver import infer_asset_kind
 from app.services.assets_service import (
+    _container_image_group_key,
     container_merge_group_key,
     finding_value_matches_merge_source,
     get_assets_with_findings,
@@ -140,6 +141,32 @@ def _serialize_digest_conflict(row: AssetDigestConflict) -> dict:
     }
 
 
+def _finding_belongs_to_asset_for_delete(finding: Finding, asset_id: str) -> bool:
+    source_asset_id = (asset_id or "").strip()
+    if not source_asset_id:
+        return False
+    for raw in (
+        finding.image,
+        finding.component,
+        getattr(finding, "component_base", None),
+        finding.tag,
+    ):
+        if str(raw or "").strip() == source_asset_id:
+            return True
+
+    source_kind = infer_asset_kind(source_asset_id, "")
+    if source_kind not in ("container", "repo"):
+        return False
+    source_key = _container_image_group_key(source_asset_id, None)
+    for raw in (finding.image, finding.component):
+        value = str(raw or "").strip()
+        if not value or infer_asset_kind(value, "") not in ("container", "repo"):
+            continue
+        if _container_image_group_key(value, None) == source_key:
+            return True
+    return False
+
+
 async def _delete_asset_owned_data(
     db: AsyncSession,
     *,
@@ -147,12 +174,40 @@ async def _delete_asset_owned_data(
     ctx: UserContext,
 ) -> dict[str, int | bool]:
     """Delete data owned by an asset, leaving independent loadouts untouched."""
-    finding_id_result = await db.execute(
-        select(Finding.id)
-        .where((Finding.image == asset_id) | (Finding.component == asset_id))
-        .where(tenant_filter(Finding, ctx))
+    source_container_key = container_merge_group_key(asset_id)
+    match_ors = [
+        Finding.image == asset_id,
+        Finding.component == asset_id,
+        Finding.component_base == asset_id,
+        Finding.tag == asset_id,
+    ]
+    for prefix in merge_candidate_image_like_prefixes(asset_id):
+        escaped_prefix = _escape_sql_like_prefix(prefix)
+        match_ors.append(Finding.image.ilike(f"{escaped_prefix}%", escape="\\"))
+        match_ors.append(Finding.component.ilike(f"{escaped_prefix}%", escape="\\"))
+    if infer_asset_kind(asset_id, "") in ("container", "repo"):
+        escaped_asset_id = _escape_sql_like_prefix(asset_id)
+        match_ors.append(Finding.image.ilike(f"%/{escaped_asset_id}%", escape="\\"))
+        match_ors.append(Finding.component.ilike(f"%/{escaped_asset_id}%", escape="\\"))
+
+    finding_result = await db.execute(
+        select(Finding).where(or_(*match_ors)).where(tenant_filter(Finding, ctx))
     )
-    finding_ids = [str(fid) for fid in finding_id_result.scalars().all()]
+    finding_ids = [
+        str(finding.id)
+        for finding in finding_result.scalars().all()
+        if _finding_belongs_to_asset_for_delete(finding, asset_id)
+        or finding_value_matches_merge_source(
+            finding.image,
+            asset_id,
+            source_container_key=source_container_key,
+        )
+        or finding_value_matches_merge_source(
+            finding.component,
+            asset_id,
+            source_container_key=source_container_key,
+        )
+    ]
 
     counts: dict[str, int | bool] = {"deleted_asset_loadouts": 0}
 

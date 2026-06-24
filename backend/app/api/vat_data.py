@@ -61,18 +61,25 @@ async def _vat_data_etag(
     if archived is not None:
         finding_q = finding_q.where(Finding.archived == archived)
     f_max, f_count = (await db.execute(finding_q)).one()
-    a_max = (
-        await db.execute(select(func.max(Asset.id)))
-    ).scalar() or ""
-    al_max = (
-        await db.execute(select(func.max(AssetAlias.updated_at)))
-    ).scalar()
+    a_max, a_count = (
+        await db.execute(select(func.max(Asset.id), func.count(Asset.id)))
+    ).one()
+    al_max, al_count = (
+        await db.execute(
+            select(
+                func.max(AssetAlias.updated_at),
+                func.count(AssetAlias.source_asset_id),
+            )
+        )
+    ).one()
     sig = "|".join(
         [
             str(f_max.isoformat()) if f_max else "",
             str(f_count or 0),
-            str(a_max),
+            str(a_max or ""),
+            str(a_count or 0),
             str(al_max.isoformat()) if al_max else "",
+            str(al_count or 0),
             str(ctx.tenant_id or ""),
             "X" if ctx.cross_tenant else "S",
             str(archived),

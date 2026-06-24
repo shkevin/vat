@@ -1,9 +1,13 @@
 """Tests for VAT data API — findings + assets in one response."""
 
+from unittest.mock import AsyncMock
+
 import bcrypt
 import pytest
 from sqlalchemy import text
 
+from app.api.vat_data import _vat_data_etag
+from app.schemas.auth import UserContext
 from app.services.findings_service import create_findings_bulk
 
 
@@ -99,3 +103,112 @@ async def test_vat_data_returns_all_findings(client, vat_data_test_setup):
     assert (
         len(set(group_keys)) == 2
     ), f"Expected 2 unique groups, got {len(set(group_keys))}: {group_keys}"
+
+
+async def _etag_for_default_query(db) -> str:
+    ctx = UserContext(
+        user_id="admin",
+        email="admin@vat.local",
+        tenant_id="t-default",
+        role="admin",
+        raw_identity="admin@vat.local",
+    )
+    return await _vat_data_etag(
+        db,
+        ctx=ctx,
+        archived=None,
+        status=None,
+        severity=None,
+        source=None,
+        finding_type=None,
+        asset=None,
+        search=None,
+        search_fields=None,
+        limit=0,
+        page=1,
+        page_size=500,
+        include_assets=True,
+        include_zero_assets=True,
+        include_asset_findings=False,
+        slim=True,
+        full=True,
+    )
+
+
+class _EtagOneResult:
+    def __init__(self, row):
+        self._row = row
+
+    def one(self):
+        return self._row
+
+
+async def test_vat_data_etag_includes_asset_count_for_deletes():
+    """Asset count must participate in ETag generation, not only max(asset.id)."""
+    ctx = UserContext(
+        user_id="admin",
+        email="admin@vat.local",
+        tenant_id="t-default",
+        role="admin",
+        raw_identity="admin@vat.local",
+    )
+
+    async def etag_with_asset_count(asset_count: int) -> str:
+        db = type("DB", (), {})()
+        db.execute = AsyncMock(
+            side_effect=[
+                _EtagOneResult((None, 0)),  # findings max(updated_at), count
+                _EtagOneResult(
+                    ("asset-z", asset_count)
+                ),  # max asset id stays unchanged
+                _EtagOneResult((None, 0)),  # alias max(updated_at), count
+            ]
+        )
+        return await _vat_data_etag(
+            db,
+            ctx=ctx,
+            archived=None,
+            status=None,
+            severity=None,
+            source=None,
+            finding_type=None,
+            asset=None,
+            search=None,
+            search_fields=None,
+            limit=0,
+            page=1,
+            page_size=500,
+            include_assets=True,
+            include_zero_assets=True,
+            include_asset_findings=False,
+            slim=True,
+            full=True,
+        )
+
+    before = await etag_with_asset_count(2)
+    after = await etag_with_asset_count(1)
+
+    assert after != before
+
+
+@pytest.mark.asyncio
+async def test_vat_data_etag_changes_when_non_max_asset_is_deleted(db):
+    """Deleting any asset must invalidate /vat-data's cached response."""
+    await db.execute(text("DELETE FROM asset_aliases"))
+    await db.execute(text("DELETE FROM assets"))
+    await db.execute(
+        text(
+            "INSERT INTO assets (id, name, type, source) VALUES "
+            "('asset-a', 'asset-a', 'repo', 'VAT'), "
+            "('asset-z', 'asset-z', 'repo', 'VAT')"
+        )
+    )
+    await db.commit()
+
+    before = await _etag_for_default_query(db)
+
+    await db.execute(text("DELETE FROM assets WHERE id = 'asset-a'"))
+    await db.commit()
+    after = await _etag_for_default_query(db)
+
+    assert after != before

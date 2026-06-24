@@ -6,7 +6,10 @@ import bcrypt
 import pytest
 from sqlalchemy import text
 
-from app.api.assets import _delete_asset_owned_data
+from app.api.assets import (
+    _delete_asset_owned_data,
+    _finding_belongs_to_asset_for_delete,
+)
 from app.schemas.auth import UserContext
 from app.services.findings_service import create_findings_bulk
 
@@ -116,12 +119,48 @@ class _Rowcount:
         self.rowcount = rowcount
 
 
+class _FakeFinding:
+    def __init__(
+        self,
+        finding_id,
+        *,
+        image=None,
+        component=None,
+        component_base=None,
+        tag=None,
+    ):
+        self.id = finding_id
+        self.image = image
+        self.component = component
+        self.component_base = component_base
+        self.tag = tag
+
+
+def test_finding_belongs_to_asset_delete_matches_normalized_container_ref():
+    finding = _FakeFinding(
+        "finding-1",
+        image="docker.io/kamiwaza/bundle:latest",
+    )
+
+    assert _finding_belongs_to_asset_for_delete(finding, "kamiwaza/bundle")
+
+
+def test_finding_belongs_to_asset_delete_matches_component_base():
+    finding = _FakeFinding(
+        "finding-1",
+        component="openssl 3.0.0",
+        component_base="openssl",
+    )
+
+    assert _finding_belongs_to_asset_for_delete(finding, "openssl")
+
+
 @pytest.mark.asyncio
 async def test_delete_asset_owned_data_deletes_dependencies_but_not_loadouts():
     db = type("DB", (), {})()
     db.execute = AsyncMock(
         side_effect=[
-            _ExecuteRows(["finding-1"]),
+            _ExecuteRows([_FakeFinding("finding-1", component="asset-delete-test")]),
             _Rowcount(2),  # audit_events
             _Rowcount(1),  # correlation_edges
             _Rowcount(1),  # finding_identifiers

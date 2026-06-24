@@ -279,6 +279,10 @@ _vatDataEtagCache.set = (k, v) => {
   return _origMapSet(k, v);
 };
 
+function clearVatDataCache(): void {
+  _vatDataEtagCache.clear();
+}
+
 /** Fetch system audit events. Endpoint requires admin permissions. */
 export async function fetchAuditEvents(
   params?: AuditEventsParams,
@@ -1608,7 +1612,9 @@ export async function bulkDeleteAssets(
     auth,
   );
   if (!res.ok) throw new Error(`bulkDeleteAssets: ${res.status}`);
-  return (await res.json()) as BulkDeleteResult;
+  const body = (await res.json()) as BulkDeleteResult;
+  clearVatDataCache();
+  return body;
 }
 
 export async function deleteAsset(assetId: string, auth?: Auth): Promise<void> {
@@ -1629,6 +1635,7 @@ export async function deleteAsset(assetId: string, auth?: Auth): Promise<void> {
     }
     throw new Error(msg);
   }
+  clearVatDataCache();
 }
 
 export async function groupAssetInto(
