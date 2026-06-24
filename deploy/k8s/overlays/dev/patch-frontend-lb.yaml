@@ -22,6 +22,11 @@ metadata:
     metallb.universe.tf/loadBalancerIPs: "10.0.40.173"
 spec:
   type: LoadBalancer
+  ports:
+    - name: http
+      port: 3000
+      targetPort: 3000
+      nodePort: 31587
   # Cluster (not Local): the frontend runs as a single replica, so with `Local` the VIP only
   # works while the announcing node is also the node hosting the pod, and the NodePort front
   # door would only answer on one node. `Cluster` lets any node forward to the pod cluster-wide

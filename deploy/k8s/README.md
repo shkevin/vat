@@ -4,10 +4,10 @@ GitOps-managed by Argo CD running in the Kamiwaza cluster. The Argo `Application
 (in `kamiwaza-argocd`) tracks this repo's `main` and picks one of the overlays
 below per environment:
 
-| Environment | Overlay path                 | Image tag | Frontend VIP    | DNS                                 |
-|-------------|------------------------------|-----------|-----------------|-------------------------------------|
-| dev         | `deploy/k8s/overlays/dev`    | `latest`  | `10.0.40.173`   | `vat.kamidev.automatedhass.com`     |
-| prod        | `deploy/k8s/overlays/prod`   | `latest`  | `10.0.40.174`   | `vat.kamiprod.automatedhass.com`    |
+| Environment | Overlay path                 | Image tag | Front door      | MetalLB fallback | DNS                                 |
+|-------------|------------------------------|-----------|-----------------|------------------|-------------------------------------|
+| dev         | `deploy/k8s/overlays/dev`    | `latest`  | `10.0.40.168`   | `10.0.40.173`    | `vat.kamidev.automatedhass.com`     |
+| prod        | `deploy/k8s/overlays/prod`   | `latest`  | `10.0.40.174`   | `10.0.40.174`    | `vat.kamiprod.automatedhass.com`    |
 
 > Both overlays currently track `:latest` (built from `main`). Switch dev to
 > `:develop` (or a `sha-<short>`) once a `develop` branch is in active use.
@@ -32,13 +32,29 @@ deploy/k8s/
 
 Traefik in this cluster is scoped to the `kamiwaza` namespace, so we do NOT
 route VAT through a Traefik `IngressRoute` (that would leak VAT resources into
-the platform namespace). Instead, the `vat-frontend` Service is patched to
-`type: LoadBalancer` with a static MetalLB VIP per environment. Point the DNS
-A-record for each environment at the VIP in the table above.
+the platform namespace).
 
-If TLS is required, front these VIPs with the external Traefik (same pattern
-as `grafana.kamidev.automatedhass.com`) or add cert-manager + a dedicated
-Ingress controller inside `vat` later.
+For dev, the stable public path is the external Traefik VM at `10.0.40.168`,
+which load-balances across the pinned `vat-frontend` NodePort `31587` on all
+k3s node IPs (`10.0.40.60`, `10.0.40.61`, `10.0.40.62`). Keep
+`vat.kamidev.automatedhass.com` pointed at `10.0.40.168`. The MetalLB VIP
+`10.0.40.173:3000` remains available only as a direct LAN fallback.
+
+The dev Service still declares a static MetalLB VIP for fallback access, but
+the user-facing DNS path must not depend on the VIP. MetalLB L2 ownership can
+move between speakers after node or workload restarts, and stale ARP caches can
+temporarily blackhole traffic even though Kubernetes shows the Service as
+healthy. The NodePort front door avoids that failure mode because it targets
+real node interfaces with health checks.
+
+Prod currently still uses its MetalLB VIP directly. If prod shows the same
+post-restart outage pattern, mirror the dev topology: front the app through an
+external load balancer over pinned NodePorts on all prod nodes, and keep the
+MetalLB VIP as fallback only.
+
+For new TLS exposure, prefer the external load balancer over pinned NodePorts
+(same pattern as dev) or add cert-manager plus a dedicated Ingress controller
+inside `vat` later.
 
 ## Secrets
 
