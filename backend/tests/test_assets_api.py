@@ -1,9 +1,13 @@
 """Tests for assets API — admin-only delete from asset page."""
 
+from unittest.mock import AsyncMock
+
 import bcrypt
 import pytest
 from sqlalchemy import text
 
+from app.api.assets import _delete_asset_owned_data
+from app.schemas.auth import UserContext
 from app.services.findings_service import create_findings_bulk
 
 
@@ -21,6 +25,7 @@ async def assets_delete_setup(client, db):
         await db.execute(text("DELETE FROM asset_digest_conflicts"))
     if has_observed_tags:
         await db.execute(text("DELETE FROM asset_observed_tags"))
+    await db.execute(text("DELETE FROM asset_loadouts"))
     await db.execute(text("DELETE FROM asset_merge_reviews"))
     await db.execute(text("DELETE FROM asset_merge_events"))
     await db.execute(text("DELETE FROM asset_aliases"))
@@ -90,6 +95,69 @@ async def assets_delete_setup(client, db):
     }
 
 
+class _ScalarRows:
+    def __init__(self, rows):
+        self._rows = rows
+
+    def all(self):
+        return self._rows
+
+
+class _ExecuteRows:
+    def __init__(self, rows):
+        self._rows = rows
+
+    def scalars(self):
+        return _ScalarRows(self._rows)
+
+
+class _Rowcount:
+    def __init__(self, rowcount):
+        self.rowcount = rowcount
+
+
+@pytest.mark.asyncio
+async def test_delete_asset_owned_data_deletes_dependencies_but_not_loadouts():
+    db = type("DB", (), {})()
+    db.execute = AsyncMock(
+        side_effect=[
+            _ExecuteRows(["finding-1"]),
+            _Rowcount(2),  # audit_events
+            _Rowcount(1),  # correlation_edges
+            _Rowcount(1),  # finding_identifiers
+            _Rowcount(1),  # finding_observations
+            _Rowcount(1),  # asset_merge_events
+            _Rowcount(1),  # findings
+            _Rowcount(1),  # asset_merge_reviews
+            _Rowcount(1),  # asset_aliases
+            _Rowcount(1),  # asset_observed_tags
+            _Rowcount(1),  # asset_digest_conflicts
+            _Rowcount(1),  # openscap_scan_results
+            _Rowcount(1),  # sbom_packages
+            _Rowcount(1),  # assets
+        ]
+    )
+    ctx = UserContext(
+        user_id="admin",
+        email="admin@vat.local",
+        tenant_id="t-default",
+        role="admin",
+        raw_identity="admin@vat.local",
+    )
+
+    result = await _delete_asset_owned_data(
+        db, asset_id="asset-delete-test", ctx=ctx
+    )
+
+    assert result["deleted_findings"] == 1
+    assert result["deleted_asset"] is True
+    assert result["deleted_asset_loadouts"] == 0
+    executed_sql = "\n".join(
+        str(call.args[0]) for call in db.execute.await_args_list
+    )
+    assert "asset_loadouts" not in executed_sql
+
+
 async def _approve_merge_review(db, source_asset_id: str, target_asset_id: str) -> None:
     await db.execute(
         text(
@@ -116,9 +184,83 @@ async def _approve_merge_review(db, source_asset_id: str, target_asset_id: str) 
 
 
 @pytest.mark.asyncio
-async def test_delete_asset_removes_only_asset_row(client, db, assets_delete_setup):
-    """DELETE /api/assets/{id} removes the asset row without deleting findings."""
+async def test_delete_asset_removes_asset_owned_data_but_keeps_loadouts(
+    client, db, assets_delete_setup
+):
+    """DELETE /api/assets/{id} removes asset-owned data without deleting loadouts."""
     token = assets_delete_setup["admin_token"]
+    await db.execute(
+        text(
+            "INSERT INTO asset_loadouts "
+            "(id, tenant_id, name, asset_ids, created_at, updated_at) "
+            "VALUES ('loadout-keep', 't-default', 'keep me', "
+            "'[\"asset-delete-test\"]'::jsonb, NOW(), NOW())"
+        )
+    )
+    await db.execute(
+        text(
+            "INSERT INTO finding_identifiers "
+            "(finding_id, namespace, value, confidence, source, metadata_json, "
+            "created_at, updated_at) "
+            "VALUES ('asset-del-f1', 'cve', 'CVE-2024-1111', 'high', "
+            "'test', '{}'::jsonb, NOW(), NOW())"
+        )
+    )
+    await db.execute(
+        text(
+            "INSERT INTO finding_observations "
+            "(finding_id, scan_session_id, source_name, created_at) "
+            "VALUES ('asset-del-f1', 'scan-1', 'test', NOW())"
+        )
+    )
+    await db.execute(
+        text(
+            "INSERT INTO audit_events "
+            "(event_id, trace_id, event_type, actor_type, asset_id, finding_id, "
+            "data, record_hash, created_at) "
+            "VALUES ('asset-delete-audit', 'trace-1', 'test', 'system', "
+            "'asset-delete-test', "
+            "'asset-del-f1', '{}'::jsonb, 'hash-1', NOW())"
+        )
+    )
+    await db.execute(
+        text(
+            "INSERT INTO asset_aliases "
+            "(source_asset_id, canonical_asset_id, created_at, updated_at) "
+            "VALUES ('asset-delete-test', 'asset-target', NOW(), NOW())"
+        )
+    )
+    await db.execute(
+        text(
+            "INSERT INTO asset_merge_reviews "
+            "(source_asset_id, target_asset_id, status, details, "
+            "created_at, updated_at) "
+            "VALUES ('asset-delete-test', 'asset-target', 'pending', "
+            "'{}'::jsonb, NOW(), NOW())"
+        )
+    )
+    await db.execute(
+        text(
+            "INSERT INTO asset_merge_events "
+            "(source_asset_id, target_asset_id, finding_id, prev_values, "
+            "next_values, created_at) "
+            "VALUES ('asset-delete-test', 'asset-target', 'asset-del-f1', "
+            "'{}'::jsonb, '{}'::jsonb, NOW())"
+        )
+    )
+    has_observed_tags = await db.scalar(
+        text("SELECT to_regclass('public.asset_observed_tags') IS NOT NULL")
+    )
+    if has_observed_tags:
+        await db.execute(
+            text(
+                "INSERT INTO asset_observed_tags "
+                "(asset_id, tag, observation_count, first_seen_at, last_seen_at) "
+                "VALUES ('asset-delete-test', 'latest', 1, NOW(), NOW())"
+            )
+        )
+    await db.commit()
+
     res = await client.delete(
         "/api/assets/asset-delete-test",
         headers={"Authorization": f"Bearer {token}"},
@@ -126,13 +268,51 @@ async def test_delete_asset_removes_only_asset_row(client, db, assets_delete_set
     assert res.status_code == 200
     payload = res.json()
     assert payload["deleted_asset"] is True
-    assert payload["deleted_findings"] == 0
+    assert payload["deleted_findings"] >= 1
+    assert payload["deleted_asset_loadouts"] == 0
 
     findings_count = await db.scalar(text("SELECT COUNT(*) FROM findings"))
+    identifier_count = await db.scalar(
+        text("SELECT COUNT(*) FROM finding_identifiers")
+    )
+    observation_count = await db.scalar(
+        text("SELECT COUNT(*) FROM finding_observations")
+    )
+    audit_count = await db.scalar(
+        text("SELECT COUNT(*) FROM audit_events WHERE event_id = 'asset-delete-audit'")
+    )
+    alias_count = await db.scalar(
+        text(
+            "SELECT COUNT(*) FROM asset_aliases "
+            "WHERE source_asset_id = 'asset-delete-test'"
+        )
+    )
+    review_count = await db.scalar(
+        text(
+            "SELECT COUNT(*) FROM asset_merge_reviews "
+            "WHERE source_asset_id = 'asset-delete-test'"
+        )
+    )
+    merge_event_count = await db.scalar(
+        text(
+            "SELECT COUNT(*) FROM asset_merge_events "
+            "WHERE source_asset_id = 'asset-delete-test'"
+        )
+    )
+    loadout_count = await db.scalar(
+        text("SELECT COUNT(*) FROM asset_loadouts WHERE id = 'loadout-keep'")
+    )
     assets_count = await db.scalar(
         text("SELECT COUNT(*) FROM assets WHERE id = 'asset-delete-test'")
     )
-    assert findings_count >= 1
+    assert findings_count == 0
+    assert identifier_count == 0
+    assert observation_count == 0
+    assert audit_count == 0
+    assert alias_count == 0
+    assert review_count == 0
+    assert merge_event_count == 0
+    assert loadout_count == 1
     assert assets_count == 0
 
 

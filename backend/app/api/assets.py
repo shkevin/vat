@@ -17,11 +17,18 @@ from app.core.auth import (
 from app.core.config import get_settings
 from app.core.database import get_db
 from app.models.asset import Asset
-from app.models.asset_digest_conflict import AssetDigestConflict
 from app.models.asset_alias import AssetAlias
+from app.models.asset_digest_conflict import AssetDigestConflict
 from app.models.asset_merge_event import AssetMergeEvent
 from app.models.asset_merge_review import AssetMergeReview
+from app.models.asset_observed_tag import AssetObservedTag
+from app.models.audit_event import AuditEvent
+from app.models.correlation_edge import CorrelationEdge
 from app.models.finding import Finding, Status
+from app.models.finding_identifier import FindingIdentifier
+from app.models.finding_observation import FindingObservation
+from app.models.openscap_scan_result import OpenSCAPScanResult
+from app.models.sbom import SbomPackage
 from app.schemas.auth import UserContext
 from app.services.asset_aliases import (
     record_merge_event,
@@ -131,6 +138,139 @@ def _serialize_digest_conflict(row: AssetDigestConflict) -> dict:
         "first_seen_at": row.first_seen_at.isoformat() if row.first_seen_at else None,
         "last_seen_at": row.last_seen_at.isoformat() if row.last_seen_at else None,
     }
+
+
+async def _delete_asset_owned_data(
+    db: AsyncSession,
+    *,
+    asset_id: str,
+    ctx: UserContext,
+) -> dict[str, int | bool]:
+    """Delete data owned by an asset, leaving independent loadouts untouched."""
+    finding_id_result = await db.execute(
+        select(Finding.id)
+        .where((Finding.image == asset_id) | (Finding.component == asset_id))
+        .where(tenant_filter(Finding, ctx))
+    )
+    finding_ids = [str(fid) for fid in finding_id_result.scalars().all()]
+
+    counts: dict[str, int | bool] = {"deleted_asset_loadouts": 0}
+
+    def rowcount(result) -> int:
+        return int(result.rowcount or 0)
+
+    if finding_ids:
+        counts["deleted_audit_events"] = rowcount(
+            await db.execute(
+                delete(AuditEvent).where(
+                    (AuditEvent.asset_id == asset_id)
+                    | (AuditEvent.finding_id.in_(finding_ids))
+                )
+            )
+        )
+        counts["deleted_correlation_edges"] = rowcount(
+            await db.execute(
+                delete(CorrelationEdge).where(
+                    (CorrelationEdge.finding_id_a.in_(finding_ids))
+                    | (CorrelationEdge.finding_id_b.in_(finding_ids))
+                )
+            )
+        )
+        counts["deleted_finding_identifiers"] = rowcount(
+            await db.execute(
+                delete(FindingIdentifier).where(
+                    FindingIdentifier.finding_id.in_(finding_ids)
+                )
+            )
+        )
+        counts["deleted_finding_observations"] = rowcount(
+            await db.execute(
+                delete(FindingObservation).where(
+                    FindingObservation.finding_id.in_(finding_ids)
+                )
+            )
+        )
+        counts["deleted_asset_merge_events"] = rowcount(
+            await db.execute(
+                delete(AssetMergeEvent).where(
+                    (AssetMergeEvent.source_asset_id == asset_id)
+                    | (AssetMergeEvent.target_asset_id == asset_id)
+                    | (AssetMergeEvent.finding_id.in_(finding_ids))
+                )
+            )
+        )
+        counts["deleted_findings"] = rowcount(
+            await db.execute(delete(Finding).where(Finding.id.in_(finding_ids)))
+        )
+    else:
+        counts.update(
+            {
+                "deleted_audit_events": rowcount(
+                    await db.execute(
+                        delete(AuditEvent).where(AuditEvent.asset_id == asset_id)
+                    )
+                ),
+                "deleted_correlation_edges": 0,
+                "deleted_finding_identifiers": 0,
+                "deleted_finding_observations": 0,
+                "deleted_asset_merge_events": rowcount(
+                    await db.execute(
+                        delete(AssetMergeEvent).where(
+                            (AssetMergeEvent.source_asset_id == asset_id)
+                            | (AssetMergeEvent.target_asset_id == asset_id)
+                        )
+                    )
+                ),
+                "deleted_findings": 0,
+            }
+        )
+
+    counts["deleted_asset_merge_reviews"] = rowcount(
+        await db.execute(
+            delete(AssetMergeReview).where(
+                (AssetMergeReview.source_asset_id == asset_id)
+                | (AssetMergeReview.target_asset_id == asset_id)
+            )
+        )
+    )
+    counts["deleted_asset_aliases"] = rowcount(
+        await db.execute(
+            delete(AssetAlias).where(
+                (AssetAlias.source_asset_id == asset_id)
+                | (AssetAlias.canonical_asset_id == asset_id)
+            )
+        )
+    )
+    counts["deleted_asset_observed_tags"] = rowcount(
+        await db.execute(
+            delete(AssetObservedTag).where(AssetObservedTag.asset_id == asset_id)
+        )
+    )
+    counts["deleted_asset_digest_conflicts"] = rowcount(
+        await db.execute(
+            delete(AssetDigestConflict).where(AssetDigestConflict.asset_id == asset_id)
+        )
+    )
+    counts["deleted_openscap_results"] = rowcount(
+        await db.execute(
+            delete(OpenSCAPScanResult).where(OpenSCAPScanResult.asset_id == asset_id)
+        )
+    )
+    counts["deleted_sbom_packages"] = rowcount(
+        await db.execute(delete(SbomPackage).where(SbomPackage.component == asset_id))
+    )
+
+    asset_result = await db.execute(delete(Asset).where(Asset.id == asset_id))
+    counts["deleted_asset"] = (asset_result.rowcount or 0) > 0
+    return counts
+
+
+def _asset_delete_removed_any(result: dict[str, int | bool]) -> bool:
+    return any(
+        value is True or (isinstance(value, int) and value > 0)
+        for key, value in result.items()
+        if key != "deleted_asset_loadouts"
+    )
 
 
 @router.get("/{asset_id:path}/merge-suggestions")
@@ -428,21 +568,18 @@ async def delete_asset(
     ctx: UserContext = Depends(require_admin),
 ):
     """
-    Delete the persisted asset row only.
+    Delete an asset and its asset-owned data.
 
-    Findings, loadouts, aliases, observations, and related evidence are left
-    intact. The Assets UI is backed by persisted rows, so removing the row hides
-    the asset without deleting vulnerability evidence.
+    Loadouts are intentionally independent and are not deleted or modified.
     """
-    asset_result = await db.execute(delete(Asset).where(Asset.id == asset_id))
-    asset_deleted = (asset_result.rowcount or 0) > 0
+    result = await _delete_asset_owned_data(db, asset_id=asset_id, ctx=ctx)
 
-    if not asset_deleted:
+    if not _asset_delete_removed_any(result):
         await db.rollback()
         raise HTTPException(status_code=404, detail="Asset not found")
 
     await db.commit()
-    return {"deleted_findings": 0, "deleted_asset": asset_deleted}
+    return result
 
 
 class AssetBulkDeleteRequest(BaseModel):
@@ -471,10 +608,9 @@ async def bulk_delete_assets(
             continue
         seen.add(aid)
         try:
-            asset_result = await db.execute(delete(Asset).where(Asset.id == aid))
-            a_deleted = (asset_result.rowcount or 0) > 0
+            result = await _delete_asset_owned_data(db, asset_id=aid, ctx=ctx)
             await db.commit()
-            if not a_deleted:
+            if not _asset_delete_removed_any(result):
                 not_found += 1
                 results.append(
                     {"asset_id": aid, "status": "not_found"}
@@ -485,8 +621,7 @@ async def bulk_delete_assets(
                     {
                         "asset_id": aid,
                         "status": "deleted",
-                        "deleted_findings": 0,
-                        "deleted_asset": a_deleted,
+                        **result,
                     }
                 )
         except Exception as e:

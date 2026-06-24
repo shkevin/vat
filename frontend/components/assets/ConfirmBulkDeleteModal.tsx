@@ -17,7 +17,7 @@ export function ConfirmBulkDeleteModal({
   onConfirm,
 }: ConfirmBulkDeleteModalProps) {
   const requiresTypedConfirm = assets.length > TYPED_CONFIRM_THRESHOLD;
-  const requiredText = `delete ${assets.length} assets`;
+  const requiredText = ["delete", String(assets.length), "assets"].join(" ");
   const [typed, setTyped] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -95,8 +95,9 @@ export function ConfirmBulkDeleteModal({
             color: "var(--ui-text-secondary)",
           }}
         >
-          This deletes only the saved asset row{assets.length === 1 ? "" : "s"}.
-          Findings, loadouts, and evidence remain intact.
+          This deletes the selected asset{assets.length === 1 ? "" : "s"} and
+          associated findings, evidence, merge metadata, and scan/SBOM data.
+          Loadouts remain intact.
         </p>
 
         <ul
