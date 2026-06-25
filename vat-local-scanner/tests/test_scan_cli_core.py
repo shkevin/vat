@@ -550,7 +550,7 @@ def test_image_ref_tag_extracts_only_real_image_tags() -> None:
     assert cli._image_ref_tag("registry.example.com:5000/apps/api:v1") == "v1"
     assert cli._image_ref_tag("registry.example.com/apps/api:v1@sha256:abc123") == "v1"
     assert cli._image_ref_tag("registry.example.com/apps/api@sha256:abc123") is None
-    assert cli._image_ref_tag("registry.example.com/apps/api") is None
+    assert cli._image_ref_tag("registry.example.com/apps/api") == "latest"
 
 
 def test_cmd_scan_inventory_passes_pull_secret_auth_to_trivy(monkeypatch, tmp_path: Path) -> None:

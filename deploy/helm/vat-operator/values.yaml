@@ -75,5 +75,6 @@ nodeAgent:
   scanTimeoutSeconds: 600
   containerdNamespace: k8s.io
   containerdSocketPath: /host/run/containerd/containerd.sock
+  dockerSocketPath: /host/var/run/docker.sock
   kubeletRootPath: /host/var/lib/kubelet
   staticPodManifestPath: /host/etc/kubernetes/manifests

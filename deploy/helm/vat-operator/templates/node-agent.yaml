@@ -39,6 +39,7 @@ spec:
                   --node-name "${NODE_NAME:-unknown-node}" \
                   --containerd-socket "${VAT_CONTAINERD_SOCKET_PATH:-/run/containerd/containerd.sock}" \
                   --containerd-namespace "${VAT_CONTAINERD_NAMESPACE:-k8s.io}" \
+                  --docker-socket "${VAT_DOCKER_SOCKET_PATH:-/host/var/run/docker.sock}" \
                   --scan-types "${VAT_RUNTIME_SCAN_TYPES:-image-sca,image-sbom}" \
                   --state-file /state/runtime-scan-state.json \
                   --full-rescan-interval-seconds "${VAT_RUNTIME_FULL_RESCAN_INTERVAL_SECONDS:-86400}" || true
@@ -63,6 +64,8 @@ spec:
               value: {{ .Values.nodeAgent.containerdSocketPath | quote }}
             - name: VAT_CONTAINERD_NAMESPACE
               value: {{ .Values.nodeAgent.containerdNamespace | quote }}
+            - name: VAT_DOCKER_SOCKET_PATH
+              value: {{ .Values.nodeAgent.dockerSocketPath | quote }}
             - name: VAT_KUBELET_ROOT_PATH
               value: {{ .Values.nodeAgent.kubeletRootPath | quote }}
             - name: VAT_STATIC_POD_MANIFEST_PATH

@@ -322,6 +322,130 @@ def _runtime_targets_from_crictl(doc: dict, cluster_name: str, node_name: str) -
     return targets
 
 
+def _preferred_cri_image_ref(image: dict) -> str:
+    tags = image.get("repoTags") if isinstance(image.get("repoTags"), list) else []
+    digests = image.get("repoDigests") if isinstance(image.get("repoDigests"), list) else []
+    for ref in [*tags, *digests]:
+        value = str(ref or "").strip()
+        if value and value != "<none>:<none>" and not value.startswith("sha256:"):
+            return value
+    return ""
+
+
+def _runtime_targets_from_crictl_images(
+    doc: dict,
+    cluster_name: str,
+    node_name: str,
+    *,
+    referenced_images: set[str] | None = None,
+) -> list[dict]:
+    images = doc.get("images") if isinstance(doc, dict) else None
+    if not isinstance(images, list):
+        return []
+    referenced = referenced_images or set()
+    cluster = (cluster_name or "cluster").strip() or "cluster"
+    node = (node_name or "unknown-node").strip() or "unknown-node"
+    targets: list[dict] = []
+    seen: set[str] = set()
+    for image in images:
+        if not isinstance(image, dict):
+            continue
+        image_ref = _preferred_cri_image_ref(image)
+        if not image_ref or image_ref in referenced or image_ref in seen:
+            continue
+        seen.add(image_ref)
+        image_id = str(image.get("id") or "").strip()
+        asset = f"k8s/{cluster}/node/{node}/runtime-image/{_runtime_asset_slug(image_ref)}"
+        targets.append(
+            {
+                "asset": asset,
+                "containerId": image_id,
+                "containerName": image_ref,
+                "image": image_ref,
+                "nodeName": node,
+                "state": "IMAGE_PRESENT",
+            }
+        )
+    return targets
+
+
+def _runtime_targets_from_docker_containers(
+    rows: list[dict],
+    cluster_name: str,
+    node_name: str,
+) -> list[dict]:
+    cluster = (cluster_name or "cluster").strip() or "cluster"
+    node = (node_name or "unknown-node").strip() or "unknown-node"
+    targets: list[dict] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        image = str(row.get("Image") or "").strip()
+        if not image:
+            continue
+        container_id = str(row.get("ID") or "").strip()
+        raw_name = str(row.get("Names") or row.get("Names") or "").strip()
+        container_name = raw_name.split(",", 1)[0].lstrip("/") or container_id[:12] or "container"
+        suffix = container_id[:12] if container_id else hashlib.sha256(image.encode()).hexdigest()[:12]
+        asset = f"k8s/{cluster}/node/{node}/docker-container/{_runtime_asset_slug(container_name + '-' + suffix)}"
+        targets.append(
+            {
+                "asset": asset,
+                "containerId": container_id,
+                "containerName": container_name,
+                "image": image,
+                "nodeName": node,
+                "state": str(row.get("State") or row.get("Status") or "").strip(),
+            }
+        )
+    return targets
+
+
+def _docker_image_ref(row: dict) -> str:
+    repo = str(row.get("Repository") or "").strip()
+    tag = str(row.get("Tag") or "").strip()
+    digest = str(row.get("Digest") or "").strip()
+    if repo and repo != "<none>" and tag and tag != "<none>":
+        return f"{repo}:{tag}"
+    if repo and repo != "<none>" and digest and digest != "<none>":
+        return f"{repo}@{digest}"
+    return ""
+
+
+def _runtime_targets_from_docker_images(
+    rows: list[dict],
+    cluster_name: str,
+    node_name: str,
+    *,
+    referenced_images: set[str] | None = None,
+) -> list[dict]:
+    referenced = referenced_images or set()
+    cluster = (cluster_name or "cluster").strip() or "cluster"
+    node = (node_name or "unknown-node").strip() or "unknown-node"
+    targets: list[dict] = []
+    seen: set[str] = set()
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        image_ref = _docker_image_ref(row)
+        if not image_ref or image_ref in referenced or image_ref in seen:
+            continue
+        seen.add(image_ref)
+        image_id = str(row.get("ID") or "").strip()
+        asset = f"k8s/{cluster}/node/{node}/docker-image/{_runtime_asset_slug(image_ref)}"
+        targets.append(
+            {
+                "asset": asset,
+                "containerId": image_id,
+                "containerName": image_ref,
+                "image": image_ref,
+                "nodeName": node,
+                "state": "IMAGE_PRESENT",
+            }
+        )
+    return targets
+
+
 def _merge_scan_cli(cfg: ScannerConfig, args: argparse.Namespace) -> ScannerConfig:
     """Merge CLI args into config."""
     scan_types = _parse_scan_types(getattr(args, "scan_types", "") or "")
@@ -892,11 +1016,12 @@ def _image_ref_tag(image_ref: str) -> str | None:
     ref = str(image_ref or "").strip()
     if not ref:
         return None
+    has_digest = "@" in ref
     ref_without_digest = ref.split("@", 1)[0]
     last_slash = ref_without_digest.rfind("/")
     last_colon = ref_without_digest.rfind(":")
     if last_colon <= last_slash:
-        return None
+        return None if has_digest else "latest"
     tag = ref_without_digest[last_colon + 1 :].strip()
     return tag or None
 
@@ -1210,6 +1335,65 @@ def _load_runtime_containers(containerd_socket: Path) -> dict:
     return json.loads(result.stdout or "{}")
 
 
+def _load_runtime_images(containerd_socket: Path) -> dict:
+    endpoint = f"unix://{containerd_socket}"
+    result = subprocess.run(
+        ["crictl", "--runtime-endpoint", endpoint, "images", "-o", "json"],
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    if result.returncode != 0:
+        raise VATClientError(result.stderr.strip() or "crictl images failed")
+    return json.loads(result.stdout or "{}")
+
+
+def _load_docker_containers(docker_socket: Path) -> list[dict]:
+    if not docker_socket.exists():
+        return []
+    result = subprocess.run(
+        [
+            "docker",
+            "--host",
+            f"unix://{docker_socket}",
+            "ps",
+            "-a",
+            "--format",
+            "{{json .}}",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    if result.returncode != 0:
+        raise VATClientError(result.stderr.strip() or "docker ps failed")
+    return [json.loads(line) for line in result.stdout.splitlines() if line.strip()]
+
+
+def _load_docker_images(docker_socket: Path) -> list[dict]:
+    if not docker_socket.exists():
+        return []
+    result = subprocess.run(
+        [
+            "docker",
+            "--host",
+            f"unix://{docker_socket}",
+            "image",
+            "ls",
+            "--digests",
+            "--no-trunc",
+            "--format",
+            "{{json .}}",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    if result.returncode != 0:
+        raise VATClientError(result.stderr.strip() or "docker image ls failed")
+    return [json.loads(line) for line in result.stdout.splitlines() if line.strip()]
+
+
 def _runtime_image_signature(image: str, targets: list[dict], scan_types: list[str]) -> str:
     target_bits = [
         f"{target.get('asset','')}|{target.get('containerId','')}|{target.get('state','')}"
@@ -1276,6 +1460,10 @@ def cmd_scan_runtime(args: argparse.Namespace) -> int:
         args.containerd_namespace
         or os.environ.get("VAT_CONTAINERD_NAMESPACE", "k8s.io")
     ).strip() or "k8s.io"
+    docker_socket = Path(
+        getattr(args, "docker_socket", None)
+        or os.environ.get("VAT_DOCKER_SOCKET_PATH", "/host/var/run/docker.sock")
+    )
 
     state_path = Path(args.state_file) if getattr(args, "state_file", None) else None
     state = _load_scan_state(state_path)
@@ -1292,6 +1480,44 @@ def cmd_scan_runtime(args: argparse.Namespace) -> int:
         return 1 if getattr(args, "fail_on_error", False) else 0
 
     targets = _runtime_targets_from_crictl(runtime_doc, cluster_name, node_name)
+    referenced_images = {str(target.get("image") or "").strip() for target in targets if target.get("image")}
+    try:
+        image_doc = _load_runtime_images(containerd_socket)
+        targets.extend(
+            _runtime_targets_from_crictl_images(
+                image_doc,
+                cluster_name,
+                node_name,
+                referenced_images=referenced_images,
+            )
+        )
+    except (OSError, VATClientError, json.JSONDecodeError, subprocess.TimeoutExpired, FileNotFoundError) as e:
+        print(f"WARN: unable to enumerate runtime images: {e}", file=sys.stderr)
+
+    referenced_images = {str(target.get("image") or "").strip() for target in targets if target.get("image")}
+    try:
+        docker_container_targets = _runtime_targets_from_docker_containers(
+            _load_docker_containers(docker_socket),
+            cluster_name,
+            node_name,
+        )
+        targets.extend(docker_container_targets)
+    except (OSError, VATClientError, json.JSONDecodeError, subprocess.TimeoutExpired, FileNotFoundError) as e:
+        print(f"WARN: unable to enumerate Docker containers: {e}", file=sys.stderr)
+
+    referenced_images = {str(target.get("image") or "").strip() for target in targets if target.get("image")}
+    try:
+        targets.extend(
+            _runtime_targets_from_docker_images(
+                _load_docker_images(docker_socket),
+                cluster_name,
+                node_name,
+                referenced_images=referenced_images,
+            )
+        )
+    except (OSError, VATClientError, json.JSONDecodeError, subprocess.TimeoutExpired, FileNotFoundError) as e:
+        print(f"WARN: unable to enumerate Docker images: {e}", file=sys.stderr)
+
     by_image: dict[str, list[dict]] = {}
     for target in targets:
         image = str(target.get("image") or "").strip()
@@ -2173,6 +2399,11 @@ def main() -> int:
         "--containerd-namespace",
         default="",
         help="Containerd namespace for Kubernetes images (env: VAT_CONTAINERD_NAMESPACE, default: k8s.io)",
+    )
+    sp_runtime.add_argument(
+        "--docker-socket",
+        type=Path,
+        help="Host Docker socket path for Docker containers/images (env: VAT_DOCKER_SOCKET_PATH)",
     )
     sp_runtime.add_argument("--state-file", type=Path, help="Persisted runtime scan state file")
     sp_runtime.add_argument(
