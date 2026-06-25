@@ -64,6 +64,57 @@ async def test_ingest_force_tag_override_updates_existing_finding_tag(db) -> Non
 
 
 @pytest.mark.anyio
+async def test_ingest_source_issue_fallback_does_not_merge_different_assets(db) -> None:
+    """The same scanner issue ID on two k8s workload assets must create two findings."""
+    uniq = uuid.uuid4().hex[:8]
+    source = f"trivy-k8s-{uniq}"
+    base_payload = VatFindingSchema(
+        cve_id=f"CVE-{uniq}",
+        severity=VatSeverity.HIGH,
+        description="same vulnerability on repeated image targets",
+        finding_type=VatFindingType.SCA,
+        title="Repeated image vulnerability",
+        component="openssl 3.0.0",
+        tag="latest",
+        source_issue_id=f"trivy:{uniq}:openssl:CVE",
+    )
+    first_payload = base_payload.model_copy(
+        update={"image": f"k8s/test/default/deployment/api-{uniq}/api"}
+    )
+    second_payload = base_payload.model_copy(
+        update={"image": f"k8s/test/default/deployment/worker-{uniq}/api"}
+    )
+
+    first, created_first = await ingest_finding(
+        db,
+        first_payload,
+        source_name=source,
+        parser_id="trivy",
+        auto_sync_to_tracker=False,
+    )
+    second, created_second = await ingest_finding(
+        db,
+        second_payload,
+        source_name=source,
+        parser_id="trivy",
+        auto_sync_to_tracker=False,
+    )
+
+    assert created_first is True
+    assert created_second is True
+    assert second.id != first.id
+    rows = (
+        await db.execute(
+            select(Finding).where(
+                Finding.source == source,
+                Finding.source_issue_id == f"trivy:{uniq}:openssl:CVE",
+            )
+        )
+    ).scalars().all()
+    assert {row.image for row in rows} == {first_payload.image, second_payload.image}
+
+
+@pytest.mark.anyio
 async def test_import_sbom_force_tag_override_updates_license_finding_tag(db) -> None:
     """SBOM-created license findings should inherit authoritative scan tag."""
     uniq = uuid.uuid4().hex[:8]

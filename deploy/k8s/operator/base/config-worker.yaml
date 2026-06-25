@@ -48,6 +48,18 @@ spec:
               value: "86400"
             - name: VAT_CLUSTER_NAME
               value: cluster
+            - name: HTTP_PROXY
+              value: http://vat-egress-proxy.vat.svc.cluster.local.:3128
+            - name: HTTPS_PROXY
+              value: http://vat-egress-proxy.vat.svc.cluster.local.:3128
+            - name: NO_PROXY
+              value: .svc,.svc.cluster.local,.cluster.local,localhost,127.0.0.1,10.0.0.0/8,10.42.0.0/16,10.43.0.0/16,vat-backend.vat.svc.cluster.local
+            - name: http_proxy
+              value: http://vat-egress-proxy.vat.svc.cluster.local.:3128
+            - name: https_proxy
+              value: http://vat-egress-proxy.vat.svc.cluster.local.:3128
+            - name: no_proxy
+              value: .svc,.svc.cluster.local,.cluster.local,localhost,127.0.0.1,10.0.0.0/8,10.42.0.0/16,10.43.0.0/16,vat-backend.vat.svc.cluster.local
             - name: VAT_API_KEY
               valueFrom:
                 secretKeyRef:

@@ -325,6 +325,14 @@ async def ingest_finding(
         from app.services.external_links_service import find_finding_by_external_id
 
         existing = await find_finding_by_external_id(db, source_name, str(sid).strip())
+        if existing:
+            incoming_asset = (payload.image or payload.component or "").strip()
+            existing_asset = (
+                (getattr(existing, "image", None) or "")
+                or (getattr(existing, "component", None) or "")
+            ).strip()
+            if incoming_asset and existing_asset and incoming_asset != existing_asset:
+                existing = None
         if existing and existing.fingerprint_id != fp:
             existing.fingerprint_id = fp
             audit = list(existing.audit or [])

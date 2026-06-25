@@ -888,7 +888,7 @@ def _inventory_pull_secret_refs(item: dict) -> list[tuple[str, str]]:
 
 
 def _fetch_kubernetes_secret(namespace: str, name: str) -> dict | None:
-    host = os.environ.get("KUBERNETES_SERVICE_HOST", "").strip()
+    host = os.environ.get("VAT_KUBERNETES_API_HOST", "kubernetes.default.svc").strip()
     port = os.environ.get("KUBERNETES_SERVICE_PORT", "443").strip() or "443"
     token_path = Path("/var/run/secrets/kubernetes.io/serviceaccount/token")
     ca_path = Path("/var/run/secrets/kubernetes.io/serviceaccount/ca.crt")
