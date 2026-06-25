@@ -5,15 +5,18 @@ from __future__ import annotations
 import io
 import json
 from datetime import datetime
+from collections.abc import Iterable, Mapping
 from typing import Any, Optional
 
 from openpyxl import Workbook
+from openpyxl.cell import WriteOnlyCell
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
 from app.services.metric_semantics import is_open_risk
 
 STIG_RULE_ROWS_CAP = 100_000
+WORKBOOK_FINDING_ROWS_CAP = 10_000
 
 
 def _flat_str(v: Any) -> str:
@@ -226,6 +229,207 @@ def _write_sheet(wb: Workbook, title: str, headers: list[str], data_rows: list[d
         ws.auto_filter.ref = f"A1:{get_column_letter(len(headers))}{len(data_rows) + 1}"
 
 
+def _excel_value(v: Any) -> Any:
+    if v is None:
+        return ""
+    if isinstance(v, (dict, list)):
+        return json.dumps(v, default=str)[:32000]
+    return v
+
+
+def _write_streaming_sheet(
+    wb: Workbook,
+    title: str,
+    headers: list[str],
+    data_rows: Iterable[Mapping[str, Any]],
+) -> None:
+    """Append rows to a write-only worksheet without retaining cell objects."""
+    ws = wb.create_sheet(title)
+    header_cells = []
+    for h in headers:
+        cell = WriteOnlyCell(ws, value=h)
+        cell.font = _HEADER_FONT
+        cell.fill = _HEADER_FILL
+        cell.alignment = _HEADER_ALIGNMENT
+        cell.border = _HEADER_BORDER
+        header_cells.append(cell)
+    ws.append(header_cells)
+    for row in data_rows:
+        ws.append([_excel_value(row.get(h)) for h in headers])
+
+
+def _build_readme_streaming_sheet(
+    wb: Workbook,
+    *,
+    generated_at: datetime,
+    backend_version: str,
+    tenant_id: Optional[str],
+    export_options: dict[str, Any],
+) -> None:
+    rows = [
+        {"section": "VAT Auditor Workbook", "value": "Compliance evidence companion to the VAT export bundle"},
+        {"section": "Generated (UTC)", "value": generated_at.isoformat().replace("+00:00", "Z")},
+        {"section": "Backend Version", "value": backend_version},
+        {"section": "Tenant", "value": tenant_id or "(global / unset)"},
+        {"section": "Export Options", "value": json.dumps(export_options, default=str)},
+        {"section": "Sheet", "value": "Findings: all findings with full detail columns"},
+        {"section": "Sheet", "value": "Waivers_Risk_Acceptance: risk-accepted findings with waiver attestation"},
+        {"section": "Sheet", "value": "Justifications_Comments: findings with justification or reviewer notes"},
+        {"section": "Sheet", "value": "Finding_Decision_Log: per-finding audit trail entries"},
+        {"section": "Sheet", "value": "Remediation_Backlog: open findings requiring action"},
+        {"section": "Sheet", "value": "Metrics_Summary: aggregate counts and severity breakdown"},
+        {"section": "Sheet", "value": "STIG_STIGViewer_Files: index of STIG/OpenSCAP XML files in the bundle"},
+        {"section": "Sheet", "value": "STIG_Check_Results: rule-level results parsed from XCCDF"},
+        {"section": "Sheet", "value": "STIG_VAT_Findings: VAT findings related to STIG benchmarks"},
+        {"section": "Sheet", "value": "System_Audit_Events: system-level audit event stream"},
+        {
+            "section": "STIG Viewer Import",
+            "value": (
+                "Import raw results from the stig/ folder in the ZIP bundle "
+                "(*.xccdf.xml, *.oval-results.xml). See stig/README-STIG-Viewer.txt."
+            ),
+        },
+        {
+            "section": "STIG Check Results",
+            "value": (
+                f"STIG_Check_Results lists up to {STIG_RULE_ROWS_CAP:,} rule-results parsed from XCCDF; "
+                "XML files remain authoritative for STIG Viewer re-import."
+            ),
+        },
+    ]
+    _write_streaming_sheet(wb, "ReadMe", ["section", "value"], rows)
+
+
+def _iter_finding_workbook_rows(findings: Iterable[dict]) -> Iterable[dict[str, Any]]:
+    for f in findings:
+        att = f.get("attestation") if isinstance(f.get("attestation"), dict) else {}
+        yield {
+            "id": f.get("id"),
+            "fingerprintId": f.get("fingerprintId"),
+            "cveId": f.get("cveId"),
+            "ruleId": f.get("ruleId"),
+            "stableRuleKey": f.get("stableRuleKey"),
+            "benchmarkId": f.get("benchmarkId"),
+            "benchmarkFamily": f.get("benchmarkFamily"),
+            "profileScope": f.get("profileScope"),
+            "title": f.get("title"),
+            "findingType": f.get("findingType"),
+            "severity": f.get("severity"),
+            "status": f.get("status"),
+            "source": f.get("source"),
+            "component": f.get("component"),
+            "image": f.get("image"),
+            "filePath": f.get("filePath"),
+            "team": f.get("team"),
+            "owner": f.get("owner"),
+            "controlRef": f.get("controlRef"),
+            "suppressionScope": f.get("suppressionScope"),
+            "archived": f.get("archived"),
+            "firstDetectedAt": f.get("firstDetectedAt"),
+            "created": f.get("created"),
+            "closedAt": f.get("closedAt"),
+            "slaDue": f.get("slaDue"),
+            "justification": f.get("justification"),
+            "compensatingControls": f.get("compensatingControls"),
+            "reviewerNote": f.get("reviewerNote"),
+            "waiverRef": att.get("waiverRef"),
+            "approver": att.get("approver"),
+            "approverTitle": att.get("approverTitle"),
+            "approvedAt": att.get("approvedAt"),
+            "expiresAt": att.get("expiresAt"),
+        }
+
+
+def _iter_justification_rows(findings: Iterable[dict]) -> Iterable[dict[str, Any]]:
+    for f in findings:
+        if not (f.get("justification") or f.get("compensatingControls") or f.get("reviewerNote")):
+            continue
+        yield {
+            "findingId": f.get("id"),
+            "cveId": f.get("cveId"),
+            "title": f.get("title"),
+            "status": f.get("status"),
+            "justification": f.get("justification"),
+            "compensatingControls": f.get("compensatingControls"),
+            "reviewerNote": f.get("reviewerNote"),
+        }
+
+
+def _iter_finding_audit_log_rows(findings: Iterable[dict]) -> Iterable[dict[str, str]]:
+    for f in findings:
+        fid = _flat_str(f.get("id"))
+        for entry in f.get("audit") or []:
+            if not isinstance(entry, dict):
+                continue
+            yield {
+                "findingId": fid,
+                "timestamp": _flat_str(entry.get("ts")),
+                "user": _flat_str(entry.get("user")),
+                "action": _flat_str(entry.get("action")),
+                "note": _flat_str(entry.get("note")),
+            }
+
+
+def _iter_remediation_rows(findings: Iterable[dict]) -> Iterable[dict[str, Any]]:
+    for f in findings:
+        if not is_open_risk(f.get("status") or ""):
+            continue
+        yield {
+            "findingId": f.get("id"),
+            "cveId": f.get("cveId"),
+            "ruleId": f.get("ruleId"),
+            "title": f.get("title"),
+            "severity": f.get("severity"),
+            "status": f.get("status"),
+            "slaDue": f.get("slaDue"),
+            "team": f.get("team"),
+            "owner": f.get("owner"),
+            "controlRef": f.get("controlRef"),
+            "component": f.get("component"),
+            "image": f.get("image"),
+            "firstDetectedAt": f.get("firstDetectedAt"),
+        }
+
+
+def _iter_stig_viewer_rows(stig_file_manifest: Iterable[dict[str, Any]]) -> Iterable[dict[str, Any]]:
+    for m in stig_file_manifest:
+        fn = m.get("filename") or ""
+        yield {
+            "zipPath": f"stig/{fn}",
+            "assetId": m.get("assetId"),
+            "sourceId": m.get("sourceId"),
+            "parserId": m.get("parserId"),
+            "benchmarkId": m.get("benchmarkId"),
+            "benchmarkFamily": m.get("benchmarkFamily"),
+            "profileScope": m.get("profileScope"),
+            "contentVersion": m.get("contentVersion"),
+            "evidenceSha256": m.get("evidenceSha256"),
+            "createdAt": m.get("createdAt"),
+            "importHint": "DISA STIG Viewer: Import results file (XCCDF or OVAL per tool support).",
+        }
+
+
+def _iter_stig_finding_rows(findings: Iterable[dict], keys: list[str]) -> Iterable[dict[str, Any]]:
+    for f in findings:
+        if _is_stig_related_finding(f):
+            yield {k: f.get(k) for k in keys}
+
+
+def _iter_system_audit_rows(events: Iterable[dict]) -> Iterable[dict[str, str]]:
+    for e in events:
+        yield {
+            "eventId": _flat_str(e.get("event_id")),
+            "createdAt": _flat_str(e.get("created_at")),
+            "eventType": _flat_str(e.get("event_type")),
+            "findingId": _flat_str(e.get("finding_id")),
+            "assetId": _flat_str(e.get("asset_id")),
+            "sourceId": _flat_str(e.get("source_id")),
+            "parserId": _flat_str(e.get("parser_id")),
+            "decisionName": _flat_str(e.get("decision_name")),
+            "decisionResult": _flat_str(e.get("decision_result")),
+        }
+
+
 def _build_waiver_records_local(rows: list[dict]) -> list[dict]:
     out: list[dict] = []
     for f in rows:
@@ -383,14 +587,11 @@ def build_auditor_workbook_bytes(
     """
     waiver_records = waiver_records if waiver_records is not None else _build_waiver_records_local(findings)
 
-    wb = Workbook()
-    default_ws = wb.active
-    wb.remove(default_ws)
+    wb = Workbook(write_only=True)
 
     # --- ReadMe (styled cover sheet) ---
-    ws_readme = wb.create_sheet("ReadMe")
-    _build_readme_sheet(
-        ws_readme,
+    _build_readme_streaming_sheet(
+        wb,
         generated_at=generated_at,
         backend_version=backend_version,
         tenant_id=tenant_id,
@@ -433,47 +634,13 @@ def build_auditor_workbook_bytes(
         "approvedAt",
         "expiresAt",
     ]
-    finding_rows: list[dict[str, Any]] = []
-    for f in findings:
-        att = f.get("attestation") if isinstance(f.get("attestation"), dict) else {}
-        finding_rows.append(
-            {
-                "id": f.get("id"),
-                "fingerprintId": f.get("fingerprintId"),
-                "cveId": f.get("cveId"),
-                "ruleId": f.get("ruleId"),
-                "stableRuleKey": f.get("stableRuleKey"),
-                "benchmarkId": f.get("benchmarkId"),
-                "benchmarkFamily": f.get("benchmarkFamily"),
-                "profileScope": f.get("profileScope"),
-                "title": f.get("title"),
-                "findingType": f.get("findingType"),
-                "severity": f.get("severity"),
-                "status": f.get("status"),
-                "source": f.get("source"),
-                "component": f.get("component"),
-                "image": f.get("image"),
-                "filePath": f.get("filePath"),
-                "team": f.get("team"),
-                "owner": f.get("owner"),
-                "controlRef": f.get("controlRef"),
-                "suppressionScope": f.get("suppressionScope"),
-                "archived": f.get("archived"),
-                "firstDetectedAt": f.get("firstDetectedAt"),
-                "created": f.get("created"),
-                "closedAt": f.get("closedAt"),
-                "slaDue": f.get("slaDue"),
-                "justification": f.get("justification"),
-                "compensatingControls": f.get("compensatingControls"),
-                "reviewerNote": f.get("reviewerNote"),
-                "waiverRef": att.get("waiverRef"),
-                "approver": att.get("approver"),
-                "approverTitle": att.get("approverTitle"),
-                "approvedAt": att.get("approvedAt"),
-                "expiresAt": att.get("expiresAt"),
-            }
-        )
-    _write_sheet(wb, "Findings", finding_headers, finding_rows)
+    workbook_findings = findings[:WORKBOOK_FINDING_ROWS_CAP]
+    _write_streaming_sheet(
+        wb,
+        "Findings",
+        finding_headers,
+        _iter_finding_workbook_rows(workbook_findings),
+    )
 
     # --- Waivers ---
     w_headers = [
@@ -491,28 +658,25 @@ def build_auditor_workbook_bytes(
         "expiresAt",
         "controlRef",
     ]
-    _write_sheet(wb, "Waivers_Risk_Acceptance", w_headers, waiver_records)
+    _write_streaming_sheet(wb, "Waivers_Risk_Acceptance", w_headers, waiver_records)
 
     # --- Justifications (long text) ---
     just_headers = ["findingId", "cveId", "title", "status", "justification", "compensatingControls", "reviewerNote"]
-    just_rows = [
-        {
-            "findingId": f.get("id"),
-            "cveId": f.get("cveId"),
-            "title": f.get("title"),
-            "status": f.get("status"),
-            "justification": f.get("justification"),
-            "compensatingControls": f.get("compensatingControls"),
-            "reviewerNote": f.get("reviewerNote"),
-        }
-        for f in findings
-        if f.get("justification") or f.get("compensatingControls") or f.get("reviewerNote")
-    ]
-    _write_sheet(wb, "Justifications_Comments", just_headers, just_rows)
+    _write_streaming_sheet(
+        wb,
+        "Justifications_Comments",
+        just_headers,
+        _iter_justification_rows(workbook_findings),
+    )
 
     # --- Per-finding audit trail (embedded audit[]) ---
     ad_headers = ["findingId", "timestamp", "user", "action", "note"]
-    _write_sheet(wb, "Finding_Decision_Log", ad_headers, _finding_audit_log_rows(findings))
+    _write_streaming_sheet(
+        wb,
+        "Finding_Decision_Log",
+        ad_headers,
+        _iter_finding_audit_log_rows(workbook_findings),
+    )
 
     # --- Remediation-style backlog (not formal eMASS POA&M) ---
     poam_headers = [
@@ -530,29 +694,15 @@ def build_auditor_workbook_bytes(
         "image",
         "firstDetectedAt",
     ]
-    poam_rows = [
-        {
-            "findingId": f.get("id"),
-            "cveId": f.get("cveId"),
-            "ruleId": f.get("ruleId"),
-            "title": f.get("title"),
-            "severity": f.get("severity"),
-            "status": f.get("status"),
-            "slaDue": f.get("slaDue"),
-            "team": f.get("team"),
-            "owner": f.get("owner"),
-            "controlRef": f.get("controlRef"),
-            "component": f.get("component"),
-            "image": f.get("image"),
-            "firstDetectedAt": f.get("firstDetectedAt"),
-        }
-        for f in findings
-        if is_open_risk(f.get("status") or "")
-    ]
-    _write_sheet(wb, "Remediation_Backlog", poam_headers, poam_rows)
+    _write_streaming_sheet(
+        wb,
+        "Remediation_Backlog",
+        poam_headers,
+        _iter_remediation_rows(workbook_findings),
+    )
 
     # --- Metrics ---
-    _write_sheet(
+    _write_streaming_sheet(
         wb,
         "Metrics_Summary",
         ["metric", "value"],
@@ -573,25 +723,7 @@ def build_auditor_workbook_bytes(
         "createdAt",
         "importHint",
     ]
-    stig_f_rows: list[dict[str, Any]] = []
-    for m in stig_file_manifest:
-        fn = m.get("filename") or ""
-        stig_f_rows.append(
-            {
-                "zipPath": f"stig/{fn}",
-                "assetId": m.get("assetId"),
-                "sourceId": m.get("sourceId"),
-                "parserId": m.get("parserId"),
-                "benchmarkId": m.get("benchmarkId"),
-                "benchmarkFamily": m.get("benchmarkFamily"),
-                "profileScope": m.get("profileScope"),
-                "contentVersion": m.get("contentVersion"),
-                "evidenceSha256": m.get("evidenceSha256"),
-                "createdAt": m.get("createdAt"),
-                "importHint": "DISA STIG Viewer: Import results file (XCCDF or OVAL per tool support).",
-            }
-        )
-    _write_sheet(wb, "STIG_STIGViewer_Files", stig_f_headers, stig_f_rows)
+    _write_streaming_sheet(wb, "STIG_STIGViewer_Files", stig_f_headers, _iter_stig_viewer_rows(stig_file_manifest))
 
     # --- Rule-level rows from XCCDF ---
     chk_headers = [
@@ -603,10 +735,9 @@ def build_auditor_workbook_bytes(
         "result",
         "severity",
     ]
-    _write_sheet(wb, "STIG_Check_Results", chk_headers, stig_rule_rows)
+    _write_streaming_sheet(wb, "STIG_Check_Results", chk_headers, stig_rule_rows)
 
     # --- VAT STIG-related findings (normalized) ---
-    stig_findings = [f for f in findings if _is_stig_related_finding(f)]
     sf_subset = [
         "id",
         "cveId",
@@ -626,8 +757,7 @@ def build_auditor_workbook_bytes(
         "justification",
         "firstDetectedAt",
     ]
-    sf_rows = [{k: f.get(k) for k in sf_subset} for f in stig_findings]
-    _write_sheet(wb, "STIG_VAT_Findings", sf_subset, sf_rows)
+    _write_streaming_sheet(wb, "STIG_VAT_Findings", sf_subset, _iter_stig_finding_rows(findings, sf_subset))
 
     # --- System audit (same scope as audit-events.json when included) ---
     if audit_events is not None:
@@ -642,9 +772,9 @@ def build_auditor_workbook_bytes(
             "decisionName",
             "decisionResult",
         ]
-        _write_sheet(wb, "System_Audit_Events", sa_headers, _system_audit_rows(audit_events))
+        _write_streaming_sheet(wb, "System_Audit_Events", sa_headers, _iter_system_audit_rows(audit_events))
     else:
-        _write_sheet(
+        _write_streaming_sheet(
             wb,
             "System_Audit_Events",
             ["note"],

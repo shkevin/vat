@@ -333,3 +333,121 @@ def test_cmd_scan_runtime_ingests_cri_image_store_and_docker_targets(monkeypatch
         "k8s/k3s-remote/node/node-a/runtime-image/kindest-node-v1.30.0",
         "k8s/k3s-remote/node/node-a/docker-container/kind-registry-abc123456789",
     ]
+
+
+def test_cmd_scan_runtime_ingests_container_stig_without_docker_socket(monkeypatch, tmp_path: Path) -> None:
+    socket_path = tmp_path / "containerd.sock"
+    socket_path.write_text("", encoding="utf-8")
+    docker_socket = tmp_path / "missing-docker.sock"
+    monkeypatch.setattr(cli, "_load_runtime_containers", lambda *args, **kwargs: {"containers": []})
+    monkeypatch.setattr(
+        cli,
+        "_load_runtime_images",
+        lambda *args, **kwargs: {"images": [{"id": "sha256:kind", "repoTags": ["kindest/node:v1.30.0"]}]},
+    )
+    monkeypatch.setattr(cli, "_load_docker_containers", lambda *args, **kwargs: [])
+    monkeypatch.setattr(cli, "_load_docker_images", lambda *args, **kwargs: [])
+    monkeypatch.setattr(cli, "run_stig_image_ref", lambda *args, **kwargs: "<xccdf/>")
+
+    calls: list[dict] = []
+    monkeypatch.setattr(
+        cli,
+        "ingest_openscap_report",
+        lambda *args, **kwargs: calls.append(kwargs) or {"ok": 1},
+    )
+
+    assert cli.cmd_scan_runtime(
+        _runtime_args(
+            tmp_path,
+            containerd_socket=socket_path,
+            docker_socket=docker_socket,
+            scan_types="container-stig",
+        )
+    ) == 0
+
+    assert calls == [
+        {
+            "asset": "k8s/k3s-remote/node/node-a/runtime-image/kindest-node-v1.30.0",
+            "tag": "container-stig",
+            "idempotency_key": "container-stig:k8s/k3s-remote/node/node-a/runtime-image/kindest-node-v1.30.0:kindest/node:v1.30.0",
+        }
+    ]
+
+
+def test_cmd_scan_runtime_prefers_parser_specific_openscap_key(monkeypatch, tmp_path: Path) -> None:
+    socket_path = tmp_path / "containerd.sock"
+    socket_path.write_text("", encoding="utf-8")
+    monkeypatch.setattr(cli, "_load_runtime_containers", lambda *args, **kwargs: {"containers": []})
+    monkeypatch.setattr(
+        cli,
+        "_load_runtime_images",
+        lambda *args, **kwargs: {"images": [{"id": "sha256:kind", "repoTags": ["kindest/node:v1.30.0"]}]},
+    )
+    monkeypatch.setattr(cli, "_load_docker_containers", lambda *args, **kwargs: [])
+    monkeypatch.setattr(cli, "_load_docker_images", lambda *args, **kwargs: [])
+    monkeypatch.setattr(cli, "run_stig_image_ref", lambda *args, **kwargs: "<xccdf/>")
+    ensure_calls: list[dict] = []
+
+    def _ensure_source(*args, **kwargs):
+        ensure_calls.append(kwargs)
+        return args[2], ("openscap-key" if kwargs.get("regenerate_key") else None)
+
+    monkeypatch.setattr(cli, "ensure_source", _ensure_source)
+    monkeypatch.setattr(cli, "cache_key", lambda *args, **kwargs: None)
+    monkeypatch.setattr(cli, "get_cached_key", lambda *args, **kwargs: None)
+
+    keys: list[str] = []
+    monkeypatch.setattr(
+        cli,
+        "ingest_openscap_report",
+        lambda vat_url, key, *args, **kwargs: keys.append(key) or {"ok": 1},
+    )
+
+    assert cli.cmd_scan_runtime(
+        _runtime_args(
+            tmp_path,
+            api_key="runtime-key",
+            admin_token="adm",
+            containerd_socket=socket_path,
+            docker_socket=tmp_path / "missing-docker.sock",
+            scan_types="container-stig",
+        )
+    ) == 0
+
+    assert keys == ["openscap-key"]
+    assert [call.get("regenerate_key") for call in ensure_calls] == [False, True]
+
+
+def test_cmd_scan_runtime_ingests_container_stig_when_trivy_fails(monkeypatch, tmp_path: Path) -> None:
+    socket_path = tmp_path / "containerd.sock"
+    socket_path.write_text("", encoding="utf-8")
+    monkeypatch.setattr(cli, "_load_runtime_containers", lambda *args, **kwargs: {"containers": []})
+    monkeypatch.setattr(
+        cli,
+        "_load_runtime_images",
+        lambda *args, **kwargs: {"images": [{"id": "sha256:kind", "repoTags": ["kindest/node:v1.30.0"]}]},
+    )
+    monkeypatch.setattr(cli, "_load_docker_containers", lambda *args, **kwargs: [])
+    monkeypatch.setattr(cli, "_load_docker_images", lambda *args, **kwargs: [])
+    monkeypatch.setattr(cli, "run_trivy_image_ref", lambda *args, **kwargs: None)
+    monkeypatch.setattr(cli, "run_trivy_image_ref_cyclonedx", lambda *args, **kwargs: None)
+    monkeypatch.setattr(cli, "run_stig_image_ref", lambda *args, **kwargs: "<xccdf/>")
+
+    calls: list[dict] = []
+    monkeypatch.setattr(
+        cli,
+        "ingest_openscap_report",
+        lambda *args, **kwargs: calls.append(kwargs) or {"ok": 1},
+    )
+
+    assert cli.cmd_scan_runtime(
+        _runtime_args(
+            tmp_path,
+            containerd_socket=socket_path,
+            docker_socket=tmp_path / "missing-docker.sock",
+            scan_types="image-sca,container-stig",
+        )
+    ) == 0
+
+    assert calls
+    assert calls[0]["tag"] == "container-stig"

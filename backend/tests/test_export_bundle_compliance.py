@@ -292,6 +292,96 @@ async def test_build_export_bundle_scopes_to_selected_assets(monkeypatch):
     assert [a["id"] for a in payload["assets"]] == ["asset-a"]
 
 
+@pytest.mark.asyncio
+async def test_build_export_bundle_includes_scan_evidence_artifacts(monkeypatch):
+    xccdf_xml = b"""<?xml version="1.0" encoding="UTF-8"?>
+<Benchmark xmlns="http://checklists.nist.gov/xccdf/1.2" id="xccdf_org.ssgproject.content_benchmark_TEST">
+  <TestResult id="xccdf_org.open-scap_testresult_default-profile" profile="stig">
+    <rule-result idref="xccdf_org.ssgproject.content_rule_file_permissions" severity="medium">
+      <result>fail</result>
+    </rule-result>
+  </TestResult>
+</Benchmark>
+"""
+    openscap_row = SimpleNamespace(
+        asset_id="k8s/cluster/node/node-a/runtime-image/app-1.0",
+        source_id="openscap",
+        parser_id="openscap",
+        raw_xccdf_xml=xccdf_xml,
+        created_at=datetime(2025, 6, 1, tzinfo=timezone.utc),
+        benchmark_id="xccdf_org.ssgproject.content_benchmark_TEST",
+        benchmark_family="TEST",
+        profile_scope="stig",
+        content_version="1",
+        evidence_sha256="abc123",
+    )
+
+    monkeypatch.setattr("app.services.export_service.list_findings", AsyncMock(return_value=[]))
+    monkeypatch.setattr(
+        "app.services.export_service.enrich_findings_with_source_group_severity",
+        AsyncMock(side_effect=lambda _db, rows: rows),
+    )
+    monkeypatch.setattr(
+        "app.services.export_service.get_assets_with_findings",
+        AsyncMock(return_value=[]),
+    )
+    monkeypatch.setattr(
+        "app.services.export_service.list_sbom_packages",
+        AsyncMock(
+            return_value=[
+                {
+                    "id": "pkg-1",
+                    "name": "openssl",
+                    "version": "3.0.0",
+                    "licenseId": "Apache-2.0",
+                    "component": "ghcr.io/acme/app:1.0",
+                    "language": "c",
+                }
+            ]
+        ),
+    )
+    monkeypatch.setattr(
+        "app.services.export_service.list_openscap_scan_results",
+        AsyncMock(return_value=[openscap_row]),
+    )
+    monkeypatch.setattr(
+        "app.services.export_service.load_audit_events_for_export",
+        AsyncMock(return_value=[]),
+    )
+
+    data = await build_export_bundle(
+        MagicMock(),
+        ctx=SimpleNamespace(tenant_id="tenant-a", cross_tenant=False),
+        options=ExportBundleOptions(include_audit_events=True),
+    )
+
+    zf = zipfile.ZipFile(io.BytesIO(data), "r")
+    names = zf.namelist()
+    prefix = [n for n in names if n.startswith("vat-export-")][0].split("/")[0]
+    stig_files = [n for n in names if n.startswith(f"{prefix}/stig/")]
+    assert f"{prefix}/stig/README-STIG-Viewer.txt" in names
+    assert f"{prefix}/stig/manifest.json" in names
+    assert any(n.endswith(".xccdf.xml") for n in stig_files)
+    assert f"{prefix}/sbom/sbom-cyclonedx.json" in names
+    assert f"{prefix}/sbom/by-asset/manifest.json" in names
+    assert f"{prefix}/auditor-workbook.xlsx" in names
+
+    stig_manifest = json.loads(zf.read(f"{prefix}/stig/manifest.json").decode())
+    assert stig_manifest[0]["assetId"] == openscap_row.asset_id
+    assert stig_manifest[0]["parserId"] == "openscap"
+    asset_manifest = json.loads(zf.read(f"{prefix}/sbom/by-asset/manifest.json").decode())
+    assert asset_manifest[0]["component"] == "ghcr.io/acme/app:1.0"
+
+    from openpyxl import load_workbook
+
+    wb = load_workbook(io.BytesIO(zf.read(f"{prefix}/auditor-workbook.xlsx")), read_only=True)
+    assert "STIG_STIGViewer_Files" in wb.sheetnames
+    assert "STIG_Check_Results" in wb.sheetnames
+    check_rows = list(wb["STIG_Check_Results"].iter_rows(values_only=True))
+    assert check_rows[1][4] == "xccdf_org.ssgproject.content_rule_file_permissions"
+    assert check_rows[1][5] == "fail"
+
+
 def test_build_waiver_records_filters_status():
     rows = [
         {"id": "a", "status": "Open", "attestation": {}},

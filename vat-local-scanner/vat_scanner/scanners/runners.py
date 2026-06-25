@@ -6,6 +6,7 @@ import json
 import os
 import re
 import subprocess
+import tarfile
 import uuid
 from pathlib import Path
 
@@ -431,6 +432,191 @@ def run_stig_oci_layout(
         import shutil
 
         shutil.rmtree(out_dir, ignore_errors=True)
+
+
+def run_stig_image_ref(
+    image_ref: str,
+    asset_name: str,
+    timeout: int = 600,
+    *,
+    docker_host: str | None = None,
+    docker_config_path: Path | None = None,
+    temp_dir: Path | None = None,
+    verbose: bool = False,
+) -> str | None:
+    """
+    Run OpenSCAP STIG on an image reference without requiring a Docker daemon.
+
+    Runtime scans run on containerd-only nodes, so this path uses skopeo to copy
+    the image to a docker archive, unpacks the root filesystem, and evaluates it
+    with oscap-chroot.
+    """
+    if not image_ref:
+        return None
+    temp_dir = Path(temp_dir) if temp_dir else Path("/tmp")
+    out_dir = temp_dir / f"stig-ref-{uuid.uuid4().hex[:12]}"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    archive_path = out_dir / "image.tar"
+    rootfs_path = out_dir / "rootfs"
+    rootfs_path.mkdir(parents=True, exist_ok=True)
+    report_path = out_dir / "report.html"
+    results_path = out_dir / "results.xml"
+    env = os.environ.copy()
+    env["TMPDIR"] = str(out_dir)
+    env["TMP"] = str(out_dir)
+    env["TEMP"] = str(out_dir)
+    if docker_config_path is not None:
+        env["DOCKER_CONFIG"] = str(docker_config_path)
+    skopeo_cmd = [
+        "skopeo",
+        "--tmpdir",
+        str(out_dir),
+        "copy",
+        f"docker://{image_ref}",
+        f"docker-archive:{archive_path}",
+    ]
+    authfile = (Path(docker_config_path) / "config.json") if docker_config_path else None
+    if authfile is not None and authfile.exists():
+        skopeo_cmd[4:4] = ["--src-authfile", str(authfile)]
+
+    try:
+        skopeo = subprocess.run(
+            skopeo_cmd,
+            capture_output=True,
+            text=True,
+            timeout=min(300, timeout),
+            env=env,
+        )
+        if skopeo.returncode != 0:
+            if verbose and (skopeo.stderr or skopeo.stdout):
+                import sys
+
+                err = (skopeo.stderr or "").strip() or (skopeo.stdout or "").strip()
+                if err:
+                    for line in err.splitlines()[:5]:
+                        print(f"    {line}", file=sys.stderr, flush=True)
+            return None
+        if not _extract_docker_archive_rootfs(archive_path, rootfs_path):
+            if verbose:
+                import sys
+
+                print(f"    unable to extract image rootfs for {image_ref}", file=sys.stderr, flush=True)
+            return None
+        cmd = [
+            "oscap-chroot",
+            str(rootfs_path),
+            "xccdf",
+            "eval",
+            "--profile",
+            STIG_PROFILE,
+            "--report",
+            str(report_path),
+            "--results",
+            str(results_path),
+            STIG_DATASTREAM,
+        ]
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            env=env,
+        )
+        if result.returncode not in (0, 2) or not results_path.exists():
+            if verbose and (result.stderr or result.stdout):
+                import sys
+
+                err = (result.stderr or "").strip() or (result.stdout or "").strip()
+                if err:
+                    for line in err.splitlines()[:5]:
+                        print(f"    {line}", file=sys.stderr, flush=True)
+            return None
+        return results_path.read_text(encoding="utf-8", errors="replace")
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as e:
+        if verbose:
+            import sys
+
+            print(f"    {type(e).__name__}: {e}", file=sys.stderr, flush=True)
+        return None
+    finally:
+        import shutil
+
+        shutil.rmtree(out_dir, ignore_errors=True)
+
+
+def _safe_member_path(root: Path, name: str) -> Path | None:
+    target = (root / name.lstrip("/")).resolve()
+    try:
+        target.relative_to(root.resolve())
+    except ValueError:
+        return None
+    return target
+
+
+def _apply_layer_tar(layer_file, rootfs_path: Path) -> None:
+    with tarfile.open(fileobj=layer_file, mode="r:*") as layer:
+        for member in layer:
+            name = member.name
+            base = Path(name).name
+            if base.startswith(".wh."):
+                parent = _safe_member_path(rootfs_path, str(Path(name).parent))
+                if parent is None:
+                    continue
+                if base == ".wh..wh..opq":
+                    continue
+                target = parent / base.removeprefix(".wh.")
+                if target.is_dir() and not target.is_symlink():
+                    import shutil
+
+                    shutil.rmtree(target, ignore_errors=True)
+                else:
+                    target.unlink(missing_ok=True)
+                continue
+
+            target = _safe_member_path(rootfs_path, name)
+            if target is None:
+                continue
+            if member.isdir():
+                target.mkdir(parents=True, exist_ok=True)
+            elif member.isfile():
+                target.parent.mkdir(parents=True, exist_ok=True)
+                with layer.extractfile(member) as src:
+                    if src is None:
+                        continue
+                    with target.open("wb") as dst:
+                        import shutil
+
+                        shutil.copyfileobj(src, dst)
+                target.chmod(member.mode & 0o777)
+            elif member.issym():
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.unlink(missing_ok=True)
+                target.symlink_to(member.linkname)
+
+
+def _extract_docker_archive_rootfs(archive_path: Path, rootfs_path: Path) -> bool:
+    """Extract docker-archive layers into a rootfs directory for oscap-chroot."""
+    try:
+        with tarfile.open(archive_path, mode="r:*") as archive:
+            manifest_member = archive.getmember("manifest.json")
+            manifest_file = archive.extractfile(manifest_member)
+            if manifest_file is None:
+                return False
+            manifest = json.loads(manifest_file.read().decode("utf-8"))
+            layers = manifest[0].get("Layers") if manifest else None
+            if not isinstance(layers, list) or not layers:
+                return False
+            for layer_name in layers:
+                if not isinstance(layer_name, str):
+                    continue
+                layer_member = archive.getmember(layer_name)
+                layer_file = archive.extractfile(layer_member)
+                if layer_file is None:
+                    continue
+                _apply_layer_tar(layer_file, rootfs_path)
+        return True
+    except (OSError, tarfile.TarError, KeyError, json.JSONDecodeError, IndexError):
+        return False
 
 
 # oscap-docker image-cve emits this when image is not RHEL/Fedora

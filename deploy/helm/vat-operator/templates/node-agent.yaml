@@ -40,7 +40,7 @@ spec:
                   --containerd-socket "${VAT_CONTAINERD_SOCKET_PATH:-/run/containerd/containerd.sock}" \
                   --containerd-namespace "${VAT_CONTAINERD_NAMESPACE:-k8s.io}" \
                   --docker-socket "${VAT_DOCKER_SOCKET_PATH:-/host/var/run/docker.sock}" \
-                  --scan-types "${VAT_RUNTIME_SCAN_TYPES:-image-sca,image-sbom}" \
+                  --scan-types "${VAT_RUNTIME_SCAN_TYPES:-image-sca,image-sbom,container-stig}" \
                   --state-file /state/runtime-scan-state.json \
                   --full-rescan-interval-seconds "${VAT_RUNTIME_FULL_RESCAN_INTERVAL_SECONDS:-86400}" || true
                 vat-scan scan-node \

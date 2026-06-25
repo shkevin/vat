@@ -3,6 +3,7 @@
 from datetime import datetime, timezone
 
 from app.services.audit_workbook_export import (
+    WORKBOOK_FINDING_ROWS_CAP,
     build_auditor_workbook_bytes,
     extract_xccdf_rule_results,
 )
@@ -76,3 +77,36 @@ def test_build_auditor_workbook_minimal():
     )
     assert data[:2] == b"PK"
     assert len(data) > 2000
+
+
+def test_build_auditor_workbook_caps_finding_detail_rows():
+    from io import BytesIO
+
+    from openpyxl import load_workbook
+
+    ts = datetime(2025, 6, 1, tzinfo=timezone.utc)
+    findings = [
+        {
+            "id": f"f{i}",
+            "cveId": f"CVE-{i}",
+            "status": "Open",
+            "severity": "High",
+            "source": "trivy",
+        }
+        for i in range(WORKBOOK_FINDING_ROWS_CAP + 2)
+    ]
+
+    data = build_auditor_workbook_bytes(
+        findings=findings,
+        stig_file_manifest=[],
+        stig_rule_rows=[],
+        audit_events=[],
+        generated_at=ts,
+        tenant_id="tenant-a",
+        backend_version="0.1.0",
+        export_options={},
+    )
+
+    wb = load_workbook(BytesIO(data), read_only=True)
+    # Header + capped finding rows. Full findings remain available in export JSON/CSV.
+    assert sum(1 for _ in wb["Findings"].iter_rows(values_only=True)) == WORKBOOK_FINDING_ROWS_CAP + 1

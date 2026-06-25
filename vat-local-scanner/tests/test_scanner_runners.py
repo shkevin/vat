@@ -184,6 +184,47 @@ def test_run_stig_image_success(monkeypatch, tmp_path: Path) -> None:
     assert runners.run_stig_image(tar, "asset", temp_dir=tmp_path) == "<xml/>"
 
 
+def test_run_stig_image_ref_uses_skopeo_and_oscap_chroot(monkeypatch, tmp_path: Path) -> None:
+    commands: list[list[str]] = []
+    subprocess_envs: list[dict[str, str]] = []
+
+    def _fake_run(cmd, **kwargs):
+        commands.append(cmd)
+        subprocess_envs.append(kwargs.get("env") or {})
+        if cmd and cmd[0] == "oscap-chroot":
+            results_path = Path(cmd[cmd.index("--results") + 1])
+            results_path.write_text("<xml/>", encoding="utf-8")
+            return _Completed(2)
+        return _Completed(0)
+
+    monkeypatch.setattr(runners.subprocess, "run", _fake_run)
+    monkeypatch.setattr(runners, "_extract_docker_archive_rootfs", lambda *args, **kwargs: True)
+
+    assert (
+        runners.run_stig_image_ref(
+            "ghcr.io/acme/app:v1",
+            "asset",
+            temp_dir=tmp_path,
+        )
+        == "<xml/>"
+    )
+
+    assert commands[0][:3] == ["skopeo", "--tmpdir", subprocess_envs[0]["TMPDIR"]]
+    assert commands[0][3:5] == ["copy", "docker://ghcr.io/acme/app:v1"]
+    assert commands[0][5].startswith("docker-archive:")
+    chroot_cmd = commands[1]
+    assert chroot_cmd[0] == "oscap-chroot"
+    assert Path(chroot_cmd[1]).name == "rootfs"
+    assert chroot_cmd[2:4] == ["xccdf", "eval"]
+    assert chroot_cmd[chroot_cmd.index("--profile") + 1] == runners.STIG_PROFILE
+    assert Path(chroot_cmd[chroot_cmd.index("--report") + 1]).name == "report.html"
+    assert Path(chroot_cmd[chroot_cmd.index("--results") + 1]).name == "results.xml"
+    assert chroot_cmd[-1] == runners.STIG_DATASTREAM
+    assert Path(subprocess_envs[0]["TMPDIR"]).parent == tmp_path
+    assert Path(subprocess_envs[0]["TMP"]).parent == tmp_path
+    assert Path(subprocess_envs[0]["TEMP"]).parent == tmp_path
+
+
 def test_run_stig_image_handles_missing_loaded_image(monkeypatch, tmp_path: Path) -> None:
     tar = tmp_path / "img.tar"
     tar.write_text("x", encoding="utf-8")

@@ -68,7 +68,7 @@ nodeAgent:
   imagePullPolicy: Always
   runtimeProfile: generic
   scanTypes: node-stig,node-oval-cve
-  runtimeScanTypes: image-sca,image-sbom
+  runtimeScanTypes: image-sca,image-sbom,container-stig
   runtimeImagePullSecrets: vat-operator/harbor-creds
   scanIntervalSeconds: 86400
   runtimeFullRescanIntervalSeconds: 86400

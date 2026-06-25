@@ -52,7 +52,8 @@ VAT’s backend includes **reproducible** integration tests that exercise the sa
 | `VAT_API_KEY` | Ingest API key (optional if using admin token) |
 | `VAT_ADMIN_TOKEN` | Admin API key or JWT for auto-creating sources (VAT Settings → Access) |
 | `VAT_SCAN_IMAGE_DIGEST` | Optional digest attached by `scan-image` to VAT ingest |
-| `VAT_INVENTORY_SCAN_TYPES` | Operator image inventory scan families, default `image-sca,image-sbom` |
+| `VAT_INVENTORY_SCAN_TYPES` | Operator central image inventory scan families, default `image-sca,image-sbom` |
+| `VAT_RUNTIME_SCAN_TYPES` | Operator node runtime scan families, default `image-sca,image-sbom,container-stig` |
 | `VAT_K8S_SCAN_STATE_FILE` | State file for `scan-k8s-inventory` change detection |
 | `VAT_CLUSTER_NAME` | Cluster name used for `k8s/<cluster>/...` asset IDs |
 | `VAT_NODE_SCAN_TYPES` | Node scan families, default `node-stig,node-oval-cve` |
@@ -118,7 +119,9 @@ docker compose --profile scanner run scanner scan /workspace/repo1 /workspace/re
 
 The scanner mounts the project root at `/workspace` read-only. Use `--temp-dir` or `VAT_SCANNER_TEMP_DIR` to change where temp files are written (default: /tmp).
 
-**STIG scans** (Chainguard GPOS STIG for containers) require Docker socket access. Mount it when using the scanner image:
+**Local bundle STIG scans** (Chainguard GPOS STIG for container tarballs/OCI layouts) use
+Docker to load local image artifacts. Mount the Docker socket when using `scan`
+against local image archives:
 
 ```bash
 docker run -v /var/run/docker.sock:/var/run/docker.sock \
@@ -126,7 +129,7 @@ docker run -v /var/run/docker.sock:/var/run/docker.sock \
   vat-scanner scan /scan --scan-types container,stig --asset my-images
 ```
 
-Place container tarballs (`.tar` from `docker save`) or Helm/imgpkg bundles (outer `.tar` with `.wrap` files containing OCI image layouts) in the scan path. The scanner discovers images in both formats, loads each into Docker (via `docker load` or `skopeo copy oci:... docker-daemon:...`), and runs the Chainguard OpenSCAP STIG profile against it. See `docs/container-scan-nested-helm-research.md` for details.
+Place container tarballs (`.tar` from `docker save`) or Helm/imgpkg bundles (outer `.tar` with `.wrap` files containing OCI image layouts) in the scan path. The scanner discovers images in both formats, loads each into Docker (via `docker load` or `skopeo copy oci:... docker-daemon:...`), and runs the Chainguard OpenSCAP STIG profile against it. Runtime `container-stig` scans use `skopeo` plus `oscap-chroot` against image references, so Kubernetes node-agent runtime STIG does not require a Docker socket. See `docs/container-scan-nested-helm-research.md` for details.
 
 ## Kubernetes Operator Lanes
 

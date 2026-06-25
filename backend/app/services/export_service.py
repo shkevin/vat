@@ -790,6 +790,7 @@ async def build_export_bundle(
     from app.services.audit_workbook_export import (
         STIG_RULE_ROWS_CAP,
         STIG_VIEWER_README,
+        WORKBOOK_FINDING_ROWS_CAP,
         build_auditor_workbook_bytes,
         extract_xccdf_rule_results,
     )
@@ -864,6 +865,13 @@ async def build_export_bundle(
         put(
             "audit-events.json",
             _compact_json(audit_events_for_workbook, default=str),
+        )
+
+    if len(rows) > WORKBOOK_FINDING_ROWS_CAP:
+        export_warnings.append(
+            "auditor_workbook_findings_capped: "
+            f"workbook finding-detail sheets include first {WORKBOOK_FINDING_ROWS_CAP} of {len(rows)} findings; "
+            "complete finding data is in assets-findings.json and findings.csv"
         )
 
     try:

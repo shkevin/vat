@@ -53,6 +53,7 @@ from vat_scanner.sarif_output import reports_to_sarif
 from vat_scanner.scanners import (
     run_node_oval_cve,
     run_node_stig,
+    run_stig_image_ref,
     run_trivy_fs,
     run_trivy_image_ref,
     run_trivy_image_ref_cyclonedx,
@@ -219,6 +220,7 @@ def _parse_scan_types(s: str) -> list[str]:
 
 
 INVENTORY_SCAN_TYPES = ("image-sca", "image-sbom")
+RUNTIME_SCAN_TYPES = ("image-sca", "image-sbom", "container-stig")
 NODE_SCAN_TYPES = ("node-stig", "node-oval-cve")
 
 
@@ -262,6 +264,30 @@ def _parse_node_scan_types(raw: str | None) -> list[str]:
         if normalized in NODE_SCAN_TYPES and normalized not in out:
             out.append(normalized)
     return out or list(NODE_SCAN_TYPES)
+
+
+def _parse_runtime_scan_types(raw: str | None) -> list[str]:
+    value = (raw or "").strip()
+    if not value:
+        value = os.environ.get("VAT_RUNTIME_SCAN_TYPES", "") or ",".join(RUNTIME_SCAN_TYPES)
+    requested = [part.strip().lower() for part in value.split(",") if part.strip()]
+    if any(part in ("all", "*") for part in requested):
+        return list(RUNTIME_SCAN_TYPES)
+    aliases = {
+        "trivy": "image-sca",
+        "sca": "image-sca",
+        "sbom": "image-sbom",
+        "cyclonedx": "image-sbom",
+        "stig": "container-stig",
+        "openscap": "container-stig",
+        "container-stig": "container-stig",
+    }
+    out: list[str] = []
+    for part in requested:
+        normalized = aliases.get(part, part)
+        if normalized in RUNTIME_SCAN_TYPES and normalized not in out:
+            out.append(normalized)
+    return out or list(RUNTIME_SCAN_TYPES)
 
 
 def _node_asset(cluster_name: str, node_name: str) -> str:
@@ -1429,26 +1455,41 @@ def cmd_scan_runtime(args: argparse.Namespace) -> int:
         print("\nERROR: Set VAT_URL and VAT_API_KEY or VAT_ADMIN_TOKEN.", file=sys.stderr)
         return 1
 
-    scan_types = _parse_inventory_scan_types(getattr(args, "scan_types", "") or None)
+    scan_types = _parse_runtime_scan_types(getattr(args, "scan_types", "") or None)
     parser_keys: dict[str, str] = {}
-    if api_key:
-        parser_keys["trivy"] = api_key
-        parser_keys["cyclonedx"] = api_key
-    elif not args.dry_run and admin_token:
-        for parser_id in ("trivy", "cyclonedx"):
+    if not args.dry_run and admin_token:
+        for parser_id in ("trivy", "cyclonedx", "openscap"):
             if parser_id == "cyclonedx" and "image-sbom" not in scan_types:
                 continue
             if parser_id == "trivy" and "image-sca" not in scan_types:
                 continue
+            if parser_id == "openscap" and "container-stig" not in scan_types:
+                continue
             source_id, ensured_key = ensure_source(
                 vat_url,
                 admin_token,
-                source_id_for_parser(parser_id),
                 parser_id,
-                reset_key=bool(getattr(args, "reset_keys", False)),
+                create_key=True,
+                regenerate_key=bool(getattr(args, "reset_keys", False)),
+                asset_type="container" if parser_id == "openscap" else "package",
             )
-            cache_key(source_id, ensured_key)
-            parser_keys[parser_id] = ensured_key
+            key = ensured_key or get_cached_key(source_id)
+            if not key and not bool(getattr(args, "reset_keys", False)):
+                source_id, key = ensure_source(
+                    vat_url,
+                    admin_token,
+                    parser_id,
+                    create_key=True,
+                    regenerate_key=True,
+                    asset_type="container" if parser_id == "openscap" else "package",
+                )
+            if key:
+                cache_key(source_id, key)
+                parser_keys[parser_id] = key
+    elif api_key:
+        parser_keys["trivy"] = api_key
+        parser_keys["cyclonedx"] = api_key
+        parser_keys["openscap"] = api_key
 
     cluster_name = (args.cluster_name or os.environ.get("VAT_CLUSTER_NAME", "cluster")).strip() or "cluster"
     node_name = (args.node_name or os.environ.get("NODE_NAME", "") or os.uname().nodename).strip() or "node"
@@ -1561,12 +1602,22 @@ def cmd_scan_runtime(args: argparse.Namespace) -> int:
                 if "image-sbom" in scan_types
                 else None
             )
+            stig_xml = (
+                run_stig_image_ref(
+                    image,
+                    image,
+                    timeout=600,
+                    docker_config_path=docker_config_path,
+                    verbose=False,
+                )
+                if "container-stig" in scan_types
+                else None
+            )
         if "image-sca" in scan_types and not report:
             print("ERROR: Trivy runtime image scan failed or trivy not found.", file=sys.stderr)
             failures += 1
             if getattr(args, "fail_on_error", False):
                 return 1
-            continue
         if "image-sbom" in scan_types and not sbom_report:
             print("ERROR: Trivy CycloneDX runtime image scan failed or trivy not found.", file=sys.stderr)
             failures += 1
@@ -1584,11 +1635,14 @@ def cmd_scan_runtime(args: argparse.Namespace) -> int:
             if target_report and getattr(args, "no_snippets", False):
                 target_report = strip_snippets(target_report)
             target_sbom_report = copy.deepcopy(sbom_report) if sbom_report else None
+            target_stig_xml = stig_xml
             if args.dry_run:
                 if target_report:
                     print(f"  trivy: {len(target_report.get('Results') or [])} result(s)")
                 if target_sbom_report:
                     print(f"  cyclonedx: {len(target_sbom_report.get('components') or [])} component(s)")
+                if target_stig_xml:
+                    print(f"  openscap: {count_openscap_findings(target_stig_xml)} finding(s)")
                 continue
             if target_report:
                 try:
@@ -1601,6 +1655,29 @@ def cmd_scan_runtime(args: argparse.Namespace) -> int:
                         image_digest=None,
                     )
                     print(f"  trivy: {resp}")
+                except VATClientError as e:
+                    target_failures += 1
+                    print(f"\nERROR: {e}", file=sys.stderr)
+                    if getattr(args, "fail_on_error", False):
+                        return 1
+            if target_stig_xml:
+                openscap_key = parser_keys.get("openscap") or api_key
+                if not openscap_key:
+                    target_failures += 1
+                    print("\nERROR: No OpenSCAP ingest key available.", file=sys.stderr)
+                    if getattr(args, "fail_on_error", False):
+                        return 1
+                    continue
+                try:
+                    resp = ingest_openscap_report(
+                        vat_url,
+                        openscap_key,
+                        target_stig_xml,
+                        asset=asset,
+                        tag="container-stig",
+                        idempotency_key=f"container-stig:{asset}:{image}",
+                    )
+                    print(f"  openscap: {resp}")
                 except VATClientError as e:
                     target_failures += 1
                     print(f"\nERROR: {e}", file=sys.stderr)
@@ -2040,10 +2117,7 @@ def cmd_scan_node(args: argparse.Namespace) -> int:
         return 1
 
     parser_keys: dict[str, str] = {}
-    if api_key:
-        parser_keys["openscap"] = api_key
-        parser_keys["openscap_oval"] = api_key
-    if not dry_run and admin_token and not api_key:
+    if not dry_run and admin_token:
         for parser_id in ("openscap", "openscap_oval"):
             if parser_id == "openscap" and "node-stig" not in scan_types:
                 continue
@@ -2062,11 +2136,27 @@ def cmd_scan_node(args: argparse.Namespace) -> int:
                 print(f"\nERROR: {e}", file=sys.stderr)
                 return 1
             key = ensured_key or get_cached_key(source_id)
+            if not key and not bool(getattr(args, "reset_keys", False)):
+                try:
+                    source_id, key = ensure_source(
+                        vat_url,
+                        admin_token,
+                        parser_id,
+                        create_key=True,
+                        regenerate_key=True,
+                        asset_type="container",
+                    )
+                except VATClientError as e:
+                    print(f"\nERROR: {e}", file=sys.stderr)
+                    return 1
             if not key:
                 print(f"  {source_id}: no key", file=sys.stderr)
                 return 1
             parser_keys[parser_id] = key
             cache_key(source_id, key)
+    elif api_key:
+        parser_keys["openscap"] = api_key
+        parser_keys["openscap_oval"] = api_key
 
     timeout = int(getattr(args, "timeout", 600) or 600)
     verbose = bool(getattr(args, "verbose", False))
@@ -2413,7 +2503,11 @@ def main() -> int:
         help="Rescan unchanged runtime images after this many seconds; 0 disables scheduled full rescans",
     )
     sp_runtime.add_argument("--force-full-rescan", action="store_true", help="Ignore scan state for this run")
-    sp_runtime.add_argument("--scan-types", default="", help="Comma-separated runtime scan types: image-sca,image-sbom")
+    sp_runtime.add_argument(
+        "--scan-types",
+        default="",
+        help="Comma-separated runtime scan types: image-sca,image-sbom,container-stig",
+    )
     sp_runtime.set_defaults(func=cmd_scan_runtime)
 
     # scan-k8s-inventory

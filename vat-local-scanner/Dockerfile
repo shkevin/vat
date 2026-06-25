@@ -1,6 +1,8 @@
 # VAT Local Scanner — self-contained image with Trivy, Grype, npm, pip-audit
 # Run: docker run -v $(pwd)/repo:/scan -e VAT_URL=... -e VAT_ADMIN_TOKEN=... vat-scanner scan /scan [--asset NAME] [--dry-run]
 
+FROM cgr.dev/chainguard/openscap:latest AS openscap-content
+
 FROM python:3.11-slim-bookworm
 
 # Docker CLI from official repo (API 1.44+); docker.io is too old for Docker 26.x hosts
@@ -11,6 +13,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     npm \
     gnupg \
     openscap-scanner \
+    openscap-utils \
     && install -m 0755 -d /etc/apt/keyrings \
     && curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc \
     && chmod a+r /etc/apt/keyrings/docker.asc \
@@ -18,6 +21,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && apt-get update \
     && apt-get install -y --no-install-recommends docker-ce-cli \
     && rm -rf /var/lib/apt/lists/*
+
+RUN mkdir -p /usr/share/xml/scap/ssg/content
+COPY --from=openscap-content /usr/share/xml/scap/ssg/content/ssg-chainguard-gpos-ds.xml /usr/share/xml/scap/ssg/content/ssg-chainguard-gpos-ds.xml
 
 # Skopeo 1.20.0 from felipecrs/skopeo-bin (newer than apt; fixes "io: read/write on closed pipe" with Docker 26.x)
 ARG TARGETARCH=amd64

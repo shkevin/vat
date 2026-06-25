@@ -190,7 +190,9 @@ The image lane defaults to `VAT_OPERATOR_IMAGE_INVENTORY_MODE=runtime`. In this
 mode the node-agent enumerates containers and image-store entries known to the
 node runtime, running or stopped, and scans the corresponding images. It also
 checks the host Docker socket at `/host/var/run/docker.sock` when available so
-Docker-only containers/images can be included. Set the value to `running` to
+Docker-only containers/images can be included. Runtime `container-stig` uses
+`skopeo` plus `oscap-chroot`, so STIG scanning works on containerd-only nodes
+without a host Docker socket. Set the value to `running` to
 scan only containers currently reported as running by Pods, or `workload` when
 you want desired-state scanning from Deployment, StatefulSet, DaemonSet, Job,
 CronJob, and standalone Pod specs.

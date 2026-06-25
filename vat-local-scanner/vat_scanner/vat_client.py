@@ -266,9 +266,14 @@ def get_cached_key(source_id: str) -> str | None:
 
 def cache_key(source_id: str, key: str) -> None:
     """Cache API key for source."""
-    cache = _load_key_cache()
-    cache[source_id] = key
-    _save_key_cache(cache)
+    try:
+        cache = _load_key_cache()
+        cache[source_id] = key
+        _save_key_cache(cache)
+    except OSError:
+        # Containerized scanner lanes often run with read-only root filesystems;
+        # lack of a writable key cache must not block the current ingest.
+        return
 
 
 class VATClientError(Exception):
