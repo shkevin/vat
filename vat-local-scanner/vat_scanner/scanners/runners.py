@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import subprocess
 import uuid
@@ -120,16 +121,58 @@ def run_trivy_image(tar_path: Path, timeout: int = 120) -> dict | None:
     return json.loads(result.stdout)
 
 
-def run_trivy_image_ref(image_ref: str, timeout: int = 120) -> dict | None:
+def run_trivy_image_ref(
+    image_ref: str,
+    timeout: int = 120,
+    docker_config_path: Path | None = None,
+) -> dict | None:
     """Run trivy image on image reference (e.g. myregistry/app:v1). Returns JSON or None."""
+    env = os.environ.copy()
+    if docker_config_path is not None:
+        env["DOCKER_CONFIG"] = str(docker_config_path)
     try:
         result = subprocess.run(
             ["trivy", "image", image_ref, "--format", "json", "--quiet"],
             capture_output=True,
             text=True,
             timeout=timeout,
+            env=env,
         )
     except FileNotFoundError:
+        return None
+    if result.returncode != 0 or not result.stdout.strip():
+        return None
+    return json.loads(result.stdout)
+
+
+def run_trivy_image_ref_cyclonedx(
+    image_ref: str,
+    timeout: int = 180,
+    docker_config_path: Path | None = None,
+) -> dict | None:
+    """Run trivy image on image reference and return CycloneDX JSON SBOM."""
+    env = os.environ.copy()
+    if docker_config_path is not None:
+        env["DOCKER_CONFIG"] = str(docker_config_path)
+    try:
+        result = subprocess.run(
+            [
+                "trivy",
+                "image",
+                image_ref,
+                "--format",
+                "cyclonedx",
+                "--list-all-pkgs",
+                "--quiet",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            env=env,
+        )
+    except FileNotFoundError:
+        return None
+    except subprocess.TimeoutExpired:
         return None
     if result.returncode != 0 or not result.stdout.strip():
         return None
@@ -516,6 +559,129 @@ def run_oval_cve_oci_layout(
             import sys
             print(f"    {type(e).__name__}: {e}", file=sys.stderr, flush=True)
         return (None, False)
+    finally:
+        import shutil
+
+        shutil.rmtree(out_dir, ignore_errors=True)
+
+
+def run_node_stig(
+    host_root: Path,
+    asset_name: str,
+    timeout: int = 600,
+    *,
+    datastream_path: Path | None = None,
+    profile: str | None = None,
+    temp_dir: Path | None = None,
+    verbose: bool = False,
+) -> str | None:
+    """
+    Run OpenSCAP STIG evaluation against a mounted host root.
+
+    Node STIG content varies by OS, so the caller must provide a datastream path
+    through the argument or ``VAT_NODE_STIG_DATASTREAM``. Missing content is a
+    clean skip, not a node-agent failure.
+    """
+    host_root = Path(host_root)
+    raw_datastream = datastream_path or os.environ.get("VAT_NODE_STIG_DATASTREAM", "")
+    datastream = Path(raw_datastream) if raw_datastream else None
+    if not host_root.exists() or datastream is None or not datastream.exists():
+        return None
+    profile_id = profile or os.environ.get("VAT_NODE_STIG_PROFILE", STIG_PROFILE)
+    temp_dir = Path(temp_dir) if temp_dir else Path("/tmp")
+    out_dir = temp_dir / f"node-stig-{uuid.uuid4().hex[:12]}"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    results_path = out_dir / "results.xml"
+    try:
+        result = subprocess.run(
+            [
+                "oscap",
+                "xccdf",
+                "eval",
+                "--chroot",
+                str(host_root),
+                "--profile",
+                profile_id,
+                "--results",
+                str(results_path),
+                str(datastream),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+        if result.returncode not in (0, 2) or not results_path.exists():
+            if verbose and (result.stderr or result.stdout):
+                import sys
+                err = (result.stderr or result.stdout).strip()
+                for line in err.splitlines()[:5]:
+                    print(f"    {line}", file=sys.stderr, flush=True)
+            return None
+        return results_path.read_text(encoding="utf-8", errors="replace")
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as e:
+        if verbose:
+            import sys
+            print(f"    {type(e).__name__}: {e}", file=sys.stderr, flush=True)
+        return None
+    finally:
+        import shutil
+
+        shutil.rmtree(out_dir, ignore_errors=True)
+
+
+def run_node_oval_cve(
+    host_root: Path,
+    asset_name: str,
+    timeout: int = 600,
+    *,
+    definitions_path: Path | None = None,
+    temp_dir: Path | None = None,
+    verbose: bool = False,
+) -> str | None:
+    """
+    Run OpenSCAP OVAL evaluation against a mounted host root.
+
+    Requires explicit OVAL definitions via argument or
+    ``VAT_NODE_OVAL_DEFINITIONS``. Missing content is a clean skip.
+    """
+    host_root = Path(host_root)
+    raw_definitions = definitions_path or os.environ.get("VAT_NODE_OVAL_DEFINITIONS", "")
+    definitions = Path(raw_definitions) if raw_definitions else None
+    if not host_root.exists() or definitions is None or not definitions.exists():
+        return None
+    temp_dir = Path(temp_dir) if temp_dir else Path("/tmp")
+    out_dir = temp_dir / f"node-oval-{uuid.uuid4().hex[:12]}"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    results_path = out_dir / "oval-results.xml"
+    try:
+        result = subprocess.run(
+            [
+                "oscap",
+                "oval",
+                "eval",
+                "--chroot",
+                str(host_root),
+                "--results",
+                str(results_path),
+                str(definitions),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+        if result.returncode not in (0, 2) or not results_path.exists():
+            if verbose and (result.stderr or result.stdout):
+                import sys
+                err = (result.stderr or result.stdout).strip()
+                for line in err.splitlines()[:5]:
+                    print(f"    {line}", file=sys.stderr, flush=True)
+            return None
+        return results_path.read_text(encoding="utf-8", errors="replace")
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as e:
+        if verbose:
+            import sys
+            print(f"    {type(e).__name__}: {e}", file=sys.stderr, flush=True)
+        return None
     finally:
         import shutil
 

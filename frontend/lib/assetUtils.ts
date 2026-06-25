@@ -63,6 +63,7 @@ export function containerImageGroupKey(
 ): string {
   const img = image.trim();
   if (!img) return img;
+  if (img.toLowerCase().startsWith("k8s/")) return img;
   const cached = _groupKeyMemo.get(img);
   if (cached !== undefined) return cached;
   const kind = inferAssetKindForGrouping(img);
@@ -490,6 +491,44 @@ export function defaultContainerVariantKey(
     if (c !== 0) return c;
     return ka.localeCompare(kb);
   })[0];
+}
+
+export function containerVariantTags(findings: Finding[]): string[] {
+  const tags = [
+    ...new Set(
+      findings
+        .map((f) => f.tag?.trim() || getFindingTag(f) || "")
+        .filter(Boolean),
+    ),
+  ].sort();
+  return tags.length > 0 ? tags : ["latest"];
+}
+
+export function formatContainerVariantOptionLabel(
+  variantFindings: Finding[],
+  allFindings: Finding[],
+): string {
+  const tags = containerVariantTags(variantFindings);
+  const label = tags.join(", ");
+  const digest =
+    variantFindings.map(getFindingImageDigest).find((d) => Boolean(d)) ??
+    undefined;
+  if (!digest) return label;
+
+  const tagVariantCounts = new Map<string, Set<string>>();
+  for (const finding of allFindings) {
+    const key = containerVariantKey(finding);
+    for (const tag of containerVariantTags([finding])) {
+      const variants = tagVariantCounts.get(tag) ?? new Set<string>();
+      variants.add(key);
+      tagVariantCounts.set(tag, variants);
+    }
+  }
+
+  const needsDigest = tags.some(
+    (tag) => (tagVariantCounts.get(tag)?.size ?? 0) > 1,
+  );
+  return needsDigest ? `${label} (${formatDigestShort(digest)})` : label;
 }
 
 /** Sort key for the Tags column (containers use multi-tag list). */

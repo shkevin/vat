@@ -154,3 +154,91 @@ kustomize build --enable-alpha-plugins --enable-exec deploy/k8s/overlays/prod >/
 
 Both flags are required — `--enable-exec` alone leaves the KSOPS generator
 disabled in nested builds.
+
+## VAT operator
+
+The VAT operator is packaged separately from the core app. It discovers
+Kubernetes workloads and cluster objects, publishes compact inventories, and
+lets bounded workers scan those inventories sequentially. This avoids creating
+one Kubernetes Job per container and keeps VAT as the source of record for
+findings, SBOMs, deduplication, and correlation.
+
+The default cluster lanes are:
+
+- `vat-scanner-worker`: image SCA plus image SBOM from `vat-scan-inventory`.
+- `vat-config-worker`: Kubernetes config, secrets posture, and RBAC posture
+  from `vat-k8s-inventory`.
+- `vat-operator-node-agent`: privileged node OpenSCAP STIG/OVAL lane, enabled
+  by the runtime profile overlays and enabled by default in Helm.
+
+For private images, the image inventory stores only referenced
+`imagePullSecrets` names. The scanner worker reads those Kubernetes Secrets at
+scan time with its service account and writes a temporary Docker auth config for
+Trivy. Secret contents are not written into inventory ConfigMaps.
+
+Source-code SAST is not enabled from the cluster by default because Kubernetes
+does not contain source repositories. Use `vat-scan scan`, `scan-archive`, or a
+separate mounted source workflow for Semgrep/Gitleaks/source dependency scans.
+
+Base install, non-privileged image/config/RBAC scanning:
+
+```bash
+kubectl apply -k deploy/k8s/operator/base
+```
+
+Profile overlays enable the privileged node-agent tier for infrastructure
+scans. The node agent is a small DaemonSet, separate from the bounded scanner
+worker:
+
+```bash
+kubectl apply -k deploy/k8s/operator/overlays/k0s
+kubectl apply -k deploy/k8s/operator/overlays/k3s
+kubectl apply -k deploy/k8s/operator/overlays/kind
+```
+
+`kind` support is intentionally limited by kind's architecture: Kubernetes
+nodes are Docker containers, so node scans see the containerized node unless
+the host runtime is explicitly mounted into the cluster.
+
+Node STIG/OVAL scanning mounts the host root read-only at `/host` in a
+privileged DaemonSet. The scanner image includes the `oscap` binary, but STIG
+datastream and OVAL definition content are OS-specific and must be provided by
+mounting files or setting:
+
+- `VAT_NODE_STIG_DATASTREAM`
+- `VAT_NODE_STIG_PROFILE`
+- `VAT_NODE_OVAL_DEFINITIONS`
+
+If those files are absent or the host is unsupported, the node agent logs a
+clear skip and keeps running.
+
+Helm install:
+
+```bash
+helm install vat-operator deploy/helm/vat-operator \
+  --namespace vat-operator \
+  --create-namespace \
+  --set vat.url=http://vat-backend.vat.svc.cluster.local:8000
+```
+
+Set `--set nodeAgent.enabled=false` if you want the Helm install to skip the
+privileged host-root node lane.
+
+k0s node-agent install:
+
+```bash
+helm install vat-operator deploy/helm/vat-operator \
+  --namespace vat-operator \
+  --create-namespace \
+  --set operator.runtimeProfile=k0s \
+  --set nodeAgent.enabled=true \
+  --set nodeAgent.runtimeProfile=k0s \
+  --set nodeAgent.containerdSocketPath=/host/run/k0s/containerd.sock \
+  --set nodeAgent.kubeletRootPath=/host/var/lib/k0s/kubelet \
+  --set nodeAgent.staticPodManifestPath=/host/var/lib/k0s/manifests
+```
+
+Create `vat-operator-credentials` in the operator namespace with an
+`adminToken` key before enabling scans. The operator uses that token to let
+scanner workers auto-provision VAT ingest sources. You may also provide an
+`apiKey` key for direct ingest where a preconfigured source key is preferred.

@@ -1,0 +1,83 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: vatoperatorconfigs.vat.io
+spec:
+  group: vat.io
+  scope: Cluster
+  names:
+    plural: vatoperatorconfigs
+    singular: vatoperatorconfig
+    kind: VatOperatorConfig
+    shortNames:
+      - voc
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              required:
+                - vatUrl
+              properties:
+                vatUrl:
+                  type: string
+                scannerImage:
+                  type: string
+                  default: harbor.automatedhass.com/vat/scanner:latest
+                credentialsSecretName:
+                  type: string
+                  default: vat-operator-credentials
+                adminTokenKey:
+                  type: string
+                  default: adminToken
+                runtimeProfile:
+                  type: string
+                  default: auto
+                  enum:
+                    - auto
+                    - generic
+                    - kind
+                    - k0s
+                    - k3s
+                nodeScanning:
+                  type: object
+                  properties:
+                    enabled:
+                      type: boolean
+                      default: false
+                    hostRuntimeExposed:
+                      type: boolean
+                      default: false
+                rescanIntervalSeconds:
+                  type: integer
+                  minimum: 60
+                  default: 3600
+                maxConcurrentScanJobs:
+                  type: integer
+                  minimum: 1
+                  default: 5
+                excludedNamespaces:
+                  type: array
+                  items:
+                    type: string
+                  default:
+                    - kube-system
+                    - kube-public
+                    - kube-node-lease
+            status:
+              type: object
+              properties:
+                observedGeneration:
+                  type: integer
+                conditions:
+                  type: array
+                  items:
+                    type: object
+                    x-kubernetes-preserve-unknown-fields: true
+      subresources:
+        status: {}

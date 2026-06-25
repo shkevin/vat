@@ -11,6 +11,8 @@ from vat_scanner.scanners.detection import (
 from vat_scanner.scanners.runners import (
     run_gitleaks,
     run_grype,
+    run_node_oval_cve,
+    run_node_stig,
     run_npm_audit,
     run_oval_cve_image,
     run_oval_cve_oci_layout,
@@ -23,6 +25,7 @@ from vat_scanner.scanners.runners import (
     run_trivy_image_cyclonedx,
     run_trivy_image,
     run_trivy_image_ref,
+    run_trivy_image_ref_cyclonedx,
     run_trivy_oci_layout_cyclonedx,
     run_trivy_oci_layout,
 )
@@ -41,6 +44,8 @@ __all__ = [
     "has_semgrep_content",
     "run_gitleaks",
     "run_grype",
+    "run_node_oval_cve",
+    "run_node_stig",
     "run_npm_audit",
     "run_oval_cve_image",
     "run_oval_cve_oci_layout",
@@ -53,6 +58,7 @@ __all__ = [
     "run_trivy_image_cyclonedx",
     "run_trivy_image",
     "run_trivy_image_ref",
+    "run_trivy_image_ref_cyclonedx",
     "run_trivy_oci_layout_cyclonedx",
     "run_trivy_oci_layout",
     "normalize_gitleaks",

@@ -1,0 +1,97 @@
+{{- if .Values.nodeAgent.enabled }}
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: vat-operator-node-agent
+  namespace: {{ include "vat-operator.namespace" . }}
+  labels:
+    app.kubernetes.io/name: vat-operator-node-agent
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: vat-operator-node-agent
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: vat-operator-node-agent
+    spec:
+      serviceAccountName: {{ .Values.scanner.serviceAccountName }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- range . }}
+        - name: {{ . }}
+        {{- end }}
+      {{- end }}
+      hostPID: true
+      tolerations:
+        - operator: Exists
+      containers:
+        - name: node-agent
+          image: {{ include "vat-operator.scannerImage" . }}
+          imagePullPolicy: {{ .Values.nodeAgent.imagePullPolicy }}
+          command:
+            - /bin/sh
+            - -c
+          args:
+            - |
+              while true; do
+                vat-scan scan-node \
+                  --host-root "${VAT_HOST_ROOT:-/host}" \
+                  --node-name "${NODE_NAME:-unknown-node}" \
+                  --scan-types "${VAT_NODE_SCAN_TYPES:-node-stig,node-oval-cve}" \
+                  --timeout "${VAT_NODE_SCAN_TIMEOUT_SECONDS:-600}" || true
+                sleep "${VAT_NODE_SCAN_INTERVAL_SECONDS:-86400}"
+              done
+          securityContext:
+            privileged: true
+            readOnlyRootFilesystem: true
+          env:
+            - name: VAT_URL
+              value: {{ .Values.vat.url | quote }}
+            - name: VAT_CLUSTER_NAME
+              value: {{ .Values.scanner.clusterName | quote }}
+            - name: VAT_OPERATOR_RUNTIME_PROFILE
+              value: {{ .Values.nodeAgent.runtimeProfile | quote }}
+            - name: VAT_CONTAINERD_SOCKET_PATH
+              value: {{ .Values.nodeAgent.containerdSocketPath | quote }}
+            - name: VAT_KUBELET_ROOT_PATH
+              value: {{ .Values.nodeAgent.kubeletRootPath | quote }}
+            - name: VAT_STATIC_POD_MANIFEST_PATH
+              value: {{ .Values.nodeAgent.staticPodManifestPath | quote }}
+            - name: VAT_HOST_ROOT
+              value: /host
+            - name: VAT_NODE_SCAN_TYPES
+              value: {{ .Values.nodeAgent.scanTypes | quote }}
+            - name: VAT_NODE_SCAN_INTERVAL_SECONDS
+              value: {{ .Values.nodeAgent.scanIntervalSeconds | quote }}
+            - name: VAT_NODE_SCAN_TIMEOUT_SECONDS
+              value: {{ .Values.nodeAgent.scanTimeoutSeconds | quote }}
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: VAT_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.vat.credentialsSecretName }}
+                  key: apiKey
+                  optional: true
+            - name: VAT_ADMIN_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.vat.credentialsSecretName }}
+                  key: {{ .Values.vat.adminTokenKey }}
+                  optional: true
+          volumeMounts:
+            - name: host-root
+              mountPath: /host
+              readOnly: true
+            - name: scanner-tmp
+              mountPath: /tmp
+      volumes:
+        - name: host-root
+          hostPath:
+            path: /
+        - name: scanner-tmp
+          emptyDir: {}
+{{- end }}

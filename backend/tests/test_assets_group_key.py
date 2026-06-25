@@ -38,3 +38,8 @@ def test_group_key_matches_normalize_for_container_and_repo() -> None:
 def test_non_image_asset_id_not_canonicalized() -> None:
     """Single-token / package-scope strings stay raw (no docker.io/library/…)."""
     assert _container_image_group_key("2026-03-09_1801", None) == "2026-03-09_1801"
+
+
+def test_kubernetes_workload_asset_id_not_canonicalized() -> None:
+    asset_id = "k8s/k3s-remote/argocd/deployment/argocd-dex-server/dex-server"
+    assert _container_image_group_key(asset_id, None) == asset_id

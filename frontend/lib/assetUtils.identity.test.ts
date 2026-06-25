@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { SEV_ORDER } from "@/lib/constants";
 import {
+  containerImageGroupKey,
   sameAssetIdentity,
   collectFindingsForAssetIdentity,
   resolveAssetForPage,
@@ -39,6 +40,13 @@ describe("sameAssetIdentity", () => {
         "docker.io/containers/images/b",
       ),
     ).toBe(false);
+  });
+});
+
+describe("containerImageGroupKey", () => {
+  it("preserves Kubernetes workload asset ids", () => {
+    const assetId = "k8s/k3s-remote/argocd/deployment/argocd-dex-server/dex-server";
+    expect(containerImageGroupKey(assetId)).toBe(assetId);
   });
 });
 

@@ -1,0 +1,105 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: vat-operator
+  labels:
+    app.kubernetes.io/name: vat-operator
+rules:
+  - apiGroups: [""]
+    resources:
+      - namespaces
+      - pods
+      - services
+      - configmaps
+      - secrets
+      - serviceaccounts
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources:
+      - configmaps
+    verbs: ["create"]
+  - apiGroups: [""]
+    resources:
+      - configmaps
+    resourceNames:
+      - vat-scan-inventory
+      - vat-k8s-inventory
+    verbs: ["get", "patch", "update"]
+  - apiGroups: ["apps"]
+    resources:
+      - deployments
+      - statefulsets
+      - daemonsets
+      - replicasets
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["batch"]
+    resources:
+      - jobs
+      - cronjobs
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["networking.k8s.io"]
+    resources:
+      - ingresses
+      - networkpolicies
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources:
+      - roles
+      - rolebindings
+      - clusterroles
+      - clusterrolebindings
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["vat.io"]
+    resources:
+      - vatoperatorconfigs
+      - scanpolicies
+      - scanreports
+    verbs: ["get", "list", "watch", "create", "patch", "update"]
+  - apiGroups: ["vat.io"]
+    resources:
+      - vatoperatorconfigs/status
+      - scanpolicies/status
+      - scanreports/status
+    verbs: ["get", "patch", "update"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: vat-operator
+  labels:
+    app.kubernetes.io/name: vat-operator
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: vat-operator
+subjects:
+  - kind: ServiceAccount
+    name: vat-operator
+    namespace: vat-operator
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: vat-operator-scanner
+  labels:
+    app.kubernetes.io/name: vat-operator-scanner
+rules:
+  - apiGroups: [""]
+    resources:
+      - secrets
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: vat-operator-scanner
+  labels:
+    app.kubernetes.io/name: vat-operator-scanner
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: vat-operator-scanner
+subjects:
+  - kind: ServiceAccount
+    name: vat-operator-scanner
+    namespace: vat-operator

@@ -1,0 +1,85 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vat-scanner-worker
+  namespace: vat-operator
+  labels:
+    app.kubernetes.io/name: vat-scanner-worker
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: vat-scanner-worker
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: vat-scanner-worker
+    spec:
+      serviceAccountName: vat-operator-scanner
+      imagePullSecrets:
+        - name: harbor-creds
+      containers:
+        - name: scanner
+          image: harbor.automatedhass.com/vat/scanner:latest
+          imagePullPolicy: Always
+          command:
+            - /bin/sh
+            - -c
+          args:
+            - |
+              while true; do
+                if [ -s /inventory/images.json ]; then
+                  vat-scan scan-inventory /inventory/images.json \
+                    --state-file /state/scan-state.json \
+                    --scan-types "${VAT_INVENTORY_SCAN_TYPES:-image-sca,image-sbom}" \
+                    --full-rescan-interval-seconds "${VAT_FULL_RESCAN_INTERVAL_SECONDS:-86400}" || true
+                else
+                  echo "waiting for vat-scan-inventory ConfigMap"
+                fi
+                sleep "${VAT_SCAN_INTERVAL_SECONDS:-3600}"
+              done
+          env:
+            - name: VAT_URL
+              value: http://vat-backend.vat.svc.cluster.local:8000
+            - name: VAT_SCAN_INTERVAL_SECONDS
+              value: "3600"
+            - name: VAT_FULL_RESCAN_INTERVAL_SECONDS
+              value: "86400"
+            - name: VAT_INVENTORY_SCAN_TYPES
+              value: image-sca,image-sbom
+            - name: VAT_CLUSTER_NAME
+              value: cluster
+            - name: VAT_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: vat-operator-credentials
+                  key: apiKey
+                  optional: true
+            - name: VAT_ADMIN_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: vat-operator-credentials
+                  key: adminToken
+                  optional: true
+          volumeMounts:
+            - name: inventory
+              mountPath: /inventory
+              readOnly: true
+            - name: scanner-state
+              mountPath: /state
+          resources:
+            requests:
+              cpu: 100m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 2Gi
+      volumes:
+        - name: inventory
+          configMap:
+            name: vat-scan-inventory
+            optional: true
+        - name: scanner-state
+          emptyDir: {}

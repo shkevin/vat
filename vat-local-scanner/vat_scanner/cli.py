@@ -3,10 +3,20 @@
 from __future__ import annotations
 
 import argparse
+import base64
+from contextlib import contextmanager
 import copy
+import gzip
+import hashlib
 import json
+import os
+import ssl
 import sys
+import tempfile
+import urllib.request
 import uuid
+from datetime import datetime, timezone
+from typing import Iterator
 from pathlib import Path
 
 from vat_scanner import __version__
@@ -38,7 +48,13 @@ from vat_scanner.vat_client import (
     source_id_for_parser,
 )
 from vat_scanner.sarif_output import reports_to_sarif
-from vat_scanner.scanners import run_trivy_image_ref
+from vat_scanner.scanners import (
+    run_node_oval_cve,
+    run_node_stig,
+    run_trivy_fs,
+    run_trivy_image_ref,
+    run_trivy_image_ref_cyclonedx,
+)
 from vat_scanner.scanners.normalize import normalize_trivy
 from vat_scanner.archive import extract_archive, is_archive, remove_extracted
 from vat_scanner.container_identity import canonical_container_asset
@@ -198,6 +214,58 @@ def _parse_scan_types(s: str) -> list[str]:
     raw = [x.strip().lower() for x in s.split(",") if x.strip()]
     valid = [t for t in raw if t in ALL_SCAN_TYPES]
     return valid if valid else list(ALL_SCAN_TYPES)
+
+
+INVENTORY_SCAN_TYPES = ("image-sca", "image-sbom")
+NODE_SCAN_TYPES = ("node-stig", "node-oval-cve")
+
+
+def _parse_inventory_scan_types(raw: str | None) -> list[str]:
+    value = (raw or "").strip()
+    if not value:
+        value = os.environ.get("VAT_INVENTORY_SCAN_TYPES", "") or ",".join(INVENTORY_SCAN_TYPES)
+    requested = [part.strip().lower() for part in value.split(",") if part.strip()]
+    if any(part in ("all", "*") for part in requested):
+        return list(INVENTORY_SCAN_TYPES)
+    aliases = {
+        "trivy": "image-sca",
+        "sca": "image-sca",
+        "sbom": "image-sbom",
+        "cyclonedx": "image-sbom",
+    }
+    out: list[str] = []
+    for part in requested:
+        normalized = aliases.get(part, part)
+        if normalized in INVENTORY_SCAN_TYPES and normalized not in out:
+            out.append(normalized)
+    return out or list(INVENTORY_SCAN_TYPES)
+
+
+def _parse_node_scan_types(raw: str | None) -> list[str]:
+    value = (raw or "").strip()
+    if not value:
+        value = os.environ.get("VAT_NODE_SCAN_TYPES", "") or ",".join(NODE_SCAN_TYPES)
+    requested = [part.strip().lower() for part in value.split(",") if part.strip()]
+    if any(part in ("all", "*") for part in requested):
+        return list(NODE_SCAN_TYPES)
+    aliases = {
+        "stig": "node-stig",
+        "oval": "node-oval-cve",
+        "oval-cve": "node-oval-cve",
+        "node-oval": "node-oval-cve",
+    }
+    out: list[str] = []
+    for part in requested:
+        normalized = aliases.get(part, part)
+        if normalized in NODE_SCAN_TYPES and normalized not in out:
+            out.append(normalized)
+    return out or list(NODE_SCAN_TYPES)
+
+
+def _node_asset(cluster_name: str, node_name: str) -> str:
+    cluster = (cluster_name or "cluster").strip() or "cluster"
+    node = (node_name or os.environ.get("NODE_NAME", "") or os.uname().nodename).strip() or "node"
+    return f"k8s/{cluster}/node/{node}/host"
 
 
 def _merge_scan_cli(cfg: ScannerConfig, args: argparse.Namespace) -> ScannerConfig:
@@ -711,25 +779,52 @@ def cmd_scan_image(args: argparse.Namespace) -> int:
 
     import os
     vat_url = (args.vat_url or os.environ.get("VAT_URL", "")).strip()
+    api_key = (getattr(args, "api_key", "") or os.environ.get("VAT_API_KEY", "")).strip()
     admin_token = (args.admin_token or os.environ.get("VAT_ADMIN_TOKEN", "")).strip()
-    if not vat_url or not admin_token:
-        print("\nERROR: Set VAT_URL and VAT_ADMIN_TOKEN.", file=sys.stderr)
+    if not vat_url or not (api_key or admin_token):
+        print("\nERROR: Set VAT_URL and VAT_API_KEY or VAT_ADMIN_TOKEN.", file=sys.stderr)
         return 1
 
     try:
-        source_id, key = ensure_source(
-            vat_url, admin_token, "trivy",
-            create_key=True, regenerate_key=args.reset_keys,
-            asset_type="container",
-        )
+        key = api_key
         if not key:
-            key = get_cached_key(source_id)
-        if not key:
-            print(f"  {source_id}: no key", file=sys.stderr)
-            return 1
-        cache_key(source_id, key)
+            source_id, key = ensure_source(
+                vat_url, admin_token, "trivy",
+                create_key=True, regenerate_key=args.reset_keys,
+                asset_type="container",
+            )
+            if not key:
+                key = get_cached_key(source_id)
+            if not key:
+                print(f"  {source_id}: no key", file=sys.stderr)
+                return 1
+            cache_key(source_id, key)
         tag_val = getattr(args, "tag", None)
-        resp = ingest_report(vat_url, key, report, asset=asset_name, tag=tag_val)
+        image_digest = (
+            getattr(args, "image_digest", None)
+            or os.environ.get("VAT_SCAN_IMAGE_DIGEST", "")
+        ).strip() or None
+        import time
+        last_error: VATClientError | None = None
+        for attempt in range(1, 4):
+            try:
+                resp = ingest_report(
+                    vat_url,
+                    key,
+                    report,
+                    asset=asset_name,
+                    tag=tag_val,
+                    image_digest=image_digest,
+                )
+                break
+            except VATClientError as e:
+                last_error = e
+                if attempt == 3:
+                    raise
+                print(f"  trivy ingest attempt {attempt} failed; retrying...", file=sys.stderr)
+                time.sleep(attempt * 2)
+        if last_error is not None and "resp" not in locals():
+            raise last_error
         print(f"  trivy: {resp}")
     except VATClientError as e:
         print(f"\nERROR: {e}", file=sys.stderr)
@@ -737,6 +832,819 @@ def cmd_scan_image(args: argparse.Namespace) -> int:
 
     print("\nDone. Asset:", asset_name)
     return 0
+
+
+def _image_ref_tag(image_ref: str) -> str | None:
+    ref = str(image_ref or "").strip()
+    if not ref:
+        return None
+    ref_without_digest = ref.split("@", 1)[0]
+    last_slash = ref_without_digest.rfind("/")
+    last_colon = ref_without_digest.rfind(":")
+    if last_colon <= last_slash:
+        return None
+    tag = ref_without_digest[last_colon + 1 :].strip()
+    return tag or None
+
+
+def _inventory_target_asset_and_tag(
+    target: dict,
+    cluster_name: str,
+    image_ref: str | None = None,
+) -> tuple[str | None, str | None]:
+    namespace = str(target.get("namespace") or "").strip()
+    kind = str(target.get("kind") or "").strip()
+    name = str(target.get("name") or "").strip()
+    container_name = str(target.get("containerName") or "").strip()
+    if not (namespace and kind and name and container_name):
+        return None, None
+    cluster = (cluster_name or "cluster").strip() or "cluster"
+    asset = f"k8s/{cluster}/{namespace}/{kind.lower()}/{name}/{container_name}"
+    tag = _image_ref_tag(image_ref or "")
+    return asset, tag
+
+
+def _inventory_targets(item: dict) -> list[dict]:
+    targets = item.get("targets") if isinstance(item, dict) else None
+    if not isinstance(targets, list):
+        return []
+    return [target for target in targets if isinstance(target, dict)]
+
+
+def _inventory_pull_secret_refs(item: dict) -> list[tuple[str, str]]:
+    refs: set[tuple[str, str]] = set()
+    for target in _inventory_targets(item):
+        namespace = str(target.get("namespace") or "").strip()
+        if not namespace:
+            continue
+        names = target.get("imagePullSecrets") or target.get("imagePullSecretNames") or []
+        if not isinstance(names, list):
+            continue
+        for name in names:
+            secret_name = str(name or "").strip()
+            if secret_name:
+                refs.add((namespace, secret_name))
+    return sorted(refs)
+
+
+def _fetch_kubernetes_secret(namespace: str, name: str) -> dict | None:
+    host = os.environ.get("KUBERNETES_SERVICE_HOST", "").strip()
+    port = os.environ.get("KUBERNETES_SERVICE_PORT", "443").strip() or "443"
+    token_path = Path("/var/run/secrets/kubernetes.io/serviceaccount/token")
+    ca_path = Path("/var/run/secrets/kubernetes.io/serviceaccount/ca.crt")
+    if not host or not token_path.exists():
+        return None
+    token = token_path.read_text(encoding="utf-8").strip()
+    url = f"https://{host}:{port}/api/v1/namespaces/{namespace}/secrets/{name}"
+    context = ssl.create_default_context(cafile=str(ca_path)) if ca_path.exists() else ssl.create_default_context()
+    request = urllib.request.Request(url, headers={"Authorization": f"Bearer {token}"})
+    try:
+        with urllib.request.urlopen(request, context=context, timeout=10) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except Exception as e:
+        print(f"  WARN: unable to read imagePullSecret {namespace}/{name}: {e}", file=sys.stderr)
+        return None
+
+
+def _docker_auths_from_secret(secret: dict | None) -> dict:
+    if not isinstance(secret, dict):
+        return {}
+    data = secret.get("data")
+    if not isinstance(data, dict):
+        return {}
+    encoded = data.get(".dockerconfigjson") or data.get(".dockercfg")
+    if not encoded:
+        return {}
+    try:
+        decoded = base64.b64decode(str(encoded)).decode("utf-8")
+        doc = json.loads(decoded)
+    except (ValueError, json.JSONDecodeError):
+        return {}
+    if isinstance(doc.get("auths"), dict):
+        return doc["auths"]
+    if isinstance(doc, dict):
+        return doc
+    return {}
+
+
+@contextmanager
+def _temporary_registry_auth_config(item: dict, temp_base: Path | None = None) -> Iterator[Path | None]:
+    auths: dict = {}
+    for namespace, secret_name in _inventory_pull_secret_refs(item):
+        auths.update(_docker_auths_from_secret(_fetch_kubernetes_secret(namespace, secret_name)))
+    if not auths:
+        yield None
+        return
+
+    parent = Path(temp_base) if temp_base else Path(tempfile.gettempdir())
+    parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="vat-registry-auth-", dir=str(parent)) as auth_dir:
+        auth_path = Path(auth_dir)
+        (auth_path / "config.json").write_text(json.dumps({"auths": auths}), encoding="utf-8")
+        yield auth_path
+
+
+def _inventory_item_key(item: dict) -> str:
+    digest = str(item.get("imageDigest") or "").strip()
+    if digest:
+        return digest
+    return str(item.get("image") or "").strip()
+
+
+def _inventory_target_signature(target: dict) -> str:
+    parts = [
+        str(target.get("namespace") or "").strip(),
+        str(target.get("kind") or "").strip(),
+        str(target.get("name") or "").strip(),
+        str(target.get("containerName") or "").strip(),
+    ]
+    secrets = target.get("imagePullSecrets") or target.get("imagePullSecretNames") or []
+    if isinstance(secrets, list):
+        secret_part = ",".join(sorted(str(name or "").strip() for name in secrets if str(name or "").strip()))
+        if secret_part:
+            parts.append(f"pullSecrets={secret_part}")
+    return "/".join(parts)
+
+
+def _inventory_item_signature(item: dict) -> str:
+    key = _inventory_item_key(item)
+    targets = sorted(
+        _inventory_target_signature(target)
+        for target in _inventory_targets(item)
+    )
+    return f"{key}|{','.join(targets)}"
+
+
+def _load_scan_state(path: Path | None) -> dict:
+    if path is None or not path.exists():
+        return {"images": {}}
+    try:
+        doc = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {"images": {}}
+    if not isinstance(doc, dict):
+        return {"images": {}}
+    images = doc.get("images")
+    if not isinstance(images, dict):
+        doc["images"] = {}
+    return doc
+
+
+def _save_scan_state(path: Path | None, state: dict) -> None:
+    if path is None:
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(state, indent=2, sort_keys=True), encoding="utf-8")
+
+
+def _parse_state_time(value: object) -> datetime | None:
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    if raw.endswith("Z"):
+        raw = raw[:-1] + "+00:00"
+    try:
+        parsed = datetime.fromisoformat(raw)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _full_rescan_due(state: dict, interval_seconds: int, force: bool) -> bool:
+    if force:
+        return True
+    if interval_seconds <= 0:
+        return False
+    last_full = _parse_state_time(state.get("lastFullScanAt"))
+    if last_full is None:
+        return False
+    age = datetime.now(timezone.utc) - last_full
+    return age.total_seconds() >= interval_seconds
+
+
+def _k8s_inventory_item_key(item: dict) -> str:
+    namespace = str(item.get("namespace") or "").strip()
+    kind = str(item.get("kind") or "").strip()
+    name = str(item.get("name") or "").strip()
+    if namespace:
+        return f"{namespace}/{kind}/{name}"
+    return f"cluster/{kind}/{name}"
+
+
+def _k8s_inventory_item_signature(item: dict) -> str:
+    resource_version = str(item.get("resourceVersion") or "").strip()
+    manifest = str(item.get("manifest") or "")
+    digest = hashlib.sha256(manifest.encode("utf-8")).hexdigest()
+    return f"{resource_version}|{digest}"
+
+
+def _load_k8s_scan_state(path: Path | None) -> dict:
+    if path is None or not path.exists():
+        return {"objects": {}}
+    try:
+        doc = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {"objects": {}}
+    if not isinstance(doc, dict):
+        return {"objects": {}}
+    objects = doc.get("objects")
+    if not isinstance(objects, dict):
+        doc["objects"] = {}
+    return doc
+
+
+def _k8s_inventory_asset_and_tag(item: dict, cluster_name: str) -> tuple[str | None, str | None]:
+    kind = str(item.get("kind") or "").strip()
+    name = str(item.get("name") or "").strip()
+    namespace = str(item.get("namespace") or "").strip()
+    if not (kind and name):
+        return None, None
+    cluster = (cluster_name or "cluster").strip() or "cluster"
+    namespace_part = namespace or "cluster"
+    asset = f"k8s/{cluster}/{namespace_part}/{kind.lower()}/{name}"
+    rbac_kinds = {"role", "rolebinding", "clusterrole", "clusterrolebinding"}
+    tag = "rbac" if kind.lower() in rbac_kinds else "k8s-config"
+    return asset, tag
+
+
+def _safe_k8s_manifest_filename(item: dict) -> str:
+    raw = _k8s_inventory_item_key(item).lower()
+    return "".join(ch if ch.isalnum() else "-" for ch in raw).strip("-") or "object"
+
+
+def _read_k8s_inventory_doc(path: Path) -> dict:
+    raw = path.read_text(encoding="utf-8")
+    if path.name.endswith(".gz.b64"):
+        decoded = base64.b64decode(raw)
+        return json.loads(gzip.decompress(decoded).decode("utf-8"))
+    return json.loads(raw)
+
+
+def _ingest_trivy_report_with_retry(
+    *,
+    vat_url: str,
+    key: str,
+    report: dict,
+    asset_name: str,
+    tag: str | None,
+    image_digest: str | None,
+) -> dict:
+    import time
+
+    max_attempts = 5
+    for attempt in range(1, max_attempts + 1):
+        try:
+            return ingest_report(
+                vat_url,
+                key,
+                report,
+                asset=asset_name,
+                tag=tag,
+                image_digest=image_digest,
+            )
+        except VATClientError:
+            if attempt == max_attempts:
+                raise
+            print(f"  trivy ingest attempt {attempt} failed; retrying...", file=sys.stderr)
+            time.sleep(min(2**attempt, 16))
+    raise VATClientError("Ingest failed")
+
+
+def _ingest_json_report_with_retry(
+    *,
+    vat_url: str,
+    key: str,
+    report: dict,
+    asset_name: str,
+    tag: str | None,
+    image_digest: str | None,
+    label: str,
+) -> dict:
+    import time
+
+    max_attempts = 5
+    for attempt in range(1, max_attempts + 1):
+        try:
+            return ingest_report(
+                vat_url,
+                key,
+                report,
+                asset=asset_name,
+                tag=tag,
+                image_digest=image_digest,
+            )
+        except VATClientError:
+            if attempt == max_attempts:
+                raise
+            print(f"  {label} ingest attempt {attempt} failed; retrying...", file=sys.stderr)
+            time.sleep(min(2**attempt, 16))
+    raise VATClientError("Ingest failed")
+
+
+def cmd_scan_inventory(args: argparse.Namespace) -> int:
+    """Scan a deduplicated Kubernetes image inventory sequentially."""
+    inventory_path = Path(args.inventory)
+    try:
+        doc = json.loads(inventory_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as e:
+        print(f"ERROR: Unable to read inventory {inventory_path}: {e}", file=sys.stderr)
+        return 1
+
+    items = doc.get("items") if isinstance(doc, dict) else None
+    if not isinstance(items, list):
+        print("ERROR: Inventory must contain an items array.", file=sys.stderr)
+        return 1
+
+    vat_url = (getattr(args, "vat_url", "") or os.environ.get("VAT_URL", "")).strip()
+    api_key = (getattr(args, "api_key", "") or os.environ.get("VAT_API_KEY", "")).strip()
+    admin_token = (getattr(args, "admin_token", "") or os.environ.get("VAT_ADMIN_TOKEN", "")).strip()
+    if not args.dry_run and not (vat_url and (api_key or admin_token)):
+        print("\nERROR: Set VAT_URL and VAT_API_KEY or VAT_ADMIN_TOKEN.", file=sys.stderr)
+        return 1
+
+    scan_types = _parse_inventory_scan_types(getattr(args, "scan_types", None))
+    parser_keys: dict[str, str] = {}
+    if api_key:
+        parser_keys["trivy"] = api_key
+        parser_keys["cyclonedx"] = api_key
+    if not args.dry_run and admin_token and not api_key:
+        for parser_id in ("trivy", "cyclonedx"):
+            if parser_id == "cyclonedx" and "image-sbom" not in scan_types:
+                continue
+            if parser_id == "trivy" and "image-sca" not in scan_types:
+                continue
+            try:
+                source_id, ensured_key = ensure_source(
+                    vat_url,
+                    admin_token,
+                    parser_id,
+                    create_key=True,
+                    regenerate_key=args.reset_keys,
+                    asset_type="container",
+                )
+            except VATClientError as e:
+                print(f"\nERROR: {e}", file=sys.stderr)
+                return 1
+            key_to_cache = ensured_key or get_cached_key(source_id)
+            if not key_to_cache:
+                print(f"  {source_id}: no key", file=sys.stderr)
+                return 1
+            parser_keys[parser_id] = key_to_cache
+            cache_key(source_id, key_to_cache)
+
+    key = parser_keys.get("trivy") or api_key
+    if not args.dry_run and not key and "image-sca" in scan_types:
+        try:
+            source_id, key = ensure_source(
+                vat_url,
+                admin_token,
+                "trivy",
+                create_key=True,
+                regenerate_key=args.reset_keys,
+                asset_type="container",
+            )
+        except VATClientError as e:
+            print(f"\nERROR: {e}", file=sys.stderr)
+            return 1
+        if not key:
+            key = get_cached_key(source_id)
+        if not key:
+            print(f"  {source_id}: no key", file=sys.stderr)
+            return 1
+        cache_key(source_id, key)
+        parser_keys["trivy"] = key
+
+    cluster_name = (
+        getattr(args, "cluster_name", "")
+        or os.environ.get("VAT_CLUSTER_NAME", "")
+        or os.environ.get("CLUSTER_NAME", "")
+        or "cluster"
+    ).strip()
+    state_file_value = (
+        getattr(args, "state_file", None)
+        or os.environ.get("VAT_SCAN_STATE_FILE", "")
+        or ""
+    )
+    state_file = Path(state_file_value) if state_file_value else None
+    state = _load_scan_state(state_file)
+    full_rescan_due = _full_rescan_due(
+        state,
+        int(getattr(args, "full_rescan_interval_seconds", 0) or 0),
+        bool(getattr(args, "force_full_rescan", False)),
+    )
+
+    failures = 0
+    scanned = 0
+    skipped = 0
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        image = str(item.get("image") or "").strip()
+        if not image:
+            continue
+        item_key = _inventory_item_key(item)
+        signature = _inventory_item_signature(item) + "|scanTypes=" + ",".join(scan_types)
+        image_state = (state.get("images") or {}).get(item_key)
+        if (
+            not full_rescan_due
+            and isinstance(image_state, dict)
+            and image_state.get("signature") == signature
+        ):
+            skipped += 1
+            print("Skipping unchanged image:", image)
+            continue
+        scanned += 1
+        image_digest = str(item.get("imageDigest") or "").strip() or None
+        targets = _inventory_targets(item)
+        print("Scanning image:", image)
+        with _temporary_registry_auth_config(item) as docker_config_path:
+            report = (
+                run_trivy_image_ref(image, timeout=120, docker_config_path=docker_config_path)
+                if "image-sca" in scan_types
+                else None
+            )
+            sbom_report = (
+                run_trivy_image_ref_cyclonedx(image, timeout=180, docker_config_path=docker_config_path)
+                if "image-sbom" in scan_types
+                else None
+            )
+        if "image-sca" in scan_types and not report:
+            print("ERROR: Trivy image scan failed or trivy not found.", file=sys.stderr)
+            failures += 1
+            if getattr(args, "fail_on_error", False):
+                return 1
+            continue
+        if "image-sbom" in scan_types and not sbom_report:
+            print("ERROR: Trivy CycloneDX image scan failed or trivy not found.", file=sys.stderr)
+            failures += 1
+            if getattr(args, "fail_on_error", False):
+                return 1
+
+        if not targets:
+            targets = [{"namespace": "unknown", "kind": "Image", "name": image, "containerName": "image"}]
+
+        target_failures = 0
+        for target in targets:
+            asset, tag = _inventory_target_asset_and_tag(target, cluster_name, image)
+            if not asset:
+                continue
+            print("Asset:       ", asset)
+            if "image-sca" in scan_types and report:
+                target_report = normalize_trivy(copy.deepcopy(report), asset)
+                if getattr(args, "no_snippets", False):
+                    target_report = strip_snippets(target_report)
+            else:
+                target_report = None
+            target_sbom_report = copy.deepcopy(sbom_report) if sbom_report else None
+            if args.dry_run:
+                if target_report:
+                    count = len(target_report.get("Results") or [])
+                    print(f"  trivy: {count} result(s)")
+                if target_sbom_report:
+                    count = len(target_sbom_report.get("components") or [])
+                    print(f"  cyclonedx: {count} component(s)")
+                continue
+            if target_report:
+                try:
+                    resp = _ingest_trivy_report_with_retry(
+                        vat_url=vat_url,
+                        key=parser_keys.get("trivy") or key,
+                        report=target_report,
+                        asset_name=asset,
+                        tag=tag,
+                        image_digest=image_digest,
+                    )
+                    print(f"  trivy: {resp}")
+                except VATClientError as e:
+                    target_failures += 1
+                    print(f"\nERROR: {e}", file=sys.stderr)
+                    if getattr(args, "fail_on_error", False):
+                        return 1
+            if target_sbom_report:
+                cyclonedx_key = parser_keys.get("cyclonedx") or api_key
+                if not cyclonedx_key:
+                    target_failures += 1
+                    print("\nERROR: No CycloneDX ingest key available.", file=sys.stderr)
+                    if getattr(args, "fail_on_error", False):
+                        return 1
+                    continue
+                try:
+                    resp = _ingest_json_report_with_retry(
+                        vat_url=vat_url,
+                        key=cyclonedx_key,
+                        report=target_sbom_report,
+                        asset_name=asset,
+                        tag=tag,
+                        image_digest=image_digest,
+                        label="cyclonedx",
+                    )
+                    print(f"  cyclonedx: {resp}")
+                except VATClientError as e:
+                    target_failures += 1
+                    print(f"\nERROR: {e}", file=sys.stderr)
+                    if getattr(args, "fail_on_error", False):
+                        return 1
+        failures += target_failures
+        if target_failures == 0:
+            images_state = state.setdefault("images", {})
+            images_state[item_key] = {
+                "signature": signature,
+                "image": image,
+                "imageDigest": image_digest,
+                "lastScanAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+            }
+            _save_scan_state(state_file, state)
+
+    if full_rescan_due:
+        state["lastFullScanAt"] = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        _save_scan_state(state_file, state)
+
+    print(f"\nInventory scan complete. scanned={scanned} skipped={skipped} failures={failures}")
+    return 0
+
+
+def cmd_scan_k8s_inventory(args: argparse.Namespace) -> int:
+    """Scan Kubernetes object/RBAC inventory for config and secret posture."""
+    inventory_path = Path(args.inventory)
+    try:
+        doc = _read_k8s_inventory_doc(inventory_path)
+    except (OSError, json.JSONDecodeError, ValueError) as e:
+        print(f"ERROR: Unable to read Kubernetes inventory {inventory_path}: {e}", file=sys.stderr)
+        return 1
+
+    items = doc.get("items") if isinstance(doc, dict) else None
+    if not isinstance(items, list):
+        print("ERROR: Kubernetes inventory must contain an items array.", file=sys.stderr)
+        return 1
+
+    vat_url = (getattr(args, "vat_url", "") or os.environ.get("VAT_URL", "")).strip()
+    api_key = (getattr(args, "api_key", "") or os.environ.get("VAT_API_KEY", "")).strip()
+    admin_token = (getattr(args, "admin_token", "") or os.environ.get("VAT_ADMIN_TOKEN", "")).strip()
+    if not args.dry_run and not (vat_url and (api_key or admin_token)):
+        print("\nERROR: Set VAT_URL and VAT_API_KEY or VAT_ADMIN_TOKEN.", file=sys.stderr)
+        return 1
+
+    key = api_key
+    if not args.dry_run and admin_token and not api_key:
+        try:
+            source_id, ensured_key = ensure_source(
+                vat_url,
+                admin_token,
+                "trivy",
+                create_key=True,
+                regenerate_key=args.reset_keys,
+                asset_type="repo",
+            )
+        except VATClientError as e:
+            print(f"\nERROR: {e}", file=sys.stderr)
+            return 1
+        key = ensured_key or get_cached_key(source_id)
+        if not key:
+            print(f"  {source_id}: no key", file=sys.stderr)
+            return 1
+        cache_key(source_id, key)
+    if not args.dry_run and not key:
+        print("\nERROR: No Trivy ingest key available.", file=sys.stderr)
+        return 1
+
+    cluster_name = (
+        getattr(args, "cluster_name", None)
+        or os.environ.get("VAT_CLUSTER_NAME", "")
+        or "cluster"
+    )
+    state_path = getattr(args, "state_file", None) or os.environ.get("VAT_K8S_SCAN_STATE_FILE", "")
+    state_file = Path(state_path) if state_path else None
+    state = _load_k8s_scan_state(state_file)
+    full_rescan = _full_rescan_due(
+        state,
+        int(getattr(args, "full_rescan_interval_seconds", 0) or 0),
+        bool(getattr(args, "force_full_rescan", False)),
+    )
+
+    scanned = 0
+    skipped = 0
+    failures = 0
+    with tempfile.TemporaryDirectory(prefix="vat-k8s-inventory-") as tmp:
+        root = Path(tmp)
+        for raw_item in items:
+            if not isinstance(raw_item, dict):
+                continue
+            asset, tag = _k8s_inventory_asset_and_tag(raw_item, cluster_name)
+            if not asset:
+                continue
+            item_key = _k8s_inventory_item_key(raw_item)
+            signature = _k8s_inventory_item_signature(raw_item)
+            previous = state.get("objects", {}).get(item_key, {})
+            if not full_rescan and previous.get("signature") == signature:
+                skipped += 1
+                continue
+
+            manifest = str(raw_item.get("manifest") or "").strip()
+            if not manifest:
+                skipped += 1
+                continue
+            object_dir = root / _safe_k8s_manifest_filename(raw_item)
+            object_dir.mkdir(parents=True, exist_ok=True)
+            manifest_path = object_dir / "manifest.yaml"
+            manifest_path.write_text(manifest + "\n", encoding="utf-8")
+            print("Scanning object:", item_key)
+            try:
+                report = run_trivy_fs(
+                    object_dir,
+                    disable_artifact_scanning=True,
+                    timeout=180,
+                )
+            except Exception as e:
+                failures += 1
+                print(f"ERROR: Trivy Kubernetes config scan failed for {item_key}: {e}", file=sys.stderr)
+                if getattr(args, "fail_on_error", False):
+                    return 1
+                continue
+
+            target_report = normalize_trivy(copy.deepcopy(report), asset)
+            if getattr(args, "no_snippets", False):
+                target_report = strip_snippets(target_report)
+            if args.dry_run:
+                count = len(target_report.get("Results") or [])
+                print(f"  trivy: {count} result(s)")
+            else:
+                try:
+                    resp = _ingest_json_report_with_retry(
+                        vat_url=vat_url,
+                        key=key,
+                        report=target_report,
+                        asset_name=asset,
+                        tag=tag,
+                        image_digest=None,
+                        label="trivy",
+                    )
+                    print(f"  trivy: {resp}")
+                except VATClientError as e:
+                    failures += 1
+                    print(f"\nERROR: {e}", file=sys.stderr)
+                    if getattr(args, "fail_on_error", False):
+                        return 1
+                    continue
+
+            state.setdefault("objects", {})[item_key] = {
+                "signature": signature,
+                "scannedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+            }
+            scanned += 1
+
+    if full_rescan or not state.get("lastFullScanAt"):
+        state["lastFullScanAt"] = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    _save_scan_state(state_file, state)
+    print(f"\nKubernetes inventory scan complete. scanned={scanned} skipped={skipped} failures={failures}")
+    return 1 if failures and getattr(args, "fail_on_error", False) else 0
+
+
+def cmd_scan_node(args: argparse.Namespace) -> int:
+    """Run guarded node OpenSCAP lanes against a mounted host root."""
+    host_root = Path(getattr(args, "host_root", None) or os.environ.get("VAT_HOST_ROOT", "/host"))
+    node_name = (
+        getattr(args, "node_name", None)
+        or os.environ.get("NODE_NAME", "")
+        or os.uname().nodename
+    )
+    cluster_name = (
+        getattr(args, "cluster_name", None)
+        or os.environ.get("VAT_CLUSTER_NAME", "")
+        or "cluster"
+    )
+    scan_types = _parse_node_scan_types(getattr(args, "scan_types", None))
+    asset = _node_asset(cluster_name, node_name)
+
+    if not host_root.exists():
+        print(f"Node scan skipped: host root {host_root} is not mounted.", file=sys.stderr)
+        return 0
+    if not (host_root / "etc" / "os-release").exists():
+        print(f"Node scan skipped: {host_root}/etc/os-release is missing.", file=sys.stderr)
+        return 0
+
+    vat_url = (getattr(args, "vat_url", "") or os.environ.get("VAT_URL", "")).strip()
+    api_key = (getattr(args, "api_key", "") or os.environ.get("VAT_API_KEY", "")).strip()
+    admin_token = (getattr(args, "admin_token", "") or os.environ.get("VAT_ADMIN_TOKEN", "")).strip()
+    dry_run = bool(getattr(args, "dry_run", False))
+    if not dry_run and not (vat_url and (api_key or admin_token)):
+        print("\nERROR: Set VAT_URL and VAT_API_KEY or VAT_ADMIN_TOKEN.", file=sys.stderr)
+        return 1
+
+    parser_keys: dict[str, str] = {}
+    if api_key:
+        parser_keys["openscap"] = api_key
+        parser_keys["openscap_oval"] = api_key
+    if not dry_run and admin_token and not api_key:
+        for parser_id in ("openscap", "openscap_oval"):
+            if parser_id == "openscap" and "node-stig" not in scan_types:
+                continue
+            if parser_id == "openscap_oval" and "node-oval-cve" not in scan_types:
+                continue
+            try:
+                source_id, ensured_key = ensure_source(
+                    vat_url,
+                    admin_token,
+                    parser_id,
+                    create_key=True,
+                    regenerate_key=args.reset_keys,
+                    asset_type="container",
+                )
+            except VATClientError as e:
+                print(f"\nERROR: {e}", file=sys.stderr)
+                return 1
+            key = ensured_key or get_cached_key(source_id)
+            if not key:
+                print(f"  {source_id}: no key", file=sys.stderr)
+                return 1
+            parser_keys[parser_id] = key
+            cache_key(source_id, key)
+
+    timeout = int(getattr(args, "timeout", 600) or 600)
+    verbose = bool(getattr(args, "verbose", False))
+    failures = 0
+    produced = 0
+    skipped = 0
+
+    print("Scanning node:", node_name)
+    print("Asset:        ", asset)
+    if "node-stig" in scan_types:
+        try:
+            xml = run_node_stig(host_root, asset, timeout=timeout, verbose=verbose)
+        except Exception as e:
+            failures += 1
+            print(f"ERROR: node STIG scan failed: {e}", file=sys.stderr)
+            if getattr(args, "fail_on_error", False):
+                return 1
+            xml = None
+        if xml:
+            produced += 1
+            if dry_run:
+                print(f"  openscap: {count_openscap_findings(xml)} finding(s)")
+            else:
+                key = parser_keys.get("openscap")
+                if not key:
+                    print("ERROR: No OpenSCAP ingest key available.", file=sys.stderr)
+                    return 1
+                try:
+                    resp = ingest_openscap_report(
+                        vat_url,
+                        key,
+                        xml,
+                        asset=asset,
+                        tag="node-stig",
+                        idempotency_key=f"node-stig:{asset}",
+                    )
+                    print(f"  openscap: {resp}")
+                except VATClientError as e:
+                    failures += 1
+                    print(f"ERROR: node STIG ingest failed: {e}", file=sys.stderr)
+                    if getattr(args, "fail_on_error", False):
+                        return 1
+        else:
+            skipped += 1
+            print("  openscap: skipped (missing content or unsupported host)")
+
+    if "node-oval-cve" in scan_types:
+        try:
+            xml = run_node_oval_cve(host_root, asset, timeout=timeout, verbose=verbose)
+        except Exception as e:
+            failures += 1
+            print(f"ERROR: node OVAL CVE scan failed: {e}", file=sys.stderr)
+            if getattr(args, "fail_on_error", False):
+                return 1
+            xml = None
+        if xml:
+            produced += 1
+            if dry_run:
+                print(f"  openscap_oval: {count_openscap_oval_findings(xml)} finding(s)")
+            else:
+                key = parser_keys.get("openscap_oval")
+                if not key:
+                    print("ERROR: No OpenSCAP OVAL ingest key available.", file=sys.stderr)
+                    return 1
+                try:
+                    resp = ingest_openscap_oval_report(
+                        vat_url,
+                        key,
+                        xml,
+                        asset=asset,
+                        tag="node-oval-cve",
+                        idempotency_key=f"node-oval-cve:{asset}",
+                    )
+                    print(f"  openscap_oval: {resp}")
+                except VATClientError as e:
+                    failures += 1
+                    print(f"ERROR: node OVAL CVE ingest failed: {e}", file=sys.stderr)
+                    if getattr(args, "fail_on_error", False):
+                        return 1
+        else:
+            skipped += 1
+            print("  openscap_oval: skipped (missing content or unsupported host)")
+
+    print(f"\nNode scan complete. reports={produced} skipped={skipped} failures={failures}")
+    return 1 if failures and getattr(args, "fail_on_error", False) else 0
 
 
 def cmd_config(args: argparse.Namespace) -> int:
@@ -940,11 +1848,63 @@ def main() -> int:
     sp_img = subparsers.add_parser("scan-image", help="Scan container image")
     sp_img.add_argument("image", help="Image reference (e.g. myregistry/app:v1)")
     sp_img.add_argument("--asset", help="Asset name (default: derived from image)")
+    sp_img.add_argument("--tag", help="Tag/branch context to attach to VAT ingest")
     sp_img.add_argument("--dry-run", action="store_true", help="Scan only; do not push")
     sp_img.add_argument("--no-snippets", action="store_true", help="Omit code snippets")
     sp_img.add_argument("--sarif-output", type=str, metavar="FILE", help="Write findings to SARIF 2.1.0 file")
+    sp_img.add_argument("--image-digest", help="Image digest to attach to VAT ingest (env: VAT_SCAN_IMAGE_DIGEST)")
     sp_img.add_argument("--reset-keys", action="store_true", help="Regenerate API keys")
     sp_img.set_defaults(func=cmd_scan_image)
+
+    # scan-inventory
+    sp_inv = subparsers.add_parser("scan-inventory", help="Scan deduplicated Kubernetes image inventory")
+    sp_inv.add_argument("inventory", type=Path, help="Inventory JSON file path")
+    sp_inv.add_argument("--dry-run", action="store_true", help="Scan only; do not push")
+    sp_inv.add_argument("--no-snippets", action="store_true", help="Omit code snippets")
+    sp_inv.add_argument("--reset-keys", action="store_true", help="Regenerate API keys when admin-token mode is used")
+    sp_inv.add_argument("--fail-on-error", action="store_true", help="Exit on first image scan failure")
+    sp_inv.add_argument("--cluster-name", help="Kubernetes cluster name for asset IDs (env: VAT_CLUSTER_NAME)")
+    sp_inv.add_argument("--state-file", type=Path, help="Persisted scan state file (env: VAT_SCAN_STATE_FILE)")
+    sp_inv.add_argument(
+        "--full-rescan-interval-seconds",
+        type=int,
+        default=86400,
+        help="Rescan unchanged images after this many seconds; 0 disables scheduled full rescans",
+    )
+    sp_inv.add_argument("--force-full-rescan", action="store_true", help="Ignore scan state for this run")
+    sp_inv.add_argument("--scan-types", default="", help="Comma-separated inventory scan types: image-sca,image-sbom")
+    sp_inv.set_defaults(func=cmd_scan_inventory)
+
+    # scan-k8s-inventory
+    sp_k8s = subparsers.add_parser("scan-k8s-inventory", help="Scan Kubernetes object/RBAC inventory")
+    sp_k8s.add_argument("inventory", type=Path, help="Kubernetes inventory JSON file path")
+    sp_k8s.add_argument("--dry-run", action="store_true", help="Scan only; do not push")
+    sp_k8s.add_argument("--no-snippets", action="store_true", help="Omit code snippets")
+    sp_k8s.add_argument("--reset-keys", action="store_true", help="Regenerate API keys when admin-token mode is used")
+    sp_k8s.add_argument("--fail-on-error", action="store_true", help="Exit on first object scan failure")
+    sp_k8s.add_argument("--cluster-name", help="Kubernetes cluster name for asset IDs (env: VAT_CLUSTER_NAME)")
+    sp_k8s.add_argument("--state-file", type=Path, help="Persisted scan state file (env: VAT_K8S_SCAN_STATE_FILE)")
+    sp_k8s.add_argument(
+        "--full-rescan-interval-seconds",
+        type=int,
+        default=86400,
+        help="Rescan unchanged objects after this many seconds; 0 disables scheduled full rescans",
+    )
+    sp_k8s.add_argument("--force-full-rescan", action="store_true", help="Ignore scan state for this run")
+    sp_k8s.set_defaults(func=cmd_scan_k8s_inventory)
+
+    # scan-node
+    sp_node = subparsers.add_parser("scan-node", help="Scan the mounted Kubernetes node host")
+    sp_node.add_argument("--dry-run", action="store_true", help="Scan only; do not push")
+    sp_node.add_argument("--reset-keys", action="store_true", help="Regenerate API keys when admin-token mode is used")
+    sp_node.add_argument("--fail-on-error", action="store_true", help="Exit on first node scan failure")
+    sp_node.add_argument("--cluster-name", help="Kubernetes cluster name for asset IDs (env: VAT_CLUSTER_NAME)")
+    sp_node.add_argument("--node-name", help="Kubernetes node name (env: NODE_NAME)")
+    sp_node.add_argument("--host-root", type=Path, default=Path("/host"), help="Mounted host root path")
+    sp_node.add_argument("--scan-types", default="", help="Comma-separated node scan types: node-stig,node-oval-cve")
+    sp_node.add_argument("--timeout", type=int, default=600, help="OpenSCAP timeout in seconds")
+    sp_node.add_argument("-v", "--verbose", action="store_true", help="Output scan progress")
+    sp_node.set_defaults(func=cmd_scan_node)
 
     # config
     sp_cfg = subparsers.add_parser("config", help="Validate and show effective config")

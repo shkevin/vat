@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import argparse
+import base64
+import copy
 import json
 import sys
 from pathlib import Path
@@ -342,6 +344,7 @@ def test_cmd_scan_image_branches(monkeypatch, tmp_path: Path) -> None:
         vat_url="",
         admin_token="",
         tag=None,
+        image_digest=None,
     )
     monkeypatch.setattr(cli, "run_trivy_image_ref", lambda *args, **kwargs: {"Results": []})
     monkeypatch.setattr(cli, "normalize_trivy", lambda report, *args, **kwargs: report)
@@ -355,9 +358,378 @@ def test_cmd_scan_image_branches(monkeypatch, tmp_path: Path) -> None:
     assert cli.cmd_scan_image(args) == 1
 
     args.vat_url = "https://vat"
+    args.api_key = "direct-key"
     args.admin_token = "adm"
-    monkeypatch.setattr(cli, "ensure_source", lambda *args, **kwargs: ("trivy", "k"))
+    args.image_digest = "sha256:abc123"
+    ensure_called = {"value": False}
+    monkeypatch.setattr(cli, "ensure_source", lambda *args, **kwargs: ensure_called.__setitem__("value", True) or ("trivy", "k"))
     monkeypatch.setattr(cli, "cache_key", lambda *args, **kwargs: None)
     monkeypatch.setattr(cli, "get_cached_key", lambda *args, **kwargs: "k")
-    monkeypatch.setattr(cli, "ingest_report", lambda *args, **kwargs: {"ok": 1})
+    ingest_kwargs = {}
+    monkeypatch.setattr(cli, "ingest_report", lambda *args, **kwargs: ingest_kwargs.update(kwargs) or {"ok": 1})
     assert cli.cmd_scan_image(args) == 0
+    assert ensure_called["value"] is False
+    assert ingest_kwargs["image_digest"] == "sha256:abc123"
+
+
+def test_cmd_scan_inventory_scans_image_once_and_ingests_all_targets(monkeypatch, tmp_path: Path) -> None:
+    inventory_path = tmp_path / "images.json"
+    inventory_path.write_text(
+        json.dumps(
+            {
+                "items": [
+                    {
+                        "image": "registry.example.com/api:v1",
+                        "imageDigest": "sha256:abc123",
+                        "targets": [
+                            {
+                                "namespace": "default",
+                                "kind": "Deployment",
+                                "name": "api",
+                                "containerName": "api",
+                            },
+                            {
+                                "namespace": "other",
+                                "kind": "Deployment",
+                                "name": "worker",
+                                "containerName": "api",
+                            },
+                        ],
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    scan_calls = []
+    ingest_calls = []
+    monkeypatch.setattr(
+        cli,
+        "run_trivy_image_ref",
+        lambda image, timeout=120, **kwargs: scan_calls.append(image) or {"Results": [{"Target": image}]},
+    )
+    monkeypatch.setattr(cli, "ingest_report", lambda *args, **kwargs: ingest_calls.append(kwargs) or {"ok": 1})
+
+    args = argparse.Namespace(
+        inventory=inventory_path,
+        dry_run=False,
+        fail_on_error=False,
+        vat_url="https://vat",
+        api_key="k",
+        admin_token="",
+        no_snippets=False,
+        reset_keys=False,
+        cluster_name="k3s-remote",
+    )
+
+    assert cli.cmd_scan_inventory(args) == 0
+    assert scan_calls == ["registry.example.com/api:v1"]
+    assert [c["asset"] for c in ingest_calls] == [
+        "k8s/k3s-remote/default/deployment/api/api",
+        "k8s/k3s-remote/other/deployment/worker/api",
+    ]
+    assert [c["tag"] for c in ingest_calls] == [
+        "v1",
+        "v1",
+    ]
+    assert [c["image_digest"] for c in ingest_calls] == ["sha256:abc123", "sha256:abc123"]
+
+
+def test_cmd_scan_inventory_can_ingest_image_sca_and_sbom(monkeypatch, tmp_path: Path) -> None:
+    inventory_path = tmp_path / "images.json"
+    inventory_path.write_text(
+        json.dumps(
+            {
+                "items": [
+                    {
+                        "image": "registry.example.com/api:v1",
+                        "imageDigest": "sha256:abc123",
+                        "targets": [
+                            {
+                                "namespace": "default",
+                                "kind": "Deployment",
+                                "name": "api",
+                                "containerName": "api",
+                            }
+                        ],
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    sca_calls: list[str] = []
+    sbom_calls: list[str] = []
+    ingest_calls: list[dict] = []
+    monkeypatch.setattr(
+        cli,
+        "run_trivy_image_ref",
+        lambda image, timeout=120, **kwargs: sca_calls.append(image) or {"Results": [{"Target": image}]},
+    )
+    monkeypatch.setattr(
+        cli,
+        "run_trivy_image_ref_cyclonedx",
+        lambda image, timeout=180, **kwargs: sbom_calls.append(image) or {"components": [{"name": "openssl"}]},
+        raising=False,
+    )
+    monkeypatch.setattr(cli, "ingest_report", lambda *args, **kwargs: ingest_calls.append({"report": args[2], **kwargs}) or {"ok": 1})
+
+    args = argparse.Namespace(
+        inventory=inventory_path,
+        dry_run=False,
+        fail_on_error=False,
+        vat_url="https://vat",
+        api_key="k",
+        admin_token="",
+        no_snippets=False,
+        reset_keys=False,
+        cluster_name="k3s-remote",
+        state_file=None,
+        full_rescan_interval_seconds=86400,
+        force_full_rescan=False,
+        scan_types="image-sca,image-sbom",
+    )
+
+    assert cli.cmd_scan_inventory(args) == 0
+    assert sca_calls == ["registry.example.com/api:v1"]
+    assert sbom_calls == ["registry.example.com/api:v1"]
+    assert [call["asset"] for call in ingest_calls] == [
+        "k8s/k3s-remote/default/deployment/api/api",
+        "k8s/k3s-remote/default/deployment/api/api",
+    ]
+    assert [call["image_digest"] for call in ingest_calls] == [
+        "sha256:abc123",
+        "sha256:abc123",
+    ]
+    assert ingest_calls[0]["report"].get("Results") is not None
+    assert ingest_calls[1]["report"].get("components") == [{"name": "openssl"}]
+
+
+def test_temporary_registry_auth_config_merges_pull_secrets(monkeypatch, tmp_path: Path) -> None:
+    item = {
+        "targets": [
+            {
+                "namespace": "apps",
+                "imagePullSecrets": ["harbor-creds"],
+            }
+        ]
+    }
+    docker_config = {
+        "auths": {
+            "harbor.example.com": {
+                "auth": "dXNlcjpwYXNz",
+            }
+        }
+    }
+    secret = {
+        "type": "kubernetes.io/dockerconfigjson",
+        "data": {
+            ".dockerconfigjson": base64.b64encode(json.dumps(docker_config).encode("utf-8")).decode("ascii")
+        },
+    }
+    monkeypatch.setattr(cli, "_fetch_kubernetes_secret", lambda namespace, name: secret)
+
+    with cli._temporary_registry_auth_config(item, temp_base=tmp_path) as docker_config_path:
+        assert docker_config_path is not None
+        config_path = docker_config_path / "config.json"
+        assert json.loads(config_path.read_text(encoding="utf-8")) == docker_config
+
+
+def test_inventory_signature_includes_pull_secret_references() -> None:
+    base = {
+        "image": "harbor.example.com/apps/api:v1",
+        "targets": [{"namespace": "apps", "kind": "Deployment", "name": "api", "containerName": "api"}],
+    }
+    with_secret = copy.deepcopy(base)
+    with_secret["targets"][0]["imagePullSecrets"] = ["harbor-creds"]
+
+    assert cli._inventory_item_signature(base) != cli._inventory_item_signature(with_secret)
+
+
+def test_image_ref_tag_extracts_only_real_image_tags() -> None:
+    assert cli._image_ref_tag("registry.example.com:5000/apps/api:v1") == "v1"
+    assert cli._image_ref_tag("registry.example.com/apps/api:v1@sha256:abc123") == "v1"
+    assert cli._image_ref_tag("registry.example.com/apps/api@sha256:abc123") is None
+    assert cli._image_ref_tag("registry.example.com/apps/api") is None
+
+
+def test_cmd_scan_inventory_passes_pull_secret_auth_to_trivy(monkeypatch, tmp_path: Path) -> None:
+    inventory_path = tmp_path / "images.json"
+    inventory_path.write_text(
+        json.dumps(
+            {
+                "items": [
+                    {
+                        "image": "harbor.example.com/apps/api:v1",
+                        "targets": [
+                            {
+                                "namespace": "apps",
+                                "kind": "Deployment",
+                                "name": "api",
+                                "containerName": "api",
+                                "imagePullSecrets": ["harbor-creds"],
+                            }
+                        ],
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    docker_config = {"auths": {"harbor.example.com": {"auth": "dXNlcjpwYXNz"}}}
+    secret = {
+        "type": "kubernetes.io/dockerconfigjson",
+        "data": {
+            ".dockerconfigjson": base64.b64encode(json.dumps(docker_config).encode("utf-8")).decode("ascii")
+        },
+    }
+    seen_auth_config: list[bool] = []
+    monkeypatch.setattr(cli, "_fetch_kubernetes_secret", lambda namespace, name: secret)
+
+    def fake_trivy(image: str, timeout: int = 120, docker_config_path: Path | None = None) -> dict:
+        seen_auth_config.append(bool(docker_config_path and (docker_config_path / "config.json").exists()))
+        return {"Results": []}
+
+    monkeypatch.setattr(cli, "run_trivy_image_ref", fake_trivy)
+
+    args = argparse.Namespace(
+        inventory=inventory_path,
+        dry_run=True,
+        fail_on_error=False,
+        vat_url="",
+        api_key="",
+        admin_token="",
+        no_snippets=False,
+        reset_keys=False,
+        cluster_name="k3s-remote",
+        state_file=None,
+        full_rescan_interval_seconds=86400,
+        force_full_rescan=False,
+        scan_types="image-sca",
+    )
+
+    assert cli.cmd_scan_inventory(args) == 0
+    assert seen_auth_config == [True]
+
+
+def test_cmd_scan_inventory_skips_unchanged_items_with_state(monkeypatch, tmp_path: Path) -> None:
+    inventory_path = tmp_path / "images.json"
+    state_path = tmp_path / "state.json"
+    inventory_path.write_text(
+        json.dumps(
+            {
+                "items": [
+                    {
+                        "image": "registry.example.com/api:v1",
+                        "imageDigest": "sha256:abc123",
+                        "targets": [
+                            {
+                                "namespace": "default",
+                                "kind": "Deployment",
+                                "name": "api",
+                                "containerName": "api",
+                            }
+                        ],
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    state_path.write_text(
+        json.dumps(
+            {
+                "lastFullScanAt": "2999-01-01T00:00:00Z",
+                "images": {
+                    "sha256:abc123": {
+                        "signature": "sha256:abc123|default/Deployment/api/api|scanTypes=image-sca,image-sbom"
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    scan_calls = []
+    monkeypatch.setattr(cli, "run_trivy_image_ref", lambda *args, **kwargs: scan_calls.append(args) or {"Results": []})
+
+    args = argparse.Namespace(
+        inventory=inventory_path,
+        dry_run=False,
+        fail_on_error=False,
+        vat_url="https://vat",
+        api_key="k",
+        admin_token="",
+        no_snippets=False,
+        reset_keys=False,
+        cluster_name="k3s-remote",
+        state_file=state_path,
+        full_rescan_interval_seconds=86400,
+        force_full_rescan=False,
+    )
+
+    assert cli.cmd_scan_inventory(args) == 0
+    assert scan_calls == []
+
+
+def test_cmd_scan_inventory_force_full_rescan_ignores_state(monkeypatch, tmp_path: Path) -> None:
+    inventory_path = tmp_path / "images.json"
+    state_path = tmp_path / "state.json"
+    inventory_path.write_text(
+        json.dumps(
+            {
+                "items": [
+                    {
+                        "image": "registry.example.com/api:v1",
+                        "imageDigest": "sha256:abc123",
+                        "targets": [
+                            {
+                                "namespace": "default",
+                                "kind": "Deployment",
+                                "name": "api",
+                                "containerName": "api",
+                            }
+                        ],
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    state_path.write_text(
+        json.dumps(
+            {
+                "lastFullScanAt": "2999-01-01T00:00:00Z",
+                "images": {
+                    "sha256:abc123": {
+                        "signature": "sha256:abc123|default/Deployment/api/api"
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    scan_calls = []
+    monkeypatch.setattr(
+        cli,
+        "run_trivy_image_ref",
+        lambda image, timeout=120, **kwargs: scan_calls.append(image) or {"Results": [{"Target": image}]},
+    )
+    monkeypatch.setattr(cli, "ingest_report", lambda *args, **kwargs: {"ok": 1})
+
+    args = argparse.Namespace(
+        inventory=inventory_path,
+        dry_run=False,
+        fail_on_error=False,
+        vat_url="https://vat",
+        api_key="k",
+        admin_token="",
+        no_snippets=False,
+        reset_keys=False,
+        cluster_name="k3s-remote",
+        state_file=state_path,
+        full_rescan_interval_seconds=86400,
+        force_full_rescan=True,
+    )
+
+    assert cli.cmd_scan_inventory(args) == 0
+    assert scan_calls == ["registry.example.com/api:v1"]

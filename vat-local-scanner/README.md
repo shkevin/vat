@@ -1,8 +1,8 @@
 # VAT Local Scanner
 
-Standalone CLI that runs security scans locally (Trivy, Grype, Semgrep, npm audit, pip-audit) and pushes **only findings** to VAT. No source code leaves your environment.
+Standalone CLI that runs security scans locally (Trivy, Grype, Semgrep, npm audit, pip-audit, OpenSCAP) and pushes **only findings** to VAT. No source code leaves your environment.
 
-**Docker image includes:** Trivy, Grype, Semgrep (35+ languages, GA + experimental), Gitleaks, npm, pip-audit, Docker CLI, skopeo (for STIG scans on OCI layouts).
+**Docker image includes:** Trivy, Grype, Semgrep (35+ languages, GA + experimental), Gitleaks, npm, pip-audit, Docker CLI, skopeo (for STIG scans on OCI layouts), and OpenSCAP.
 
 ## Quick Start
 
@@ -37,6 +37,9 @@ VAT’s backend includes **reproducible** integration tests that exercise the sa
 | `vat-scan scan <path>` | Scan folder(s) and push findings to VAT |
 | `vat-scan scan-archive <archive>` | Extract archive(s) to temp, scan, push, then delete |
 | `vat-scan scan-image <image>` | Scan container image and push to VAT |
+| `vat-scan scan-inventory <images.json>` | Scan Kubernetes image inventory for image SCA/SBOM |
+| `vat-scan scan-k8s-inventory <kubernetes.json>` | Scan Kubernetes object/RBAC inventory |
+| `vat-scan scan-node` | Scan mounted node host with guarded OpenSCAP STIG/OVAL lanes |
 | `vat-scan config` | Show effective config |
 | `vat-scan config-validate` | Validate config file schema |
 | `vat-scan version` | Print version |
@@ -48,6 +51,14 @@ VAT’s backend includes **reproducible** integration tests that exercise the sa
 | `VAT_URL` | VAT instance URL |
 | `VAT_API_KEY` | Ingest API key (optional if using admin token) |
 | `VAT_ADMIN_TOKEN` | Admin API key or JWT for auto-creating sources (VAT Settings → Access) |
+| `VAT_SCAN_IMAGE_DIGEST` | Optional digest attached by `scan-image` to VAT ingest |
+| `VAT_INVENTORY_SCAN_TYPES` | Operator image inventory scan families, default `image-sca,image-sbom` |
+| `VAT_K8S_SCAN_STATE_FILE` | State file for `scan-k8s-inventory` change detection |
+| `VAT_CLUSTER_NAME` | Cluster name used for `k8s/<cluster>/...` asset IDs |
+| `VAT_NODE_SCAN_TYPES` | Node scan families, default `node-stig,node-oval-cve` |
+| `VAT_NODE_STIG_DATASTREAM` | Optional host STIG datastream path for `scan-node` |
+| `VAT_NODE_STIG_PROFILE` | Optional OpenSCAP profile for `scan-node` STIG scans |
+| `VAT_NODE_OVAL_DEFINITIONS` | Optional OVAL definitions path for `scan-node` CVE scans |
 | `VAT_SCANNER_TEMP_DIR` | Temp directory for scanner output (default: /tmp) |
 
 ## Config File
@@ -83,6 +94,13 @@ docker build -t vat-scanner .
 docker run -v $(pwd)/my-repo:/scan -e VAT_URL=... -e VAT_ADMIN_TOKEN=... vat-scanner scan /scan --asset my-repo
 ```
 
+**Container image with digest context:**
+```bash
+vat-scan scan-image registry.example.com/app:v1 \
+  --image-digest sha256:... \
+  --asset k8s/default/deployment/app/app
+```
+
 **Multiple folders with one mount** (no need to mount each folder separately):
 ```bash
 # Mount parent dir, scan subfolders
@@ -109,6 +127,28 @@ docker run -v /var/run/docker.sock:/var/run/docker.sock \
 ```
 
 Place container tarballs (`.tar` from `docker save`) or Helm/imgpkg bundles (outer `.tar` with `.wrap` files containing OCI image layouts) in the scan path. The scanner discovers images in both formats, loads each into Docker (via `docker load` or `skopeo copy oci:... docker-daemon:...`), and runs the Chainguard OpenSCAP STIG profile against it. See `docs/container-scan-nested-helm-research.md` for details.
+
+## Kubernetes Operator Lanes
+
+The VAT operator uses this CLI in bounded workers:
+
+- `scan-inventory` consumes `vat-scan-inventory` and scans each unique workload
+  image once for `image-sca` and `image-sbom`, then ingests results for each
+  Kubernetes workload target. If workload targets reference `imagePullSecrets`,
+  the scanner resolves those secrets through the Kubernetes API and passes a
+  temporary Docker auth config to Trivy for the current image scan.
+- `scan-k8s-inventory` consumes `vat-k8s-inventory`, writes each object manifest
+  to a temporary directory, and runs Trivy config/secrets posture scans. RBAC
+  objects are tagged `rbac`; other objects are tagged `k8s-config`.
+- `scan-node` runs in the privileged node-agent DaemonSet against `/host`.
+  OpenSCAP STIG/OVAL content is OS-specific; if `VAT_NODE_STIG_DATASTREAM` or
+  `VAT_NODE_OVAL_DEFINITIONS` are not present, the lane logs a skip and keeps
+  the agent healthy.
+
+Source-code SAST is not automatically enabled from Kubernetes because the
+cluster does not contain source repositories. Use `scan` or `scan-archive` with
+mounted repositories or source archives when you want Semgrep/Gitleaks/source
+dependency coverage.
 
 ## Gating (CI)
 

@@ -554,6 +554,12 @@ async def post_sources_manual_ensure(
         if body.regenerate_key:
             full_key, key_prefix, _ = await regenerate_key(db, source_id)
             key = full_key
+        elif body.create_key:
+            configured_keys = await list_keys(db)
+            has_key = any(info.source_id == source_id for info in configured_keys)
+            if not has_key:
+                full_key, key_prefix, _ = await create_key(db, source_id)
+                key = full_key
     else:
         new_source = {
             "id": source_id,

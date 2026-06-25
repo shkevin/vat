@@ -1,0 +1,13 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vat-operator
+  namespace: vat-operator
+spec:
+  template:
+    spec:
+      containers:
+        - name: operator
+          env:
+            - name: VAT_OPERATOR_NODE_SCANNING_ENABLED
+              value: "true"

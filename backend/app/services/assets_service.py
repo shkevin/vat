@@ -45,6 +45,8 @@ def _container_image_group_key(image: str, _tag: Optional[str]) -> str:
     img = (image or "").strip()
     if not img:
         return img
+    if img.lower().startswith("k8s/"):
+        return img
     kind = infer_asset_kind(img, "")
     if kind in ("container", "repo"):
         return apply_container_asset_path_aliases(
@@ -306,6 +308,7 @@ async def get_assets_with_findings(
             list_findings,
         )
 
+        finding_limit = limit if include_finding_derived_assets else 0
         findings = await list_findings(
             db,
             ctx=ctx,
@@ -317,7 +320,7 @@ async def get_assets_with_findings(
             asset=asset,
             search=search,
             search_fields=search_fields,
-            limit=limit,
+            limit=finding_limit,
         )
         findings_dicts = [FindingRead.model_validate(f).to_api_dict() for f in findings]
         findings_dicts = await enrich_findings_with_source_group_severity(
@@ -361,6 +364,8 @@ async def get_assets_with_findings(
         )
         for k, flist in by_key.items()
     ]
+    if limit > 0 and not include_finding_derived_assets:
+        payloads = payloads[:limit]
     asset_ids = [p["id"] for p in payloads]
     if not asset_ids:
         return payloads

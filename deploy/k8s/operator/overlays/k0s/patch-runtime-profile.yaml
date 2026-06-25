@@ -1,0 +1,65 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vat-operator
+  namespace: vat-operator
+spec:
+  template:
+    spec:
+      containers:
+        - name: operator
+          env:
+            - name: VAT_CLUSTER_NAME
+              value: k0s
+            - name: VAT_OPERATOR_RUNTIME_PROFILE
+              value: k0s
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: vat-operator-node-agent
+  namespace: vat-operator
+spec:
+  template:
+    spec:
+      containers:
+        - name: node-agent
+          env:
+            - name: VAT_CLUSTER_NAME
+              value: k0s
+            - name: VAT_OPERATOR_RUNTIME_PROFILE
+              value: k0s
+            - name: VAT_CONTAINERD_SOCKET_PATH
+              value: /host/run/k0s/containerd.sock
+            - name: VAT_KUBELET_ROOT_PATH
+              value: /host/var/lib/k0s/kubelet
+            - name: VAT_STATIC_POD_MANIFEST_PATH
+              value: /host/var/lib/k0s/manifests
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vat-scanner-worker
+  namespace: vat-operator
+spec:
+  template:
+    spec:
+      containers:
+        - name: scanner
+          env:
+            - name: VAT_CLUSTER_NAME
+              value: k0s
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vat-config-worker
+  namespace: vat-operator
+spec:
+  template:
+    spec:
+      containers:
+        - name: scanner
+          env:
+            - name: VAT_CLUSTER_NAME
+              value: k0s

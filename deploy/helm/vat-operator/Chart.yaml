@@ -1,0 +1,6 @@
+apiVersion: v2
+name: vat-operator
+description: VAT Kubernetes operator for cluster-wide vulnerability and posture scans
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

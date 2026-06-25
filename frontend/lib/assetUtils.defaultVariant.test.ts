@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   defaultContainerVariantKey,
   containerVariantKey,
+  formatContainerVariantOptionLabel,
 } from "./assetUtils";
 import type { Finding } from "@/types";
 
@@ -54,5 +55,32 @@ describe("defaultContainerVariantKey", () => {
     ];
     const keys = [...new Set(findings.map(containerVariantKey))].sort();
     expect(defaultContainerVariantKey(keys, findings)).toBe(d2);
+  });
+});
+
+describe("formatContainerVariantOptionLabel", () => {
+  it("shows the image tag only when the tag uniquely identifies a variant", () => {
+    const digest = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    const findings = [
+      f({ id: "a", imageDigest: digest, tag: "v1.2.14", image: "img" }),
+    ];
+
+    expect(formatContainerVariantOptionLabel(findings, findings)).toBe("v1.2.14");
+  });
+
+  it("adds a short digest only when the same tag maps to multiple variants", () => {
+    const d1 = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    const d2 = "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+    const findings = [
+      f({ id: "a", imageDigest: d1, tag: "latest", image: "img" }),
+      f({ id: "b", imageDigest: d2, tag: "latest", image: "img" }),
+    ];
+    const firstVariant = findings.filter(
+      (finding) => containerVariantKey(finding) === d1,
+    );
+
+    expect(formatContainerVariantOptionLabel(firstVariant, findings)).toBe(
+      "latest (sha256:aaaaaaaaaaaa…)",
+    );
   });
 });

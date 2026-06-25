@@ -1,0 +1,45 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vat-operator
+  namespace: {{ include "vat-operator.namespace" . }}
+  labels:
+    app.kubernetes.io/name: vat-operator
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: vat-operator
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: vat-operator
+    spec:
+      serviceAccountName: vat-operator
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- range . }}
+        - name: {{ . }}
+        {{- end }}
+      {{- end }}
+      containers:
+        - name: operator
+          image: {{ include "vat-operator.operatorImage" . }}
+          imagePullPolicy: {{ .Values.operator.image.pullPolicy }}
+          env:
+            - name: VAT_URL
+              value: {{ .Values.vat.url | quote }}
+            - name: VAT_OPERATOR_NAMESPACE
+              value: {{ include "vat-operator.namespace" . | quote }}
+            - name: VAT_OPERATOR_SCANNER_IMAGE
+              value: {{ include "vat-operator.scannerImage" . | quote }}
+            - name: VAT_OPERATOR_CREDENTIAL_SECRET
+              value: {{ .Values.vat.credentialsSecretName | quote }}
+            - name: VAT_OPERATOR_ADMIN_TOKEN_KEY
+              value: {{ .Values.vat.adminTokenKey | quote }}
+            - name: VAT_OPERATOR_RUNTIME_PROFILE
+              value: {{ .Values.operator.runtimeProfile | quote }}
+            - name: VAT_OPERATOR_NODE_SCANNING_ENABLED
+              value: {{ or .Values.operator.nodeScanning.enabled .Values.nodeAgent.enabled | quote }}
+          resources:
+            {{- toYaml .Values.operator.resources | nindent 12 }}

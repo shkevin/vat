@@ -15,7 +15,7 @@ import {
   sameAssetIdentity,
   containerVariantKey,
   defaultContainerVariantKey,
-  formatDigestShort,
+  formatContainerVariantOptionLabel,
   getFindingImageDigest,
 } from "@/lib/assetUtils";
 import { getGroupedFindings } from "@/lib/findingGroupUtils";
@@ -695,19 +695,7 @@ export function AssetPage({ config }: AssetPageProps) {
       const group = asset.findings.filter(
         (f) => containerVariantKey(f) === key,
       );
-      const digest =
-        group.map(getFindingImageDigest).find((d) => Boolean(d)) ?? undefined;
-      const tags = [
-        ...new Set(
-          group
-            .map((f) => f.tag?.trim() || getFindingTag(f) || "")
-            .filter(Boolean),
-        ),
-      ].sort();
-      if (tags.length === 0) tags.push("latest");
-      const label = digest
-        ? `${formatDigestShort(digest)} — ${tags.join(", ")}`
-        : tags.join(", ");
+      const label = formatContainerVariantOptionLabel(group, asset.findings);
       return { value: key, label };
     });
   }, [asset, assetType, containerVariantKeys]);
@@ -2213,7 +2201,7 @@ export function AssetPage({ config }: AssetPageProps) {
                           style={{ color: "var(--app-muted)", flexShrink: 0 }}
                         />
                       }
-                      aria-label="Filter by tag or image digest"
+                      aria-label="Filter by image variant"
                     />
                   )}
                 </div>
