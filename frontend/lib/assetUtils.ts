@@ -234,6 +234,36 @@ export function containerVariantKey(f: Finding): string {
   return `tag:${tag || "latest"}`;
 }
 
+export function containerVariantKeyForFinding(
+  finding: Finding,
+  allFindings: Finding[],
+): string {
+  const digest = getFindingImageDigest(finding);
+  if (digest) return digest;
+
+  const tag = finding.tag?.trim() || getFindingTag(finding) || "latest";
+  const digestsForTag = new Set<string>();
+  for (const candidate of allFindings) {
+    const candidateTag =
+      candidate.tag?.trim() || getFindingTag(candidate) || "latest";
+    if (candidateTag !== tag) continue;
+    const candidateDigest = getFindingImageDigest(candidate);
+    if (candidateDigest) digestsForTag.add(candidateDigest);
+  }
+  if (digestsForTag.size === 1) return [...digestsForTag][0]!;
+  return `tag:${tag}`;
+}
+
+export function containerVariantKeysForFindings(findings: Finding[]): string[] {
+  return [
+    ...new Set(
+      findings.map((finding) =>
+        containerVariantKeyForFinding(finding, findings),
+      ),
+    ),
+  ].sort();
+}
+
 /** Short label for digest chips (Docker Hub–style). */
 export function formatDigestShort(digest: string | undefined): string {
   if (!digest?.startsWith("sha256:")) return digest ?? "—";
@@ -480,7 +510,7 @@ export function defaultContainerVariantKey(
   const primaryForKey = (key: string): string => {
     const tags = new Set<string>();
     for (const f of findings) {
-      if (containerVariantKey(f) !== key) continue;
+      if (containerVariantKeyForFinding(f, findings) !== key) continue;
       const t = f.tag?.trim() || getFindingTag(f) || "";
       if (t) tags.add(t);
     }
@@ -517,7 +547,7 @@ export function formatContainerVariantOptionLabel(
 
   const tagVariantCounts = new Map<string, Set<string>>();
   for (const finding of allFindings) {
-    const key = containerVariantKey(finding);
+    const key = containerVariantKeyForFinding(finding, allFindings);
     for (const tag of containerVariantTags([finding])) {
       const variants = tagVariantCounts.get(tag) ?? new Set<string>();
       variants.add(key);

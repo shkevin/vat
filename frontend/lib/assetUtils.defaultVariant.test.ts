@@ -2,6 +2,8 @@ import { describe, it, expect } from "vitest";
 import {
   defaultContainerVariantKey,
   containerVariantKey,
+  containerVariantKeyForFinding,
+  containerVariantKeysForFindings,
   formatContainerVariantOptionLabel,
 } from "./assetUtils";
 import type { Finding } from "@/types";
@@ -82,5 +84,19 @@ describe("formatContainerVariantOptionLabel", () => {
     expect(formatContainerVariantOptionLabel(firstVariant, findings)).toBe(
       "latest (sha256:aaaaaaaaaaaa…)",
     );
+  });
+});
+
+describe("containerVariantKeysForFindings", () => {
+  it("folds digestless findings into the only digest-backed variant for the same tag", () => {
+    const digest = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    const findings = [
+      f({ id: "a", imageDigest: digest, tag: "latest", image: "img" }),
+      f({ id: "b", imageDigest: undefined, tag: "latest", image: "img" }),
+    ];
+
+    expect(containerVariantKeysForFindings(findings)).toEqual([digest]);
+    expect(containerVariantKeyForFinding(findings[1]!, findings)).toBe(digest);
+    expect(formatContainerVariantOptionLabel(findings, findings)).toBe("latest");
   });
 });

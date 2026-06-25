@@ -13,7 +13,8 @@ import {
   mergeSuggestionTargetAlreadyRepresentedOnAsset,
   resolveAssetForPage,
   sameAssetIdentity,
-  containerVariantKey,
+  containerVariantKeyForFinding,
+  containerVariantKeysForFindings,
   defaultContainerVariantKey,
   formatContainerVariantOptionLabel,
   getFindingImageDigest,
@@ -75,9 +76,10 @@ import { normalizeContainerRef } from "@/lib/containerRefNormalization";
 function findingMatchesContainerVariant(
   f: Finding,
   variantFilter: string,
+  allFindings: Finding[],
 ): boolean {
   if (!variantFilter) return true;
-  return containerVariantKey(f) === variantFilter;
+  return containerVariantKeyForFinding(f, allFindings) === variantFilter;
 }
 
 const SORT_OPTS = [
@@ -684,8 +686,7 @@ export function AssetPage({ config }: AssetPageProps) {
   /** One entry per manifest digest when known; else one per tag (legacy without digest). */
   const containerVariantKeys = useMemo(() => {
     if (!asset || assetType !== "container") return [];
-    const keys = new Set(asset.findings.map(containerVariantKey));
-    return Array.from(keys).sort();
+    return containerVariantKeysForFindings(asset.findings);
   }, [asset, assetType]);
 
   /** Dropdown labels: one row per digest (or per tag when digest unknown). */
@@ -693,7 +694,7 @@ export function AssetPage({ config }: AssetPageProps) {
     if (!asset || assetType !== "container") return [];
     return containerVariantKeys.map((key) => {
       const group = asset.findings.filter(
-        (f) => containerVariantKey(f) === key,
+        (f) => containerVariantKeyForFinding(f, asset.findings) === key,
       );
       const label = formatContainerVariantOptionLabel(group, asset.findings);
       return { value: key, label };
@@ -799,7 +800,9 @@ export function AssetPage({ config }: AssetPageProps) {
       });
     }
     if (tagFilter && assetType === "container") {
-      list = list.filter((f) => findingMatchesContainerVariant(f, tagFilter));
+      list = list.filter((f) =>
+        findingMatchesContainerVariant(f, tagFilter, asset.findings),
+      );
     }
     return list;
   }, [asset, branchFilter, tagFilter, assetType]);
