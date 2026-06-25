@@ -39,6 +39,8 @@ spec:
               value: {{ .Values.vat.adminTokenKey | quote }}
             - name: VAT_OPERATOR_RUNTIME_PROFILE
               value: {{ .Values.operator.runtimeProfile | quote }}
+            - name: VAT_OPERATOR_IMAGE_INVENTORY_MODE
+              value: {{ .Values.operator.imageInventoryMode | quote }}
             - name: VAT_OPERATOR_NODE_SCANNING_ENABLED
               value: {{ or .Values.operator.nodeScanning.enabled .Values.nodeAgent.enabled | quote }}
           resources:

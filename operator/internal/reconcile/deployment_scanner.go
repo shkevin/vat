@@ -69,6 +69,21 @@ func ReconcileWorkloadImageScans(
 ) (Result, error) {
 	result := Result{}
 	targets := make([]inventory.ImageTarget, 0)
+	if cfg.ImageInventoryMode != "workload" {
+		pods, err := client.CoreV1().Pods("").List(ctx, metav1.ListOptions{})
+		if err != nil {
+			return result, fmt.Errorf("list pods: %w", err)
+		}
+		for i := range pods.Items {
+			targets = append(targets, inventory.ImageTargetsFromRunningPod(&pods.Items[i])...)
+		}
+
+		doc := BuildImageInventory(targets)
+		if err := publishInventory(ctx, client, cfg, doc); err != nil {
+			return result, err
+		}
+		return Result{PublishedImages: len(doc.Items), WorkloadTargets: len(targets)}, nil
+	}
 
 	deployments, err := client.AppsV1().Deployments("").List(ctx, metav1.ListOptions{})
 	if err != nil {

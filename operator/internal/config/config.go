@@ -33,6 +33,7 @@ type Config struct {
 	MaxConcurrentScanJobs   int
 	RescanIntervalSeconds   int
 	ExcludedNamespaceNames  []string
+	ImageInventoryMode      string
 }
 
 func LoadFromEnv() (Config, error) {
@@ -44,6 +45,7 @@ func LoadFromEnv() (Config, error) {
 		"VAT_OPERATOR_ADMIN_TOKEN_KEY":       os.Getenv("VAT_OPERATOR_ADMIN_TOKEN_KEY"),
 		"VAT_OPERATOR_RUNTIME_PROFILE":       os.Getenv("VAT_OPERATOR_RUNTIME_PROFILE"),
 		"VAT_OPERATOR_NODE_SCANNING_ENABLED": os.Getenv("VAT_OPERATOR_NODE_SCANNING_ENABLED"),
+		"VAT_OPERATOR_IMAGE_INVENTORY_MODE":  os.Getenv("VAT_OPERATOR_IMAGE_INVENTORY_MODE"),
 	})
 }
 
@@ -76,6 +78,7 @@ func LoadFromMap(env map[string]string) (Config, error) {
 		MaxConcurrentScanJobs:   5,
 		RescanIntervalSeconds:   3600,
 		ExcludedNamespaceNames:  []string{"kube-system", "kube-public", "kube-node-lease"},
+		ImageInventoryMode:      imageInventoryMode(env["VAT_OPERATOR_IMAGE_INVENTORY_MODE"]),
 	}, nil
 }
 
@@ -93,5 +96,14 @@ func parseBool(value string) bool {
 		return true
 	default:
 		return false
+	}
+}
+
+func imageInventoryMode(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "workload", "workloads", "desired":
+		return "workload"
+	default:
+		return "running"
 	}
 }

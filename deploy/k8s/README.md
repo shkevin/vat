@@ -186,6 +186,11 @@ Base install, non-privileged image/config/RBAC scanning:
 kubectl apply -k deploy/k8s/operator/base
 ```
 
+The image lane defaults to `VAT_OPERATOR_IMAGE_INVENTORY_MODE=running`, which
+publishes only containers currently reported as running by Pods. Set the value
+to `workload` when you want desired-state scanning from Deployment,
+StatefulSet, DaemonSet, Job, CronJob, and standalone Pod specs.
+
 Profile overlays enable the privileged node-agent tier for infrastructure
 scans. The node agent is a small DaemonSet, separate from the bounded scanner
 worker:

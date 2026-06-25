@@ -100,6 +100,44 @@ func ImageTargetsFromPod(pod *corev1.Pod) []ImageTarget {
 	)
 }
 
+func ImageTargetsFromRunningPod(pod *corev1.Pod) []ImageTarget {
+	if pod == nil || pod.Status.Phase != corev1.PodRunning {
+		return nil
+	}
+
+	imagePullSecrets := imagePullSecretNames(pod.Spec.ImagePullSecrets)
+	containersByName := map[string]corev1.Container{}
+	for _, container := range pod.Spec.InitContainers {
+		containersByName[container.Name] = container
+	}
+	for _, container := range pod.Spec.Containers {
+		containersByName[container.Name] = container
+	}
+
+	statuses := append([]corev1.ContainerStatus{}, pod.Status.InitContainerStatuses...)
+	statuses = append(statuses, pod.Status.ContainerStatuses...)
+	targets := make([]ImageTarget, 0, len(statuses))
+	for _, status := range statuses {
+		if status.State.Running == nil {
+			continue
+		}
+		container, ok := containersByName[status.Name]
+		if !ok || container.Image == "" {
+			continue
+		}
+		targets = append(targets, ImageTarget{
+			TargetNamespace:      pod.Namespace,
+			TargetKind:           "Pod",
+			TargetName:           pod.Name,
+			TargetUID:            string(pod.UID),
+			ContainerName:        container.Name,
+			Image:                container.Image,
+			ImagePullSecretNames: imagePullSecrets,
+		})
+	}
+	return targets
+}
+
 func imageTargetsFromPodSpec(
 	namespace string,
 	kind string,
