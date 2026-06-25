@@ -30,6 +30,13 @@ spec:
           args:
             - |
               while true; do
+                vat-scan scan-runtime \
+                  --node-name "${NODE_NAME:-unknown-node}" \
+                  --containerd-socket "${VAT_CONTAINERD_SOCKET_PATH:-/run/containerd/containerd.sock}" \
+                  --containerd-namespace "${VAT_CONTAINERD_NAMESPACE:-k8s.io}" \
+                  --scan-types "${VAT_RUNTIME_SCAN_TYPES:-image-sca,image-sbom}" \
+                  --state-file /state/runtime-scan-state.json \
+                  --full-rescan-interval-seconds "${VAT_RUNTIME_FULL_RESCAN_INTERVAL_SECONDS:-86400}" || true
                 vat-scan scan-node \
                   --host-root "${VAT_HOST_ROOT:-/host}" \
                   --node-name "${NODE_NAME:-unknown-node}" \
@@ -49,6 +56,8 @@ spec:
               value: generic
             - name: VAT_CONTAINERD_SOCKET_PATH
               value: /host/run/containerd/containerd.sock
+            - name: VAT_CONTAINERD_NAMESPACE
+              value: k8s.io
             - name: VAT_KUBELET_ROOT_PATH
               value: /host/var/lib/kubelet
             - name: VAT_STATIC_POD_MANIFEST_PATH
@@ -57,14 +66,36 @@ spec:
               value: /host
             - name: VAT_NODE_SCAN_TYPES
               value: node-stig,node-oval-cve
+            - name: VAT_RUNTIME_SCAN_TYPES
+              value: image-sca,image-sbom
+            - name: VAT_RUNTIME_IMAGE_PULL_SECRETS
+              value: vat-operator/harbor-creds
             - name: VAT_NODE_SCAN_INTERVAL_SECONDS
+              value: "86400"
+            - name: VAT_RUNTIME_FULL_RESCAN_INTERVAL_SECONDS
               value: "86400"
             - name: VAT_NODE_SCAN_TIMEOUT_SECONDS
               value: "600"
+            - name: HTTP_PROXY
+              value: http://vat-egress-proxy.vat.svc.cluster.local.:3128
+            - name: HTTPS_PROXY
+              value: http://vat-egress-proxy.vat.svc.cluster.local.:3128
+            - name: NO_PROXY
+              value: .svc,.svc.cluster.local,.cluster.local,localhost,127.0.0.1,10.0.0.0/8,10.42.0.0/16,10.43.0.0/16,vat-backend.vat.svc.cluster.local
+            - name: http_proxy
+              value: http://vat-egress-proxy.vat.svc.cluster.local.:3128
+            - name: https_proxy
+              value: http://vat-egress-proxy.vat.svc.cluster.local.:3128
+            - name: no_proxy
+              value: .svc,.svc.cluster.local,.cluster.local,localhost,127.0.0.1,10.0.0.0/8,10.42.0.0/16,10.43.0.0/16,vat-backend.vat.svc.cluster.local
             - name: NODE_NAME
               valueFrom:
                 fieldRef:
                   fieldPath: spec.nodeName
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
             - name: VAT_API_KEY
               valueFrom:
                 secretKeyRef:
@@ -83,9 +114,13 @@ spec:
               readOnly: true
             - name: scanner-tmp
               mountPath: /tmp
+            - name: scanner-state
+              mountPath: /state
       volumes:
         - name: host-root
           hostPath:
             path: /
         - name: scanner-tmp
+          emptyDir: {}
+        - name: scanner-state
           emptyDir: {}

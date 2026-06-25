@@ -144,7 +144,7 @@ func TestReconcileWorkloadImageScansDefaultsToRunningPodContainers(t *testing.T)
 		},
 	)
 
-	result, err := ReconcileWorkloadImageScans(ctx, client, testConfig())
+	result, err := ReconcileWorkloadImageScans(ctx, client, runningTestConfig())
 	if err != nil {
 		t.Fatalf("ReconcileWorkloadImageScans returned error: %v", err)
 	}
@@ -172,6 +172,55 @@ func TestReconcileWorkloadImageScansDefaultsToRunningPodContainers(t *testing.T)
 	}
 	if len(target.ImagePullSecretNames) != 1 || target.ImagePullSecretNames[0] != "registry-creds" {
 		t.Fatalf("ImagePullSecretNames = %#v, want registry-creds", target.ImagePullSecretNames)
+	}
+}
+
+func TestReconcileWorkloadImageScansRuntimeModePublishesEmptyCentralInventory(t *testing.T) {
+	ctx := context.Background()
+	client := fake.NewSimpleClientset(
+		&corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "vat-scan-inventory", Namespace: "vat-operator"}},
+		&appsv1.Deployment{
+			ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "api", UID: types.UID("uid-api")},
+			Spec: appsv1.DeploymentSpec{
+				Template: corev1.PodTemplateSpec{Spec: corev1.PodSpec{
+					Containers: []corev1.Container{{Name: "api", Image: "registry.example.com/api:v1"}},
+				}},
+			},
+		},
+		&corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "api-running", UID: types.UID("uid-api-running")},
+			Spec: corev1.PodSpec{
+				Containers: []corev1.Container{{Name: "api", Image: "registry.example.com/api:v1"}},
+			},
+			Status: corev1.PodStatus{
+				Phase: corev1.PodRunning,
+				ContainerStatuses: []corev1.ContainerStatus{{
+					Name: "api",
+					State: corev1.ContainerState{
+						Running: &corev1.ContainerStateRunning{},
+					},
+				}},
+			},
+		},
+	)
+
+	result, err := ReconcileWorkloadImageScans(ctx, client, testConfig())
+	if err != nil {
+		t.Fatalf("ReconcileWorkloadImageScans returned error: %v", err)
+	}
+	if result.PublishedImages != 0 || result.WorkloadTargets != 0 {
+		t.Fatalf("result = %#v, want empty central inventory in runtime mode", result)
+	}
+	cm, err := client.CoreV1().ConfigMaps("vat-operator").Get(ctx, "vat-scan-inventory", metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("get inventory ConfigMap: %v", err)
+	}
+	var doc ImageInventory
+	if err := json.Unmarshal([]byte(cm.Data["images.json"]), &doc); err != nil {
+		t.Fatalf("unmarshal inventory: %v", err)
+	}
+	if len(doc.Items) != 0 {
+		t.Fatalf("inventory item count = %d, want 0", len(doc.Items))
 	}
 }
 
@@ -241,8 +290,14 @@ func testConfig() config.Config {
 		APIKeyKey:              "apiKey",
 		InventoryConfigMapName: "vat-scan-inventory",
 		ServiceAccountName:     "vat-operator-scanner",
-		ImageInventoryMode:     "running",
+		ImageInventoryMode:     "runtime",
 	}
+}
+
+func runningTestConfig() config.Config {
+	cfg := testConfig()
+	cfg.ImageInventoryMode = "running"
+	return cfg
 }
 
 func workloadTestConfig() config.Config {

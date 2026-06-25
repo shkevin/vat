@@ -10,7 +10,9 @@ import gzip
 import hashlib
 import json
 import os
+import re
 import ssl
+import subprocess
 import sys
 import tempfile
 import urllib.request
@@ -266,6 +268,58 @@ def _node_asset(cluster_name: str, node_name: str) -> str:
     cluster = (cluster_name or "cluster").strip() or "cluster"
     node = (node_name or os.environ.get("NODE_NAME", "") or os.uname().nodename).strip() or "node"
     return f"k8s/{cluster}/node/{node}/host"
+
+
+def _runtime_asset_slug(value: str) -> str:
+    slug = re.sub(r"[^a-zA-Z0-9_.-]+", "-", str(value or "").strip()).strip("-._")
+    return slug[:80] or "container"
+
+
+def _runtime_targets_from_crictl(doc: dict, cluster_name: str, node_name: str) -> list[dict]:
+    containers = doc.get("containers") if isinstance(doc, dict) else None
+    if not isinstance(containers, list):
+        return []
+    cluster = (cluster_name or "cluster").strip() or "cluster"
+    node = (node_name or "unknown-node").strip() or "unknown-node"
+    targets: list[dict] = []
+    for container in containers:
+        if not isinstance(container, dict):
+            continue
+        image_doc = container.get("image") if isinstance(container.get("image"), dict) else {}
+        image = str(
+            image_doc.get("userSpecifiedImage")
+            or image_doc.get("image")
+            or container.get("imageRef")
+            or ""
+        ).strip()
+        if not image:
+            continue
+        labels = container.get("labels") if isinstance(container.get("labels"), dict) else {}
+        metadata = container.get("metadata") if isinstance(container.get("metadata"), dict) else {}
+        container_id = str(container.get("id") or "").strip()
+        container_name = (
+            str(labels.get("io.kubernetes.container.name") or "").strip()
+            or str(metadata.get("name") or "").strip()
+            or "container"
+        )
+        namespace = str(labels.get("io.kubernetes.pod.namespace") or "").strip()
+        pod_name = str(labels.get("io.kubernetes.pod.name") or "").strip()
+        if namespace and pod_name:
+            asset = f"k8s/{cluster}/{namespace}/pod/{pod_name}/{container_name}"
+        else:
+            suffix = container_id[:12] if container_id else hashlib.sha256(image.encode()).hexdigest()[:12]
+            asset = f"k8s/{cluster}/node/{node}/runtime/{_runtime_asset_slug(container_name + '-' + suffix)}"
+        targets.append(
+            {
+                "asset": asset,
+                "containerId": container_id,
+                "containerName": container_name,
+                "image": image,
+                "nodeName": node,
+                "state": str(container.get("state") or "").strip(),
+            }
+        )
+    return targets
 
 
 def _merge_scan_cli(cfg: ScannerConfig, args: argparse.Namespace) -> ScannerConfig:
@@ -1143,6 +1197,233 @@ def _ingest_json_report_with_retry(
     raise VATClientError("Ingest failed")
 
 
+def _load_runtime_containers(containerd_socket: Path) -> dict:
+    endpoint = f"unix://{containerd_socket}"
+    result = subprocess.run(
+        ["crictl", "--runtime-endpoint", endpoint, "ps", "-a", "-o", "json"],
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    if result.returncode != 0:
+        raise VATClientError(result.stderr.strip() or "crictl ps failed")
+    return json.loads(result.stdout or "{}")
+
+
+def _runtime_image_signature(image: str, targets: list[dict], scan_types: list[str]) -> str:
+    target_bits = [
+        f"{target.get('asset','')}|{target.get('containerId','')}|{target.get('state','')}"
+        for target in targets
+    ]
+    return f"{image}|targets={','.join(sorted(target_bits))}|scanTypes={','.join(scan_types)}"
+
+
+def _runtime_auth_inventory_item() -> dict:
+    raw = os.environ.get("VAT_RUNTIME_IMAGE_PULL_SECRETS", "").strip()
+    if not raw:
+        return {}
+    default_namespace = os.environ.get("POD_NAMESPACE", "vat-operator").strip() or "vat-operator"
+    pull_secrets: list[dict[str, str]] = []
+    for part in [piece.strip() for piece in raw.split(",") if piece.strip()]:
+        if "/" in part:
+            namespace, name = part.split("/", 1)
+        else:
+            namespace, name = default_namespace, part
+        namespace = namespace.strip()
+        name = name.strip()
+        if namespace and name:
+            pull_secrets.append({"namespace": namespace, "name": name})
+    return {"targets": [{"pullSecrets": pull_secrets}]} if pull_secrets else {}
+
+
+def cmd_scan_runtime(args: argparse.Namespace) -> int:
+    """Scan images known to the local node container runtime, running or stopped."""
+    vat_url = (args.vat_url or os.environ.get("VAT_URL", "")).strip()
+    api_key = (getattr(args, "api_key", "") or os.environ.get("VAT_API_KEY", "")).strip()
+    admin_token = (args.admin_token or os.environ.get("VAT_ADMIN_TOKEN", "")).strip()
+    if not vat_url or not (api_key or admin_token or args.dry_run):
+        print("\nERROR: Set VAT_URL and VAT_API_KEY or VAT_ADMIN_TOKEN.", file=sys.stderr)
+        return 1
+
+    scan_types = _parse_inventory_scan_types(getattr(args, "scan_types", "") or None)
+    parser_keys: dict[str, str] = {}
+    if api_key:
+        parser_keys["trivy"] = api_key
+        parser_keys["cyclonedx"] = api_key
+    elif not args.dry_run and admin_token:
+        for parser_id in ("trivy", "cyclonedx"):
+            if parser_id == "cyclonedx" and "image-sbom" not in scan_types:
+                continue
+            if parser_id == "trivy" and "image-sca" not in scan_types:
+                continue
+            source_id, ensured_key = ensure_source(
+                vat_url,
+                admin_token,
+                source_id_for_parser(parser_id),
+                parser_id,
+                reset_key=bool(getattr(args, "reset_keys", False)),
+            )
+            cache_key(source_id, ensured_key)
+            parser_keys[parser_id] = ensured_key
+
+    cluster_name = (args.cluster_name or os.environ.get("VAT_CLUSTER_NAME", "cluster")).strip() or "cluster"
+    node_name = (args.node_name or os.environ.get("NODE_NAME", "") or os.uname().nodename).strip() or "node"
+    containerd_socket = Path(
+        args.containerd_socket
+        or os.environ.get("VAT_CONTAINERD_SOCKET_PATH", "/run/containerd/containerd.sock")
+    )
+    containerd_namespace = (
+        args.containerd_namespace
+        or os.environ.get("VAT_CONTAINERD_NAMESPACE", "k8s.io")
+    ).strip() or "k8s.io"
+
+    state_path = Path(args.state_file) if getattr(args, "state_file", None) else None
+    state = _load_scan_state(state_path)
+    full_rescan = _full_rescan_due(
+        state,
+        int(getattr(args, "full_rescan_interval_seconds", 86400) or 86400),
+        bool(getattr(args, "force_full_rescan", False)),
+    )
+
+    try:
+        runtime_doc = _load_runtime_containers(containerd_socket)
+    except (OSError, VATClientError, json.JSONDecodeError, subprocess.TimeoutExpired) as e:
+        print(f"ERROR: unable to enumerate runtime containers: {e}", file=sys.stderr)
+        return 1 if getattr(args, "fail_on_error", False) else 0
+
+    targets = _runtime_targets_from_crictl(runtime_doc, cluster_name, node_name)
+    by_image: dict[str, list[dict]] = {}
+    for target in targets:
+        image = str(target.get("image") or "").strip()
+        if image:
+            by_image.setdefault(image, []).append(target)
+
+    scanned = skipped = failures = 0
+    images_state = state.setdefault("images", {})
+    auth_item = _runtime_auth_inventory_item()
+    for image in sorted(by_image):
+        image_targets = by_image[image]
+        signature = _runtime_image_signature(image, image_targets, scan_types)
+        item_state = images_state.get(image)
+        if not full_rescan and isinstance(item_state, dict) and item_state.get("signature") == signature:
+            skipped += 1
+            continue
+
+        print("Scanning runtime image:", image)
+        with _temporary_registry_auth_config(auth_item) as docker_config_path:
+            report = (
+                run_trivy_image_ref(
+                    image,
+                    timeout=120,
+                    docker_config_path=docker_config_path,
+                    image_src="remote",
+                    containerd_address=str(containerd_socket),
+                    containerd_namespace=containerd_namespace,
+                )
+                if "image-sca" in scan_types
+                else None
+            )
+            sbom_report = (
+                run_trivy_image_ref_cyclonedx(
+                    image,
+                    timeout=180,
+                    docker_config_path=docker_config_path,
+                    image_src="remote",
+                    containerd_address=str(containerd_socket),
+                    containerd_namespace=containerd_namespace,
+                )
+                if "image-sbom" in scan_types
+                else None
+            )
+        if "image-sca" in scan_types and not report:
+            print("ERROR: Trivy runtime image scan failed or trivy not found.", file=sys.stderr)
+            failures += 1
+            if getattr(args, "fail_on_error", False):
+                return 1
+            continue
+        if "image-sbom" in scan_types and not sbom_report:
+            print("ERROR: Trivy CycloneDX runtime image scan failed or trivy not found.", file=sys.stderr)
+            failures += 1
+            if getattr(args, "fail_on_error", False):
+                return 1
+
+        target_failures = 0
+        for target in image_targets:
+            asset = str(target.get("asset") or "").strip()
+            if not asset:
+                continue
+            tag = _image_ref_tag(image)
+            print("Asset:       ", asset)
+            target_report = normalize_trivy(copy.deepcopy(report), asset) if report else None
+            if target_report and getattr(args, "no_snippets", False):
+                target_report = strip_snippets(target_report)
+            target_sbom_report = copy.deepcopy(sbom_report) if sbom_report else None
+            if args.dry_run:
+                if target_report:
+                    print(f"  trivy: {len(target_report.get('Results') or [])} result(s)")
+                if target_sbom_report:
+                    print(f"  cyclonedx: {len(target_sbom_report.get('components') or [])} component(s)")
+                continue
+            if target_report:
+                try:
+                    resp = _ingest_trivy_report_with_retry(
+                        vat_url=vat_url,
+                        key=parser_keys.get("trivy") or api_key,
+                        report=target_report,
+                        asset_name=asset,
+                        tag=tag,
+                        image_digest=None,
+                    )
+                    print(f"  trivy: {resp}")
+                except VATClientError as e:
+                    target_failures += 1
+                    print(f"\nERROR: {e}", file=sys.stderr)
+                    if getattr(args, "fail_on_error", False):
+                        return 1
+            if target_sbom_report:
+                cyclonedx_key = parser_keys.get("cyclonedx") or api_key
+                if not cyclonedx_key:
+                    target_failures += 1
+                    print("\nERROR: No CycloneDX ingest key available.", file=sys.stderr)
+                    if getattr(args, "fail_on_error", False):
+                        return 1
+                    continue
+                try:
+                    resp = _ingest_json_report_with_retry(
+                        vat_url=vat_url,
+                        key=cyclonedx_key,
+                        report=target_sbom_report,
+                        asset_name=asset,
+                        tag=tag,
+                        image_digest=None,
+                        label="cyclonedx",
+                    )
+                    print(f"  cyclonedx: {resp}")
+                except VATClientError as e:
+                    target_failures += 1
+                    print(f"\nERROR: {e}", file=sys.stderr)
+                    if getattr(args, "fail_on_error", False):
+                        return 1
+        failures += target_failures
+        if target_failures == 0:
+            images_state[image] = {
+                "signature": signature,
+                "image": image,
+                "scannedAt": datetime.now(timezone.utc).isoformat(),
+            }
+            scanned += 1
+            _save_scan_state(state_path, state)
+
+    if full_rescan:
+        state["lastFullScanAt"] = datetime.now(timezone.utc).isoformat()
+    _save_scan_state(state_path, state)
+    print(
+        f"\nRuntime scan complete. images={len(by_image)} scanned={scanned} "
+        f"skipped={skipped} targets={len(targets)} failures={failures}"
+    )
+    return 1 if failures and getattr(args, "fail_on_error", False) else 0
+
+
 def cmd_scan_inventory(args: argparse.Namespace) -> int:
     """Scan a deduplicated Kubernetes image inventory sequentially."""
     inventory_path = Path(args.inventory)
@@ -1874,6 +2155,35 @@ def main() -> int:
     sp_inv.add_argument("--force-full-rescan", action="store_true", help="Ignore scan state for this run")
     sp_inv.add_argument("--scan-types", default="", help="Comma-separated inventory scan types: image-sca,image-sbom")
     sp_inv.set_defaults(func=cmd_scan_inventory)
+
+    # scan-runtime
+    sp_runtime = subparsers.add_parser("scan-runtime", help="Scan local node runtime containers and images")
+    sp_runtime.add_argument("--dry-run", action="store_true", help="Scan only; do not push")
+    sp_runtime.add_argument("--no-snippets", action="store_true", help="Omit code snippets")
+    sp_runtime.add_argument("--reset-keys", action="store_true", help="Regenerate API keys when admin-token mode is used")
+    sp_runtime.add_argument("--fail-on-error", action="store_true", help="Exit on first runtime scan failure")
+    sp_runtime.add_argument("--cluster-name", help="Kubernetes cluster name for asset IDs (env: VAT_CLUSTER_NAME)")
+    sp_runtime.add_argument("--node-name", help="Kubernetes node name (env: NODE_NAME)")
+    sp_runtime.add_argument(
+        "--containerd-socket",
+        type=Path,
+        help="Containerd socket path (env: VAT_CONTAINERD_SOCKET_PATH)",
+    )
+    sp_runtime.add_argument(
+        "--containerd-namespace",
+        default="",
+        help="Containerd namespace for Kubernetes images (env: VAT_CONTAINERD_NAMESPACE, default: k8s.io)",
+    )
+    sp_runtime.add_argument("--state-file", type=Path, help="Persisted runtime scan state file")
+    sp_runtime.add_argument(
+        "--full-rescan-interval-seconds",
+        type=int,
+        default=86400,
+        help="Rescan unchanged runtime images after this many seconds; 0 disables scheduled full rescans",
+    )
+    sp_runtime.add_argument("--force-full-rescan", action="store_true", help="Ignore scan state for this run")
+    sp_runtime.add_argument("--scan-types", default="", help="Comma-separated runtime scan types: image-sca,image-sbom")
+    sp_runtime.set_defaults(func=cmd_scan_runtime)
 
     # scan-k8s-inventory
     sp_k8s = subparsers.add_parser("scan-k8s-inventory", help="Scan Kubernetes object/RBAC inventory")

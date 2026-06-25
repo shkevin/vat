@@ -125,20 +125,34 @@ def run_trivy_image_ref(
     image_ref: str,
     timeout: int = 120,
     docker_config_path: Path | None = None,
+    image_src: str | None = None,
+    containerd_address: str | None = None,
+    containerd_namespace: str | None = None,
 ) -> dict | None:
     """Run trivy image on image reference (e.g. myregistry/app:v1). Returns JSON or None."""
     env = os.environ.copy()
+    env.setdefault("TRIVY_CACHE_DIR", "/tmp/trivy-cache")
+    env.setdefault("XDG_CACHE_HOME", "/tmp")
     if docker_config_path is not None:
         env["DOCKER_CONFIG"] = str(docker_config_path)
+    if containerd_address:
+        env["CONTAINERD_ADDRESS"] = str(containerd_address)
+    if containerd_namespace:
+        env["CONTAINERD_NAMESPACE"] = str(containerd_namespace)
+    cmd = ["trivy", "image", image_ref, "--format", "json", "--quiet"]
+    if image_src:
+        cmd.extend(["--image-src", image_src])
     try:
         result = subprocess.run(
-            ["trivy", "image", image_ref, "--format", "json", "--quiet"],
+            cmd,
             capture_output=True,
             text=True,
             timeout=timeout,
             env=env,
         )
     except FileNotFoundError:
+        return None
+    except subprocess.TimeoutExpired:
         return None
     if result.returncode != 0 or not result.stdout.strip():
         return None
@@ -149,22 +163,34 @@ def run_trivy_image_ref_cyclonedx(
     image_ref: str,
     timeout: int = 180,
     docker_config_path: Path | None = None,
+    image_src: str | None = None,
+    containerd_address: str | None = None,
+    containerd_namespace: str | None = None,
 ) -> dict | None:
     """Run trivy image on image reference and return CycloneDX JSON SBOM."""
     env = os.environ.copy()
+    env.setdefault("TRIVY_CACHE_DIR", "/tmp/trivy-cache")
+    env.setdefault("XDG_CACHE_HOME", "/tmp")
     if docker_config_path is not None:
         env["DOCKER_CONFIG"] = str(docker_config_path)
+    if containerd_address:
+        env["CONTAINERD_ADDRESS"] = str(containerd_address)
+    if containerd_namespace:
+        env["CONTAINERD_NAMESPACE"] = str(containerd_namespace)
+    cmd = [
+        "trivy",
+        "image",
+        image_ref,
+        "--format",
+        "cyclonedx",
+        "--list-all-pkgs",
+        "--quiet",
+    ]
+    if image_src:
+        cmd.extend(["--image-src", image_src])
     try:
         result = subprocess.run(
-            [
-                "trivy",
-                "image",
-                image_ref,
-                "--format",
-                "cyclonedx",
-                "--list-all-pkgs",
-                "--quiet",
-            ],
+            cmd,
             capture_output=True,
             text=True,
             timeout=timeout,

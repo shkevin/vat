@@ -35,6 +35,13 @@ spec:
           args:
             - |
               while true; do
+                vat-scan scan-runtime \
+                  --node-name "${NODE_NAME:-unknown-node}" \
+                  --containerd-socket "${VAT_CONTAINERD_SOCKET_PATH:-/run/containerd/containerd.sock}" \
+                  --containerd-namespace "${VAT_CONTAINERD_NAMESPACE:-k8s.io}" \
+                  --scan-types "${VAT_RUNTIME_SCAN_TYPES:-image-sca,image-sbom}" \
+                  --state-file /state/runtime-scan-state.json \
+                  --full-rescan-interval-seconds "${VAT_RUNTIME_FULL_RESCAN_INTERVAL_SECONDS:-86400}" || true
                 vat-scan scan-node \
                   --host-root "${VAT_HOST_ROOT:-/host}" \
                   --node-name "${NODE_NAME:-unknown-node}" \
@@ -54,6 +61,8 @@ spec:
               value: {{ .Values.nodeAgent.runtimeProfile | quote }}
             - name: VAT_CONTAINERD_SOCKET_PATH
               value: {{ .Values.nodeAgent.containerdSocketPath | quote }}
+            - name: VAT_CONTAINERD_NAMESPACE
+              value: {{ .Values.nodeAgent.containerdNamespace | quote }}
             - name: VAT_KUBELET_ROOT_PATH
               value: {{ .Values.nodeAgent.kubeletRootPath | quote }}
             - name: VAT_STATIC_POD_MANIFEST_PATH
@@ -62,14 +71,38 @@ spec:
               value: /host
             - name: VAT_NODE_SCAN_TYPES
               value: {{ .Values.nodeAgent.scanTypes | quote }}
+            - name: VAT_RUNTIME_SCAN_TYPES
+              value: {{ .Values.nodeAgent.runtimeScanTypes | quote }}
+            - name: VAT_RUNTIME_IMAGE_PULL_SECRETS
+              value: {{ .Values.nodeAgent.runtimeImagePullSecrets | quote }}
             - name: VAT_NODE_SCAN_INTERVAL_SECONDS
               value: {{ .Values.nodeAgent.scanIntervalSeconds | quote }}
+            - name: VAT_RUNTIME_FULL_RESCAN_INTERVAL_SECONDS
+              value: {{ .Values.nodeAgent.runtimeFullRescanIntervalSeconds | quote }}
             - name: VAT_NODE_SCAN_TIMEOUT_SECONDS
               value: {{ .Values.nodeAgent.scanTimeoutSeconds | quote }}
+            {{- if .Values.scanner.proxy.enabled }}
+            - name: HTTP_PROXY
+              value: {{ .Values.scanner.proxy.httpProxy | quote }}
+            - name: HTTPS_PROXY
+              value: {{ .Values.scanner.proxy.httpsProxy | quote }}
+            - name: NO_PROXY
+              value: {{ .Values.scanner.proxy.noProxy | quote }}
+            - name: http_proxy
+              value: {{ .Values.scanner.proxy.httpProxy | quote }}
+            - name: https_proxy
+              value: {{ .Values.scanner.proxy.httpsProxy | quote }}
+            - name: no_proxy
+              value: {{ .Values.scanner.proxy.noProxy | quote }}
+            {{- end }}
             - name: NODE_NAME
               valueFrom:
                 fieldRef:
                   fieldPath: spec.nodeName
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
             - name: VAT_API_KEY
               valueFrom:
                 secretKeyRef:
@@ -88,10 +121,14 @@ spec:
               readOnly: true
             - name: scanner-tmp
               mountPath: /tmp
+            - name: scanner-state
+              mountPath: /state
       volumes:
         - name: host-root
           hostPath:
             path: /
         - name: scanner-tmp
+          emptyDir: {}
+        - name: scanner-state
           emptyDir: {}
 {{- end }}

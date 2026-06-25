@@ -33,6 +33,17 @@ RUN SKOPEO_VERSION=1.20.0 && \
 # Trivy
 RUN curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin
 
+# crictl for node runtime inventory enumeration (containerd/CRI)
+RUN CRICTL_VERSION="$(python3 -c "import json, urllib.request; print(json.load(urllib.request.urlopen('https://api.github.com/repos/kubernetes-sigs/cri-tools/releases/latest'))['tag_name'])")" && \
+    case "${TARGETARCH}" in \
+        amd64) CRICTL_ARCH=amd64 ;; \
+        arm64) CRICTL_ARCH=arm64 ;; \
+        *) CRICTL_ARCH=amd64 ;; \
+    esac && \
+    curl -fsSL "https://github.com/kubernetes-sigs/cri-tools/releases/download/${CRICTL_VERSION}/crictl-${CRICTL_VERSION}-linux-${CRICTL_ARCH}.tar.gz" -o /tmp/crictl.tar.gz && \
+    tar -xzf /tmp/crictl.tar.gz -C /usr/local/bin crictl && \
+    rm /tmp/crictl.tar.gz
+
 # Grype
 RUN curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sh -s -- -b /usr/local/bin
 

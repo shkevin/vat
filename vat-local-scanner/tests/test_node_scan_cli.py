@@ -65,3 +65,134 @@ def test_cmd_scan_node_skips_when_host_root_missing(monkeypatch, tmp_path: Path)
 
     assert cli.cmd_scan_node(args) == 0
     assert calls == []
+
+
+def _runtime_args(tmp_path: Path, **overrides):
+    base = dict(
+        dry_run=False,
+        fail_on_error=False,
+        vat_url="https://vat",
+        api_key="runtime-key",
+        admin_token="",
+        reset_keys=False,
+        cluster_name="k3s-remote",
+        node_name="node-a",
+        containerd_socket=tmp_path / "containerd.sock",
+        containerd_namespace="k8s.io",
+        scan_types="image-sca,image-sbom",
+        state_file=tmp_path / "runtime-state.json",
+        full_rescan_interval_seconds=86400,
+        force_full_rescan=True,
+        no_snippets=False,
+    )
+    base.update(overrides)
+    return argparse.Namespace(**base)
+
+
+def test_runtime_inventory_targets_kubernetes_and_host_containers() -> None:
+    doc = {
+        "containers": [
+            {
+                "id": "abc123456789",
+                "metadata": {"name": "api"},
+                "image": {"image": "registry.example.com/api:v1"},
+                "labels": {
+                    "io.kubernetes.pod.namespace": "apps",
+                    "io.kubernetes.pod.name": "api-abc",
+                    "io.kubernetes.container.name": "api",
+                },
+                "state": "CONTAINER_EXITED",
+            },
+            {
+                "id": "def123456789",
+                "metadata": {"name": "kind-control-plane"},
+                "image": {"image": "kindest/node:v1.29.0"},
+                "labels": {},
+                "state": "CONTAINER_RUNNING",
+            },
+        ]
+    }
+
+    targets = cli._runtime_targets_from_crictl(doc, "k3s-remote", "node-a")
+
+    assert targets == [
+        {
+            "asset": "k8s/k3s-remote/apps/pod/api-abc/api",
+            "containerId": "abc123456789",
+            "containerName": "api",
+            "image": "registry.example.com/api:v1",
+            "nodeName": "node-a",
+            "state": "CONTAINER_EXITED",
+        },
+        {
+            "asset": "k8s/k3s-remote/node/node-a/runtime/kind-control-plane-def123456789",
+            "containerId": "def123456789",
+            "containerName": "kind-control-plane",
+            "image": "kindest/node:v1.29.0",
+            "nodeName": "node-a",
+            "state": "CONTAINER_RUNNING",
+        },
+    ]
+
+
+def test_cmd_scan_runtime_ingests_each_runtime_target(monkeypatch, tmp_path: Path) -> None:
+    socket_path = tmp_path / "containerd.sock"
+    socket_path.write_text("", encoding="utf-8")
+    runtime_doc = {
+        "containers": [
+            {
+                "id": "abc123456789",
+                "metadata": {"name": "api"},
+                "image": {"image": "registry.example.com/shared:v1"},
+                "labels": {
+                    "io.kubernetes.pod.namespace": "apps",
+                    "io.kubernetes.pod.name": "api-abc",
+                    "io.kubernetes.container.name": "api",
+                },
+                "state": "CONTAINER_RUNNING",
+            },
+            {
+                "id": "def123456789",
+                "metadata": {"name": "worker"},
+                "image": {"image": "registry.example.com/shared:v1"},
+                "labels": {
+                    "io.kubernetes.pod.namespace": "apps",
+                    "io.kubernetes.pod.name": "worker-def",
+                    "io.kubernetes.container.name": "worker",
+                },
+                "state": "CONTAINER_EXITED",
+            },
+        ]
+    }
+    monkeypatch.setattr(cli, "_load_runtime_containers", lambda *args, **kwargs: runtime_doc)
+    monkeypatch.setattr(
+        cli,
+        "run_trivy_image_ref",
+        lambda *args, **kwargs: {"Results": [{"Target": "registry.example.com/shared:v1"}]},
+    )
+    monkeypatch.setattr(
+        cli,
+        "run_trivy_image_ref_cyclonedx",
+        lambda *args, **kwargs: {"components": [{"name": "openssl"}]},
+    )
+
+    calls: list[dict] = []
+    monkeypatch.setattr(
+        cli,
+        "_ingest_trivy_report_with_retry",
+        lambda **kwargs: calls.append({"kind": "trivy", **kwargs}) or {"ok": 1},
+    )
+    monkeypatch.setattr(
+        cli,
+        "_ingest_json_report_with_retry",
+        lambda **kwargs: calls.append({"kind": "cyclonedx", **kwargs}) or {"ok": 1},
+    )
+
+    assert cli.cmd_scan_runtime(_runtime_args(tmp_path, containerd_socket=socket_path)) == 0
+
+    trivy_calls = [call for call in calls if call["kind"] == "trivy"]
+    assert [call["asset_name"] for call in trivy_calls] == [
+        "k8s/k3s-remote/apps/pod/api-abc/api",
+        "k8s/k3s-remote/apps/pod/worker-def/worker",
+    ]
+    assert all(call["image_digest"] is None for call in trivy_calls)
