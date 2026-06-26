@@ -22,6 +22,7 @@ _DIGEST = "sha256:" + "a" * 64
 async def _reset(db) -> None:
     await db.execute(text("TRUNCATE TABLE assets RESTART IDENTITY CASCADE"))
     await db.execute(text("TRUNCATE TABLE findings RESTART IDENTITY CASCADE"))
+    await db.execute(text("TRUNCATE TABLE sbom_packages RESTART IDENTITY CASCADE"))
     await db.commit()
 
 
@@ -99,3 +100,57 @@ async def test_non_bundle_mode_keeps_digest(clean_integration_tables):
     rows = (await db.execute(text("SELECT image_digest FROM findings"))).all()
     assert rows
     assert any(d for (d,) in rows), "digest should be preserved outside bundle mode"
+
+
+@pytest.mark.asyncio
+async def test_bundle_cyclonedx_license_findings_use_bundle_tag_without_digest(
+    clean_integration_tables,
+):
+    """SBOM-created license findings must not become per-image variants of the bundle."""
+    db = clean_integration_tables
+    await _reset(db)
+
+    doc = {
+        "bomFormat": "CycloneDX",
+        "metadata": {
+            "component": {
+                "name": f"kamiwaza/images/core:release-0.13.5@{_DIGEST}",
+                "version": "release-0.13.5",
+            }
+        },
+        "components": [
+            {
+                "type": "library",
+                "name": "busybox",
+                "version": "1.36.1",
+                "licenses": [{"license": {"id": "GPL-3.0"}}],
+            }
+        ],
+    }
+
+    await _ingest_from_parser(
+        db,
+        doc,
+        "cyclonedx",
+        "cyclonedx",
+        None,
+        asset_override="kamiwaza-bundle",
+        source_image_override="kamiwaza/images/core",
+        image_digest_override=_DIGEST,
+        tag_override="v0.13.5",
+    )
+
+    rows = (
+        await db.execute(
+            text(
+                "SELECT image, tag, image_digest, title "
+                "FROM findings WHERE source = 'cyclonedx'"
+            )
+        )
+    ).all()
+    assert rows, "expected SBOM license finding"
+    for image, tag, digest, title in rows:
+        assert image == "kamiwaza-bundle"
+        assert tag == "v0.13.5"
+        assert not digest
+        assert "kamiwaza/images/core" in title

@@ -34,6 +34,107 @@ spec:
             - -c
           args:
             - |
+              prewarm_node_ingest_keys() {
+                if [ -z "${VAT_ADMIN_TOKEN:-}" ]; then
+                  return 0
+                fi
+                python - <<'PY'
+              import json
+              import os
+              import sys
+              import urllib.request
+              from pathlib import Path
+
+              vat_url = os.environ.get("VAT_URL", "").rstrip("/")
+              admin_token = os.environ.get("VAT_ADMIN_TOKEN", "").strip()
+              prefix = (
+                  os.environ.get("VAT_SOURCE_ID_PREFIX", "").strip()
+                  or f"node-{os.environ.get('NODE_NAME', 'unknown-node')}"
+              )
+              cache_dir = Path(os.environ.get("VAT_SCANNER_KEY_CACHE_DIR", "/state"))
+              cache_file = cache_dir / "scanner-keys.json"
+              legacy_cache_file = Path.home() / ".config" / "vat" / "scanner-keys.json"
+              runtime_scan_types = {
+                  item.strip()
+                  for item in os.environ.get(
+                      "VAT_RUNTIME_SCAN_TYPES", "image-sca,image-sbom,container-stig"
+                  ).split(",")
+                  if item.strip()
+              }
+              node_scan_types = {
+                  item.strip()
+                  for item in os.environ.get(
+                      "VAT_NODE_SCAN_TYPES", "node-stig,node-oval-cve"
+                  ).split(",")
+                  if item.strip()
+              }
+
+              if not vat_url or not admin_token:
+                  raise SystemExit(0)
+
+              parsers = []
+              if "image-sca" in runtime_scan_types:
+                  parsers.append(("trivy", "package"))
+              if "image-sbom" in runtime_scan_types:
+                  parsers.append(("cyclonedx", "package"))
+              if "container-stig" in runtime_scan_types or "node-stig" in node_scan_types:
+                  parsers.append(("openscap", "container"))
+              if "node-oval-cve" in node_scan_types:
+                  parsers.append(("openscap_oval", "container"))
+
+              cache_dir.mkdir(parents=True, exist_ok=True)
+              try:
+                  cache = json.loads(cache_file.read_text(encoding="utf-8"))
+              except Exception:
+                  cache = {}
+
+              def ensure(parser_id, asset_type, regenerate=False):
+                  body = {
+                      "parser": parser_id,
+                      "sourceIdPrefix": prefix,
+                      "assetType": asset_type,
+                      "createKey": True,
+                      "regenerateKey": regenerate,
+                  }
+                  req = urllib.request.Request(
+                      f"{vat_url}/api/settings/sources/manual/ensure",
+                      data=json.dumps(body).encode(),
+                      method="POST",
+                      headers={
+                          "Authorization": f"Bearer {admin_token}",
+                          "Content-Type": "application/json",
+                      },
+                  )
+                  with urllib.request.urlopen(req, timeout=30) as resp:
+                      return json.loads(resp.read().decode())
+
+              for parser_id, asset_type in parsers:
+                  source_id = f"{prefix}-{parser_id}"
+                  key = cache.get(source_id) or cache.get(parser_id)
+                  if not key:
+                      data = ensure(parser_id, asset_type, regenerate=False)
+                      key = data.get("key")
+                  if not key:
+                      data = ensure(parser_id, asset_type, regenerate=True)
+                      key = data.get("key")
+                      source_id = data.get("sourceId") or source_id
+                  if not key:
+                      raise SystemExit(f"{source_id}: no key")
+                  cache[source_id] = key
+                  # Current published scanner images do not yet understand
+                  # VAT_SOURCE_ID_PREFIX, so keep the legacy lookup warm too.
+                  cache[parser_id] = key
+                  print(f"prewarmed {source_id} ingest key", file=sys.stderr)
+
+              cache_file.write_text(json.dumps(cache, indent=2), encoding="utf-8")
+              cache_file.chmod(0o600)
+              legacy_cache_file.parent.mkdir(parents=True, exist_ok=True)
+              legacy_cache_file.write_text(json.dumps(cache, indent=2), encoding="utf-8")
+              legacy_cache_file.chmod(0o600)
+              PY
+              }
+
+              prewarm_node_ingest_keys
               while true; do
                 vat-scan scan-runtime \
                   --node-name "${NODE_NAME:-unknown-node}" \
@@ -106,12 +207,10 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.namespace
-            - name: VAT_API_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: {{ .Values.vat.credentialsSecretName }}
-                  key: apiKey
-                  optional: true
+            - name: VAT_SOURCE_ID_PREFIX
+              value: node-$(NODE_NAME)
+            - name: VAT_SCANNER_KEY_CACHE_DIR
+              value: /state
             - name: VAT_ADMIN_TOKEN
               valueFrom:
                 secretKeyRef:
@@ -126,6 +225,8 @@ spec:
               mountPath: /tmp
             - name: scanner-state
               mountPath: /state
+            - name: scanner-state
+              mountPath: /root/.config
       volumes:
         - name: host-root
           hostPath:
@@ -133,5 +234,7 @@ spec:
         - name: scanner-tmp
           emptyDir: {}
         - name: scanner-state
-          emptyDir: {}
+          hostPath:
+            path: {{ .Values.nodeAgent.stateHostPath | quote }}
+            type: DirectoryOrCreate
 {{- end }}

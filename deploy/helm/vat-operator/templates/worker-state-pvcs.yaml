@@ -1,0 +1,18 @@
+{{- if and .Values.scanner.worker.state.persistence.enabled (not .Values.scanner.worker.state.persistence.existingClaim) }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: vat-scanner-worker-state
+  namespace: {{ include "vat-operator.namespace" . }}
+  labels:
+    app.kubernetes.io/name: vat-scanner-worker
+spec:
+  accessModes:
+    - ReadWriteOnce
+  {{- if .Values.scanner.worker.state.persistence.storageClassName }}
+  storageClassName: {{ .Values.scanner.worker.state.persistence.storageClassName | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.scanner.worker.state.persistence.size | quote }}
+{{- end }}

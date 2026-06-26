@@ -76,7 +76,9 @@ import type {
 // attestation, external link list) that aren't needed for first-paint and
 // would otherwise bust localStorage at fleet scale. Bumped to v2 so old
 // oversized v1 entries (silently rejected by previous size cap) don't leak in.
-const VAT_SNAPSHOT_KEY = "vat:lastFindingsSnapshot:v2";
+// v3 invalidates bundle snapshots that may contain stale per-image digests
+// restored before the cleaned API payload arrives.
+const VAT_SNAPSHOT_KEY = "vat:lastFindingsSnapshot:v3";
 
 /** localStorage key for persisted sidebar filter state. v1 = first persisted shape;
  * bump if the schema changes incompatibly. */

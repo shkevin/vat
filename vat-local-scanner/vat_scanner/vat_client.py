@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+import os
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
@@ -14,12 +16,49 @@ CACHE_DIR = Path.home() / ".config" / "vat"
 CACHE_FILE = CACHE_DIR / "scanner-keys.json"
 
 
+def _source_id_prefix() -> str:
+    return (os.environ.get("VAT_SOURCE_ID_PREFIX") or SOURCE_ID_PREFIX).strip()
+
+
+def key_cache_dir() -> Path:
+    raw = (os.environ.get("VAT_SCANNER_KEY_CACHE_DIR") or "").strip()
+    if raw:
+        return Path(raw)
+    return CACHE_DIR
+
+
+def key_cache_file() -> Path:
+    return key_cache_dir() / "scanner-keys.json"
+
+
+def _validated_base_url(base_url: str) -> str:
+    """Return a normalized VAT base URL after rejecting unsafe request targets."""
+    raw = (base_url or "").strip()
+    parsed = urllib.parse.urlsplit(raw)
+    if (
+        parsed.scheme not in {"http", "https"}
+        or not parsed.hostname
+        or parsed.username
+        or parsed.password
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise VATClientError("Unsafe VAT URL: expected http(s) URL without credentials, query, or fragment")
+    path = parsed.path.rstrip("/")
+    return urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, path, "", ""))
+
+
+def _api_url(base_url: str, path: str) -> str:
+    return f"{_validated_base_url(base_url)}{path}"
+
+
 def _load_key_cache() -> dict[str, str]:
     """Load source_id -> key from cache."""
-    if not CACHE_FILE.exists():
+    cache_file = key_cache_file()
+    if not cache_file.exists():
         return {}
     try:
-        with open(CACHE_FILE) as f:
+        with open(cache_file) as f:
             return json.load(f)
     except (json.JSONDecodeError, OSError):
         return {}
@@ -27,17 +66,20 @@ def _load_key_cache() -> dict[str, str]:
 
 def source_id_for_parser(parser: str) -> str:
     """Return source_id for a parser. When prefix empty, use parser name only."""
-    if SOURCE_ID_PREFIX:
-        return f"{SOURCE_ID_PREFIX}-{parser}"
+    prefix = _source_id_prefix()
+    if prefix:
+        return f"{prefix}-{parser}"
     return parser
 
 
 def _save_key_cache(cache: dict[str, str]) -> None:
     """Save key cache."""
-    CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    with open(CACHE_FILE, "w") as f:
+    cache_dir = key_cache_dir()
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    cache_file = key_cache_file()
+    with open(cache_file, "w") as f:
         json.dump(cache, f, indent=2)
-    CACHE_FILE.chmod(0o600)
+    cache_file.chmod(0o600)
 
 
 def ensure_source(
@@ -54,10 +96,10 @@ def ensure_source(
     POST /api/settings/sources/manual/ensure
     Returns (source_id, key or None).
     """
-    url = f"{base_url.rstrip('/')}/api/settings/sources/manual/ensure"
+    url = _api_url(base_url, "/api/settings/sources/manual/ensure")
     body = {
         "parser": parser,
-        "sourceIdPrefix": SOURCE_ID_PREFIX,
+        "sourceIdPrefix": _source_id_prefix(),
         "assetType": asset_type,
         "createKey": create_key,
         "regenerateKey": regenerate_key,
@@ -134,7 +176,7 @@ def ingest_report(
     Optional asset/tag set X-VAT-Asset/X-VAT-Tag headers for bundle scans.
     Returns response dict.
     """
-    url = f"{base_url.rstrip('/')}/api/ingest"
+    url = _api_url(base_url, "/api/ingest")
     req = urllib.request.Request(
         url,
         data=json.dumps(report).encode(),
@@ -180,7 +222,7 @@ def ingest_openscap_report(
     source_image: container label (e.g. redis, metrics-server) so component identifies which image failed.
     Returns response dict.
     """
-    url = f"{base_url.rstrip('/')}/api/ingest"
+    url = _api_url(base_url, "/api/ingest")
     data = xml_content.encode("utf-8") if isinstance(xml_content, str) else xml_content
     req = urllib.request.Request(
         url,
@@ -229,7 +271,7 @@ def ingest_openscap_oval_report(
     Optional asset/tag/source_image set headers for bundle scans.
     Returns response dict.
     """
-    url = f"{base_url.rstrip('/')}/api/ingest"
+    url = _api_url(base_url, "/api/ingest")
     data = xml_content.encode("utf-8") if isinstance(xml_content, str) else xml_content
     req = urllib.request.Request(
         url,

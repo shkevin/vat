@@ -165,8 +165,8 @@ findings, SBOMs, deduplication, and correlation.
 
 The default cluster lanes are:
 
-- `vat-scanner-worker`: image SCA plus image SBOM from `vat-scan-inventory`.
-- `vat-config-worker`: Kubernetes config, secrets posture, and RBAC posture
+- `vat-scanner-worker`: a single cluster worker that runs image SCA/SBOM from
+  `vat-scan-inventory` and Kubernetes config, secrets posture, and RBAC posture
   from `vat-k8s-inventory`.
 - `vat-operator-node-agent`: privileged node OpenSCAP STIG/OVAL lane, enabled
   by the runtime profile overlays and enabled by default in Helm.

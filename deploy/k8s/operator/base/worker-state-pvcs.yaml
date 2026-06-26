@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: vat-scanner-worker-state
+  namespace: vat-operator
+  labels:
+    app.kubernetes.io/name: vat-scanner-worker
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi

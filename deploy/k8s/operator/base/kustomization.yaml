@@ -8,5 +8,5 @@ resources:
   - serviceaccounts.yaml
   - rbac.yaml
   - deployment.yaml
+  - worker-state-pvcs.yaml
   - scanner-worker.yaml
-  - config-worker.yaml

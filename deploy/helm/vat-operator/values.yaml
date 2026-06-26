@@ -39,19 +39,33 @@ scanner:
   worker:
     replicas: 1
     scanIntervalSeconds: 3600
+    scanRetryIntervalSeconds: 300
     fullRescanIntervalSeconds: 86400
     scanTypes: image-sca,image-sbom
+    state:
+      persistence:
+        enabled: true
+        existingClaim: ""
+        storageClassName: ""
+        size: 1Gi
     resources:
       requests:
-        cpu: 100m
-        memory: 512Mi
+        cpu: 150m
+        memory: 768Mi
       limits:
-        cpu: "1"
-        memory: 2Gi
+        cpu: "2"
+        memory: 3Gi
   configWorker:
     replicas: 1
     scanIntervalSeconds: 3600
+    scanRetryIntervalSeconds: 300
     fullRescanIntervalSeconds: 86400
+    state:
+      persistence:
+        enabled: true
+        existingClaim: ""
+        storageClassName: ""
+        size: 1Gi
     resources:
       requests:
         cpu: 50m
@@ -73,6 +87,7 @@ nodeAgent:
   scanIntervalSeconds: 86400
   runtimeFullRescanIntervalSeconds: 86400
   scanTimeoutSeconds: 600
+  stateHostPath: /var/lib/vat-scanner/state
   containerdNamespace: k8s.io
   containerdSocketPath: /host/run/containerd/containerd.sock
   dockerSocketPath: /host/var/run/docker.sock

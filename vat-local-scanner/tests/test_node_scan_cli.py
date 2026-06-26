@@ -597,6 +597,47 @@ def test_cmd_scan_runtime_prefers_parser_specific_openscap_key(monkeypatch, tmp_
     assert [call.get("regenerate_key") for call in ensure_calls] == [False, True]
 
 
+def test_cmd_scan_runtime_summarizes_scanner_failures_without_error_spam(
+    monkeypatch, tmp_path: Path, capsys
+) -> None:
+    socket_path = tmp_path / "containerd.sock"
+    socket_path.write_text("", encoding="utf-8")
+    monkeypatch.setattr(cli, "_load_runtime_containers", lambda *args, **kwargs: {"containers": []})
+    monkeypatch.setattr(
+        cli,
+        "_load_runtime_images",
+        lambda *args, **kwargs: {
+            "images": [
+                {
+                    "id": "sha256:kind",
+                    "repoTags": ["kindest/node:v1.30.0"],
+                }
+            ]
+        },
+    )
+    monkeypatch.setattr(cli, "_load_docker_containers", lambda *args, **kwargs: [])
+    monkeypatch.setattr(cli, "_load_docker_images", lambda *args, **kwargs: [])
+    monkeypatch.setattr(cli, "run_trivy_image_ref", lambda *args, **kwargs: None)
+    monkeypatch.setattr(cli, "run_trivy_image_ref_cyclonedx", lambda *args, **kwargs: None)
+
+    assert cli.cmd_scan_runtime(
+        _runtime_args(
+            tmp_path,
+            api_key="runtime-key",
+            admin_token="",
+            containerd_socket=socket_path,
+            docker_socket=tmp_path / "missing-docker.sock",
+            scan_types="image-sca,image-sbom",
+        )
+    ) == 0
+
+    captured = capsys.readouterr()
+    assert "Runtime scan complete." in captured.out
+    assert "scannerFailures=2" in captured.out
+    assert "ERROR: Trivy runtime image scan failed" not in captured.err
+    assert "ERROR: Trivy CycloneDX runtime image scan failed" not in captured.err
+
+
 def test_cmd_scan_runtime_ingests_container_stig_when_trivy_fails(monkeypatch, tmp_path: Path) -> None:
     socket_path = tmp_path / "containerd.sock"
     socket_path.write_text("", encoding="utf-8")

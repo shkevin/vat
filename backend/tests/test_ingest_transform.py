@@ -1,6 +1,6 @@
 """Tests for ingest asset-type transform."""
 
-from app.api.ingest import _apply_asset_type_transform
+from app.api.ingest import _apply_asset_type_transform, _resolve_parser
 from app.schemas.vat import VatFindingSchema
 
 
@@ -78,3 +78,9 @@ def test_vat_schema_sanitizes_null_bytes_and_control_chars():
     assert p.file_path == "frontend/.next/cache/bundle.pack"
     assert p.snippet_masked == "token\tok\nkeep"
     assert p.partial_fingerprints == {"primary": "abcd"}
+
+
+def test_resolve_parser_infers_folder_scan_source_without_config():
+    """Orphaned folder-scan keys should not fall back to SARIF."""
+    assert _resolve_parser(None, "folder-scan-trivy") == "trivy"
+    assert _resolve_parser(None, "folder-scan-cyclonedx") == "cyclonedx"

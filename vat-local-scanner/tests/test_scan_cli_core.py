@@ -5,6 +5,7 @@ import base64
 import copy
 import json
 import sys
+import time
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -706,6 +707,78 @@ def test_cmd_scan_inventory_prefers_admin_managed_parser_key(monkeypatch, tmp_pa
     assert [call.get("regenerate_key") for call in ensure_calls] == [False, True]
 
 
+def test_cmd_scan_inventory_summarizes_scanner_failures_without_error_spam(
+    monkeypatch, tmp_path: Path, capsys
+) -> None:
+    inventory_path = tmp_path / "images.json"
+    inventory_path.write_text(
+        json.dumps(
+            {
+                "items": [
+                    {
+                        "image": "registry.example.com/api:v1",
+                        "targets": [{"namespace": "apps", "kind": "Deployment", "name": "api"}],
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(cli, "run_trivy_image_ref", lambda *args, **kwargs: None)
+    monkeypatch.setattr(cli, "run_trivy_image_ref_cyclonedx", lambda *args, **kwargs: None)
+
+    args = argparse.Namespace(
+        inventory=inventory_path,
+        dry_run=False,
+        fail_on_error=False,
+        vat_url="https://vat",
+        api_key="inventory-key",
+        admin_token="",
+        no_snippets=False,
+        reset_keys=False,
+        cluster_name="k3s-remote",
+        state_file=None,
+        full_rescan_interval_seconds=86400,
+        force_full_rescan=True,
+        scan_types="image-sca,image-sbom",
+        verbose=False,
+    )
+
+    assert cli.cmd_scan_inventory(args) == 0
+
+    captured = capsys.readouterr()
+    assert "Inventory scan complete." in captured.out
+    assert "scannerFailures=2" in captured.out
+    assert "ERROR: Trivy image scan failed" not in captured.err
+    assert "ERROR: Trivy CycloneDX image scan failed" not in captured.err
+
+
+def test_ingest_retry_suppresses_transient_attempt_logs(monkeypatch, capsys) -> None:
+    attempts = {"count": 0}
+
+    def _flaky_ingest(*args, **kwargs):
+        attempts["count"] += 1
+        if attempts["count"] == 1:
+            raise cli.VATClientError("Ingest failed: [Errno 111] Connection refused")
+        return {"ok": 1}
+
+    monkeypatch.setattr(cli, "ingest_report", _flaky_ingest)
+    monkeypatch.setattr(time, "sleep", lambda *_args, **_kwargs: None)
+
+    result = cli._ingest_json_report_with_retry(
+        vat_url="https://vat",
+        key="k",
+        report={"Results": []},
+        asset_name="asset",
+        tag=None,
+        image_digest=None,
+        label="trivy",
+    )
+
+    assert result == {"ok": 1}
+    assert "ingest attempt" not in capsys.readouterr().err
+
+
 def test_cmd_scan_k8s_inventory_prefers_admin_managed_parser_key(monkeypatch, tmp_path: Path) -> None:
     inventory_path = tmp_path / "kubernetes.json"
     inventory_path.write_text(
@@ -818,6 +891,54 @@ def test_cmd_scan_inventory_skips_unchanged_items_with_state(monkeypatch, tmp_pa
 
     assert cli.cmd_scan_inventory(args) == 0
     assert scan_calls == []
+
+
+def test_cmd_scan_inventory_seeds_last_full_scan_after_complete_pass(monkeypatch, tmp_path: Path) -> None:
+    inventory_path = tmp_path / "images.json"
+    state_path = tmp_path / "state.json"
+    inventory_path.write_text(
+        json.dumps(
+            {
+                "items": [
+                    {
+                        "image": "registry.example.com/api:v1",
+                        "imageDigest": "sha256:abc123",
+                        "targets": [
+                            {
+                                "namespace": "default",
+                                "kind": "Deployment",
+                                "name": "api",
+                                "containerName": "api",
+                            }
+                        ],
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(cli, "run_trivy_image_ref", lambda *args, **kwargs: {"Results": []})
+    monkeypatch.setattr(cli, "run_trivy_image_ref_cyclonedx", lambda *args, **kwargs: {"components": []})
+    monkeypatch.setattr(cli, "ingest_report", lambda *args, **kwargs: {"ok": 1})
+
+    args = argparse.Namespace(
+        inventory=inventory_path,
+        dry_run=False,
+        fail_on_error=False,
+        vat_url="https://vat",
+        api_key="k",
+        admin_token="",
+        no_snippets=False,
+        reset_keys=False,
+        cluster_name="k3s-remote",
+        state_file=state_path,
+        full_rescan_interval_seconds=86400,
+        force_full_rescan=False,
+    )
+
+    assert cli.cmd_scan_inventory(args) == 0
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    assert state.get("lastFullScanAt")
 
 
 def test_cmd_scan_inventory_force_full_rescan_ignores_state(monkeypatch, tmp_path: Path) -> None:

@@ -6,6 +6,7 @@ import argparse
 import base64
 from contextlib import contextmanager
 import copy
+import fcntl
 import gzip
 import hashlib
 import json
@@ -47,6 +48,7 @@ from vat_scanner.vat_client import (
     ingest_report,
     ingest_openscap_report,
     ingest_openscap_oval_report,
+    key_cache_dir,
     source_id_for_parser,
 )
 from vat_scanner.sarif_output import reports_to_sarif
@@ -1412,7 +1414,8 @@ def _ingest_trivy_report_with_retry(
         except VATClientError:
             if attempt == max_attempts:
                 raise
-            print(f"  trivy ingest attempt {attempt} failed; retrying...", file=sys.stderr)
+            if _verbose_retry_logging_enabled():
+                print(f"  trivy ingest attempt {attempt} failed; retrying...", file=sys.stderr)
             time.sleep(min(2**attempt, 16))
     raise VATClientError("Ingest failed")
 
@@ -1443,9 +1446,32 @@ def _ingest_json_report_with_retry(
         except VATClientError:
             if attempt == max_attempts:
                 raise
-            print(f"  {label} ingest attempt {attempt} failed; retrying...", file=sys.stderr)
+            if _verbose_retry_logging_enabled():
+                print(f"  {label} ingest attempt {attempt} failed; retrying...", file=sys.stderr)
             time.sleep(min(2**attempt, 16))
     raise VATClientError("Ingest failed")
+
+
+def _verbose_retry_logging_enabled() -> bool:
+    return (os.environ.get("VAT_VERBOSE_RETRY_LOGS") or "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
+@contextmanager
+def _parser_key_cache_lock() -> Iterator[None]:
+    """Serialize parser-key regeneration across aggregated worker processes."""
+    lock_dir = key_cache_dir()
+    lock_dir.mkdir(parents=True, exist_ok=True)
+    with (lock_dir / "scanner-keys.lock").open("w", encoding="utf-8") as lock_file:
+        fcntl.flock(lock_file, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(lock_file, fcntl.LOCK_UN)
 
 
 def _ensure_parser_ingest_key(
@@ -1456,27 +1482,30 @@ def _ensure_parser_ingest_key(
     reset_keys: bool = False,
     asset_type: str = "package",
 ) -> tuple[str, str | None]:
-    source_id, ensured_key = ensure_source(
-        vat_url,
-        admin_token,
-        parser_id,
-        create_key=True,
-        regenerate_key=reset_keys,
-        asset_type=asset_type,
-    )
-    key = ensured_key or get_cached_key(source_id)
-    if not key and not reset_keys:
-        source_id, key = ensure_source(
+    with _parser_key_cache_lock():
+        source_id, ensured_key = ensure_source(
             vat_url,
             admin_token,
             parser_id,
             create_key=True,
-            regenerate_key=True,
+            regenerate_key=reset_keys,
             asset_type=asset_type,
         )
+        key = ensured_key or get_cached_key(source_id)
+        if not key and not reset_keys:
+            source_id, key = ensure_source(
+                vat_url,
+                admin_token,
+                parser_id,
+                create_key=True,
+                regenerate_key=True,
+                asset_type=asset_type,
+            )
+        if key:
+            cache_key(source_id, key)
     if key:
-        cache_key(source_id, key)
-    return source_id, key
+        return source_id, key
+    return source_id, None
 
 
 def _load_runtime_containers(containerd_socket: Path) -> dict:
@@ -1606,26 +1635,18 @@ def cmd_scan_runtime(args: argparse.Namespace) -> int:
                 continue
             if parser_id == "openscap" and "container-stig" not in scan_types:
                 continue
-            source_id, ensured_key = ensure_source(
-                vat_url,
-                admin_token,
-                parser_id,
-                create_key=True,
-                regenerate_key=bool(getattr(args, "reset_keys", False)),
-                asset_type="container" if parser_id == "openscap" else "package",
-            )
-            key = ensured_key or get_cached_key(source_id)
-            if not key and not bool(getattr(args, "reset_keys", False)):
-                source_id, key = ensure_source(
+            try:
+                source_id, key = _ensure_parser_ingest_key(
                     vat_url,
                     admin_token,
                     parser_id,
-                    create_key=True,
-                    regenerate_key=True,
+                    reset_keys=bool(getattr(args, "reset_keys", False)),
                     asset_type="container" if parser_id == "openscap" else "package",
                 )
+            except VATClientError as e:
+                print(f"\nERROR: {e}", file=sys.stderr)
+                return 1
             if key:
-                cache_key(source_id, key)
                 parser_keys[parser_id] = key
     elif api_key:
         parser_keys["trivy"] = api_key
@@ -1713,7 +1734,7 @@ def cmd_scan_runtime(args: argparse.Namespace) -> int:
         if image:
             by_image.setdefault(image, []).append(target)
 
-    scanned = skipped = failures = 0
+    scanned = skipped = failures = scanner_failures = 0
     images_state = state.setdefault("images", {})
     auth_item = _runtime_auth_inventory_item()
     for image in sorted(by_image):
@@ -1769,18 +1790,24 @@ def cmd_scan_runtime(args: argparse.Namespace) -> int:
                         verbose=False,
                     )
         if "image-sca" in scan_types and not report:
-            print("ERROR: Trivy runtime image scan failed or trivy not found.", file=sys.stderr)
+            if getattr(args, "fail_on_error", False) or getattr(args, "verbose", False):
+                print("ERROR: Trivy runtime image scan failed or trivy not found.", file=sys.stderr)
             failures += 1
+            scanner_failures += 1
             if getattr(args, "fail_on_error", False):
                 return 1
         if "image-sbom" in scan_types and not sbom_report:
-            print("ERROR: Trivy CycloneDX runtime image scan failed or trivy not found.", file=sys.stderr)
+            if getattr(args, "fail_on_error", False) or getattr(args, "verbose", False):
+                print("ERROR: Trivy CycloneDX runtime image scan failed or trivy not found.", file=sys.stderr)
             failures += 1
+            scanner_failures += 1
             if getattr(args, "fail_on_error", False):
                 return 1
         if "container-stig" in scan_types and not stig_xml:
-            print("ERROR: OpenSCAP runtime STIG scan produced no results.", file=sys.stderr)
+            if getattr(args, "fail_on_error", False) or getattr(args, "verbose", False):
+                print("ERROR: OpenSCAP runtime STIG scan produced no results.", file=sys.stderr)
             failures += 1
+            scanner_failures += 1
             if getattr(args, "fail_on_error", False):
                 return 1
 
@@ -1883,12 +1910,13 @@ def cmd_scan_runtime(args: argparse.Namespace) -> int:
             scanned += 1
             _save_scan_state(state_path, state)
 
-    if full_rescan:
+    if failures == 0 and (full_rescan or not state.get("lastFullScanAt")):
         state["lastFullScanAt"] = datetime.now(timezone.utc).isoformat()
-    _save_scan_state(state_path, state)
+        _save_scan_state(state_path, state)
     print(
         f"\nRuntime scan complete. images={len(by_image)} scanned={scanned} "
-        f"skipped={skipped} targets={len(targets)} failures={failures}"
+        f"skipped={skipped} targets={len(targets)} failures={failures} "
+        f"scannerFailures={scanner_failures}"
     )
     return 1 if failures and getattr(args, "fail_on_error", False) else 0
 
@@ -1979,6 +2007,7 @@ def cmd_scan_inventory(args: argparse.Namespace) -> int:
     )
 
     failures = 0
+    scanner_failures = 0
     scanned = 0
     skipped = 0
     for item in items:
@@ -2013,22 +2042,26 @@ def cmd_scan_inventory(args: argparse.Namespace) -> int:
                 if "image-sbom" in scan_types
                 else None
             )
+        image_scanner_failures = 0
         if "image-sca" in scan_types and not report:
-            print("ERROR: Trivy image scan failed or trivy not found.", file=sys.stderr)
-            failures += 1
+            if getattr(args, "fail_on_error", False) or getattr(args, "verbose", False):
+                print("ERROR: Trivy image scan failed or trivy not found.", file=sys.stderr)
+            scanner_failures += 1
+            image_scanner_failures += 1
             if getattr(args, "fail_on_error", False):
                 return 1
-            continue
         if "image-sbom" in scan_types and not sbom_report:
-            print("ERROR: Trivy CycloneDX image scan failed or trivy not found.", file=sys.stderr)
-            failures += 1
+            if getattr(args, "fail_on_error", False) or getattr(args, "verbose", False):
+                print("ERROR: Trivy CycloneDX image scan failed or trivy not found.", file=sys.stderr)
+            scanner_failures += 1
+            image_scanner_failures += 1
             if getattr(args, "fail_on_error", False):
                 return 1
 
         if not targets:
             targets = [{"namespace": "unknown", "kind": "Image", "name": image, "containerName": "image"}]
 
-        target_failures = 0
+        target_failures = image_scanner_failures
         seen_target_assets: set[str] = set()
         for target in targets:
             asset, tag = _inventory_target_asset_and_tag(target, cluster_name, image)
@@ -2104,11 +2137,14 @@ def cmd_scan_inventory(args: argparse.Namespace) -> int:
             }
             _save_scan_state(state_file, state)
 
-    if full_rescan_due:
+    if failures == 0 and (full_rescan_due or not state.get("lastFullScanAt")):
         state["lastFullScanAt"] = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
         _save_scan_state(state_file, state)
 
-    print(f"\nInventory scan complete. scanned={scanned} skipped={skipped} failures={failures}")
+    print(
+        f"\nInventory scan complete. scanned={scanned} skipped={skipped} "
+        f"failures={failures} scannerFailures={scanner_failures}"
+    )
     return 0
 
 
@@ -2239,10 +2275,11 @@ def cmd_scan_k8s_inventory(args: argparse.Namespace) -> int:
                 "scannedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
             }
             scanned += 1
+            _save_scan_state(state_file, state)
 
-    if full_rescan or not state.get("lastFullScanAt"):
+    if failures == 0 and (full_rescan or not state.get("lastFullScanAt")):
         state["lastFullScanAt"] = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-    _save_scan_state(state_file, state)
+        _save_scan_state(state_file, state)
     print(f"\nKubernetes inventory scan complete. scanned={scanned} skipped={skipped} failures={failures}")
     return 1 if failures and getattr(args, "fail_on_error", False) else 0
 
@@ -2286,36 +2323,20 @@ def cmd_scan_node(args: argparse.Namespace) -> int:
             if parser_id == "openscap_oval" and "node-oval-cve" not in scan_types:
                 continue
             try:
-                source_id, ensured_key = ensure_source(
+                source_id, key = _ensure_parser_ingest_key(
                     vat_url,
                     admin_token,
                     parser_id,
-                    create_key=True,
-                    regenerate_key=args.reset_keys,
+                    reset_keys=args.reset_keys,
                     asset_type="container",
                 )
             except VATClientError as e:
                 print(f"\nERROR: {e}", file=sys.stderr)
                 return 1
-            key = ensured_key or get_cached_key(source_id)
-            if not key and not bool(getattr(args, "reset_keys", False)):
-                try:
-                    source_id, key = ensure_source(
-                        vat_url,
-                        admin_token,
-                        parser_id,
-                        create_key=True,
-                        regenerate_key=True,
-                        asset_type="container",
-                    )
-                except VATClientError as e:
-                    print(f"\nERROR: {e}", file=sys.stderr)
-                    return 1
             if not key:
                 print(f"  {source_id}: no key", file=sys.stderr)
                 return 1
             parser_keys[parser_id] = key
-            cache_key(source_id, key)
     elif api_key:
         parser_keys["openscap"] = api_key
         parser_keys["openscap_oval"] = api_key

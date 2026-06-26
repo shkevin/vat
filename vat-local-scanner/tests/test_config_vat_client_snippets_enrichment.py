@@ -119,12 +119,45 @@ def test_snippet_enrichment_helpers_and_report(tmp_path: Path) -> None:
 
 
 def test_vat_client_cache_and_source_id(monkeypatch, tmp_path: Path) -> None:
-    monkeypatch.setattr(vat_client, "CACHE_DIR", tmp_path)
-    monkeypatch.setattr(vat_client, "CACHE_FILE", tmp_path / "scanner-keys.json")
+    monkeypatch.setenv("VAT_SCANNER_KEY_CACHE_DIR", str(tmp_path))
     assert vat_client.source_id_for_parser("trivy") == "trivy"
     assert vat_client.get_cached_key("missing") is None
     vat_client.cache_key("trivy", "k1")
     assert vat_client.get_cached_key("trivy") == "k1"
+
+
+def test_vat_client_uses_env_source_id_prefix(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("VAT_SCANNER_KEY_CACHE_DIR", str(tmp_path))
+    monkeypatch.setenv("VAT_SOURCE_ID_PREFIX", "node-k3s-agent-1")
+
+    assert vat_client.source_id_for_parser("trivy") == "node-k3s-agent-1-trivy"
+
+    captured_body: dict | None = None
+
+    def _ok_urlopen(req, timeout=0):
+        nonlocal captured_body
+        captured_body = json.loads(req.data.decode())
+        return _Response({"sourceId": "node-k3s-agent-1-trivy", "key": "k"})
+
+    monkeypatch.setattr(vat_client.urllib.request, "urlopen", _ok_urlopen)
+    source_id, key = vat_client.ensure_source("https://vat.test", "adm", "trivy")
+
+    assert source_id == "node-k3s-agent-1-trivy"
+    assert key == "k"
+    assert captured_body["sourceIdPrefix"] == "node-k3s-agent-1"
+
+
+def test_vat_client_rejects_unsafe_base_urls(monkeypatch) -> None:
+    def _unexpected_urlopen(req, timeout=0):
+        raise AssertionError("unsafe URLs should be rejected before network I/O")
+
+    monkeypatch.setattr(vat_client.urllib.request, "urlopen", _unexpected_urlopen)
+
+    with pytest.raises(vat_client.VATClientError, match="Unsafe VAT URL"):
+        vat_client.ingest_report("file:///etc/passwd", "k", {"Results": []})
+
+    with pytest.raises(vat_client.VATClientError, match="Unsafe VAT URL"):
+        vat_client.ensure_source("http://user:pass@vat.test", "adm", "trivy")
 
 
 def test_vat_client_http_calls_and_errors(monkeypatch) -> None:

@@ -49,17 +49,3 @@ spec:
           env:
             - name: VAT_CLUSTER_NAME
               value: k3s-remote
----
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: vat-config-worker
-  namespace: vat-operator
-spec:
-  template:
-    spec:
-      containers:
-        - name: scanner
-          env:
-            - name: VAT_CLUSTER_NAME
-              value: k3s-remote

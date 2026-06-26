@@ -19,6 +19,7 @@ from app.core.tenancy import DEFAULT_TENANT_ID
 from app.models.asset import Asset
 from app.parsers import (
     PARSER_IDENTITY_POLICY,
+    PARSER_REGISTRY,
     extract_asset_hint,
     get_parser,
     parser_accepts_input_kind,
@@ -377,6 +378,7 @@ async def _ingest_from_parser(
         asset_override=asset_override,
         tag_override=tag_override,
     )
+    bundle_mode = bool(asset_override and source_image_override)
 
     if not payloads:
         # Ensure Asset record so zero-finding scans appear in frontend
@@ -432,7 +434,9 @@ async def _ingest_from_parser(
                     source=source,
                     component=sbom_component,
                     finding_tag=tag_policy.sbom_tag,
+                    finding_asset=asset_override if bundle_mode else None,
                     force_finding_tag_override=tag_policy.force_override,
+                    suppress_metadata_digest=bundle_mode,
                 )
                 if sbom_created or sbom_updated:
                     logger.info(
@@ -554,7 +558,6 @@ async def _ingest_from_parser(
             # would make each sub-image a distinct "container variant" of the one bundle asset,
             # so the asset detail page scopes to a single image and hides the rest (appears empty).
             # Keep per-image identity in `component` only; never carry the sub-image digest here.
-            bundle_mode = bool(asset_override and source_image_override)
             if bundle_mode:
                 if getattr(p, "image_digest", None):
                     p = p.model_copy(update={"image_digest": None})
@@ -646,7 +649,9 @@ async def _ingest_from_parser(
                 source=source,
                 component=sbom_component,
                 finding_tag=tag_policy.sbom_tag,
+                finding_asset=asset_override if bundle_mode else None,
                 force_finding_tag_override=tag_policy.force_override,
+                suppress_metadata_digest=bundle_mode,
             )
             if sbom_created or sbom_updated:
                 logger.info(
@@ -730,6 +735,12 @@ def _resolve_parser(source_config: dict | None, source_id: str) -> str:
     """Resolve parser from source config. Default sarif for backward compat."""
     if source_config and source_config.get("parser"):
         return str(source_config["parser"]).strip().lower()
+    normalized_source_id = (source_id or "").strip().lower()
+    for parser_id in sorted(PARSER_REGISTRY, key=len, reverse=True):
+        if normalized_source_id == parser_id or normalized_source_id.endswith(
+            f"-{parser_id}"
+        ):
+            return parser_id
     return "sarif"
 
 

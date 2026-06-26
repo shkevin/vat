@@ -97,6 +97,25 @@ def _extract_metadata_tag_digest(doc: dict) -> tuple[str | None, str | None]:
     return tag, digest
 
 
+def _resolve_sbom_finding_context(
+    doc: dict,
+    *,
+    finding_tag: Optional[str],
+    force_finding_tag_override: bool,
+    suppress_metadata_digest: bool,
+) -> tuple[str | None, str | None]:
+    """Resolve tag/digest for SBOM-created findings.
+
+    Bundle scans use the release tag as the reviewer-facing asset version. The
+    SBOM's per-image digest remains useful package evidence, but should not be
+    stamped onto the bundle finding where it becomes a UI image variant.
+    """
+    sbom_tag, sbom_digest = _extract_metadata_tag_digest(doc)
+    if suppress_metadata_digest:
+        return (_clip(finding_tag, 256), None)
+    return (_clip(sbom_tag or finding_tag, 256), sbom_digest)
+
+
 def _clip(value: str | None, max_len: int) -> str | None:
     """Bound persisted string fields to DB column sizes."""
     if value is None:
@@ -365,7 +384,9 @@ async def import_sbom(
     source: str = "manual",
     component: Optional[str] = None,
     finding_tag: Optional[str] = None,
+    finding_asset: Optional[str] = None,
     force_finding_tag_override: bool = False,
+    suppress_metadata_digest: bool = False,
     tenant_id: Optional[str] = None,
 ) -> tuple[int, int]:
     """
@@ -379,9 +400,15 @@ async def import_sbom(
     created = 0
     updated = 0
     source_entry = {"name": source, "importedAt": _now()}
-    # SBOM-derived per-image tag/digest. Wins over caller-supplied finding_tag,
-    # which typically carries a bundle/release tag rather than the artifact tag.
-    sbom_tag, sbom_digest = _extract_metadata_tag_digest(doc)
+    # SBOM-derived per-image tag/digest. Bundle imports suppress the digest so
+    # internal container SHAs remain evidence, not reviewer-facing asset variants.
+    metadata_tag, _metadata_digest = _extract_metadata_tag_digest(doc)
+    effective_tag, sbom_digest = _resolve_sbom_finding_context(
+        doc,
+        finding_tag=finding_tag,
+        force_finding_tag_override=force_finding_tag_override,
+        suppress_metadata_digest=suppress_metadata_digest,
+    )
 
     for pkg in packages:
         comp = pkg.get("component") or component
@@ -444,8 +471,7 @@ async def import_sbom(
             fp = make_fingerprint(cve_id, occurrence_scope)
             res = await db.execute(select(Finding).where(Finding.fingerprint_id == fp))
             existing_finding = res.scalar_one_or_none()
-            effective_tag = _clip(sbom_tag or finding_tag, 256)
-            canonical_image = _canonicalize_container_image(comp)
+            canonical_image = _canonicalize_container_image(finding_asset or comp)
             corr_key, corr_conf = correlation_key_for_payload(
                 finding_type="license",
                 image=canonical_image or "",
@@ -506,7 +532,8 @@ async def import_sbom(
             else:
                 if effective_tag and (
                     force_finding_tag_override
-                    or sbom_tag
+                    or suppress_metadata_digest
+                    or metadata_tag
                     or not (existing_finding.tag and str(existing_finding.tag).strip())
                 ):
                     existing_finding.tag = effective_tag
@@ -515,6 +542,10 @@ async def import_sbom(
                     and str(existing_finding.image_digest).strip()
                 ):
                     existing_finding.image_digest = sbom_digest
+                if suppress_metadata_digest and getattr(
+                    existing_finding, "image_digest", None
+                ):
+                    existing_finding.image_digest = None
                 if license_id and not (
                     getattr(existing_finding, "license_expression", None)
                     and str(existing_finding.license_expression).strip()
