@@ -36,7 +36,7 @@ spec:
             - name: VAT_OPERATOR_RUNTIME_PROFILE
               value: auto
             - name: VAT_OPERATOR_IMAGE_INVENTORY_MODE
-              value: runtime
+              value: workload
             - name: VAT_OPERATOR_NODE_SCANNING_ENABLED
               value: "false"
           resources:

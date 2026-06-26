@@ -122,6 +122,15 @@ def test_run_trivy_image_ref_nonzero_or_empty(monkeypatch) -> None:
     assert runners.run_trivy_image_ref("ghcr.io/acme/app:v1") is None
 
 
+def test_safe_member_path_returns_none_for_symlink_loop(tmp_path: Path) -> None:
+    root = tmp_path / "rootfs"
+    loop_dir = root / "usr" / "lib"
+    loop_dir.mkdir(parents=True)
+    (loop_dir / "loop").symlink_to("loop")
+
+    assert runners._safe_member_path(root, "usr/lib/loop/file") is None
+
+
 def test_skopeo_copy_oci_to_docker_paths(monkeypatch, tmp_path: Path) -> None:
     oci = tmp_path / "oci"
     oci.mkdir()
@@ -223,6 +232,25 @@ def test_run_stig_image_ref_uses_skopeo_and_oscap_chroot(monkeypatch, tmp_path: 
     assert Path(subprocess_envs[0]["TMPDIR"]).parent == tmp_path
     assert Path(subprocess_envs[0]["TMP"]).parent == tmp_path
     assert Path(subprocess_envs[0]["TEMP"]).parent == tmp_path
+
+
+def test_run_stig_rootfs_uses_oscap_chroot(monkeypatch, tmp_path: Path) -> None:
+    rootfs = tmp_path / "rootfs"
+    rootfs.mkdir()
+    commands: list[list[str]] = []
+
+    def _fake_run(cmd, capture_output=True, text=True, timeout=600, env=None):
+        commands.append(cmd)
+        results_path = Path(cmd[cmd.index("--results") + 1])
+        results_path.write_text("<xccdf/>", encoding="utf-8")
+        return _Completed(0)
+
+    monkeypatch.setattr(runners.subprocess, "run", _fake_run)
+
+    assert runners.run_stig_rootfs(rootfs, "asset", temp_dir=tmp_path) == "<xccdf/>"
+
+    assert commands[0][:4] == ["oscap-chroot", str(rootfs), "xccdf", "eval"]
+    assert commands[0][commands[0].index("--profile") + 1] == runners.STIG_PROFILE
 
 
 def test_run_stig_image_handles_missing_loaded_image(monkeypatch, tmp_path: Path) -> None:

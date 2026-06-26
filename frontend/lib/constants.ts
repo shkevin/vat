@@ -83,10 +83,11 @@ export const SLA_DAYS: Record<string, Record<string, number>> = {
 };
 
 /** Asset types — derived from finding fields. No fallback; every asset has a proper type. */
-export const ASSET_TYPES = ["repo", "container", "package", "path"] as const;
+export const ASSET_TYPES = ["node", "repo", "container", "package", "path"] as const;
 export type AssetType = (typeof ASSET_TYPES)[number];
 
 export const ASSET_TYPE_LABELS: Record<AssetType, string> = {
+  node: "Node",
   repo: "Repo",
   container: "Container",
   package: "Package",

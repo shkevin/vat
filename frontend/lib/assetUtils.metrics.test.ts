@@ -42,4 +42,29 @@ describe("deriveAssets metric rollups", () => {
     expect(assets[0].verifiedPct).toBe(33.3);
     expect(assets[0].oraPct).toBe(96);
   });
+
+  it("hides Kubernetes object paths from the main asset list", () => {
+    const assets = deriveAssets(
+      [
+        {
+          ...finding("svc", "Open", "Low"),
+          image: "k8s/k3s-remote/monitoring/service/alloy",
+          component: "Service alloy",
+        },
+        {
+          ...finding("pod", "Open", "Low"),
+          image: "k8s/k3s-remote/monitoring/pod/alloy-k2x27/alloy",
+          component: "alloy",
+        },
+        {
+          ...finding("container", "Open", "Low"),
+          image: "ghcr.io/acme/alloy:v1",
+          component: "alloy",
+        },
+      ],
+      ["Critical", "High", "Medium", "Low", "Informational"],
+    );
+
+    expect(assets.map((asset) => asset.id)).toEqual(["ghcr.io/acme/alloy"]);
+  });
 });

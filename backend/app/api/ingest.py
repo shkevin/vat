@@ -208,6 +208,8 @@ async def _ensure_asset_record(
     if not asset_id or not asset_id.strip():
         return False
     asset_id = asset_id.strip()
+    if asset_id.lower().startswith("k8s/"):
+        return False
     existing = await db.get(Asset, asset_id)
     if existing:
         return False
@@ -222,6 +224,15 @@ async def _ensure_asset_record(
         )
     )
     await db.commit()
+    return True
+
+
+def _should_create_asset_record(asset_id: str, asset_type: str) -> bool:
+    aid = (asset_id or "").strip().lower()
+    if not aid:
+        return False
+    if aid.startswith("k8s/"):
+        return False
     return True
 
 
@@ -243,6 +254,24 @@ def _remap_payload_asset_context(
     if (payload.tag or "").strip() == old_id:
         updates["tag"] = new_id
     return payload.model_copy(update=updates) if updates else payload
+
+
+def _asset_type_for_resolution(
+    configured_asset_type: Optional[str],
+    resolution_kind: str,
+    asset_id: str,
+) -> str:
+    """Persist first-class Kubernetes inventory assets under their real scope."""
+    aid = (asset_id or "").strip().lower()
+    if resolution_kind == "container" and aid.startswith("k8s/") and "/container/" in aid:
+        return "container"
+    if resolution_kind == "container":
+        return "container"
+    if resolution_kind == "node" and aid.startswith("k8s/"):
+        return "node"
+    if configured_asset_type:
+        return configured_asset_type
+    return resolution_kind if resolution_kind in ("container", "repo") else "package"
 
 
 def _apply_asset_type_transform(
@@ -368,7 +397,7 @@ async def _ingest_from_parser(
                 parser_id=parser_id,
                 source_asset_type=asset_type,
             )
-            if stub_id:
+            if stub_id and _should_create_asset_record(stub_id, stub_type):
                 await _ensure_asset_record(db, stub_id, source, stub_type)
         if parser_id in ("openscap", "openscap_oval"):
             logger.info(
@@ -485,6 +514,13 @@ async def _ingest_from_parser(
                 resolution.asset_id = canonical_asset_id
                 resolution.reason = "manual_asset_alias_override"
                 resolution.confidence = "explicit"
+            ensured_asset_type = _asset_type_for_resolution(
+                asset_type,
+                resolution.asset_kind,
+                resolution.asset_id,
+            )
+            if _should_create_asset_record(resolution.asset_id, ensured_asset_type):
+                await _ensure_asset_record(db, resolution.asset_id, source, ensured_asset_type)
             if rollup.enabled:
                 await rollup.record_mapping(
                     {

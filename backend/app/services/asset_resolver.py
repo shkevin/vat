@@ -40,6 +40,12 @@ def infer_asset_kind(asset_id: str, parser_id: str) -> str:
     pid = _clean(parser_id).lower()
     if not aid:
         return "unknown"
+    parts = aid.split("/")
+    if len(parts) >= 5 and parts[0].lower() == "k8s":
+        if parts[2].lower() == "cluster" and parts[3].lower() == "node":
+            return "node"
+        if "container" in [part.lower() for part in parts[2:]]:
+            return "container"
     if pid in ("openscap", "openscap_oval"):
         return "host_scope"
     if pid in ("semgrep", "sarif", "gitleaks"):

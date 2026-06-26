@@ -55,6 +55,16 @@ def _container_image_group_key(image: str, _tag: Optional[str]) -> str:
     return img
 
 
+def should_expose_asset_in_main_list(asset_id: str, asset_type: str | None = None) -> bool:
+    """Main VAT assets are scanner assets, not Kubernetes inventory objects."""
+    aid = (asset_id or "").strip().lower()
+    if not aid:
+        return False
+    if aid.startswith("k8s/"):
+        return False
+    return True
+
+
 def container_merge_group_key(source_asset_id: str) -> str | None:
     """
     Grouping key for a merge *source* when it is container-like.
@@ -330,6 +340,8 @@ async def get_assets_with_findings(
     grouped_findings: dict[str, list[dict]] = {}
     for d in findings_dicts:
         key = _asset_key_from_dict(d)
+        if not should_expose_asset_in_main_list(key):
+            continue
         grouped_findings.setdefault(key, []).append(d)
 
     by_key: dict[str, list[dict]] = (
@@ -349,6 +361,9 @@ async def get_assets_with_findings(
         result = await db.execute(asset_q)
         asset_records = {a.id: a for a in result.scalars().all()}
         for aid in asset_records:
+            asset = asset_records[aid]
+            if not should_expose_asset_in_main_list(aid, getattr(asset, "type", None)):
+                continue
             if include_zero_assets or aid in grouped_findings:
                 by_key[aid] = grouped_findings.get(aid, [])
 

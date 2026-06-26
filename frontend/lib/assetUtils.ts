@@ -14,6 +14,7 @@ import type { Asset, Finding } from "@/types";
 import {
   inferAssetTypeFromFindings,
   isKnownApiAssetType,
+  looksLikeKubernetesNodeAsset,
 } from "./assetTypeInfer";
 import {
   inferAssetKindForGrouping,
@@ -86,19 +87,29 @@ export function containerImageGroupKey(
   return result;
 }
 
+export function shouldExposeAssetInMainList(assetId: string | undefined): boolean {
+  const id = (assetId ?? "").trim().toLowerCase();
+  if (!id) return false;
+  if (id.startsWith("k8s/")) return false;
+  return true;
+}
+
 /**
  * Asset key for grouping — image or component only. Branches/tags are shown on the asset page.
  */
-function assetKey(f: Finding): string {
+function assetKey(f: Finding): string | null {
   const img = f.image?.trim();
   const comp = f.component?.trim();
-  if (img) return containerImageGroupKey(img, f.tag);
-  if (comp) return comp;
+  if (img) {
+    const key = containerImageGroupKey(img, f.tag);
+    return shouldExposeAssetInMainList(key) ? key : null;
+  }
+  if (comp) return shouldExposeAssetInMainList(comp) ? comp : null;
   return `unknown-${f.id}`;
 }
 
 /** Return the asset id for a finding (same logic as assetKey). Used for filtering findings by asset. */
-export function assetIdForFinding(f: Finding): string {
+export function assetIdForFinding(f: Finding): string | null {
   return assetKey(f);
 }
 
@@ -126,7 +137,10 @@ export function collectFindingsForAssetIdentity(
 ): Finding[] {
   const id = (assetId ?? "").trim();
   if (!id) return [];
-  return findings.filter((f) => sameAssetIdentity(assetIdForFinding(f), id));
+  return findings.filter((f) => {
+    const findingAssetId = assetIdForFinding(f);
+    return findingAssetId ? sameAssetIdentity(findingAssetId, id) : false;
+  });
 }
 
 /**
@@ -323,6 +337,7 @@ export function getAssetTypeFromAsset(asset: Asset): AssetType {
     return inferAssetTypeFromFindings(asset.findings);
   }
   const id = asset.id ?? asset.name ?? "";
+  if (looksLikeKubernetesNodeAsset(id)) return "node";
   if (id.includes(":")) return "container";
   return "package";
 }
@@ -372,6 +387,7 @@ export function deriveAssets(
   const byKey = new Map<string, Finding[]>();
   for (const f of findings) {
     const key = assetKey(f);
+    if (!key) continue;
     const list = byKey.get(key) ?? [];
     list.push(f);
     byKey.set(key, list);

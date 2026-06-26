@@ -102,6 +102,17 @@ func ReconcileKubernetesInventory(
 		obj := pods.Items[i]
 		obj.TypeMeta = metav1.TypeMeta{APIVersion: "v1", Kind: "Pod"}
 		items = append(items, kubernetesInventoryItem("Pod", &obj, obj))
+		items = append(items, containerInventoryItems(obj)...)
+	}
+
+	nodes, err := client.CoreV1().Nodes().List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return Result{}, fmt.Errorf("list nodes for k8s inventory: %w", err)
+	}
+	for i := range nodes.Items {
+		obj := nodes.Items[i]
+		obj.TypeMeta = metav1.TypeMeta{APIVersion: "v1", Kind: "Node"}
+		items = append(items, kubernetesInventoryItem("Node", &obj, obj))
 	}
 
 	services, err := client.CoreV1().Services("").List(ctx, metav1.ListOptions{})
@@ -324,6 +335,58 @@ func publishKubernetesInventory(ctx context.Context, client kubernetes.Interface
 		return fmt.Errorf("publish Kubernetes inventory ConfigMap %s/%s: %w", cfg.Namespace, name, err)
 	}
 	return nil
+}
+
+func containerInventoryItems(pod corev1.Pod) []KubernetesInventoryItem {
+	containers := make([]KubernetesInventoryItem, 0, len(pod.Spec.InitContainers)+len(pod.Spec.Containers))
+	for _, container := range pod.Spec.InitContainers {
+		containers = append(containers, containerInventoryItem(pod, container, "init"))
+	}
+	for _, container := range pod.Spec.Containers {
+		containers = append(containers, containerInventoryItem(pod, container, "app"))
+	}
+	return containers
+}
+
+func containerInventoryItem(pod corev1.Pod, container corev1.Container, containerType string) KubernetesInventoryItem {
+	name := fmt.Sprintf("%s/%s", pod.Name, container.Name)
+	manifest := map[string]any{
+		"apiVersion": "vat.io/v1",
+		"kind":       "Container",
+		"metadata": map[string]any{
+			"name":      name,
+			"namespace": pod.Namespace,
+			"labels": map[string]string{
+				"vat.io/pod":            pod.Name,
+				"vat.io/container-name": container.Name,
+				"vat.io/container-type": containerType,
+			},
+		},
+		"spec": map[string]any{
+			"image":           container.Image,
+			"imagePullPolicy": string(container.ImagePullPolicy),
+			"resources":       container.Resources,
+			"securityContext": container.SecurityContext,
+			"parent": map[string]any{
+				"apiVersion": "v1",
+				"kind":       "Pod",
+				"name":       pod.Name,
+				"uid":        string(pod.UID),
+			},
+		},
+	}
+	rendered, err := renderCompactManifest(manifest)
+	if err != nil {
+		rendered = []byte(fmt.Sprintf("apiVersion: vat.io/v1\nkind: Container\nmetadata:\n  name: %s\n", name))
+	}
+	return KubernetesInventoryItem{
+		Namespace:       pod.Namespace,
+		Kind:            "Container",
+		Name:            name,
+		UID:             string(pod.UID),
+		ResourceVersion: pod.ResourceVersion,
+		Manifest:        string(rendered),
+	}
 }
 
 var _ = appsv1.Deployment{}

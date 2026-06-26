@@ -1,8 +1,12 @@
+// @vitest-environment jsdom
+
 import { describe, expect, it } from "vitest";
+import { renderHook } from "@testing-library/react";
 
 import type { ApiAuditEvent } from "@/lib/api";
+import type { Finding } from "@/types";
 import type { ActivityEvent } from "@/types/activity";
-import { rollupFindingEvents, toSystemEvent } from "./useActivityFeed";
+import { rollupFindingEvents, toSystemEvent, useActivityFeed } from "./useActivityFeed";
 
 describe("toSystemEvent", () => {
   it("formats ingest rollup windows with readable title and detail", () => {
@@ -112,5 +116,38 @@ describe("toSystemEvent", () => {
     expect(assetARollup?.relatedFindings?.[0]?.title).toBe("License finding from SBOM");
     const assetBOriginal = rolled.find((row) => row.id === "e4");
     expect(assetBOriginal).toBeTruthy();
+  });
+
+  it("omits asset id for findings hidden from the main asset list", () => {
+    const findings: Finding[] = [
+      {
+        id: "finding-k8s-1",
+        findingType: "config",
+        fingerprintId: "fp-k8s-1",
+        cveId: "",
+        severity: "Medium",
+        status: "open",
+        sources: [],
+        image: "k8s/cluster/node-1",
+        audit: [
+          {
+            ts: "2026-04-04T12:00:00Z",
+            user: "system",
+            action: "Imported from Kubernetes scan",
+            note: null,
+          },
+        ],
+      },
+    ];
+
+    const { result } = renderHook(() =>
+      useActivityFeed({
+        findings,
+        isAdmin: false,
+        sourceFilter: "finding",
+      }),
+    );
+
+    expect(result.current.events[0]?.assetId).toBeUndefined();
   });
 });

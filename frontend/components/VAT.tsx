@@ -161,6 +161,7 @@ export default function VAT({ config }: VATProps) {
     onlyFavorites,
     setOnlyFavorites,
     showEmptyAssets,
+    setShowEmptyAssets,
     needsJustification,
     setNeedsJustification,
     searchFields,
@@ -171,6 +172,42 @@ export default function VAT({ config }: VATProps) {
     error,
     refetch,
   } = data;
+
+  useEffect(() => {
+    setFilterFindingStatuses(new Set(dashboardState.status ?? []));
+    setFilterAssetTypes(new Set(dashboardState.assetTypes ?? []));
+    setFilterABC(new Set(dashboardState.abc ?? []));
+    setFilterVerifiedRange([
+      dashboardState.verifiedMin ?? 0,
+      dashboardState.verifiedMax ?? 100,
+    ]);
+    setFilterORARange([dashboardState.oraMin ?? 0, dashboardState.oraMax ?? 100]);
+    setShowArchived(dashboardState.archived ?? false);
+    setOnlyFavorites(dashboardState.favorites ?? false);
+    setShowEmptyAssets(dashboardState.showEmptyAssets ?? false);
+    setNeedsJustification(dashboardState.needsJustification ?? false);
+  }, [
+    dashboardState.abc,
+    dashboardState.archived,
+    dashboardState.assetTypes,
+    dashboardState.favorites,
+    dashboardState.needsJustification,
+    dashboardState.oraMax,
+    dashboardState.oraMin,
+    dashboardState.showEmptyAssets,
+    dashboardState.status,
+    dashboardState.verifiedMax,
+    dashboardState.verifiedMin,
+    setFilterABC,
+    setFilterAssetTypes,
+    setFilterFindingStatuses,
+    setFilterORARange,
+    setFilterVerifiedRange,
+    setNeedsJustification,
+    setOnlyFavorites,
+    setShowArchived,
+    setShowEmptyAssets,
+  ]);
 
   const activityFeed = useActivityFeed({
     findings,

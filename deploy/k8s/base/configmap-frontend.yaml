@@ -6,6 +6,7 @@ metadata:
 data:
   HOSTNAME: "0.0.0.0"
   PORT: "3000"
+  API_UPSTREAM_URL: "http://vat-backend:8000"
   APP_NAME: "VAT"
   APP_LOGO: "/vat-logo-dark.svg"
   CLASSIFICATION: "UNCLASSIFIED"

@@ -544,8 +544,75 @@ def run_stig_image_ref(
         shutil.rmtree(out_dir, ignore_errors=True)
 
 
+def run_stig_rootfs(
+    rootfs_path: Path,
+    asset_name: str,
+    timeout: int = 600,
+    *,
+    temp_dir: Path | None = None,
+    verbose: bool = False,
+) -> str | None:
+    """Run OpenSCAP STIG against an already-mounted container rootfs."""
+    rootfs_path = Path(rootfs_path)
+    if not rootfs_path.exists():
+        return None
+    temp_dir = Path(temp_dir) if temp_dir else Path("/tmp")
+    out_dir = temp_dir / f"stig-rootfs-{uuid.uuid4().hex[:12]}"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    report_path = out_dir / "report.html"
+    results_path = out_dir / "results.xml"
+    env = os.environ.copy()
+    env["TMPDIR"] = str(out_dir)
+    env["TMP"] = str(out_dir)
+    env["TEMP"] = str(out_dir)
+    cmd = [
+        "oscap-chroot",
+        str(rootfs_path),
+        "xccdf",
+        "eval",
+        "--profile",
+        STIG_PROFILE,
+        "--report",
+        str(report_path),
+        "--results",
+        str(results_path),
+        STIG_DATASTREAM,
+    ]
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            env=env,
+        )
+        if result.returncode not in (0, 2) or not results_path.exists():
+            if verbose and (result.stderr or result.stdout):
+                import sys
+
+                err = (result.stderr or "").strip() or (result.stdout or "").strip()
+                if err:
+                    for line in err.splitlines()[:5]:
+                        print(f"    {line}", file=sys.stderr, flush=True)
+            return None
+        return results_path.read_text(encoding="utf-8", errors="replace")
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as e:
+        if verbose:
+            import sys
+
+            print(f"    {type(e).__name__}: {e}", file=sys.stderr, flush=True)
+        return None
+    finally:
+        import shutil
+
+        shutil.rmtree(out_dir, ignore_errors=True)
+
+
 def _safe_member_path(root: Path, name: str) -> Path | None:
-    target = (root / name.lstrip("/")).resolve()
+    try:
+        target = (root / name.lstrip("/")).resolve()
+    except RuntimeError:
+        return None
     try:
         target.relative_to(root.resolve())
     except ValueError:

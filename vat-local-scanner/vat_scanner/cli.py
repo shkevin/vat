@@ -54,13 +54,14 @@ from vat_scanner.scanners import (
     run_node_oval_cve,
     run_node_stig,
     run_stig_image_ref,
+    run_stig_rootfs,
     run_trivy_fs,
     run_trivy_image_ref,
     run_trivy_image_ref_cyclonedx,
 )
 from vat_scanner.scanners.normalize import normalize_trivy
 from vat_scanner.archive import extract_archive, is_archive, remove_extracted
-from vat_scanner.container_identity import canonical_container_asset
+from vat_scanner.container_identity import canonical_container_asset, image_digest_from_ref
 from vat_scanner.openscap_utils import (
     count_openscap_findings,
     count_openscap_oval_findings,
@@ -301,7 +302,31 @@ def _runtime_asset_slug(value: str) -> str:
     return slug[:80] or "container"
 
 
-def _runtime_targets_from_crictl(doc: dict, cluster_name: str, node_name: str) -> list[dict]:
+def _containerd_task_rootfs_path(
+    containerd_socket: Path | None,
+    containerd_namespace: str,
+    container_id: str,
+) -> str | None:
+    if not containerd_socket or not container_id:
+        return None
+    task_rootfs = (
+        Path(containerd_socket).parent
+        / "io.containerd.runtime.v2.task"
+        / (containerd_namespace or "k8s.io")
+        / container_id
+        / "rootfs"
+    )
+    return str(task_rootfs) if task_rootfs.exists() else None
+
+
+def _runtime_targets_from_crictl(
+    doc: dict,
+    cluster_name: str,
+    node_name: str,
+    *,
+    containerd_socket: Path | None = None,
+    containerd_namespace: str = "k8s.io",
+) -> list[dict]:
     containers = doc.get("containers") if isinstance(doc, dict) else None
     if not isinstance(containers, list):
         return []
@@ -330,21 +355,34 @@ def _runtime_targets_from_crictl(doc: dict, cluster_name: str, node_name: str) -
         )
         namespace = str(labels.get("io.kubernetes.pod.namespace") or "").strip()
         pod_name = str(labels.get("io.kubernetes.pod.name") or "").strip()
+        asset = image
+        target = {
+            "asset": asset,
+            "containerId": container_id,
+            "containerName": container_name,
+            "image": image,
+            "nodeName": node,
+            "state": str(container.get("state") or "").strip(),
+        }
+        digest = image_digest_from_ref(str(container.get("imageRef") or image).strip())
+        if digest:
+            target["imageDigest"] = digest
         if namespace and pod_name:
-            asset = f"k8s/{cluster}/{namespace}/pod/{pod_name}/{container_name}"
-        else:
-            suffix = container_id[:12] if container_id else hashlib.sha256(image.encode()).hexdigest()[:12]
-            asset = f"k8s/{cluster}/node/{node}/runtime/{_runtime_asset_slug(container_name + '-' + suffix)}"
-        targets.append(
-            {
-                "asset": asset,
-                "containerId": container_id,
+            target["kubernetes"] = {
+                "cluster": cluster,
+                "namespace": namespace,
+                "podName": pod_name,
                 "containerName": container_name,
-                "image": image,
                 "nodeName": node,
-                "state": str(container.get("state") or "").strip(),
             }
+        rootfs_path = _containerd_task_rootfs_path(
+            containerd_socket,
+            containerd_namespace,
+            container_id,
         )
+        if rootfs_path:
+            target["rootfsPath"] = rootfs_path
+        targets.append(target)
     return targets
 
 
@@ -381,13 +419,24 @@ def _runtime_targets_from_crictl_images(
             continue
         seen.add(image_ref)
         image_id = str(image.get("id") or "").strip()
-        asset = f"k8s/{cluster}/node/{node}/runtime-image/{_runtime_asset_slug(image_ref)}"
+        asset = image_ref
+        digest = image_digest_from_ref(
+            next(
+                (
+                    str(ref).strip()
+                    for ref in (image.get("repoDigests") or [])
+                    if str(ref).strip()
+                ),
+                image_ref,
+            )
+        )
         targets.append(
             {
                 "asset": asset,
                 "containerId": image_id,
                 "containerName": image_ref,
                 "image": image_ref,
+                **({"imageDigest": digest} if digest else {}),
                 "nodeName": node,
                 "state": "IMAGE_PRESENT",
             }
@@ -399,6 +448,9 @@ def _runtime_targets_from_docker_containers(
     rows: list[dict],
     cluster_name: str,
     node_name: str,
+    *,
+    docker_socket: Path | None = None,
+    docker_host_root: Path = Path("/host"),
 ) -> list[dict]:
     cluster = (cluster_name or "cluster").strip() or "cluster"
     node = (node_name or "unknown-node").strip() or "unknown-node"
@@ -412,19 +464,67 @@ def _runtime_targets_from_docker_containers(
         container_id = str(row.get("ID") or "").strip()
         raw_name = str(row.get("Names") or row.get("Names") or "").strip()
         container_name = raw_name.split(",", 1)[0].lstrip("/") or container_id[:12] or "container"
-        suffix = container_id[:12] if container_id else hashlib.sha256(image.encode()).hexdigest()[:12]
-        asset = f"k8s/{cluster}/node/{node}/docker-container/{_runtime_asset_slug(container_name + '-' + suffix)}"
-        targets.append(
-            {
-                "asset": asset,
-                "containerId": container_id,
-                "containerName": container_name,
-                "image": image,
-                "nodeName": node,
-                "state": str(row.get("State") or row.get("Status") or "").strip(),
-            }
+        asset = image
+        target = {
+            "asset": asset,
+            "containerId": container_id,
+            "containerName": container_name,
+            "image": image,
+            "nodeName": node,
+            "state": str(row.get("State") or row.get("Status") or "").strip(),
+        }
+        rootfs_path = _docker_container_rootfs_path(
+            container_id,
+            docker_socket=docker_socket,
+            docker_host_root=docker_host_root,
         )
+        if rootfs_path:
+            target["rootfsPath"] = rootfs_path
+        targets.append(target)
     return targets
+
+
+def _docker_container_rootfs_path(
+    container_id: str,
+    *,
+    docker_socket: Path | None,
+    docker_host_root: Path = Path("/host"),
+) -> str | None:
+    if not container_id or not docker_socket or not Path(docker_socket).exists():
+        return None
+    try:
+        result = subprocess.run(
+            ["docker", "-H", f"unix://{docker_socket}", "inspect", container_id],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+        return None
+    if result.returncode != 0:
+        return None
+    try:
+        doc = json.loads(result.stdout or "[]")
+    except json.JSONDecodeError:
+        return None
+    container = doc[0] if isinstance(doc, list) and doc else {}
+    graph = container.get("GraphDriver") if isinstance(container, dict) else {}
+    data = graph.get("Data") if isinstance(graph, dict) else {}
+    merged = str(data.get("MergedDir") or "").strip()
+    if not merged:
+        return None
+    direct = Path(merged)
+    if _path_exists(direct):
+        return str(direct)
+    mapped = Path(docker_host_root) / merged.lstrip("/")
+    return str(mapped) if _path_exists(mapped) else None
+
+
+def _path_exists(path: Path) -> bool:
+    try:
+        return path.exists()
+    except OSError:
+        return False
 
 
 def _docker_image_ref(row: dict) -> str:
@@ -458,13 +558,15 @@ def _runtime_targets_from_docker_images(
             continue
         seen.add(image_ref)
         image_id = str(row.get("ID") or "").strip()
-        asset = f"k8s/{cluster}/node/{node}/docker-image/{_runtime_asset_slug(image_ref)}"
+        asset = image_ref
+        digest = image_digest_from_ref(image_ref)
         targets.append(
             {
                 "asset": asset,
                 "containerId": image_id,
                 "containerName": image_ref,
                 "image": image_ref,
+                **({"imageDigest": digest} if digest else {}),
                 "nodeName": node,
                 "state": "IMAGE_PRESENT",
             }
@@ -663,7 +765,7 @@ def cmd_scan(args: argparse.Namespace) -> int:
     def _prepare_report_for_push(parser: str, report: object, scan_root: Path, no_snippets: bool) -> object:
         payload = copy.deepcopy(report)
         if no_snippets:
-            payload = strip_snippets(payload)
+            return strip_snippets(payload)
         report_map = {parser: payload}
         enrich_reports(report_map, scan_root)
         return report_map[parser]
@@ -779,7 +881,8 @@ def cmd_scan(args: argparse.Namespace) -> int:
             # Push this path's reports immediately
             if path_cfg.no_snippets:
                 reports = {k: strip_snippets(v) for k, v in reports.items()}
-            enrich_reports(reports, path)
+            else:
+                enrich_reports(reports, path)
             if i == 0:
                 print("\nPushing to VAT...")
             try:
@@ -891,7 +994,8 @@ def cmd_scan_archive(args: argparse.Namespace) -> int:
                 return 1
             if path_cfg.no_snippets:
                 reports = {k: strip_snippets(v) for k, v in reports.items()}
-            enrich_reports(reports, extracted_root)
+            else:
+                enrich_reports(reports, extracted_root)
             if i == 0:
                 print("\nPushing to VAT...")
             for p in list(reports.keys()):
@@ -1057,15 +1161,11 @@ def _inventory_target_asset_and_tag(
     cluster_name: str,
     image_ref: str | None = None,
 ) -> tuple[str | None, str | None]:
-    namespace = str(target.get("namespace") or "").strip()
-    kind = str(target.get("kind") or "").strip()
-    name = str(target.get("name") or "").strip()
-    container_name = str(target.get("containerName") or "").strip()
-    if not (namespace and kind and name and container_name):
+    image = str(image_ref or "").strip()
+    if not image:
         return None, None
-    cluster = (cluster_name or "cluster").strip() or "cluster"
-    asset = f"k8s/{cluster}/{namespace}/{kind.lower()}/{name}/{container_name}"
-    tag = _image_ref_tag(image_ref or "")
+    asset = image
+    tag = _image_ref_tag(image)
     return asset, tag
 
 
@@ -1348,6 +1448,37 @@ def _ingest_json_report_with_retry(
     raise VATClientError("Ingest failed")
 
 
+def _ensure_parser_ingest_key(
+    vat_url: str,
+    admin_token: str,
+    parser_id: str,
+    *,
+    reset_keys: bool = False,
+    asset_type: str = "package",
+) -> tuple[str, str | None]:
+    source_id, ensured_key = ensure_source(
+        vat_url,
+        admin_token,
+        parser_id,
+        create_key=True,
+        regenerate_key=reset_keys,
+        asset_type=asset_type,
+    )
+    key = ensured_key or get_cached_key(source_id)
+    if not key and not reset_keys:
+        source_id, key = ensure_source(
+            vat_url,
+            admin_token,
+            parser_id,
+            create_key=True,
+            regenerate_key=True,
+            asset_type=asset_type,
+        )
+    if key:
+        cache_key(source_id, key)
+    return source_id, key
+
+
 def _load_runtime_containers(containerd_socket: Path) -> dict:
     endpoint = f"unix://{containerd_socket}"
     result = subprocess.run(
@@ -1426,6 +1557,16 @@ def _runtime_image_signature(image: str, targets: list[dict], scan_types: list[s
         for target in targets
     ]
     return f"{image}|targets={','.join(sorted(target_bits))}|scanTypes={','.join(scan_types)}"
+
+
+def _first_runtime_rootfs_path(targets: list[dict]) -> Path | None:
+    for target in targets:
+        raw = str(target.get("rootfsPath") or "").strip()
+        if raw:
+            path = Path(raw)
+            if path.exists():
+                return path
+    return None
 
 
 def _runtime_auth_inventory_item() -> dict:
@@ -1520,7 +1661,13 @@ def cmd_scan_runtime(args: argparse.Namespace) -> int:
         print(f"ERROR: unable to enumerate runtime containers: {e}", file=sys.stderr)
         return 1 if getattr(args, "fail_on_error", False) else 0
 
-    targets = _runtime_targets_from_crictl(runtime_doc, cluster_name, node_name)
+    targets = _runtime_targets_from_crictl(
+        runtime_doc,
+        cluster_name,
+        node_name,
+        containerd_socket=containerd_socket,
+        containerd_namespace=containerd_namespace,
+    )
     referenced_images = {str(target.get("image") or "").strip() for target in targets if target.get("image")}
     try:
         image_doc = _load_runtime_images(containerd_socket)
@@ -1541,6 +1688,7 @@ def cmd_scan_runtime(args: argparse.Namespace) -> int:
             _load_docker_containers(docker_socket),
             cluster_name,
             node_name,
+            docker_socket=docker_socket,
         )
         targets.extend(docker_container_targets)
     except (OSError, VATClientError, json.JSONDecodeError, subprocess.TimeoutExpired, FileNotFoundError) as e:
@@ -1577,6 +1725,7 @@ def cmd_scan_runtime(args: argparse.Namespace) -> int:
             continue
 
         print("Scanning runtime image:", image)
+        local_rootfs = _first_runtime_rootfs_path(image_targets)
         with _temporary_registry_auth_config(auth_item) as docker_config_path:
             report = (
                 run_trivy_image_ref(
@@ -1602,17 +1751,23 @@ def cmd_scan_runtime(args: argparse.Namespace) -> int:
                 if "image-sbom" in scan_types
                 else None
             )
-            stig_xml = (
-                run_stig_image_ref(
-                    image,
-                    image,
-                    timeout=600,
-                    docker_config_path=docker_config_path,
-                    verbose=False,
-                )
-                if "container-stig" in scan_types
-                else None
-            )
+            stig_xml = None
+            if "container-stig" in scan_types:
+                if local_rootfs:
+                    stig_xml = run_stig_rootfs(
+                        local_rootfs,
+                        image,
+                        timeout=600,
+                        verbose=False,
+                    )
+                if not stig_xml:
+                    stig_xml = run_stig_image_ref(
+                        image,
+                        image,
+                        timeout=600,
+                        docker_config_path=docker_config_path,
+                        verbose=False,
+                    )
         if "image-sca" in scan_types and not report:
             print("ERROR: Trivy runtime image scan failed or trivy not found.", file=sys.stderr)
             failures += 1
@@ -1623,13 +1778,23 @@ def cmd_scan_runtime(args: argparse.Namespace) -> int:
             failures += 1
             if getattr(args, "fail_on_error", False):
                 return 1
+        if "container-stig" in scan_types and not stig_xml:
+            print("ERROR: OpenSCAP runtime STIG scan produced no results.", file=sys.stderr)
+            failures += 1
+            if getattr(args, "fail_on_error", False):
+                return 1
 
         target_failures = 0
+        seen_target_assets: set[str] = set()
         for target in image_targets:
             asset = str(target.get("asset") or "").strip()
             if not asset:
                 continue
+            if asset in seen_target_assets:
+                continue
+            seen_target_assets.add(asset)
             tag = _image_ref_tag(image)
+            target_image_digest = str(target.get("imageDigest") or "").strip() or None
             print("Asset:       ", asset)
             target_report = normalize_trivy(copy.deepcopy(report), asset) if report else None
             if target_report and getattr(args, "no_snippets", False):
@@ -1652,7 +1817,7 @@ def cmd_scan_runtime(args: argparse.Namespace) -> int:
                         report=target_report,
                         asset_name=asset,
                         tag=tag,
-                        image_digest=None,
+                        image_digest=target_image_digest,
                     )
                     print(f"  trivy: {resp}")
                 except VATClientError as e:
@@ -1675,6 +1840,7 @@ def cmd_scan_runtime(args: argparse.Namespace) -> int:
                         target_stig_xml,
                         asset=asset,
                         tag="container-stig",
+                        image_digest=target_image_digest,
                         idempotency_key=f"container-stig:{asset}:{image}",
                     )
                     print(f"  openscap: {resp}")
@@ -1698,7 +1864,7 @@ def cmd_scan_runtime(args: argparse.Namespace) -> int:
                         report=target_sbom_report,
                         asset_name=asset,
                         tag=tag,
-                        image_digest=None,
+                        image_digest=target_image_digest,
                         label="cyclonedx",
                     )
                     print(f"  cyclonedx: {resp}")
@@ -1750,54 +1916,47 @@ def cmd_scan_inventory(args: argparse.Namespace) -> int:
 
     scan_types = _parse_inventory_scan_types(getattr(args, "scan_types", None))
     parser_keys: dict[str, str] = {}
-    if api_key:
-        parser_keys["trivy"] = api_key
-        parser_keys["cyclonedx"] = api_key
-    if not args.dry_run and admin_token and not api_key:
+    if not args.dry_run and admin_token:
         for parser_id in ("trivy", "cyclonedx"):
             if parser_id == "cyclonedx" and "image-sbom" not in scan_types:
                 continue
             if parser_id == "trivy" and "image-sca" not in scan_types:
                 continue
             try:
-                source_id, ensured_key = ensure_source(
+                source_id, key_to_cache = _ensure_parser_ingest_key(
                     vat_url,
                     admin_token,
                     parser_id,
-                    create_key=True,
-                    regenerate_key=args.reset_keys,
+                    reset_keys=args.reset_keys,
                     asset_type="container",
                 )
             except VATClientError as e:
                 print(f"\nERROR: {e}", file=sys.stderr)
                 return 1
-            key_to_cache = ensured_key or get_cached_key(source_id)
             if not key_to_cache:
                 print(f"  {source_id}: no key", file=sys.stderr)
                 return 1
             parser_keys[parser_id] = key_to_cache
-            cache_key(source_id, key_to_cache)
+    elif api_key:
+        parser_keys["trivy"] = api_key
+        parser_keys["cyclonedx"] = api_key
 
-    key = parser_keys.get("trivy") or api_key
+    key = parser_keys.get("trivy") or (api_key if not admin_token else "")
     if not args.dry_run and not key and "image-sca" in scan_types:
         try:
-            source_id, key = ensure_source(
+            source_id, key = _ensure_parser_ingest_key(
                 vat_url,
                 admin_token,
                 "trivy",
-                create_key=True,
-                regenerate_key=args.reset_keys,
+                reset_keys=args.reset_keys,
                 asset_type="container",
             )
         except VATClientError as e:
             print(f"\nERROR: {e}", file=sys.stderr)
             return 1
         if not key:
-            key = get_cached_key(source_id)
-        if not key:
             print(f"  {source_id}: no key", file=sys.stderr)
             return 1
-        cache_key(source_id, key)
         parser_keys["trivy"] = key
 
     cluster_name = (
@@ -1870,10 +2029,14 @@ def cmd_scan_inventory(args: argparse.Namespace) -> int:
             targets = [{"namespace": "unknown", "kind": "Image", "name": image, "containerName": "image"}]
 
         target_failures = 0
+        seen_target_assets: set[str] = set()
         for target in targets:
             asset, tag = _inventory_target_asset_and_tag(target, cluster_name, image)
             if not asset:
                 continue
+            if asset in seen_target_assets:
+                continue
+            seen_target_assets.add(asset)
             print("Asset:       ", asset)
             if "image-sca" in scan_types and report:
                 target_report = normalize_trivy(copy.deepcopy(report), asset)
@@ -1970,25 +2133,24 @@ def cmd_scan_k8s_inventory(args: argparse.Namespace) -> int:
         print("\nERROR: Set VAT_URL and VAT_API_KEY or VAT_ADMIN_TOKEN.", file=sys.stderr)
         return 1
 
-    key = api_key
-    if not args.dry_run and admin_token and not api_key:
+    key = ""
+    if not args.dry_run and admin_token:
         try:
-            source_id, ensured_key = ensure_source(
+            source_id, key = _ensure_parser_ingest_key(
                 vat_url,
                 admin_token,
                 "trivy",
-                create_key=True,
-                regenerate_key=args.reset_keys,
+                reset_keys=args.reset_keys,
                 asset_type="repo",
             )
         except VATClientError as e:
             print(f"\nERROR: {e}", file=sys.stderr)
             return 1
-        key = ensured_key or get_cached_key(source_id)
         if not key:
             print(f"  {source_id}: no key", file=sys.stderr)
             return 1
-        cache_key(source_id, key)
+    elif api_key:
+        key = api_key
     if not args.dry_run and not key:
         print("\nERROR: No Trivy ingest key available.", file=sys.stderr)
         return 1

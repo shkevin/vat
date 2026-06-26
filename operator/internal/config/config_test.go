@@ -30,8 +30,8 @@ func TestLoadFromEnvUsesDefaultsAndRuntimeProfile(t *testing.T) {
 	if cfg.AdminTokenKey != "adminToken" {
 		t.Fatalf("AdminTokenKey = %q", cfg.AdminTokenKey)
 	}
-	if cfg.ImageInventoryMode != "runtime" {
-		t.Fatalf("ImageInventoryMode = %q, want runtime", cfg.ImageInventoryMode)
+	if cfg.ImageInventoryMode != "workload" {
+		t.Fatalf("ImageInventoryMode = %q, want workload", cfg.ImageInventoryMode)
 	}
 }
 

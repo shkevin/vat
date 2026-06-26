@@ -91,6 +91,7 @@ def _runtime_args(tmp_path: Path, **overrides):
 
 
 def test_runtime_inventory_targets_kubernetes_and_host_containers() -> None:
+    host_run = Path("/tmp/does-not-exist")
     doc = {
         "containers": [
             {
@@ -114,19 +115,31 @@ def test_runtime_inventory_targets_kubernetes_and_host_containers() -> None:
         ]
     }
 
-    targets = cli._runtime_targets_from_crictl(doc, "k3s-remote", "node-a")
+    targets = cli._runtime_targets_from_crictl(
+        doc,
+        "k3s-remote",
+        "node-a",
+        containerd_socket=host_run / "containerd.sock",
+    )
 
     assert targets == [
         {
-            "asset": "k8s/k3s-remote/apps/pod/api-abc/api",
+            "asset": "registry.example.com/api:v1",
             "containerId": "abc123456789",
             "containerName": "api",
             "image": "registry.example.com/api:v1",
+            "kubernetes": {
+                "cluster": "k3s-remote",
+                "namespace": "apps",
+                "podName": "api-abc",
+                "containerName": "api",
+                "nodeName": "node-a",
+            },
             "nodeName": "node-a",
             "state": "CONTAINER_EXITED",
         },
         {
-            "asset": "k8s/k3s-remote/node/node-a/runtime/kind-control-plane-def123456789",
+            "asset": "kindest/node:v1.29.0",
             "containerId": "def123456789",
             "containerName": "kind-control-plane",
             "image": "kindest/node:v1.29.0",
@@ -134,6 +147,48 @@ def test_runtime_inventory_targets_kubernetes_and_host_containers() -> None:
             "state": "CONTAINER_RUNNING",
         },
     ]
+
+
+def test_runtime_inventory_targets_include_containerd_rootfs(tmp_path: Path) -> None:
+    socket_path = tmp_path / "host" / "run" / "k3s" / "containerd" / "containerd.sock"
+    rootfs = (
+        tmp_path
+        / "host"
+        / "run"
+        / "k3s"
+        / "containerd"
+        / "io.containerd.runtime.v2.task"
+        / "k8s.io"
+        / "abc123456789"
+        / "rootfs"
+    )
+    rootfs.mkdir(parents=True)
+    socket_path.write_text("", encoding="utf-8")
+
+    targets = cli._runtime_targets_from_crictl(
+        {
+            "containers": [
+                {
+                    "id": "abc123456789",
+                    "metadata": {"name": "api"},
+                    "image": {"image": "registry.example.com/api:v1"},
+                    "labels": {
+                        "io.kubernetes.pod.namespace": "apps",
+                        "io.kubernetes.pod.name": "api-abc",
+                        "io.kubernetes.container.name": "api",
+                    },
+                    "state": "CONTAINER_RUNNING",
+                }
+            ]
+        },
+        "k3s-remote",
+        "node-a",
+        containerd_socket=socket_path,
+    )
+
+    assert targets[0]["rootfsPath"] == str(rootfs)
+    assert targets[0]["asset"] == "registry.example.com/api:v1"
+    assert targets[0]["kubernetes"]["podName"] == "api-abc"
 
 
 def test_runtime_image_store_targets_unreferenced_cri_images() -> None:
@@ -161,7 +216,7 @@ def test_runtime_image_store_targets_unreferenced_cri_images() -> None:
 
     assert targets == [
         {
-            "asset": "k8s/k3s-remote/node/node-a/runtime-image/kindest-node-v1.29.0",
+            "asset": "kindest/node:v1.29.0",
             "containerId": "sha256:111",
             "containerName": "kindest/node:v1.29.0",
             "image": "kindest/node:v1.29.0",
@@ -200,7 +255,7 @@ def test_docker_runtime_targets_include_containers_and_image_store() -> None:
 
     assert container_targets == [
         {
-            "asset": "k8s/k3s-remote/node/node-a/docker-container/kind-control-plane-abc123456789",
+            "asset": "kindest/node:v1.30.0",
             "containerId": "abc123456789",
             "containerName": "kind-control-plane",
             "image": "kindest/node:v1.30.0",
@@ -210,7 +265,7 @@ def test_docker_runtime_targets_include_containers_and_image_store() -> None:
     ]
     assert image_targets == [
         {
-            "asset": "k8s/k3s-remote/node/node-a/docker-image/registry-2",
+            "asset": "registry:2",
             "containerId": "sha256:def",
             "containerName": "registry:2",
             "image": "registry:2",
@@ -218,6 +273,38 @@ def test_docker_runtime_targets_include_containers_and_image_store() -> None:
             "state": "IMAGE_PRESENT",
         }
     ]
+
+
+def test_docker_runtime_targets_include_local_rootfs(monkeypatch, tmp_path: Path) -> None:
+    docker_socket = tmp_path / "docker.sock"
+    docker_socket.write_text("", encoding="utf-8")
+    host_root = tmp_path / "host"
+    rootfs = host_root / "var/lib/docker/overlay2/abc/merged"
+    rootfs.mkdir(parents=True)
+
+    class _Result:
+        returncode = 0
+        stdout = '[{"GraphDriver":{"Data":{"MergedDir":"/var/lib/docker/overlay2/abc/merged"}}}]'
+        stderr = ""
+
+    monkeypatch.setattr(cli.subprocess, "run", lambda *args, **kwargs: _Result())
+
+    targets = cli._runtime_targets_from_docker_containers(
+        [
+            {
+                "ID": "abc123456789",
+                "Image": "kindest/node:v1.30.0",
+                "Names": "kind-control-plane",
+                "State": "running",
+            }
+        ],
+        "k3s-remote",
+        "node-a",
+        docker_socket=docker_socket,
+        docker_host_root=host_root,
+    )
+
+    assert targets[0]["rootfsPath"] == str(rootfs)
 
 
 def test_cmd_scan_runtime_ingests_each_runtime_target(monkeypatch, tmp_path: Path) -> None:
@@ -279,10 +366,7 @@ def test_cmd_scan_runtime_ingests_each_runtime_target(monkeypatch, tmp_path: Pat
     assert cli.cmd_scan_runtime(_runtime_args(tmp_path, containerd_socket=socket_path)) == 0
 
     trivy_calls = [call for call in calls if call["kind"] == "trivy"]
-    assert [call["asset_name"] for call in trivy_calls] == [
-        "k8s/k3s-remote/apps/pod/api-abc/api",
-        "k8s/k3s-remote/apps/pod/worker-def/worker",
-    ]
+    assert [call["asset_name"] for call in trivy_calls] == ["registry.example.com/shared:v1"]
     assert all(call["image_digest"] is None for call in trivy_calls)
 
 
@@ -329,9 +413,9 @@ def test_cmd_scan_runtime_ingests_cri_image_store_and_docker_targets(monkeypatch
     ) == 0
 
     assert [call["asset_name"] for call in calls] == [
-        "k8s/k3s-remote/node/node-a/docker-image/busybox-1.36",
-        "k8s/k3s-remote/node/node-a/runtime-image/kindest-node-v1.30.0",
-        "k8s/k3s-remote/node/node-a/docker-container/kind-registry-abc123456789",
+        "busybox:1.36",
+        "kindest/node:v1.30.0",
+        "registry:2",
     ]
 
 
@@ -367,11 +451,106 @@ def test_cmd_scan_runtime_ingests_container_stig_without_docker_socket(monkeypat
 
     assert calls == [
         {
-            "asset": "k8s/k3s-remote/node/node-a/runtime-image/kindest-node-v1.30.0",
+            "asset": "kindest/node:v1.30.0",
             "tag": "container-stig",
-            "idempotency_key": "container-stig:k8s/k3s-remote/node/node-a/runtime-image/kindest-node-v1.30.0:kindest/node:v1.30.0",
+            "image_digest": None,
+            "idempotency_key": "container-stig:kindest/node:v1.30.0:kindest/node:v1.30.0",
         }
     ]
+
+
+def test_cmd_scan_runtime_prefers_containerd_rootfs_for_container_stig(monkeypatch, tmp_path: Path) -> None:
+    socket_path = tmp_path / "host" / "run" / "k3s" / "containerd" / "containerd.sock"
+    rootfs = (
+        tmp_path
+        / "host"
+        / "run"
+        / "k3s"
+        / "containerd"
+        / "io.containerd.runtime.v2.task"
+        / "k8s.io"
+        / "abc123456789"
+        / "rootfs"
+    )
+    rootfs.mkdir(parents=True)
+    socket_path.write_text("", encoding="utf-8")
+    monkeypatch.setattr(
+        cli,
+        "_load_runtime_containers",
+        lambda *args, **kwargs: {
+            "containers": [
+                {
+                    "id": "abc123456789",
+                    "metadata": {"name": "api"},
+                    "image": {"image": "ghcr.io/private/app:v1"},
+                    "labels": {
+                        "io.kubernetes.pod.namespace": "apps",
+                        "io.kubernetes.pod.name": "api-abc",
+                        "io.kubernetes.container.name": "api",
+                    },
+                    "state": "CONTAINER_RUNNING",
+                }
+            ]
+        },
+    )
+    monkeypatch.setattr(cli, "_load_runtime_images", lambda *args, **kwargs: {"images": []})
+    monkeypatch.setattr(cli, "_load_docker_containers", lambda *args, **kwargs: [])
+    monkeypatch.setattr(cli, "_load_docker_images", lambda *args, **kwargs: [])
+
+    rootfs_calls: list[Path] = []
+    monkeypatch.setattr(
+        cli,
+        "run_stig_rootfs",
+        lambda rootfs_path, *args, **kwargs: rootfs_calls.append(Path(rootfs_path)) or "<xccdf/>",
+    )
+    monkeypatch.setattr(
+        cli,
+        "run_stig_image_ref",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("remote pull should not be used")),
+    )
+
+    calls: list[dict] = []
+    monkeypatch.setattr(
+        cli,
+        "ingest_openscap_report",
+        lambda *args, **kwargs: calls.append(kwargs) or {"ok": 1},
+    )
+
+    assert cli.cmd_scan_runtime(
+        _runtime_args(
+            tmp_path,
+            containerd_socket=socket_path,
+            docker_socket=tmp_path / "missing-docker.sock",
+            scan_types="container-stig",
+        )
+    ) == 0
+
+    assert rootfs_calls == [rootfs]
+    assert calls[0]["asset"] == "ghcr.io/private/app:v1"
+
+
+def test_cmd_scan_runtime_counts_missing_container_stig_as_failure(monkeypatch, tmp_path: Path) -> None:
+    socket_path = tmp_path / "containerd.sock"
+    socket_path.write_text("", encoding="utf-8")
+    monkeypatch.setattr(cli, "_load_runtime_containers", lambda *args, **kwargs: {"containers": []})
+    monkeypatch.setattr(
+        cli,
+        "_load_runtime_images",
+        lambda *args, **kwargs: {"images": [{"id": "sha256:kind", "repoTags": ["private/app:v1"]}]},
+    )
+    monkeypatch.setattr(cli, "_load_docker_containers", lambda *args, **kwargs: [])
+    monkeypatch.setattr(cli, "_load_docker_images", lambda *args, **kwargs: [])
+    monkeypatch.setattr(cli, "run_stig_image_ref", lambda *args, **kwargs: None)
+
+    assert cli.cmd_scan_runtime(
+        _runtime_args(
+            tmp_path,
+            containerd_socket=socket_path,
+            docker_socket=tmp_path / "missing-docker.sock",
+            scan_types="container-stig",
+            fail_on_error=True,
+        )
+    ) == 1
 
 
 def test_cmd_scan_runtime_prefers_parser_specific_openscap_key(monkeypatch, tmp_path: Path) -> None:

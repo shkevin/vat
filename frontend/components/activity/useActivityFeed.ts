@@ -93,7 +93,7 @@ function toFindingEvents(findings: Finding[]): ActivityEvent[] {
         title: entry.action || "Finding updated",
         detail: entry.note ?? undefined,
         findingId: finding.id,
-        assetId: resolvedAssetId,
+        assetId: resolvedAssetId ?? undefined,
         assetName,
         severity: finding.severity,
       });

@@ -32,6 +32,25 @@ func TestReconcileKubernetesInventoryPublishesObjectsAndStripsSecretData(t *test
 				}},
 			},
 		},
+		&corev1.Node{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:            "worker-1",
+				ResourceVersion: "21",
+			},
+		},
+		&corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace:       "default",
+				Name:            "api-pod",
+				ResourceVersion: "22",
+			},
+			Spec: corev1.PodSpec{
+				Containers: []corev1.Container{
+					{Name: "api", Image: "registry.example.com/api:v1"},
+					{Name: "sidecar", Image: "registry.example.com/sidecar:v1"},
+				},
+			},
+		},
 		&corev1.Secret{
 			ObjectMeta: metav1.ObjectMeta{
 				Namespace:       "default",
@@ -69,8 +88,8 @@ func TestReconcileKubernetesInventoryPublishesObjectsAndStripsSecretData(t *test
 	if err != nil {
 		t.Fatalf("ReconcileKubernetesInventory returned error: %v", err)
 	}
-	if result.KubernetesObjects != 5 {
-		t.Fatalf("KubernetesObjects = %d, want 5", result.KubernetesObjects)
+	if result.KubernetesObjects != 9 {
+		t.Fatalf("KubernetesObjects = %d, want 9", result.KubernetesObjects)
 	}
 
 	cm, err := client.CoreV1().ConfigMaps("vat-operator").Get(ctx, "vat-k8s-inventory", metav1.GetOptions{})
@@ -85,8 +104,25 @@ func TestReconcileKubernetesInventoryPublishesObjectsAndStripsSecretData(t *test
 	if err := json.Unmarshal(payload, &doc); err != nil {
 		t.Fatalf("unmarshal k8s inventory: %v", err)
 	}
-	if len(doc.Items) != 5 {
-		t.Fatalf("inventory item count = %d, want 5", len(doc.Items))
+	if len(doc.Items) != 9 {
+		t.Fatalf("inventory item count = %d, want 9", len(doc.Items))
+	}
+
+	if findKubernetesInventoryItem(doc, "", "Node", "worker-1") == nil {
+		t.Fatal("missing Node inventory item")
+	}
+	if findKubernetesInventoryItem(doc, "default", "Container", "api-pod/api") == nil {
+		t.Fatal("missing api Container inventory item")
+	}
+	sidecar := findKubernetesInventoryItem(doc, "default", "Container", "api-pod/sidecar")
+	if sidecar == nil {
+		t.Fatal("missing sidecar Container inventory item")
+	}
+	if !strings.Contains(sidecar.Manifest, "kind: Container") {
+		t.Fatal("container manifest should identify kind Container")
+	}
+	if !strings.Contains(sidecar.Manifest, "registry.example.com/sidecar:v1") {
+		t.Fatal("container manifest should include image reference")
 	}
 
 	secret := findKubernetesInventoryItem(doc, "default", "Secret", "db-password")

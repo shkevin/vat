@@ -7,6 +7,7 @@ import type { Finding } from "@/types";
 import { ASSET_TYPES, type AssetType } from "@/lib/constants";
 
 const TYPE_PRIORITY: Record<AssetType, number> = {
+  node: 5,
   container: 4,
   repo: 3,
   path: 2,
@@ -27,6 +28,16 @@ export function looksLikeContainerImageRef(image: string | undefined): boolean {
   return /^[a-z0-9._-]+$/i.test(before);
 }
 
+export function looksLikeKubernetesNodeAsset(image: string | undefined): boolean {
+  const parts = (image ?? "").trim().toLowerCase().split("/");
+  return (
+    parts.length >= 5 &&
+    parts[0] === "k8s" &&
+    parts[2] === "cluster" &&
+    parts[3] === "node"
+  );
+}
+
 function inferAssetTypeFromOneFinding(f: Finding): AssetType {
   const img = f.image?.trim() ?? "";
   const branch = f.branch?.trim() ?? "";
@@ -35,6 +46,8 @@ function inferAssetTypeFromOneFinding(f: Finding): AssetType {
   const ft = (f.findingType ?? "").toLowerCase();
   const src = (f.source ?? "").trim().toLowerCase();
   const isCode = CODE_FINDING_TYPES.has(ft);
+
+  if (looksLikeKubernetesNodeAsset(img)) return "node";
 
   if (ft === "secret") {
     if (branch) return "repo";

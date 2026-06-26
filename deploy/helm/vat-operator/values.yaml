@@ -11,7 +11,7 @@ operator:
     tag: latest
     pullPolicy: Always
   runtimeProfile: auto
-  imageInventoryMode: runtime
+  imageInventoryMode: workload
   rescanIntervalSeconds: 3600
   maxConcurrentScanJobs: 5
   nodeScanning:

@@ -11,6 +11,7 @@ from app.services.asset_resolver import (
     resolve_asset_for_payload,
     resolve_ingest_stub_asset_identity,
 )
+from app.services.assets_service import should_expose_asset_in_main_list
 
 
 def _payload(**kwargs) -> VatFindingSchema:
@@ -27,11 +28,44 @@ def test_infer_asset_kind_branches():
     assert infer_asset_kind("pkg", "npm_audit") == "package_scope"
     assert infer_asset_kind("sha256:abc", "x") == "container"
     assert infer_asset_kind("containers/images/a", "x") == "container"
+    assert infer_asset_kind("k8s/k3s-remote/cluster/node/k3s-agent-1", "x") == "node"
+    assert (
+        infer_asset_kind(
+            "k8s/k3s-remote/kube-system/container/coredns-dd6599d9d-gtwbs/coredns",
+            "x",
+        )
+        == "container"
+    )
     assert infer_asset_kind("org/repo", "x") == "repo"
     assert infer_asset_kind("/abs/path", "x") == "path_scope"
     assert infer_asset_kind("commit:abc", "x") == "container"
     assert infer_asset_kind("a>b", "x") == "path_scope"
     assert infer_asset_kind("pkgname", "x") == "package_scope"
+
+
+def test_kubernetes_inventory_objects_are_hidden_from_main_assets():
+    assert should_expose_asset_in_main_list("ghcr.io/acme/api", "container") is True
+    assert (
+        should_expose_asset_in_main_list(
+            "k8s/k3s-remote/monitoring/service/alloy",
+            "package",
+        )
+        is False
+    )
+    assert (
+        should_expose_asset_in_main_list(
+            "k8s/k3s-remote/monitoring/configmap/alloy",
+            "package",
+        )
+        is False
+    )
+    assert (
+        should_expose_asset_in_main_list(
+            "k8s/k3s-remote/monitoring/pod/alloy-k2x27/alloy",
+            "container",
+        )
+        is False
+    )
 
 
 def test_resolve_asset_precedence_and_payload_updates():

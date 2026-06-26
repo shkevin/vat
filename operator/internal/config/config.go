@@ -106,6 +106,6 @@ func imageInventoryMode(value string) string {
 	case "running", "pods":
 		return "running"
 	default:
-		return "runtime"
+		return "workload"
 	}
 }

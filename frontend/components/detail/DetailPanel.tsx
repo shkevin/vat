@@ -42,6 +42,7 @@ import { effectiveGroupKey } from "@/lib/findingGroupUtils";
 import { SEV_ORDER } from "@/lib/constants";
 import { syncFindingToTracker } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
+import { buildFindingEvidence } from "@/lib/findingEvidence";
 import {
   daysLeft,
   displayTitle,
@@ -214,6 +215,13 @@ export function DetailPanel({
     .map((id) => allFindings.find((f) => f.id === id))
     .filter(Boolean) as Finding[];
   const feedProvenance = getFeedProvenanceFromSources(finding.sources);
+  const evidence = buildFindingEvidence(finding);
+  const hasEvidence =
+    evidence.summary.length > 0 ||
+    Boolean(evidence.proof) ||
+    Boolean(evidence.remediation) ||
+    evidence.references.length > 0 ||
+    evidence.warnings.length > 0;
 
   const doUpdate = async (status: string, extra: Partial<Finding> = {}) => {
     setSaving(true);
@@ -595,6 +603,7 @@ export function DetailPanel({
                 const isInstanceView = selectedSourceIndex != null;
                 const showScopeLinePreview =
                   finding.snippetMasked &&
+                  !evidence.proof &&
                   !hasSubissues &&
                   (!hasSources || isInstanceView);
                 const snippetRow: [string, React.ReactNode] | null =
@@ -623,6 +632,150 @@ export function DetailPanel({
                 );
               })()}
             </div>
+
+            {hasEvidence && (
+              <div className="detail-panel-section">
+                <H>Evidence</H>
+                <div
+                  className="detail-panel-card"
+                  style={{ display: "flex", flexDirection: "column", gap: 16 }}
+                >
+                  {evidence.summary.length > 0 && (
+                    <div className="detail-panel-kv-grid">
+                      {evidence.summary.map((row) => (
+                        <div
+                          key={`${row.label}:${row.value}`}
+                          className="detail-panel-kv-item"
+                        >
+                          <label>{row.label}</label>
+                          <div className="value">
+                            {row.href ? (
+                              <a
+                                href={row.href}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                style={{
+                                  color: "var(--app-accent)",
+                                  textDecoration: "none",
+                                }}
+                              >
+                                {row.value}
+                              </a>
+                            ) : (
+                              row.value
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {evidence.proof && (
+                    <div>
+                      <div
+                        style={{
+                          ...mono,
+                          fontSize: 10,
+                          fontWeight: 700,
+                          color: "var(--app-muted)",
+                          marginBottom: 6,
+                          textTransform: "uppercase",
+                          letterSpacing: "0.04em",
+                        }}
+                      >
+                        {evidence.proof.label}
+                      </div>
+                      <pre className="detail-panel-snippet">
+                        {evidence.proof.content}
+                      </pre>
+                    </div>
+                  )}
+
+                  {(evidence.remediation || evidence.warnings.length > 0) && (
+                    <div>
+                      <div
+                        style={{
+                          ...mono,
+                          fontSize: 10,
+                          fontWeight: 700,
+                          color: "var(--app-muted)",
+                          marginBottom: 6,
+                          textTransform: "uppercase",
+                          letterSpacing: "0.04em",
+                        }}
+                      >
+                        Reviewer Next Step
+                      </div>
+                      {evidence.remediation && (
+                        <p className="detail-panel-prose" style={{ margin: 0 }}>
+                          {evidence.remediation}
+                        </p>
+                      )}
+                      {evidence.warnings.map((warning) => (
+                        <p
+                          key={warning}
+                          className="detail-panel-prose"
+                          style={{
+                            margin: evidence.remediation ? "8px 0 0" : 0,
+                            color: "var(--app-warning)",
+                          }}
+                        >
+                          {warning}
+                        </p>
+                      ))}
+                    </div>
+                  )}
+
+                  {evidence.references.length > 0 && (
+                    <div>
+                      <div
+                        style={{
+                          ...mono,
+                          fontSize: 10,
+                          fontWeight: 700,
+                          color: "var(--app-muted)",
+                          marginBottom: 6,
+                          textTransform: "uppercase",
+                          letterSpacing: "0.04em",
+                        }}
+                      >
+                        References
+                      </div>
+                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                        {evidence.references.map((ref) =>
+                          ref.href ? (
+                            <a
+                              key={`${ref.label}:${ref.value}`}
+                              href={ref.href}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              style={{
+                                ...mono,
+                                fontSize: 10,
+                                color: "var(--app-accent)",
+                              }}
+                            >
+                              {ref.label}
+                            </a>
+                          ) : (
+                            <span
+                              key={`${ref.label}:${ref.value}`}
+                              style={{
+                                ...mono,
+                                fontSize: 10,
+                                color: "var(--app-muted)",
+                              }}
+                            >
+                              {ref.value}
+                            </span>
+                          ),
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
 
             {feedProvenance && (
               <div className="detail-panel-section">

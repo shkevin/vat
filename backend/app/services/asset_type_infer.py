@@ -1,5 +1,5 @@
 """
-Asset scope type inference — single place for repo/container/package/path.
+Asset scope type inference — single place for node/repo/container/package/path.
 
 Uses all findings for an asset (not only the first), with priority merge so
 mixed STIG + dependency data still classifies as container when appropriate.
@@ -12,6 +12,7 @@ from typing import Any
 
 # Highest wins when merging per-finding candidates
 _TYPE_PRIORITY: dict[str, int] = {
+    "node": 5,
     "container": 4,
     "repo": 3,
     "path": 2,
@@ -42,6 +43,11 @@ def looks_like_container_image_ref(image: str | None) -> bool:
     return False
 
 
+def looks_like_kubernetes_node_asset(image: str | None) -> bool:
+    parts = (image or "").strip().lower().split("/")
+    return len(parts) >= 5 and parts[0] == "k8s" and parts[2] == "cluster" and parts[3] == "node"
+
+
 def infer_asset_type_from_one_finding(d: dict[str, Any]) -> str:
     """Classify one finding's contribution to asset scope (not merged)."""
     img = (d.get("image") or "").strip()
@@ -51,6 +57,9 @@ def infer_asset_type_from_one_finding(d: dict[str, Any]) -> str:
     ft = (d.get("findingType") or d.get("finding_type") or "").lower()
     src = (d.get("source") or "").strip().lower()
     is_code = ft in _CODE_FINDING_TYPES
+
+    if looks_like_kubernetes_node_asset(img):
+        return "node"
 
     # Secrets: bundle scans reuse image=folder — not a git repo unless branch/container ref
     if ft == "secret":
