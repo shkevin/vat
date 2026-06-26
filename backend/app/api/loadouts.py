@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import get_current_user_context, require_admin
 from app.core.database import get_db
+from app.core.tenancy import coalesced_tenant_equals, normalize_tenant_id, tenants_compatible
 from app.models.asset import Asset
 from app.models.asset_loadout import AssetLoadout
 from app.models.finding import Finding
@@ -70,14 +71,12 @@ def _serialize(row: AssetLoadout, viewer_email: str) -> dict:
 
 def _visible_filter(ctx: UserContext):
     """Owner OR (same tenant AND shared_with_team)."""
+    if ctx.tenant_id is None:
+        return AssetLoadout.owner_email == ctx.email
     return or_(
         AssetLoadout.owner_email == ctx.email,
         (
-            (
-                (AssetLoadout.tenant_id == ctx.tenant_id)
-                if ctx.tenant_id is not None
-                else AssetLoadout.tenant_id.is_(None)
-            )
+            coalesced_tenant_equals(AssetLoadout.tenant_id, ctx.tenant_id)
             & (AssetLoadout.shared_with_team.is_(True))
         ),
     )
@@ -109,7 +108,7 @@ async def create_loadout(
     row = AssetLoadout(
         name=body.name.strip(),
         owner_email=ctx.email,
-        tenant_id=ctx.tenant_id,
+        tenant_id=normalize_tenant_id(ctx.tenant_id),
         asset_ids=asset_ids,
         entries=entries,
         shared_with_team=bool(body.shared_with_team),
@@ -132,7 +131,7 @@ async def _load_or_404(
             raise HTTPException(
                 status_code=403, detail="Only the loadout owner can perform this action"
             )
-        if not row.shared_with_team or row.tenant_id != ctx.tenant_id:
+        if not row.shared_with_team or not tenants_compatible(row.tenant_id, ctx.tenant_id):
             raise HTTPException(status_code=404, detail="Loadout not found")
     return row
 

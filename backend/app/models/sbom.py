@@ -9,6 +9,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
+from app.models.tenant_scoped import TenantScopedMixin
 
 
 # License risk tiers per PRD §5.8.2
@@ -86,7 +87,7 @@ def license_risk_tier(license_id: str) -> str:
     return best
 
 
-class SbomPackage(Base):
+class SbomPackage(TenantScopedMixin, Base):
     """SBOM package — deduplicated by name+version, source-attributed."""
 
     __tablename__ = "sbom_packages"

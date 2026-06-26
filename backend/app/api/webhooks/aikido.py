@@ -16,6 +16,7 @@ from app.models.finding import Finding, Status
 from app.services.external_links_service import find_finding_by_external_id
 from app.schemas.vat import VatFindingSchema
 from app.services.aikido_full_sync import aikido_issue_trace_id
+from app.core.tenancy import normalize_tenant_id
 from app.services.ingest import ingest_finding
 from app.services.webhook_idempotency import (
     compute_idempotency_key,
@@ -262,13 +263,11 @@ async def _handle_aikido_webhook(
     issue_for_trace = data.get("issue") if isinstance(data.get("issue"), dict) else data
     trace_id = aikido_issue_trace_id(aikido_source_id, issue_for_trace or data)
 
-    # M16: stamp tenant_id from per-source creds onto the ingested
-    # finding so it lands tenant-scoped. Falls back to None when the
-    # operator hasn't bound this Aikido source to a tenant — which
-    # combined with C2's fail-closed tenant_filter means the finding is
-    # invisible to per-tenant readers until a tenant is configured. That
-    # is the correct conservative default — better unrouted than leaked.
-    creds_tenant_id = creds.get("tenant_id") if isinstance(creds, dict) else None
+    # M16: stamp tenant_id from per-source creds; always default to t-default
+    # so ingested findings stay visible in the single-tenant deployment.
+    creds_tenant_id = normalize_tenant_id(
+        creds.get("tenant_id") if isinstance(creds, dict) else None
+    )
 
     async with async_session() as session:
         if not await claim_webhook(

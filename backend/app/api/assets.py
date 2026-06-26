@@ -14,6 +14,7 @@ from app.core.auth import (
     require_reviewer,
     tenant_filter,
 )
+from app.core.tenancy import row_tenant_visible
 from app.core.config import get_settings
 from app.core.database import get_db
 from app.models.asset import Asset
@@ -38,6 +39,7 @@ from app.services.asset_aliases import (
 )
 from app.services.asset_merge_suggestions import suggest_asset_merge_targets
 from app.services.asset_resolver import infer_asset_kind
+from app.services.decision_ledger import soft_unlink_findings
 from app.services.assets_service import (
     _container_image_group_key,
     container_merge_group_key,
@@ -215,6 +217,7 @@ async def _delete_asset_owned_data(
         return int(result.rowcount or 0)
 
     if finding_ids:
+        counts["unlinked_decisions"] = await soft_unlink_findings(db, finding_ids)
         counts["deleted_audit_events"] = rowcount(
             await db.execute(
                 delete(AuditEvent).where(
@@ -1028,7 +1031,7 @@ async def unmerge_asset_alias(
         if not finding:
             ev.reverted_at = ev.reverted_at or alias.updated_at
             continue
-        if ctx.tenant_id is not None and finding.tenant_id not in (None, ctx.tenant_id):
+        if ctx.tenant_id is not None and not row_tenant_visible(finding.tenant_id, ctx):
             continue
 
         changed = False

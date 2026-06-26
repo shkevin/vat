@@ -9,6 +9,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
+from app.models.tenant_scoped import TenantScopedMixin
 
 
 class FindingType(str, enum.Enum):
@@ -48,7 +49,7 @@ class SuppressionScope(str, enum.Enum):
     contextual = "contextual"  # Suppressed
 
 
-class Finding(Base):
+class Finding(TenantScopedMixin, Base):
     """Core finding entity."""
 
     __tablename__ = "findings"

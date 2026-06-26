@@ -7,6 +7,7 @@ from typing import Optional
 from sqlalchemy import delete, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.tenancy import coalesced_tenant_equals, normalize_tenant_id
 from app.models.openscap_evidence_blob import OpenSCAPEvidenceBlob
 from app.models.openscap_scan_result import OpenSCAPScanResult
 from app.services.openscap_identity import (
@@ -72,6 +73,7 @@ async def store_openscap_scan_result(
     Store raw OpenSCAP XCCDF/OVAL XML for STIG Viewer export.
     Upserts by (asset_id, source_id) so re-scans overwrite.
     """
+    tenant_id = normalize_tenant_id(tenant_id)
     if not raw_xml or len(raw_xml) == 0:
         return
     benchmark_id = _extract_benchmark_id_from_xml(raw_xml)
@@ -133,7 +135,7 @@ async def list_openscap_scan_results(
     if not cross_tenant:
         if tenant_id is None:
             return []
-        q = q.where(OpenSCAPScanResult.tenant_id == tenant_id)
+        q = q.where(coalesced_tenant_equals(OpenSCAPScanResult.tenant_id, tenant_id))
     result = await db.execute(q)
     rows = list(result.scalars().all())
 

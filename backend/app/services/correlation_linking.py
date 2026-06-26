@@ -12,6 +12,7 @@ from typing import Any
 from sqlalchemy import Select, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.tenancy import coalesced_tenant_equals
 from app.models.finding import Finding
 from app.services.audit_events import emit_audit_event, new_trace_id
 from app.services.correlation_edges import upsert_edge
@@ -25,8 +26,8 @@ def select_correlation_cluster(
     for_update: bool = False,
 ) -> Select[tuple[Finding]]:
     """Deterministic cluster query: same typed key, same tenant scope (NULL
-    matches NULL only). Canonical row is cluster[0] ordered by created_at,
-    then id.
+    coalesces to the default tenant). Canonical row is cluster[0] ordered by
+    created_at, then id.
 
     ``for_update=True`` adds ``SELECT ... FOR UPDATE`` so concurrent ingests
     for the same correlation_key serialize on the cluster rows. Without it,
@@ -36,10 +37,7 @@ def select_correlation_cluster(
     parallel.
     """
     q = select(Finding).where(Finding.correlation_key == correlation_key)
-    if tenant_id is None:
-        q = q.where(Finding.tenant_id.is_(None))
-    else:
-        q = q.where(Finding.tenant_id == tenant_id)
+    q = q.where(coalesced_tenant_equals(Finding.tenant_id, tenant_id))
     q = q.order_by(Finding.created_at.asc(), Finding.id.asc())
     if for_update:
         q = q.with_for_update()

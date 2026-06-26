@@ -6,9 +6,10 @@ from sqlalchemy import Boolean, DateTime, LargeBinary, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
+from app.models.tenant_scoped import TenantScopedMixin
 
 
-class OpenSCAPScanResult(Base):
+class OpenSCAPScanResult(TenantScopedMixin, Base):
     """
     Stores raw XCCDF/OVAL XML from OpenSCAP scans.
     Used for export to STIG Viewer (IronBank pipeline pattern).

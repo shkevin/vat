@@ -33,7 +33,7 @@ from app.services.risk_scoring import (
 )
 from app.services.sla import SLA_DAYS
 from app.parsers.image_digest import effective_image_digest
-from app.core.tenancy import DEFAULT_TENANT_ID
+from app.core.tenancy import DEFAULT_TENANT_ID, normalize_tenant_id
 
 
 async def _record_container_asset_observations(
@@ -239,7 +239,7 @@ async def ingest_finding(
     # binding) pass tenant_id=None, which would store findings with a NULL
     # tenant — invisible to tenant-scoped UI sessions. Default to the bootstrap
     # tenant so ingested findings are visible in the default org.
-    tenant_id = tenant_id or DEFAULT_TENANT_ID
+    tenant_id = normalize_tenant_id(tenant_id)
     policy = PARSER_IDENTITY_POLICY.get(parser_id or "", {})
     requires_explicit = bool(policy.get("requires_explicit_asset", False))
     payload, _ = resolve_asset_for_payload(
@@ -403,8 +403,7 @@ async def ingest_finding(
             }
         )
         existing.audit = audit
-        if tenant_id and not existing.tenant_id:
-            existing.tenant_id = tenant_id
+        existing.tenant_id = normalize_tenant_id(existing.tenant_id or tenant_id)
         # Backfill image/component/branch/tag for asset grouping when existing has none (e.g. from old bootstrap)
         if payload.image and not existing.image:
             existing.image = payload.image
@@ -544,6 +543,13 @@ async def ingest_finding(
                 parser_id=parser_id,
             )
             await db.flush()
+        if get_settings().decision_ledger_enabled:
+            from app.services.decision_ledger import resolve_and_apply_decision
+
+            await resolve_and_apply_decision(
+                db, existing, trace_id=trace_id, parser_id=parser_id
+            )
+            await db.flush()
         await db.commit()
         await db.refresh(existing)
         return existing, False
@@ -663,6 +669,14 @@ async def ingest_finding(
             trace_id,
             source_id=source_name,
             parser_id=parser_id,
+        )
+        await db.flush()
+
+    if get_settings().decision_ledger_enabled:
+        from app.services.decision_ledger import resolve_and_apply_decision
+
+        await resolve_and_apply_decision(
+            db, finding, trace_id=trace_id, parser_id=parser_id
         )
         await db.flush()
 

@@ -13,12 +13,12 @@ def _compile(stmt) -> str:
     return str(stmt.compile(dialect=postgresql.dialect())).lower()
 
 
-def test_select_correlation_cluster_null_tenant_filters_is_null() -> None:
+def test_select_correlation_cluster_null_tenant_coalesces_to_default() -> None:
     stmt = select_correlation_cluster(correlation_key="v1:sca:asset:x", tenant_id=None)
     sql = _compile(stmt)
     assert "correlation_key" in sql
-    assert "tenant_id" in sql
-    assert "null" in sql  # IS NULL
+    assert "coalesce" in sql
+    assert "coalesce_1" in sql and "coalesce_2" in sql
 
 
 def test_select_correlation_cluster_value_tenant_filters_equality() -> None:
@@ -27,9 +27,9 @@ def test_select_correlation_cluster_value_tenant_filters_equality() -> None:
     )
     sql = _compile(stmt)
     assert "correlation_key" in sql
-    assert "findings.tenant_id" in sql
-    # Bound parameter (value not inlined) — must not use OR across tenants
-    assert "tenant_id_1" in sql or "%(tenant_id" in sql
+    assert "coalesce" in sql
+    # Bound parameters — must not use OR across tenants
+    assert "coalesce_1" in sql and "coalesce_2" in sql
 
 
 def test_select_correlation_cluster_orders_by_created_at_then_id() -> None:

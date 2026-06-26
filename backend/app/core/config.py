@@ -179,6 +179,8 @@ class Settings(BaseSettings):
 
     # Cross-source correlation linking after ingest (link-only; set VAT_CORRELATION_LINKING_ENABLED=false to disable)
     correlation_linking_enabled: bool = True
+    # Durable triage decision ledger (survives asset delete / re-import)
+    decision_ledger_enabled: bool = True
     # When true, append normalized image digest to SCA/license correlation keys (stricter deployment binding)
     correlation_include_digest: bool = False  # VAT_CORRELATION_INCLUDE_DIGEST=true
 

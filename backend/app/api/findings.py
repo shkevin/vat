@@ -8,7 +8,8 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.auth import get_current_user_context, require_admin, require_reviewer, row_tenant_visible
+from app.core.auth import get_current_user_context, require_admin, require_reviewer
+from app.core.tenancy import row_tenant_visible
 from app.core.config import get_settings
 from app.core.database import get_db
 from app.models.finding import Finding
@@ -499,8 +500,8 @@ async def get_correlation_operation_history(
         if ctx.tenant_id:
             left_tid = tenant_map.get(e.finding_id_a)
             right_tid = tenant_map.get(e.finding_id_b)
-            if (left_tid and left_tid != ctx.tenant_id) or (
-                right_tid and right_tid != ctx.tenant_id
+            if not row_tenant_visible(left_tid, ctx) or not row_tenant_visible(
+                right_tid, ctx
             ):
                 continue
         out.append(

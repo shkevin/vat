@@ -10,6 +10,7 @@ from datetime import datetime
 
 from app.core.auth import tenant_filter
 from app.core.config import get_settings
+from app.core.tenancy import normalize_tenant_id
 from app.models.finding import Finding, FindingType, Severity, Status, SuppressionScope
 from app.schemas.auth import UserContext
 from app.services.sync_service import (
@@ -21,6 +22,7 @@ from app.services.sync_service import (
     enqueue_tracker_post_decision,
 )
 from app.services.audit_events import emit_audit_event, new_trace_id
+from app.services.decision_ledger import record_decision_from_finding
 from app.services.risk_scoring import merge_environmental_risk_scoring
 from app.tasks.sync_tasks import trigger_sync_worker
 from app.schemas.finding import FindingCreate, STATUS_DISPLAY
@@ -514,6 +516,8 @@ async def update_finding(
         old_status=old_status if status_changed else None,
     )
 
+    await record_decision_from_finding(db, finding, user=user, reason="reviewer_update")
+
     changed_fields: list[str] = []
     if "status" in data and status_changed:
         changed_fields.append("status")
@@ -657,6 +661,9 @@ async def bulk_update_findings(
             }
         )
         f.audit = audit
+        await record_decision_from_finding(
+            db, f, user=user, reason="bulk_triage"
+        )
     await db.flush()
     for f in findings:
         await _enqueue_sync_on_status_change(db, f, new_status, user)
@@ -753,6 +760,9 @@ async def create_findings_bulk(
             archived=item.get("archived", False),
             archived_at=None,
             archived_reason=item.get("archivedReason"),
+            tenant_id=normalize_tenant_id(
+                item.get("tenantId") or item.get("tenant_id")
+            ),
         )
         db.add(finding)
     await db.commit()

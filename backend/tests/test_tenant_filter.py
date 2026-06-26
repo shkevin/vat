@@ -2,7 +2,8 @@
 
 from sqlalchemy import select
 
-from app.core.auth import row_tenant_visible, tenant_filter
+from app.core.auth import tenant_filter
+from app.core.tenancy import row_tenant_visible
 from app.models.finding import Finding
 from app.schemas.auth import UserContext
 

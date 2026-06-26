@@ -14,6 +14,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
+from app.core.tenancy import coalesced_tenant_equals, normalize_tenant_id
 from app.models.asset import Asset
 from app.models.finding import Finding, FindingType, Severity, Status
 from app.models.sbom import SbomPackage, license_risk_tier
@@ -393,6 +394,7 @@ async def import_sbom(
     Import CycloneDX SBOM. Dedup by name+version. Merge sources.
     Returns (created, updated) counts.
     """
+    tenant_id = normalize_tenant_id(tenant_id)
     packages = _parse_cyclonedx(doc)
     if not packages:
         return 0, 0
@@ -651,7 +653,7 @@ async def list_sbom_packages(
     if not cross_tenant:
         if tenant_id is None:
             return []
-        q = q.where(SbomPackage.tenant_id == tenant_id)
+        q = q.where(coalesced_tenant_equals(SbomPackage.tenant_id, tenant_id))
     q = q.limit(limit)
     result = await db.execute(q)
     rows = result.scalars().all()

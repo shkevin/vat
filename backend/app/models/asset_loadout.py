@@ -17,13 +17,14 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
+from app.models.tenant_scoped import TenantScopedMixin
 
 
 def _new_id() -> str:
     return f"ldo-{uuid.uuid4().hex[:12]}"
 
 
-class AssetLoadout(Base):
+class AssetLoadout(TenantScopedMixin, Base):
     __tablename__ = "asset_loadouts"
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True, default=_new_id)
