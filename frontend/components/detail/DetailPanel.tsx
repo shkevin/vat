@@ -2101,54 +2101,63 @@ export function DetailPanel({
                 Chronological record of all changes to this finding.
               </p>
               <div className="detail-panel-card">
-                {[...(finding.audit ?? [])].reverse().map((e, i) => {
-                  const isStatusChange = /Status\s*→|status\s*→/i.test(
-                    e.action,
-                  );
-                  return (
-                    <div
-                      key={i}
-                      className={`detail-panel-timeline-item${
-                        isStatusChange ? " status-change" : ""
-                      }`}
-                    >
-                      <div className="detail-panel-timeline-marker" />
-                      <div className="detail-panel-timeline-content">
-                        <div className="timeline-meta">
-                          <span
-                            style={{
-                              color: "var(--app-accent)",
-                              fontWeight: 600,
-                            }}
-                          >
-                            {e.user}
-                          </span>
-                          <span style={{ margin: "0 6px" }}>·</span>
-                          {fmtDtUtil(e.ts)}
-                        </div>
-                        <div
-                          className="timeline-action"
-                          style={{ ...sans, fontSize: 13 }}
-                        >
-                          {e.action}
-                        </div>
-                        {e.note && (
+                {(finding.audit ?? []).length === 0 ? (
+                  <p className="detail-panel-prose" style={{ margin: 0 }}>
+                    No audit history recorded yet.
+                  </p>
+                ) : (
+                  [...(finding.audit ?? [])].reverse().map((e, i) => {
+                    const isStatusChange = /Status\s*→|status\s*→/i.test(
+                      e.action,
+                    );
+                    return (
+                      <div
+                        key={i}
+                        className={`detail-panel-timeline-item${
+                          isStatusChange ? " status-change" : ""
+                        }`}
+                      >
+                        <div className="detail-panel-timeline-marker" />
+                        <div className="detail-panel-timeline-content">
+                          <div className="timeline-meta">
+                            <span
+                              style={{
+                                color: "var(--app-accent)",
+                                fontWeight: 600,
+                              }}
+                            >
+                              {e.user}
+                            </span>
+                            <span style={{ margin: "0 6px" }}>·</span>
+                            {fmtDtUtil(e.ts)}
+                          </div>
                           <div
+                            className="timeline-action"
                             style={{
                               ...sans,
-                              fontSize: 12,
-                              color: "var(--app-muted)",
-                              fontStyle: "italic",
-                              marginTop: 6,
+                              fontSize: 13,
                             }}
                           >
-                            &quot;{e.note}&quot;
+                            {e.action}
                           </div>
-                        )}
+                          {e.note && (
+                            <div
+                              style={{
+                                ...sans,
+                                fontSize: 12,
+                                color: "var(--app-muted)",
+                                fontStyle: "italic",
+                                marginTop: 6,
+                              }}
+                            >
+                              &quot;{e.note}&quot;
+                            </div>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  );
-                })}
+                    );
+                  })
+                )}
               </div>
             </div>
           </div>

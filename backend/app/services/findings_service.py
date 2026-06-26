@@ -20,6 +20,7 @@ from app.services.sync_service import (
     enqueue_source_unignore,
     enqueue_tracker_post_decision,
 )
+from app.services.audit_events import emit_audit_event, new_trace_id
 from app.tasks.sync_tasks import trigger_sync_worker
 from app.schemas.finding import FindingCreate, STATUS_DISPLAY
 
@@ -241,6 +242,90 @@ def _now() -> str:
     return datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+def _status_display(status: Status) -> str:
+    return STATUS_DISPLAY.get(status.value, status.value)
+
+
+def _audit_note_for_update(data: dict) -> str | None:
+    for key in (
+        "reviewer_note",
+        "justification",
+        "compensating_controls",
+    ):
+        value = data.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()[:200]
+    return None
+
+
+def _audit_action_for_update(
+    data: dict, *, old_status: Status, new_status: Status
+) -> str:
+    if new_status != old_status:
+        return f"Status \u2192 {_status_display(new_status)}"
+    if "reviewer_note" in data:
+        return "Reviewer note updated"
+    if "justification" in data:
+        return "Justification updated"
+    if "compensating_controls" in data:
+        return "Compensating controls updated"
+    if "suppression_scope" in data:
+        return "Suppression scope updated"
+    if "attestation" in data:
+        return "Attestation updated"
+    return "Finding updated"
+
+
+def _audit_reason_code_for_update(data: dict, *, status_changed: bool) -> str:
+    if status_changed:
+        return "status_change"
+    if "reviewer_note" in data:
+        return "reviewer_note"
+    if "justification" in data:
+        return "justification"
+    if "compensating_controls" in data:
+        return "compensating_controls"
+    if "suppression_scope" in data:
+        return "suppression_scope"
+    if "attestation" in data:
+        return "attestation"
+    return "finding_update"
+
+
+async def _emit_finding_audit_event(
+    db: AsyncSession,
+    *,
+    finding: Finding,
+    user: str,
+    action: str,
+    note: str | None,
+    reason_code: str,
+    old_status: Status | None = None,
+) -> None:
+    current_status = _status_display(finding.status)
+    data: dict[str, Any] = {
+        "action": action,
+        "status": current_status,
+    }
+    if old_status is not None:
+        data["previousStatus"] = _status_display(old_status)
+    await emit_audit_event(
+        db,
+        trace_id=new_trace_id(),
+        event_type="finding.audit",
+        actor_type="user",
+        actor_id=user,
+        asset_id=finding.image or finding.component,
+        finding_id=finding.id,
+        decision_name=action,
+        decision_reason_code=reason_code,
+        decision_result=current_status,
+        data=data,
+        retention_class="compliance",
+        note=note,
+    )
+
+
 SYNCABLE_TRACKER_FIELDS = {"status", "severity", "title", "labels"}
 
 
@@ -385,21 +470,35 @@ async def update_finding(
     if "attestation" in data:
         finding.attestation = data["attestation"]
     audit = list(finding.audit or [])
+    audit_action = _audit_action_for_update(
+        data, old_status=old_status, new_status=finding.status
+    )
+    audit_note = _audit_note_for_update(data)
     audit.append(
         {
             "ts": _now(),
             "user": user,
-            "action": "Finding updated",
-            "note": data.get("justification", "")[:80] or None,
+            "action": audit_action,
+            "note": audit_note,
         }
     )
     finding.audit = audit
     await db.flush()
+    status_changed = finding.status != old_status
+    await _emit_finding_audit_event(
+        db,
+        finding=finding,
+        user=user,
+        action=audit_action,
+        note=audit_note,
+        reason_code=_audit_reason_code_for_update(data, status_changed=status_changed),
+        old_status=old_status if status_changed else None,
+    )
 
     changed_fields: list[str] = []
-    if "status" in data and finding.status != old_status:
+    if "status" in data and status_changed:
         changed_fields.append("status")
-    if "status" in data and finding.status != old_status:
+    if "status" in data and status_changed:
         await _enqueue_sync_on_status_change(db, finding, finding.status, user)
 
     if changed_fields:

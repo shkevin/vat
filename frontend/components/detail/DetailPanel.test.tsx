@@ -195,4 +195,61 @@ describe("DetailPanel evidence", () => {
 
     expect(onClose).toHaveBeenCalledTimes(1);
   });
+
+  it("renders audit entries in the history tab", () => {
+    render(
+      <DetailPanel
+        finding={finding({
+          audit: [
+            {
+              ts: "2026-06-26T00:00:00Z",
+              user: "reviewer@example.com",
+              action: "Imported from trivy",
+              note: null,
+            },
+            {
+              ts: "2026-06-26T00:01:00Z",
+              user: "reviewer@example.com",
+              action: "Status → Risk Accepted",
+              note: "accepted for 30 days",
+            },
+          ],
+        })}
+        sources={[]}
+        tracker={tracker}
+        onArchive={vi.fn()}
+        onClose={vi.fn()}
+        onRevert={vi.fn()}
+        onUnarchive={vi.fn()}
+        onUpdate={vi.fn()}
+        readOnly
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("tab", { name: "History" }));
+
+    expect(screen.getByText("Status → Risk Accepted")).toBeTruthy();
+    expect(screen.getByText("Imported from trivy")).toBeTruthy();
+    expect(screen.getByText('"accepted for 30 days"')).toBeTruthy();
+  });
+
+  it("shows an empty state when no audit history is recorded", () => {
+    render(
+      <DetailPanel
+        finding={finding({ audit: [] })}
+        sources={[]}
+        tracker={tracker}
+        onArchive={vi.fn()}
+        onClose={vi.fn()}
+        onRevert={vi.fn()}
+        onUnarchive={vi.fn()}
+        onUpdate={vi.fn()}
+        readOnly
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("tab", { name: "History" }));
+
+    expect(screen.getByText("No audit history recorded yet.")).toBeTruthy();
+  });
 });

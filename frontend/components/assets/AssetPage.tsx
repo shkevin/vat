@@ -56,6 +56,7 @@ import {
   fetchAssetMergeSuggestions,
   fetchAssetMergeReviews,
   fetchAssetAliases,
+  fetchFinding,
   groupAssetInto,
   upsertAssetMergeReview,
   type AssetMergeReviewRecord,
@@ -63,6 +64,7 @@ import {
   type AssetMergeSuggestion,
   unmergeAssetFrom,
 } from "@/lib/api";
+import { chooseFindingForDetail, toDetailFinding } from "@/lib/findingDetail";
 
 const HEADER_PADDING = {
   compact: "4px 14px",
@@ -189,6 +191,10 @@ export function AssetPage({ config }: AssetPageProps) {
   const [selectedSourceIndex, setSelectedSourceIndex] = useState<
     number | undefined
   >();
+  const [selectedDetail, setSelectedDetail] = useState<Finding | null>(null);
+  const [selectedDetailError, setSelectedDetailError] = useState<string | null>(
+    null,
+  );
   const adminActionsRef = useRef<HTMLDivElement | null>(null);
   const targetSearchRef = useRef<HTMLDivElement | null>(null);
   /** User explicitly chose "All image variants"; do not auto-scope to one digest. */
@@ -225,6 +231,38 @@ export function AssetPage({ config }: AssetPageProps) {
     showArchived,
     setShowArchived,
   } = data;
+
+  useEffect(() => {
+    if (!selected?.id) {
+      setSelectedDetail(null);
+      setSelectedDetailError(null);
+      return;
+    }
+
+    let cancelled = false;
+    setSelectedDetail(null);
+    setSelectedDetailError(null);
+    fetchFinding(selected.id, { token, userEmail: user?.email })
+      .then((fullFinding) => {
+        if (!cancelled) setSelectedDetail(toDetailFinding(fullFinding));
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setSelectedDetailError(
+            err instanceof Error ? err.message : "Failed to load finding details",
+          );
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selected?.id, token, user?.email]);
+
+  const findingForDetail = useMemo(
+    () => chooseFindingForDetail(selected, selectedDetail),
+    [selected, selectedDetail],
+  );
 
   useEffect(() => {
     const qTab = (searchParams.get("tab") || "").toLowerCase();
@@ -2625,9 +2663,10 @@ export function AssetPage({ config }: AssetPageProps) {
             </div>
           </div>
 
-          {selected && (
+          {findingForDetail && (
             <DetailPanel
-              finding={selected}
+              finding={findingForDetail}
+              detailLoadError={selectedDetailError}
               allFindings={branchTagFilteredFindings}
               sources={sources}
               tracker={tracker}

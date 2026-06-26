@@ -69,9 +69,9 @@ import { mono, sans } from "@/lib/styles";
 import {
   fetchAssetMergeSuggestions,
   fetchFinding,
-  type ApiFinding,
   type AssetMergeSuggestion,
 } from "@/lib/api";
+import { chooseFindingForDetail, toDetailFinding } from "@/lib/findingDetail";
 import type { Finding } from "@/types";
 import type { AppConfig } from "@/config/app";
 
@@ -180,29 +180,6 @@ export default function VAT({ config }: VATProps) {
     refetch,
   } = data;
 
-  const toDetailFinding = useCallback((raw: ApiFinding): Finding => {
-    return {
-      ...(raw as unknown as Finding),
-      source: raw.source ? String(raw.source) : undefined,
-      component: raw.component ? String(raw.component) : undefined,
-      image: raw.image ? String(raw.image) : undefined,
-      branch: raw.branch ? String(raw.branch) : undefined,
-      tag: raw.tag ? String(raw.tag) : undefined,
-      description: raw.description ? String(raw.description) : undefined,
-      filePath: raw.filePath ? String(raw.filePath) : undefined,
-      line: typeof raw.line === "number" ? raw.line : undefined,
-      snippetMasked: raw.snippetMasked ? String(raw.snippetMasked) : undefined,
-      sourceFileUrl: raw.sourceFileUrl ? String(raw.sourceFileUrl) : undefined,
-      audit: Array.isArray(raw.audit) ? (raw.audit as Finding["audit"]) : [],
-      sources: Array.isArray(raw.sources)
-        ? (raw.sources as Finding["sources"])
-        : [],
-      externalLinks: Array.isArray(raw.externalLinks)
-        ? (raw.externalLinks as Finding["externalLinks"])
-        : undefined,
-    };
-  }, []);
-
   useEffect(() => {
     if (!selected?.id) {
       setSelectedDetail(null);
@@ -228,7 +205,12 @@ export default function VAT({ config }: VATProps) {
     return () => {
       cancelled = true;
     };
-  }, [selected?.id, toDetailFinding, token, user?.email]);
+  }, [selected?.id, token, user?.email]);
+
+  const findingForDetail = useMemo(
+    () => chooseFindingForDetail(selected, selectedDetail),
+    [selected, selectedDetail],
+  );
 
   useEffect(() => {
     setFilterFindingStatuses(new Set(dashboardState.status ?? []));
@@ -767,9 +749,9 @@ export default function VAT({ config }: VATProps) {
       >
         {mainContent}
       </VATLayout>
-      {selected && (
+      {findingForDetail && (
         <DetailPanel
-          finding={selectedDetail ?? selected}
+          finding={findingForDetail}
           detailLoadError={selectedDetailError}
           allFindings={data.findings}
           sources={data.sources}
