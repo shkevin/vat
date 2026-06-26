@@ -904,6 +904,23 @@ export function AssetPage({ config }: AssetPageProps) {
     };
   }, [branchTagFilteredFindings, sources]);
 
+  const sourceOptionsWithCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const finding of branchTagFilteredFindings) {
+      if (!finding.source) continue;
+      counts.set(finding.source, (counts.get(finding.source) ?? 0) + 1);
+    }
+
+    const sourceNames = new Map(sources.map((source) => [source.id, source.name]));
+    return uniqueColumnValues.sources.map((id) => {
+      const label = displaySourceName(sourceNames.get(id) ?? id) || id;
+      return {
+        value: id,
+        label: `${label} (${counts.get(id) ?? 0})`,
+      };
+    });
+  }, [branchTagFilteredFindings, sources, uniqueColumnValues.sources]);
+
   const filteredFindings = useMemo(() => {
     if (!asset) return [];
     let list = branchTagFilteredFindings;
@@ -2482,11 +2499,7 @@ export function AssetPage({ config }: AssetPageProps) {
               />
               <MultiSelectFilter
                 label="Source"
-                options={uniqueColumnValues.sources.map((id) => {
-                  const cfg = sources.find((s) => s.id === id);
-                  const label = displaySourceName(cfg?.name ?? id) || id;
-                  return { value: id, label };
-                })}
+                options={sourceOptionsWithCounts}
                 selected={sourceFilter}
                 onChange={setSourceFilter}
               />
