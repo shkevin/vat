@@ -568,6 +568,49 @@ def test_temporary_registry_auth_config_merges_pull_secrets(monkeypatch, tmp_pat
         assert json.loads(config_path.read_text(encoding="utf-8")) == docker_config
 
 
+def test_temporary_registry_auth_config_uses_fallback_secret_names(
+    monkeypatch, tmp_path: Path
+) -> None:
+    item = {
+        "targets": [
+            {
+                "namespace": "apps",
+                "kind": "Deployment",
+                "name": "api",
+                "containerName": "api",
+            }
+        ]
+    }
+    docker_config = {
+        "auths": {
+            "harbor.example.com": {
+                "auth": "dXNlcjpwYXNz",
+            }
+        }
+    }
+    secret = {
+        "type": "kubernetes.io/dockerconfigjson",
+        "data": {
+            ".dockerconfigjson": base64.b64encode(json.dumps(docker_config).encode("utf-8")).decode("ascii")
+        },
+    }
+    fetched: list[tuple[str, str]] = []
+
+    def fake_fetch(namespace: str, name: str) -> dict:
+        fetched.append((namespace, name))
+        return secret
+
+    monkeypatch.setenv("VAT_INVENTORY_FALLBACK_IMAGE_PULL_SECRET_NAMES", "harbor-creds")
+    monkeypatch.setattr(cli, "_fetch_kubernetes_secret", fake_fetch)
+
+    with cli._temporary_registry_auth_config(item, temp_base=tmp_path) as docker_config_path:
+        assert docker_config_path is not None
+        config_path = docker_config_path / "config.json"
+        assert json.loads(config_path.read_text(encoding="utf-8")) == docker_config
+
+    assert fetched == [("apps", "harbor-creds")]
+
+
 def test_inventory_signature_includes_pull_secret_references() -> None:
     base = {
         "image": "harbor.example.com/apps/api:v1",

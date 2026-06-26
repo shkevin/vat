@@ -121,6 +121,8 @@ spec:
               value: "86400"
             - name: VAT_INVENTORY_SCAN_TYPES
               value: image-sca,image-sbom
+            - name: VAT_INVENTORY_FALLBACK_IMAGE_PULL_SECRET_NAMES
+              value: harbor-creds,ghcr-creds
             - name: VAT_K8S_SCAN_INTERVAL_SECONDS
               value: "3600"
             - name: VAT_K8S_SCAN_RETRY_INTERVAL_SECONDS

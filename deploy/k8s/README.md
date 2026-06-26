@@ -186,16 +186,17 @@ Base install, non-privileged image/config/RBAC scanning:
 kubectl apply -k deploy/k8s/operator/base
 ```
 
-The image lane defaults to `VAT_OPERATOR_IMAGE_INVENTORY_MODE=runtime`. In this
-mode the node-agent enumerates containers and image-store entries known to the
-node runtime, running or stopped, and scans the corresponding images. It also
-checks the host Docker socket at `/host/var/run/docker.sock` when available so
-Docker-only containers/images can be included. Runtime `container-stig` uses
-`skopeo` plus `oscap-chroot`, so STIG scanning works on containerd-only nodes
-without a host Docker socket. Set the value to `running` to
-scan only containers currently reported as running by Pods, or `workload` when
-you want desired-state scanning from Deployment, StatefulSet, DaemonSet, Job,
-CronJob, and standalone Pod specs.
+The image lane is runtime-first. The node-agent enumerates containers and
+image-store entries known to the node runtime, running or stopped, and scans the
+corresponding local images. It also checks the host Docker socket at
+`/host/var/run/docker.sock` when available so Docker-only containers/images can
+be included. The central scanner-worker defaults to
+`VAT_OPERATOR_IMAGE_INVENTORY_MODE=non-running`, publishing only desired
+workload images that are not already represented by a running Pod. Use
+`running` to publish only running Pod containers, `runtime` to publish an empty
+central image inventory, or `workload` when you explicitly want registry scans
+for every desired Deployment, StatefulSet, DaemonSet, Job, CronJob, and
+standalone Pod image.
 
 Profile overlays enable the privileged node-agent tier for infrastructure
 scans. The node agent is a small DaemonSet, separate from the bounded scanner

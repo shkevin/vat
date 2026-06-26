@@ -103,9 +103,13 @@ func imageInventoryMode(value string) string {
 	switch strings.ToLower(strings.TrimSpace(value)) {
 	case "workload", "workloads", "desired":
 		return "workload"
+	case "non-running", "nonrunning", "pending", "not-running":
+		return "non-running"
 	case "running", "pods":
 		return "running"
+	case "runtime":
+		return "runtime"
 	default:
-		return "workload"
+		return "non-running"
 	}
 }

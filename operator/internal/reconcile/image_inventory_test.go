@@ -175,6 +175,92 @@ func TestReconcileWorkloadImageScansDefaultsToRunningPodContainers(t *testing.T)
 	}
 }
 
+func TestReconcileWorkloadImageScansPublishesOnlyNonRunningWorkloadImages(t *testing.T) {
+	ctx := context.Background()
+	client := fake.NewSimpleClientset(
+		&corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "vat-scan-inventory", Namespace: "vat-operator"}},
+		&appsv1.Deployment{
+			ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "api", UID: types.UID("uid-api")},
+			Spec: appsv1.DeploymentSpec{
+				Template: corev1.PodTemplateSpec{Spec: corev1.PodSpec{
+					Containers: []corev1.Container{{Name: "api", Image: "registry.example.com/api:v1"}},
+				}},
+			},
+		},
+		&appsv1.Deployment{
+			ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "pending", UID: types.UID("uid-pending")},
+			Spec: appsv1.DeploymentSpec{
+				Template: corev1.PodTemplateSpec{Spec: corev1.PodSpec{
+					Containers: []corev1.Container{{Name: "api", Image: "registry.example.com/pending:v1"}},
+				}},
+			},
+		},
+		&corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "api-running", UID: types.UID("uid-api-running")},
+			Spec: corev1.PodSpec{
+				Containers: []corev1.Container{{Name: "api", Image: "registry.example.com/api:v1"}},
+			},
+			Status: corev1.PodStatus{
+				Phase: corev1.PodRunning,
+				ContainerStatuses: []corev1.ContainerStatus{{
+					Name: "api",
+					State: corev1.ContainerState{
+						Running: &corev1.ContainerStateRunning{},
+					},
+				}},
+			},
+		},
+		&corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: "default",
+				Name:      "pending-pod",
+				UID:       types.UID("uid-pending-pod"),
+				OwnerReferences: []metav1.OwnerReference{{
+					APIVersion: "apps/v1",
+					Kind:       "ReplicaSet",
+					Name:       "pending-abc123",
+					UID:        types.UID("uid-pending-rs"),
+				}},
+			},
+			Spec: corev1.PodSpec{
+				Containers: []corev1.Container{{Name: "api", Image: "registry.example.com/pending:v1"}},
+			},
+			Status: corev1.PodStatus{
+				Phase: corev1.PodPending,
+				ContainerStatuses: []corev1.ContainerStatus{{
+					Name: "api",
+					State: corev1.ContainerState{
+						Waiting: &corev1.ContainerStateWaiting{},
+					},
+				}},
+			},
+		},
+	)
+
+	result, err := ReconcileWorkloadImageScans(ctx, client, nonRunningTestConfig())
+	if err != nil {
+		t.Fatalf("ReconcileWorkloadImageScans returned error: %v", err)
+	}
+	if result.PublishedImages != 1 {
+		t.Fatalf("PublishedImages = %d, want 1", result.PublishedImages)
+	}
+	if result.WorkloadTargets != 1 {
+		t.Fatalf("WorkloadTargets = %d, want 1", result.WorkloadTargets)
+	}
+
+	cm, err := client.CoreV1().ConfigMaps("vat-operator").Get(ctx, "vat-scan-inventory", metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("get inventory ConfigMap: %v", err)
+	}
+	var doc ImageInventory
+	if err := json.Unmarshal([]byte(cm.Data["images.json"]), &doc); err != nil {
+		t.Fatalf("unmarshal inventory: %v", err)
+	}
+	if len(doc.Items) != 1 || doc.Items[0].Image != "registry.example.com/pending:v1" {
+		t.Fatalf("inventory items = %#v, want only pending image", doc.Items)
+	}
+}
+
 func TestReconcileWorkloadImageScansRuntimeModePublishesEmptyCentralInventory(t *testing.T) {
 	ctx := context.Background()
 	client := fake.NewSimpleClientset(
@@ -303,5 +389,11 @@ func runningTestConfig() config.Config {
 func workloadTestConfig() config.Config {
 	cfg := testConfig()
 	cfg.ImageInventoryMode = "workload"
+	return cfg
+}
+
+func nonRunningTestConfig() config.Config {
+	cfg := testConfig()
+	cfg.ImageInventoryMode = "non-running"
 	return cfg
 }

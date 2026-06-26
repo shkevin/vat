@@ -136,6 +136,7 @@ def test_runtime_inventory_targets_kubernetes_and_host_containers() -> None:
                 "nodeName": "node-a",
             },
             "nodeName": "node-a",
+            "runtimeSource": "containerd",
             "state": "CONTAINER_EXITED",
         },
         {
@@ -144,6 +145,7 @@ def test_runtime_inventory_targets_kubernetes_and_host_containers() -> None:
             "containerName": "kind-control-plane",
             "image": "kindest/node:v1.29.0",
             "nodeName": "node-a",
+            "runtimeSource": "containerd",
             "state": "CONTAINER_RUNNING",
         },
     ]
@@ -221,6 +223,7 @@ def test_runtime_image_store_targets_unreferenced_cri_images() -> None:
             "containerName": "kindest/node:v1.29.0",
             "image": "kindest/node:v1.29.0",
             "nodeName": "node-a",
+            "runtimeSource": "containerd",
             "state": "IMAGE_PRESENT",
         }
     ]
@@ -260,6 +263,7 @@ def test_docker_runtime_targets_include_containers_and_image_store() -> None:
             "containerName": "kind-control-plane",
             "image": "kindest/node:v1.30.0",
             "nodeName": "node-a",
+            "runtimeSource": "docker",
             "state": "running",
         }
     ]
@@ -270,6 +274,7 @@ def test_docker_runtime_targets_include_containers_and_image_store() -> None:
             "containerName": "registry:2",
             "image": "registry:2",
             "nodeName": "node-a",
+            "runtimeSource": "docker",
             "state": "IMAGE_PRESENT",
         }
     ]
@@ -340,16 +345,19 @@ def test_cmd_scan_runtime_ingests_each_runtime_target(monkeypatch, tmp_path: Pat
     monkeypatch.setattr(cli, "_load_runtime_images", lambda *args, **kwargs: {"images": []})
     monkeypatch.setattr(cli, "_load_docker_containers", lambda *args, **kwargs: [])
     monkeypatch.setattr(cli, "_load_docker_images", lambda *args, **kwargs: [])
-    monkeypatch.setattr(
-        cli,
-        "run_trivy_image_ref",
-        lambda *args, **kwargs: {"Results": [{"Target": "registry.example.com/shared:v1"}]},
-    )
-    monkeypatch.setattr(
-        cli,
-        "run_trivy_image_ref_cyclonedx",
-        lambda *args, **kwargs: {"components": [{"name": "openssl"}]},
-    )
+    trivy_image_sources: list[str | None] = []
+    cyclonedx_image_sources: list[str | None] = []
+
+    def fake_trivy_image_ref(*args, **kwargs):
+        trivy_image_sources.append(kwargs.get("image_src"))
+        return {"Results": [{"Target": "registry.example.com/shared:v1"}]}
+
+    def fake_trivy_image_ref_cyclonedx(*args, **kwargs):
+        cyclonedx_image_sources.append(kwargs.get("image_src"))
+        return {"components": [{"name": "openssl"}]}
+
+    monkeypatch.setattr(cli, "run_trivy_image_ref", fake_trivy_image_ref)
+    monkeypatch.setattr(cli, "run_trivy_image_ref_cyclonedx", fake_trivy_image_ref_cyclonedx)
 
     calls: list[dict] = []
     monkeypatch.setattr(
@@ -368,6 +376,8 @@ def test_cmd_scan_runtime_ingests_each_runtime_target(monkeypatch, tmp_path: Pat
     trivy_calls = [call for call in calls if call["kind"] == "trivy"]
     assert [call["asset_name"] for call in trivy_calls] == ["registry.example.com/shared:v1"]
     assert all(call["image_digest"] is None for call in trivy_calls)
+    assert trivy_image_sources == ["containerd"]
+    assert cyclonedx_image_sources == ["containerd"]
 
 
 def test_cmd_scan_runtime_ingests_cri_image_store_and_docker_targets(monkeypatch, tmp_path: Path) -> None:
@@ -452,9 +462,9 @@ def test_cmd_scan_runtime_ingests_container_stig_without_docker_socket(monkeypat
     assert calls == [
         {
             "asset": "kindest/node:v1.30.0",
-            "tag": "container-stig",
+            "tag": "v1.30.0",
             "image_digest": None,
-            "idempotency_key": "container-stig:kindest/node:v1.30.0:kindest/node:v1.30.0",
+            "idempotency_key": "openscap:kindest/node:v1.30.0:kindest/node:v1.30.0",
         }
     ]
 
@@ -670,4 +680,4 @@ def test_cmd_scan_runtime_ingests_container_stig_when_trivy_fails(monkeypatch, t
     ) == 0
 
     assert calls
-    assert calls[0]["tag"] == "container-stig"
+    assert calls[0]["tag"] == "v1.30.0"

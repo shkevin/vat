@@ -173,7 +173,7 @@ spec:
             - name: VAT_RUNTIME_SCAN_TYPES
               value: image-sca,image-sbom,container-stig
             - name: VAT_RUNTIME_IMAGE_PULL_SECRETS
-              value: vat-operator/harbor-creds
+              value: ""
             - name: VAT_NODE_SCAN_INTERVAL_SECONDS
               value: "86400"
             - name: VAT_RUNTIME_FULL_RESCAN_INTERVAL_SECONDS

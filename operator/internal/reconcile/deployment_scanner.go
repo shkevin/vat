@@ -92,6 +92,21 @@ func ReconcileWorkloadImageScans(
 		return Result{PublishedImages: len(doc.Items), WorkloadTargets: len(targets)}, nil
 	}
 
+	runningImages := map[string]struct{}{}
+	if cfg.ImageInventoryMode == "non-running" {
+		pods, err := client.CoreV1().Pods("").List(ctx, metav1.ListOptions{})
+		if err != nil {
+			return result, fmt.Errorf("list pods: %w", err)
+		}
+		for i := range pods.Items {
+			for _, target := range inventory.ImageTargetsFromRunningPod(&pods.Items[i]) {
+				if image := strings.TrimSpace(target.Image); image != "" {
+					runningImages[inventoryKey(image)] = struct{}{}
+				}
+			}
+		}
+	}
+
 	deployments, err := client.AppsV1().Deployments("").List(ctx, metav1.ListOptions{})
 	if err != nil {
 		return Result{}, fmt.Errorf("list deployments: %w", err)
@@ -142,6 +157,9 @@ func ReconcileWorkloadImageScans(
 		}
 		targets = append(targets, inventory.ImageTargetsFromPod(&pods.Items[i])...)
 	}
+	if cfg.ImageInventoryMode == "non-running" {
+		targets = filterRunningImageTargets(targets, runningImages)
+	}
 
 	doc := BuildImageInventory(targets)
 	if err := publishInventory(ctx, client, cfg, doc); err != nil {
@@ -189,6 +207,20 @@ func BuildImageInventory(targets []inventory.ImageTarget) ImageInventory {
 		items = append(items, *item)
 	}
 	return ImageInventory{GeneratedAt: time.Now().UTC().Format(time.RFC3339), Items: items}
+}
+
+func filterRunningImageTargets(targets []inventory.ImageTarget, runningImages map[string]struct{}) []inventory.ImageTarget {
+	if len(targets) == 0 || len(runningImages) == 0 {
+		return targets
+	}
+	filtered := make([]inventory.ImageTarget, 0, len(targets))
+	for _, target := range targets {
+		if _, ok := runningImages[inventoryKey(target.Image)]; ok {
+			continue
+		}
+		filtered = append(filtered, target)
+	}
+	return filtered
 }
 
 func isScannableImageRef(image string) bool {

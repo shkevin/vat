@@ -364,6 +364,7 @@ def _runtime_targets_from_crictl(
             "containerName": container_name,
             "image": image,
             "nodeName": node,
+            "runtimeSource": "containerd",
             "state": str(container.get("state") or "").strip(),
         }
         digest = image_digest_from_ref(str(container.get("imageRef") or image).strip())
@@ -440,6 +441,7 @@ def _runtime_targets_from_crictl_images(
                 "image": image_ref,
                 **({"imageDigest": digest} if digest else {}),
                 "nodeName": node,
+                "runtimeSource": "containerd",
                 "state": "IMAGE_PRESENT",
             }
         )
@@ -473,6 +475,7 @@ def _runtime_targets_from_docker_containers(
             "containerName": container_name,
             "image": image,
             "nodeName": node,
+            "runtimeSource": "docker",
             "state": str(row.get("State") or row.get("Status") or "").strip(),
         }
         rootfs_path = _docker_container_rootfs_path(
@@ -570,6 +573,7 @@ def _runtime_targets_from_docker_images(
                 "image": image_ref,
                 **({"imageDigest": digest} if digest else {}),
                 "nodeName": node,
+                "runtimeSource": "docker",
                 "state": "IMAGE_PRESENT",
             }
         )
@@ -1194,6 +1198,44 @@ def _inventory_pull_secret_refs(item: dict) -> list[tuple[str, str]]:
     return sorted(refs)
 
 
+def _inventory_fallback_pull_secret_refs(item: dict) -> list[tuple[str, str]]:
+    secret_names = [
+        piece.strip()
+        for piece in os.environ.get("VAT_INVENTORY_FALLBACK_IMAGE_PULL_SECRET_NAMES", "").split(",")
+        if piece.strip()
+    ]
+    if not secret_names:
+        return []
+
+    refs: set[tuple[str, str]] = set()
+    for target in _inventory_targets(item):
+        namespace = str(target.get("namespace") or "").strip()
+        if not namespace:
+            continue
+        for secret_name in secret_names:
+            refs.add((namespace, secret_name))
+    return sorted(refs)
+
+
+def _inventory_default_pull_secret_refs() -> list[tuple[str, str]]:
+    raw = os.environ.get("VAT_INVENTORY_IMAGE_PULL_SECRETS", "").strip()
+    if not raw:
+        return []
+
+    default_namespace = os.environ.get("POD_NAMESPACE", "vat-operator").strip() or "vat-operator"
+    refs: set[tuple[str, str]] = set()
+    for part in [piece.strip() for piece in raw.split(",") if piece.strip()]:
+        if "/" in part:
+            namespace, secret_name = part.split("/", 1)
+        else:
+            namespace, secret_name = default_namespace, part
+        namespace = namespace.strip()
+        secret_name = secret_name.strip()
+        if namespace and secret_name:
+            refs.add((namespace, secret_name))
+    return sorted(refs)
+
+
 def _fetch_kubernetes_secret(namespace: str, name: str) -> dict | None:
     host = os.environ.get("VAT_KUBERNETES_API_HOST", "kubernetes.default.svc").strip()
     port = os.environ.get("KUBERNETES_SERVICE_PORT", "443").strip() or "443"
@@ -1237,7 +1279,12 @@ def _docker_auths_from_secret(secret: dict | None) -> dict:
 @contextmanager
 def _temporary_registry_auth_config(item: dict, temp_base: Path | None = None) -> Iterator[Path | None]:
     auths: dict = {}
-    for namespace, secret_name in _inventory_pull_secret_refs(item):
+    refs = (
+        _inventory_default_pull_secret_refs()
+        + _inventory_fallback_pull_secret_refs(item)
+        + _inventory_pull_secret_refs(item)
+    )
+    for namespace, secret_name in refs:
         auths.update(_docker_auths_from_secret(_fetch_kubernetes_secret(namespace, secret_name)))
     if not auths:
         yield None
@@ -1588,6 +1635,12 @@ def _runtime_image_signature(image: str, targets: list[dict], scan_types: list[s
     return f"{image}|targets={','.join(sorted(target_bits))}|scanTypes={','.join(scan_types)}"
 
 
+def _runtime_trivy_image_src(targets: list[dict]) -> str:
+    sources = {str(target.get("runtimeSource") or "").strip() for target in targets}
+    ordered = [source for source in ("containerd", "docker") if source in sources]
+    return ",".join(ordered) if ordered else "containerd,docker"
+
+
 def _first_runtime_rootfs_path(targets: list[dict]) -> Path | None:
     for target in targets:
         raw = str(target.get("rootfsPath") or "").strip()
@@ -1747,13 +1800,14 @@ def cmd_scan_runtime(args: argparse.Namespace) -> int:
 
         print("Scanning runtime image:", image)
         local_rootfs = _first_runtime_rootfs_path(image_targets)
+        image_src = _runtime_trivy_image_src(image_targets)
         with _temporary_registry_auth_config(auth_item) as docker_config_path:
             report = (
                 run_trivy_image_ref(
                     image,
                     timeout=120,
                     docker_config_path=docker_config_path,
-                    image_src="remote",
+                    image_src=image_src,
                     containerd_address=str(containerd_socket),
                     containerd_namespace=containerd_namespace,
                 )
@@ -1765,7 +1819,7 @@ def cmd_scan_runtime(args: argparse.Namespace) -> int:
                     image,
                     timeout=180,
                     docker_config_path=docker_config_path,
-                    image_src="remote",
+                    image_src=image_src,
                     containerd_address=str(containerd_socket),
                     containerd_namespace=containerd_namespace,
                 )
@@ -1866,9 +1920,9 @@ def cmd_scan_runtime(args: argparse.Namespace) -> int:
                         openscap_key,
                         target_stig_xml,
                         asset=asset,
-                        tag="container-stig",
+                        tag=tag,
                         image_digest=target_image_digest,
-                        idempotency_key=f"container-stig:{asset}:{image}",
+                        idempotency_key=f"openscap:{asset}:{image}",
                     )
                     print(f"  openscap: {resp}")
                 except VATClientError as e:
