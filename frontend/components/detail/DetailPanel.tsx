@@ -644,6 +644,7 @@ export function DetailPanel({
                 }}
               >
                 Showing list data because full finding details failed to load.
+                {detailLoadError ? ` (${detailLoadError})` : ""}
               </span>
             </div>
           </div>

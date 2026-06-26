@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Optional
 
 try:
-    from pydantic import BaseModel, ConfigDict
+    from pydantic import BaseModel, ConfigDict, field_validator
 
     _PYDANTIC_V2 = True
 except (
@@ -13,8 +13,20 @@ except (
     from pydantic import BaseModel
 
     _PYDANTIC_V2 = False
+    field_validator = None  # type: ignore[misc, assignment]
 
 from app.models.finding import FindingType, Severity, Status, SuppressionScope
+
+
+def _coerce_json_list(value):
+    """JSONB list columns may be NULL in legacy rows; slim path already coerces."""
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return value
+    if isinstance(value, dict):
+        return [value] if value else []
+    return value
 
 
 def _external_links_to_camel(links: list) -> list:
@@ -148,6 +160,22 @@ class FindingRead(BaseModel):
     updated_at: datetime
     first_detected_at: Optional[datetime] = None
     closed_at: Optional[datetime] = None
+
+    if _PYDANTIC_V2:
+
+        @field_validator("sources", "audit", "external_links", mode="before")
+        @classmethod
+        def _coerce_list_json_fields(cls, value):
+            return _coerce_json_list(value)
+
+        @field_validator("regression_of", mode="before")
+        @classmethod
+        def _coerce_regression_of(cls, value):
+            if value is None:
+                return None
+            if isinstance(value, list):
+                return value
+            return [value]
 
     @classmethod
     def _slim_from_orm(cls, f: "Finding") -> "FindingRead":

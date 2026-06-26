@@ -916,3 +916,23 @@ def test_group_key_fixture_parity():
         ), f"Fixture {item['id']}: got {key}, expected {item['expectedKey']}"
         api = finding_to_api_dict_with_group_key(f)
         assert api["groupKey"] == key
+
+
+def test_finding_detail_api_tolerates_null_json_list_columns():
+    """Detail responses use model_validate; legacy NULL JSONB lists must not 500."""
+    f = _mk_finding()
+    f.tracker_comment = False
+    f.sources = None
+    f.audit = None
+    f.external_links = None
+    f.regression_count = 0
+    f.archived = False
+    f.created_at = datetime.now(timezone.utc)
+    f.updated_at = datetime.now(timezone.utc)
+
+    api = finding_to_api_dict_with_group_key(f, slim=False)
+
+    assert api["sources"] == []
+    assert api["audit"] == []
+    assert api["externalLinks"] == []
+    assert api["description"] is None or isinstance(api["description"], str)
