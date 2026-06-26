@@ -17,8 +17,10 @@ from app.models.finding import Finding, FindingType, Severity, Status
 from app.services.export_service import (
     ExportBundleOptions,
     _build_waiver_records,
+    _finding_csv_row,
     build_export_bundle,
 )
+from app.services.audit_workbook_export import _iter_finding_workbook_rows
 
 
 def _waiver_finding(finding_id: str = "wf1", image: str = "api:latest") -> Finding:
@@ -51,6 +53,63 @@ def _waiver_finding(finding_id: str = "wf1", image: str = "api:latest") -> Findi
         updated_at=ts,
         first_detected_at=ts,
     )
+
+
+def test_finding_csv_row_includes_risk_scoring_columns():
+    row = _finding_csv_row(
+        {
+            "id": "f-risk",
+            "riskScoring": {
+                "source": {
+                    "score": "7.4",
+                    "severity": "High",
+                    "vector": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:H/A:N",
+                    "fixedVersion": "NONE",
+                },
+                "threat": {"epss": "0.012", "knownExploited": False},
+                "context": {"reachability": "No path found", "fixAvailable": False},
+                "environmental": {
+                    "score": "0.0",
+                    "vector": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:H/A:N/MC:N/MI:N/MA:N",
+                    "rationale": "Vulnerable ECDSA path is not reachable.",
+                },
+            },
+        }
+    )
+
+    assert row["sourceCvssScore"] == "7.4"
+    assert row["sourceCvssSeverity"] == "High"
+    assert row["fixedVersion"] == "NONE"
+    assert row["epss"] == "0.012"
+    assert row["knownExploited"] == "False"
+    assert row["reachability"] == "No path found"
+    assert row["fixAvailable"] == "False"
+    assert row["environmentalScore"] == "0.0"
+    assert row["environmentalRationale"] == "Vulnerable ECDSA path is not reachable."
+
+
+def test_auditor_workbook_findings_include_risk_scoring_columns():
+    row = next(
+        _iter_finding_workbook_rows(
+            [
+                {
+                    "id": "f-risk",
+                    "riskScoring": {
+                        "source": {"score": "7.4", "fixedVersion": "NONE"},
+                        "environmental": {
+                            "score": "0.0",
+                            "rationale": "Not reachable.",
+                        },
+                    },
+                }
+            ]
+        )
+    )
+
+    assert row["sourceCvssScore"] == "7.4"
+    assert row["fixedVersion"] == "NONE"
+    assert row["environmentalScore"] == "0.0"
+    assert row["environmentalRationale"] == "Not reachable."
 
 
 @pytest.mark.asyncio

@@ -8,6 +8,7 @@ from app.schemas.ingest import (
     CanonicalSeverity,
 )
 from app.parsers.base import IngestParser
+from app.parsers.risk_scoring import build_source_risk_scoring
 
 logger = logging.getLogger(__name__)
 
@@ -104,6 +105,17 @@ def _extract_sbom_tag_digest(comp_meta: dict, components: dict) -> tuple[str | N
     return tag, digest
 
 
+def _cvss_version_from_method(method: str | None) -> str | None:
+    method = (method or "").strip().lower()
+    if method in ("cvssv31", "cvssv3.1"):
+        return "3.1"
+    if method in ("cvssv30", "cvssv3.0", "cvssv3"):
+        return "3.0"
+    if method in ("cvssv40", "cvssv4.0", "cvssv4"):
+        return "4.0"
+    return None
+
+
 class CyclonedxParser(IngestParser):
     """Parse CycloneDX JSON SBOM with vulnerabilities (spec 1.4+)."""
 
@@ -162,9 +174,15 @@ class CyclonedxParser(IngestParser):
         if ratings and isinstance(ratings[0], dict):
             sev = _severity(ratings[0].get("severity"))
         cvss = None
+        cvss_vector = None
+        cvss_version = None
+        cvss_severity = None
         for r in ratings:
             if isinstance(r, dict) and r.get("method", "").startswith("CVSSv3"):
-                cvss = str(r.get("score") or r.get("vector", "").split("/")[-1] or "")
+                cvss = str(r.get("score") or "")
+                cvss_vector = r.get("vector")
+                cvss_version = _cvss_version_from_method(r.get("method"))
+                cvss_severity = r.get("severity")
                 break
         recommendation = v.get("recommendation") or ""
         if recommendation:
@@ -202,6 +220,17 @@ class CyclonedxParser(IngestParser):
                 "finding_type": CanonicalFindingType.SCA,
                 "cvss": cvss,
             }
+            risk_scoring = build_source_risk_scoring(
+                source="cyclonedx",
+                score=cvss,
+                vector=cvss_vector,
+                cvss_version=cvss_version,
+                severity=cvss_severity or sev.value,
+                scanner_title=fields["title"],
+                recommendation=recommendation,
+            )
+            if risk_scoring:
+                fields["risk_scoring"] = risk_scoring
             if sbom_tag:
                 fields["tag"] = sbom_tag
             if sbom_digest:
@@ -217,6 +246,17 @@ class CyclonedxParser(IngestParser):
                 "finding_type": CanonicalFindingType.SCA,
                 "cvss": cvss,
             }
+            risk_scoring = build_source_risk_scoring(
+                source="cyclonedx",
+                score=cvss,
+                vector=cvss_vector,
+                cvss_version=cvss_version,
+                severity=cvss_severity or sev.value,
+                scanner_title=fields["title"],
+                recommendation=recommendation,
+            )
+            if risk_scoring:
+                fields["risk_scoring"] = risk_scoring
             if sbom_tag:
                 fields["tag"] = sbom_tag
             if sbom_digest:

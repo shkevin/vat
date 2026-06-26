@@ -21,6 +21,7 @@ from app.services.sync_service import (
     enqueue_tracker_post_decision,
 )
 from app.services.audit_events import emit_audit_event, new_trace_id
+from app.services.risk_scoring import merge_environmental_risk_scoring
 from app.tasks.sync_tasks import trigger_sync_worker
 from app.schemas.finding import FindingCreate, STATUS_DISPLAY
 
@@ -248,11 +249,18 @@ def _status_display(status: Status) -> str:
 
 def _audit_note_for_update(data: dict) -> str | None:
     for key in (
+        "risk_scoring",
         "reviewer_note",
         "justification",
         "compensating_controls",
     ):
         value = data.get(key)
+        if key == "risk_scoring" and isinstance(value, dict):
+            env = value.get("environmental")
+            if isinstance(env, dict):
+                note = env.get("rationale") or env.get("knownScannerException")
+                if isinstance(note, str) and note.strip():
+                    return note.strip()[:200]
         if isinstance(value, str) and value.strip():
             return value.strip()[:200]
     return None
@@ -273,6 +281,8 @@ def _audit_action_for_update(
         return "Suppression scope updated"
     if "attestation" in data:
         return "Attestation updated"
+    if "risk_scoring" in data:
+        return "Environmental scoring updated"
     return "Finding updated"
 
 
@@ -289,6 +299,8 @@ def _audit_reason_code_for_update(data: dict, *, status_changed: bool) -> str:
         return "suppression_scope"
     if "attestation" in data:
         return "attestation"
+    if "risk_scoring" in data:
+        return "risk_scoring"
     return "finding_update"
 
 
@@ -469,6 +481,13 @@ async def update_finding(
         finding.suppression_scope = _suppression_scope(data["suppression_scope"])
     if "attestation" in data:
         finding.attestation = data["attestation"]
+    if "risk_scoring" in data:
+        finding.risk_scoring = merge_environmental_risk_scoring(
+            getattr(finding, "risk_scoring", None),
+            data["risk_scoring"],
+            user=user,
+            timestamp=_now(),
+        )
     audit = list(finding.audit or [])
     audit_action = _audit_action_for_update(
         data, old_status=old_status, new_status=finding.status
@@ -668,6 +687,7 @@ async def create_finding(db: AsyncSession, data: FindingCreate) -> Finding:
         sla_due=data.sla_due,
         cvss=data.cvss,
         epss=data.epss,
+        risk_scoring=data.risk_scoring,
         justification=data.justification,
         compensating_controls=data.compensating_controls,
         reviewer_note=data.reviewer_note,
@@ -719,6 +739,7 @@ async def create_findings_bulk(
             sla_due=item.get("slaDue"),
             cvss=item.get("cvss"),
             epss=item.get("epss"),
+            risk_scoring=item.get("riskScoring") or item.get("risk_scoring"),
             justification=item.get("justification"),
             compensating_controls=item.get("compensatingControls"),
             reviewer_note=item.get("reviewerNote"),

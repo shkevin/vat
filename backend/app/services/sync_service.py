@@ -71,6 +71,24 @@ def _is_aikido_finding(finding: Finding) -> bool:
     return False
 
 
+def _environmental_scoring_comment_lines(finding: Finding) -> list[str]:
+    risk = finding.risk_scoring if isinstance(finding.risk_scoring, dict) else {}
+    environmental = risk.get("environmental") if isinstance(risk, dict) else {}
+    if not isinstance(environmental, dict):
+        return []
+    lines: list[str] = []
+    score = environmental.get("score")
+    rationale = environmental.get("rationale")
+    scanner_exception = environmental.get("knownScannerException")
+    if score:
+        lines.append(f"**Environmental score:** {score}")
+    if rationale:
+        lines.append(f"**Environmental rationale:** {str(rationale)[:500]}")
+    if scanner_exception:
+        lines.append(f"**Known scanner exception:** {str(scanner_exception)[:500]}")
+    return lines
+
+
 def _get_backoff_seconds(attempts: int) -> float:
     """Exponential backoff: 60, 120, 240, ... max 3600."""
     return min(60 * (2**attempts), 3600)
@@ -320,6 +338,9 @@ async def enqueue_tracker_post_decision(
                 f"**Waiver:** {att.get('waiverRef', 'N/A')} | Expires: {att.get('expiresAt', 'N/A')}",
             ]
         )
+    scoring_lines = _environmental_scoring_comment_lines(finding)
+    if scoring_lines:
+        body_parts.extend(["", "**Risk scoring evidence:**", *scoring_lines])
     body = "\n".join(body_parts)
     request = VatTrackerPostDecisionRequest(
         tracker_issue_id=issue_id,

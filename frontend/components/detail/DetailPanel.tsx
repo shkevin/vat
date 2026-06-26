@@ -158,6 +158,21 @@ export function DetailPanel({
     finding.attestation?.expiresAt ?? "",
   );
   const [attRef, setAttRef] = useState(finding.attestation?.waiverRef ?? "");
+  const [envVector, setEnvVector] = useState(
+    finding.riskScoring?.environmental?.vector ?? "",
+  );
+  const [envScore, setEnvScore] = useState(
+    finding.riskScoring?.environmental?.score ?? "",
+  );
+  const [envException, setEnvException] = useState(
+    finding.riskScoring?.environmental?.knownScannerException ?? "",
+  );
+  const [envRationale, setEnvRationale] = useState(
+    finding.riskScoring?.environmental?.rationale ?? "",
+  );
+  const [envScopeNote, setEnvScopeNote] = useState(
+    finding.riskScoring?.environmental?.scopeNote ?? "",
+  );
   const [suppScope, setSuppScope] = useState<"global" | "contextual">(
     (finding.suppressionScope as "global" | "contextual") ?? "contextual",
   );
@@ -169,6 +184,7 @@ export function DetailPanel({
   const [archiveReason, setArchiveReason] = useState("");
   const [overrideFpLoading, setOverrideFpLoading] = useState(false);
   const [savingNotes, setSavingNotes] = useState(false);
+  const [savingEnvironmental, setSavingEnvironmental] = useState(false);
   const [syncToTrackerLoading, setSyncToTrackerLoading] = useState(false);
   const [syncToTrackerMessage, setSyncToTrackerMessage] = useState<
     string | null
@@ -213,6 +229,13 @@ export function DetailPanel({
     setAttTitle(finding.attestation?.approverTitle ?? "");
     setAttExpiry(finding.attestation?.expiresAt ?? "");
     setAttRef(finding.attestation?.waiverRef ?? "");
+    setEnvVector(finding.riskScoring?.environmental?.vector ?? "");
+    setEnvScore(finding.riskScoring?.environmental?.score ?? "");
+    setEnvException(
+      finding.riskScoring?.environmental?.knownScannerException ?? "",
+    );
+    setEnvRationale(finding.riskScoring?.environmental?.rationale ?? "");
+    setEnvScopeNote(finding.riskScoring?.environmental?.scopeNote ?? "");
     setSuppScope(
       (finding.suppressionScope as "global" | "contextual") ?? "contextual",
     );
@@ -240,6 +263,38 @@ export function DetailPanel({
       setSavingNotes(false);
     }
   }, [finding, rvNote, onUpdate]);
+
+  const doSaveEnvironmentalScoring = useCallback(async () => {
+    setSavingEnvironmental(true);
+    try {
+      await onUpdate({
+        ...finding,
+        riskScoring: {
+          ...(finding.riskScoring ?? {}),
+          environmental: {
+            cvssVersion: "3.1",
+            vector: envVector,
+            score: envScore,
+            rationale: envRationale,
+            knownScannerException: envException,
+            scopeNote: envScopeNote,
+          },
+        },
+      });
+      setToast("✓ Environmental scoring saved");
+      setTimeout(() => setToast(""), 2500);
+    } finally {
+      setSavingEnvironmental(false);
+    }
+  }, [
+    finding,
+    envVector,
+    envScore,
+    envRationale,
+    envException,
+    envScopeNote,
+    onUpdate,
+  ]);
 
   const tName = tracker?.name ?? "Tracker";
   const tIcon = tracker?.icon ?? "◈";
@@ -271,6 +326,8 @@ export function DetailPanel({
   const visibleSourceAttribution = sourceAttributionEntries(finding);
   const evidence = buildFindingEvidence(finding);
   const hasEvidence =
+    evidence.riskScoring.length > 0 ||
+    evidence.riskScoringNotes.length > 0 ||
     evidence.summary.length > 0 ||
     Boolean(evidence.proof) ||
     Boolean(evidence.remediation) ||
@@ -726,6 +783,62 @@ export function DetailPanel({
                   className="detail-panel-card"
                   style={{ display: "flex", flexDirection: "column", gap: 16 }}
                 >
+                  {evidence.riskScoring.length > 0 && (
+                    <div>
+                      <div
+                        style={{
+                          ...mono,
+                          fontSize: 10,
+                          fontWeight: 700,
+                          color: "var(--app-muted)",
+                          marginBottom: 6,
+                          textTransform: "uppercase",
+                          letterSpacing: "0.04em",
+                        }}
+                      >
+                        Risk Scoring
+                      </div>
+                      <div className="detail-panel-kv-grid">
+                        {evidence.riskScoring.map((row) => (
+                          <div
+                            key={`${row.label}:${row.value}`}
+                            className="detail-panel-kv-item"
+                          >
+                            <label>{row.label}</label>
+                            <div className="value detail-panel-breakable-value">
+                              {row.value}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {evidence.riskScoringNotes.length > 0 && (
+                    <div>
+                      {evidence.riskScoringNotes.map((note) => (
+                        <div key={`${note.label}:${note.value}`}>
+                          <div
+                            style={{
+                              ...mono,
+                              fontSize: 10,
+                              fontWeight: 700,
+                              color: "var(--app-muted)",
+                              marginBottom: 6,
+                              textTransform: "uppercase",
+                              letterSpacing: "0.04em",
+                            }}
+                          >
+                            {note.label}
+                          </div>
+                          <p className="detail-panel-prose" style={{ margin: 0 }}>
+                            {note.value}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
                   {evidence.summary.length > 0 && (
                     <div className="detail-panel-kv-grid">
                       {evidence.summary.map((row) => (
@@ -1711,6 +1824,64 @@ export function DetailPanel({
 
             {canEdit && canAct && (
               <>
+                <div className="detail-panel-form-card">
+                  <div className="detail-panel-form-card-title">
+                    Environmental Scoring
+                  </div>
+                  <Field
+                    label="Environmental CVSS Vector"
+                    value={envVector}
+                    onChange={setEnvVector}
+                    placeholder="CVSS:3.1/.../MC:N/MI:N/MA:N"
+                    mono
+                  />
+                  <div
+                    className="detail-panel-form-grid"
+                    style={{ marginTop: 12 }}
+                  >
+                    <Field
+                      label="Environmental Score"
+                      value={envScore}
+                      onChange={setEnvScore}
+                      placeholder="Computed or enter manually"
+                    />
+                    <Field
+                      label="Known Scanner Exception"
+                      value={envException}
+                      onChange={setEnvException}
+                      placeholder="Scanner exception or false-positive pattern."
+                    />
+                  </div>
+                  <div style={{ marginTop: 12 }}>
+                    <Field
+                      label="Environmental Scoring Rationale"
+                      value={envRationale}
+                      onChange={setEnvRationale}
+                      rows={3}
+                      placeholder="Explain why environmental scoring changes the practical risk."
+                    />
+                  </div>
+                  <div style={{ marginTop: 12 }}>
+                    <Field
+                      label="Scope Note"
+                      value={envScopeNote}
+                      onChange={setEnvScopeNote}
+                      rows={2}
+                      placeholder="Describe the scan scope or evidence boundary."
+                    />
+                  </div>
+                  <div className="detail-panel-save-notes-btn-wrap">
+                    <Btn
+                      size="sm"
+                      variant="secondary"
+                      disabled={savingEnvironmental}
+                      onClick={doSaveEnvironmentalScoring}
+                    >
+                      {savingEnvironmental ? "…" : "Save Environmental Scoring"}
+                    </Btn>
+                  </div>
+                </div>
+
                 <div className="detail-panel-form-card">
                   <div className="detail-panel-form-card-title">
                     Justification & Controls

@@ -19,6 +19,7 @@ from app.parsers.utils import (
     VAT_SOURCE_IMAGE_KEY,
     VAT_SOURCE_PATH_KEY,
 )
+from app.parsers.risk_scoring import build_source_risk_scoring
 
 MASK = "***REDACTED***"
 
@@ -123,6 +124,33 @@ def _trivy_type_to_ecosystem(t: str) -> str | None:
     return mapping.get(t) or (t if t in ("os", "library", "container") else None)
 
 
+def _trivy_cvss_details(value: object) -> tuple[str | None, str | None, str | None]:
+    """Return (score, vector, version) from Trivy's nested CVSS shape."""
+    if not isinstance(value, dict):
+        return (str(value), None, None) if value is not None else (None, None, None)
+    candidates = []
+    nvd = value.get("nvd")
+    if isinstance(nvd, dict):
+        candidates.append(nvd)
+    candidates.extend(v for v in value.values() if isinstance(v, dict) and v is not nvd)
+    candidates.append(value)
+    for item in candidates:
+        score = item.get("V3Score") or item.get("v3Score") or item.get("score")
+        vector = (
+            item.get("V3Vector")
+            or item.get("v3Vector")
+            or item.get("Vector")
+            or item.get("vector")
+        )
+        if score is not None or vector:
+            return (
+                str(score) if score is not None else None,
+                str(vector) if vector else None,
+                "3.1" if vector and str(vector).startswith("CVSS:3.1/") else None,
+            )
+    return None, None, None
+
+
 class TrivyParser(IngestParser):
     """Parse Trivy JSON (vulns, misconfig, secrets, licenses) to canonical format."""
 
@@ -219,15 +247,12 @@ class TrivyParser(IngestParser):
                 desc = v.get("Description") or v.get("description") or title
                 sev = _map_severity(v.get("Severity") or v.get("severity"))
                 cvss_val = v.get("CVSS") or v.get("cvss")
-                cvss_str = None
-                if isinstance(cvss_val, dict):
-                    cvss_str = str(
-                        cvss_val.get("nvd", {}).get("V3Score")
-                        or cvss_val.get("V3Score")
-                        or ""
-                    )
-                elif cvss_val is not None:
-                    cvss_str = str(cvss_val)
+                cvss_str, cvss_vector, cvss_version = _trivy_cvss_details(cvss_val)
+                fixed_version = (
+                    v.get("FixedVersion")
+                    or v.get("fixedVersion")
+                    or v.get("fixed_version")
+                )
                 fields = {
                     "cve_id": str(cve_id),
                     "severity": sev,
@@ -239,6 +264,17 @@ class TrivyParser(IngestParser):
                     "cvss": cvss_str,
                     "ecosystem": ecosystem,
                 }
+                risk_scoring = build_source_risk_scoring(
+                    source="trivy",
+                    score=cvss_str,
+                    vector=cvss_vector,
+                    cvss_version=cvss_version,
+                    severity=sev.value,
+                    scanner_title=title,
+                    fixed_version=fixed_version,
+                )
+                if risk_scoring:
+                    fields["risk_scoring"] = risk_scoring
                 if scan_tag:
                     fields["tag"] = scan_tag
                 self._inject_digest_from_result(res, fields)

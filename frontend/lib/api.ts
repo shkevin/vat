@@ -8,6 +8,7 @@ import type {
   FeedRunsResponse,
   FeedSummaryResponse,
 } from "@/types/feeds";
+import type { FindingRiskScoring } from "@/types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "/api";
 
@@ -426,6 +427,7 @@ export async function updateFinding(
   if (data.suppressionScope != null)
     body.suppression_scope = data.suppressionScope;
   if (data.attestation != null) body.attestation = data.attestation;
+  if (data.riskScoring != null) body.risk_scoring = data.riskScoring;
 
   const res = await vatFetch(
     `${API_BASE}/findings/${id}`,
@@ -2023,6 +2025,7 @@ export interface ApiFinding {
   slaDue?: string | null;
   cvss?: string | null;
   epss?: string | null;
+  riskScoring?: FindingRiskScoring | null;
   justification?: string | null;
   compensatingControls?: string | null;
   reviewerNote?: string | null;

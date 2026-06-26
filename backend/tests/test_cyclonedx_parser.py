@@ -40,3 +40,48 @@ def test_cyclonedx_valid_vulnerability():
     assert p.cve_id
     assert p.component
     assert "jackson" in p.component.lower() or "CVE" in p.cve_id
+
+
+def test_cyclonedx_parser_splits_cvss_score_and_vector():
+    parser = CyclonedxParser()
+    payloads = parser.parse(
+        {
+            "metadata": {"component": {"name": "registry.example/api:1.0.0"}},
+            "components": [
+                {
+                    "bom-ref": "pkg:pypi/ecdsa@0.19.2",
+                    "name": "ecdsa",
+                    "version": "0.19.2",
+                }
+            ],
+            "vulnerabilities": [
+                {
+                    "id": "CVE-2024-23342",
+                    "description": "Minerva attack",
+                    "recommendation": "No fixed version is available.",
+                    "ratings": [
+                        {
+                            "method": "CVSSv31",
+                            "score": 7.4,
+                            "severity": "high",
+                            "vector": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:H/A:N",
+                        }
+                    ],
+                    "affects": [{"ref": "pkg:pypi/ecdsa@0.19.2"}],
+                }
+            ],
+        }
+    )
+
+    assert payloads[0].cvss == "7.4"
+    assert payloads[0].risk_scoring == {
+        "source": {
+            "source": "cyclonedx",
+            "cvssVersion": "3.1",
+            "vector": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:H/A:N",
+            "score": "7.4",
+            "severity": "High",
+            "scannerTitle": "ecdsa:0.19.2 | CVE-2024-23342",
+        },
+        "context": {"fixAvailable": False},
+    }

@@ -155,6 +155,13 @@ class VatFindingSchema(BaseModel):
     finding_type: VatFindingType = VatFindingType.SCA
     cvss: Optional[str] = Field(default=None, max_length=16)
     epss: Optional[str] = Field(default=None, max_length=16)
+    risk_scoring: Optional[dict] = Field(
+        default=None,
+        description=(
+            "Structured source/threat/context/environmental scoring metadata. "
+            "Source, threat, and context are parser-owned; environmental is reviewer-owned."
+        ),
+    )
     team: Optional[str] = Field(default=None, max_length=128)
     owner: Optional[str] = Field(default=None, max_length=256)
     references: Optional[list[str]] = Field(default=None, max_length=50)

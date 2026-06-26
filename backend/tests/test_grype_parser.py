@@ -40,3 +40,47 @@ def test_grype_many():
     assert p.cve_id
     assert p.component
     assert "libgnutls" in p.component or "deb" in str(p.component).lower()
+
+
+def test_grype_parser_extracts_structured_risk_scoring():
+    parser = GrypeParser()
+    payloads = parser.parse(
+        {
+            "source": {"target": {"userInput": "registry.example/api:1.0.0"}},
+            "matches": [
+                {
+                    "vulnerability": {
+                        "id": "CVE-2024-9999",
+                        "severity": "High",
+                        "description": "Example vulnerability",
+                        "cvss": [
+                            {
+                                "version": "3.1",
+                                "vector": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:H/A:N",
+                                "metrics": {"baseScore": 7.4},
+                            }
+                        ],
+                        "fix": {"versions": ["2.0.0"]},
+                    },
+                    "artifact": {
+                        "name": "example",
+                        "version": "1.0.0",
+                        "type": "python-package",
+                    },
+                }
+            ],
+        }
+    )
+
+    assert payloads[0].risk_scoring == {
+        "source": {
+            "source": "grype",
+            "cvssVersion": "3.1",
+            "vector": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:H/A:N",
+            "score": "7.4",
+            "severity": "High",
+            "scannerTitle": "CVE-2024-9999 in example:1.0.0",
+            "fixedVersion": "2.0.0",
+        },
+        "context": {"fixAvailable": True},
+    }

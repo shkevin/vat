@@ -90,3 +90,92 @@ async def test_update_finding_records_reviewer_note_changes_in_audit(monkeypatch
 
     assert finding.audit[-1]["action"] == "Reviewer note updated"
     assert finding.audit[-1]["note"] == "needs app owner confirmation"
+
+
+@pytest.mark.asyncio
+async def test_update_finding_merges_environmental_risk_scoring(monkeypatch):
+    finding = _finding()
+    finding.risk_scoring = {
+        "source": {
+            "source": "trivy",
+            "score": "7.4",
+            "vector": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:H/A:N",
+        }
+    }
+    db = AsyncMock()
+    monkeypatch.setattr(findings_service, "get_finding", AsyncMock(return_value=finding))
+    monkeypatch.setattr(
+        findings_service, "_enqueue_sync_on_status_change", AsyncMock()
+    )
+    monkeypatch.setattr(
+        findings_service, "_enqueue_tracker_update_issue_if_supported", AsyncMock()
+    )
+    emit_spy = AsyncMock(return_value="audit-event-id")
+    monkeypatch.setattr(findings_service, "emit_audit_event", emit_spy)
+    monkeypatch.setattr(findings_service, "new_trace_id", lambda: "trace-review")
+    monkeypatch.setattr(findings_service, "_now", lambda: "2026-06-26T20:55:00Z")
+
+    await findings_service.update_finding(
+        db,
+        finding.id,
+        {
+            "risk_scoring": {
+                "environmental": {
+                    "cvssVersion": "3.1",
+                    "vector": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:H/A:N/MC:N/MI:N/MA:N",
+                    "score": "0.0",
+                    "rationale": "Vulnerable ECDSA signing path is not reachable.",
+                    "knownScannerException": "Trivy reports one High in the core image.",
+                    "scopeNote": "Generated container image scan set.",
+                }
+            }
+        },
+        user="reviewer@example.com",
+    )
+
+    assert finding.risk_scoring["source"]["score"] == "7.4"
+    assert finding.risk_scoring["environmental"]["score"] == "0.0"
+    assert finding.risk_scoring["environmental"]["updatedBy"] == "reviewer@example.com"
+    assert (
+        finding.risk_scoring["environmental"]["updatedAt"] == "2026-06-26T20:55:00Z"
+    )
+    assert finding.audit[-1]["action"] == "Environmental scoring updated"
+    assert finding.audit[-1]["note"] == "Vulnerable ECDSA signing path is not reachable."
+    event = emit_spy.await_args.kwargs
+    assert event["decision_reason_code"] == "risk_scoring"
+
+
+@pytest.mark.asyncio
+async def test_update_finding_computes_environmental_score_from_cvss_vector(monkeypatch):
+    finding = _finding()
+    finding.risk_scoring = {}
+    db = AsyncMock()
+    monkeypatch.setattr(findings_service, "get_finding", AsyncMock(return_value=finding))
+    monkeypatch.setattr(
+        findings_service, "_enqueue_sync_on_status_change", AsyncMock()
+    )
+    monkeypatch.setattr(
+        findings_service, "_enqueue_tracker_update_issue_if_supported", AsyncMock()
+    )
+    monkeypatch.setattr(
+        findings_service, "emit_audit_event", AsyncMock(return_value="audit-event-id")
+    )
+    monkeypatch.setattr(findings_service, "new_trace_id", lambda: "trace-review")
+    monkeypatch.setattr(findings_service, "_now", lambda: "2026-06-26T21:00:00Z")
+
+    await findings_service.update_finding(
+        db,
+        finding.id,
+        {
+            "risk_scoring": {
+                "environmental": {
+                    "cvssVersion": "3.1",
+                    "vector": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:H/A:N/CR:H/IR:H/AR:H/MAV:N/MAC:H/MPR:N/MUI:N/MS:U/MC:N/MI:N/MA:N",
+                    "rationale": "Vulnerable operation is not reachable.",
+                }
+            }
+        },
+        user="reviewer@example.com",
+    )
+
+    assert finding.risk_scoring["environmental"]["score"] == "0.0"

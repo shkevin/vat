@@ -233,6 +233,76 @@ describe("DetailPanel evidence", () => {
     expect(screen.getByText('"accepted for 30 days"')).toBeTruthy();
   });
 
+  it("saves reviewer environmental scoring from the decision tab", async () => {
+    const onUpdate = vi.fn();
+    render(
+      <DetailPanel
+        finding={finding({
+          findingType: "SCA",
+          riskScoring: {
+            source: {
+              source: "trivy",
+              score: "7.4",
+              vector: "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:H/A:N",
+            },
+          },
+        })}
+        sources={[]}
+        tracker={tracker}
+        onArchive={vi.fn()}
+        onClose={vi.fn()}
+        onRevert={vi.fn()}
+        onUnarchive={vi.fn()}
+        onUpdate={onUpdate}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("tab", { name: "Decision" }));
+    fireEvent.change(
+      screen.getByPlaceholderText("CVSS:3.1/.../MC:N/MI:N/MA:N"),
+      {
+        target: {
+          value: "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:H/A:N/MC:N/MI:N/MA:N",
+        },
+      },
+    );
+    fireEvent.change(screen.getByPlaceholderText("Computed or enter manually"), {
+      target: { value: "0.0" },
+    });
+    fireEvent.change(
+      screen.getByPlaceholderText("Explain why environmental scoring changes the practical risk."),
+      {
+        target: { value: "The vulnerable ECDSA signing path is not reachable." },
+      },
+    );
+    await act(async () => {
+      fireEvent.click(
+        screen.getByRole("button", { name: "Save Environmental Scoring" }),
+      );
+    });
+
+    expect(onUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        riskScoring: {
+          source: {
+            source: "trivy",
+            score: "7.4",
+            vector: "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:H/A:N",
+          },
+          environmental: {
+            cvssVersion: "3.1",
+            vector:
+              "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:H/A:N/MC:N/MI:N/MA:N",
+            score: "0.0",
+            rationale: "The vulnerable ECDSA signing path is not reachable.",
+            knownScannerException: "",
+            scopeNote: "",
+          },
+        },
+      }),
+    );
+  });
+
   it("shows an empty state when no audit history is recorded", () => {
     render(
       <DetailPanel

@@ -15,6 +15,8 @@ export type FindingEvidenceProof = {
 };
 
 export type FindingEvidenceView = {
+  riskScoring: FindingEvidenceSummaryRow[];
+  riskScoringNotes: FindingEvidenceSummaryRow[];
   summary: FindingEvidenceSummaryRow[];
   proof?: FindingEvidenceProof;
   explanation?: string;
@@ -83,6 +85,54 @@ function remediationFor(finding: Finding): string | undefined {
   return undefined;
 }
 
+function boolLabel(value: boolean | undefined): string | undefined {
+  if (value === true) return "Yes";
+  if (value === false) return "No";
+  return undefined;
+}
+
+function sourceCvssValue(source: NonNullable<Finding["riskScoring"]>["source"]) {
+  if (!source?.score) return undefined;
+  return [source.score, source.severity].filter(Boolean).join(" ");
+}
+
+function buildRiskScoringRows(finding: Finding): {
+  rows: FindingEvidenceSummaryRow[];
+  notes: FindingEvidenceSummaryRow[];
+} {
+  const rows: FindingEvidenceSummaryRow[] = [];
+  const notes: FindingEvidenceSummaryRow[] = [];
+  const scoring = finding.riskScoring;
+  if (!scoring) return { rows, notes };
+  const source = scoring.source;
+  const threat = scoring.threat;
+  const context = scoring.context;
+  const environmental = scoring.environmental;
+
+  addRow(rows, "Source CVSS", sourceCvssValue(source));
+  addRow(rows, "Source vector", source?.vector);
+  addRow(rows, "Source score origin", source?.source);
+  addRow(rows, "Scanner title", source?.scannerTitle);
+  addRow(rows, "Fixed version", source?.fixedVersion);
+  addRow(rows, "Environmental CVSS", environmental?.vector);
+  addRow(rows, "Environmental score", environmental?.score);
+  addRow(rows, "EPSS", threat?.epss ?? finding.epss);
+  addRow(rows, "EPSS percentile", threat?.epssPercentile);
+  addRow(rows, "Known exploited", boolLabel(threat?.knownExploited));
+  addRow(rows, "Exploit maturity", threat?.exploitMaturity);
+  addRow(rows, "Reachability", context?.reachability);
+  addRow(rows, "Fix available", boolLabel(context?.fixAvailable));
+  addRow(rows, "Asset criticality", context?.assetCriticality);
+  addRow(rows, "Exposure", context?.internetExposure);
+  addRow(rows, "Threat sources", threat?.threatSources?.join(", "));
+  addRow(rows, "Compensating controls", context?.compensatingControlRefs?.join(", "));
+
+  addRow(notes, "Known Scanner Exception", environmental?.knownScannerException);
+  addRow(notes, "Environmental Scoring Rationale", environmental?.rationale);
+  addRow(notes, "Scope Note", environmental?.scopeNote);
+  return { rows, notes };
+}
+
 function proofFor(finding: Finding): FindingEvidenceProof | undefined {
   const snippet = clean(finding.snippetMasked);
   if (!snippet) return undefined;
@@ -108,6 +158,7 @@ export function buildFindingEvidence(finding: Finding): FindingEvidenceView {
   const warnings: string[] = [];
   const type = findingType(finding);
   const location = formatFileLocation(finding);
+  const riskScoring = buildRiskScoringRows(finding);
 
   addRow(summary, "Location", location, finding.sourceFileUrl);
   addRow(summary, "Package", finding.component);
@@ -139,6 +190,8 @@ export function buildFindingEvidence(finding: Finding): FindingEvidenceView {
   }
 
   return {
+    riskScoring: riskScoring.rows,
+    riskScoringNotes: riskScoring.notes,
     summary,
     proof: proofFor(finding),
     explanation: clean(finding.description),

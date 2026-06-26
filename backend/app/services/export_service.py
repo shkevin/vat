@@ -264,8 +264,20 @@ def _flat_str(v: Any) -> str:
     return str(v)
 
 
+def _risk_section(f: dict, name: str) -> dict:
+    risk = f.get("riskScoring") or f.get("risk_scoring")
+    if not isinstance(risk, dict):
+        return {}
+    section = risk.get(name)
+    return section if isinstance(section, dict) else {}
+
+
 def _finding_csv_row(f: dict) -> dict[str, str]:
     att = f.get("attestation") if isinstance(f.get("attestation"), dict) else {}
+    source_score = _risk_section(f, "source")
+    threat_score = _risk_section(f, "threat")
+    context_score = _risk_section(f, "context")
+    environmental_score = _risk_section(f, "environmental")
     return {
         "id": _flat_str(f.get("id")),
         "fingerprintId": _flat_str(f.get("fingerprintId")),
@@ -290,6 +302,21 @@ def _finding_csv_row(f: dict) -> dict[str, str]:
         "approverTitle": _flat_str(att.get("approverTitle")),
         "approvedAt": _flat_str(att.get("approvedAt")),
         "expiresAt": _flat_str(att.get("expiresAt")),
+        "sourceCvssScore": _flat_str(source_score.get("score")),
+        "sourceCvssSeverity": _flat_str(source_score.get("severity")),
+        "sourceCvssVector": _flat_str(source_score.get("vector")),
+        "fixedVersion": _flat_str(source_score.get("fixedVersion")),
+        "epss": _flat_str(threat_score.get("epss") or f.get("epss")),
+        "knownExploited": _flat_str(threat_score.get("knownExploited")),
+        "reachability": _flat_str(context_score.get("reachability")),
+        "fixAvailable": _flat_str(context_score.get("fixAvailable")),
+        "environmentalScore": _flat_str(environmental_score.get("score")),
+        "environmentalCvssVector": _flat_str(environmental_score.get("vector")),
+        "environmentalRationale": _flat_str(environmental_score.get("rationale")),
+        "knownScannerException": _flat_str(
+            environmental_score.get("knownScannerException")
+        ),
+        "scopeNote": _flat_str(environmental_score.get("scopeNote")),
         "justification": _flat_str(f.get("justification")),
     }
 

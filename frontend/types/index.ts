@@ -3,6 +3,42 @@
  */
 
 /** Finding — core vulnerability/triage record */
+export interface FindingRiskScoring {
+  source?: {
+    source?: string;
+    cvssVersion?: string;
+    vector?: string;
+    score?: string;
+    severity?: string;
+    scannerTitle?: string;
+    fixedVersion?: string;
+  };
+  threat?: {
+    epss?: string;
+    epssPercentile?: string;
+    knownExploited?: boolean;
+    exploitMaturity?: string;
+    threatSources?: string[];
+  };
+  context?: {
+    assetCriticality?: string;
+    internetExposure?: string;
+    reachability?: string;
+    fixAvailable?: boolean;
+    compensatingControlRefs?: string[];
+  };
+  environmental?: {
+    cvssVersion?: string;
+    vector?: string;
+    score?: string;
+    rationale?: string;
+    knownScannerException?: string;
+    scopeNote?: string;
+    updatedBy?: string;
+    updatedAt?: string;
+  };
+}
+
 export interface Finding {
   id: string;
   findingType: string;
@@ -33,6 +69,7 @@ export interface Finding {
   imageDigest?: string;
   cvss?: string;
   epss?: string;
+  riskScoring?: FindingRiskScoring | null;
   team?: string;
   owner?: string;
   trackerId?: string;

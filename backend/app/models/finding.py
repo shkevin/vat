@@ -125,6 +125,7 @@ class Finding(Base):
     )  # ISO date
     cvss: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
     epss: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
+    risk_scoring: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
     justification: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     compensating_controls: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     reviewer_note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)

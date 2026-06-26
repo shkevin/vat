@@ -8,6 +8,7 @@ from app.schemas.ingest import (
     CanonicalSeverity,
 )
 from app.parsers.base import IngestParser
+from app.parsers.risk_scoring import build_source_risk_scoring
 from app.parsers.utils import extract_scan_tag
 
 logger = logging.getLogger(__name__)
@@ -117,6 +118,8 @@ class GrypeParser(IngestParser):
                 desc_parts.append(rel["description"])
         desc = "\n".join(desc_parts) or vuln_id
         cvss = None
+        cvss_vector = None
+        cvss_version = None
         cvss_v = vuln.get("cvss") or []
         if not cvss_v and m.get("relatedVulnerabilities"):
             rel = m["relatedVulnerabilities"][0]
@@ -125,6 +128,8 @@ class GrypeParser(IngestParser):
         if cvss_v and isinstance(cvss_v[0], dict):
             metrics = cvss_v[0].get("metrics") or {}
             cvss = str(metrics.get("baseScore") or cvss_v[0].get("baseScore") or "")
+            cvss_vector = cvss_v[0].get("vector")
+            cvss_version = str(cvss_v[0].get("version") or "") or None
         fix_versions = []
         if "fix" in vuln and isinstance(vuln["fix"], dict):
             fix_versions = vuln["fix"].get("versions") or []
@@ -141,6 +146,17 @@ class GrypeParser(IngestParser):
             "finding_type": CanonicalFindingType.SCA,
             "cvss": cvss,
         }
+        risk_scoring = build_source_risk_scoring(
+            source="grype",
+            score=cvss,
+            vector=cvss_vector,
+            cvss_version=cvss_version,
+            severity=vuln.get("severity"),
+            scanner_title=fields["title"],
+            fixed_version=fix_versions,
+        )
+        if risk_scoring:
+            fields["risk_scoring"] = risk_scoring
         if eco:
             fields["ecosystem"] = eco
         if scan_tag:

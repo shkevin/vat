@@ -25,6 +25,12 @@ from app.services.container_asset_observations import (
     record_container_asset_observation,
 )
 from app.services.dedup import component_base
+from app.services.risk_scoring import (
+    clean_risk_scoring,
+    epss_from_risk_scoring,
+    merge_source_risk_scoring,
+    score_from_risk_scoring,
+)
 from app.services.sla import SLA_DAYS
 from app.parsers.image_digest import effective_image_digest
 from app.core.tenancy import DEFAULT_TENANT_ID
@@ -305,6 +311,9 @@ async def ingest_finding(
             severity = standardized
     title = payload.title or cve_id
     description = payload.description or ""
+    risk_scoring = clean_risk_scoring(getattr(payload, "risk_scoring", None))
+    cvss_value = payload.cvss or score_from_risk_scoring(risk_scoring)
+    epss_value = payload.epss or epss_from_risk_scoring(risk_scoring)
 
     source_entry = {"name": source_name, "importedAt": _now()}
     audit_entry = {
@@ -430,6 +439,14 @@ async def ingest_finding(
             existing.profile_scope = payload.profile_scope
         if getattr(payload, "content_version", None) and not existing.content_version:
             existing.content_version = payload.content_version
+        if risk_scoring:
+            existing.risk_scoring = merge_source_risk_scoring(
+                getattr(existing, "risk_scoring", None), risk_scoring
+            )
+        if cvss_value and not existing.cvss:
+            existing.cvss = cvss_value
+        if epss_value and not existing.epss:
+            existing.epss = epss_value
         if getattr(payload, "needs_family_classification", None):
             existing.needs_family_classification = bool(
                 payload.needs_family_classification
@@ -599,8 +616,9 @@ async def ingest_finding(
         team=payload.team,
         owner=payload.owner,
         sla_due=sla_due,
-        cvss=payload.cvss,
-        epss=payload.epss,
+        cvss=cvss_value,
+        epss=epss_value,
+        risk_scoring=risk_scoring,
         sources=[source_entry],
         audit=[audit_entry],
         tenant_id=tenant_id,

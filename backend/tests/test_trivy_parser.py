@@ -61,6 +61,12 @@ def test_trivy_parser_vulnerabilities():
                         "Severity": "HIGH",
                         "Title": "Remote code execution",
                         "Description": "A vulnerability allows RCE.",
+                        "CVSS": {
+                            "nvd": {
+                                "V3Score": 7.4,
+                                "V3Vector": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:H/A:N",
+                            }
+                        },
                     },
                     {
                         "VulnerabilityID": "CVE-2024-5678",
@@ -82,6 +88,18 @@ def test_trivy_parser_vulnerabilities():
     assert payloads[0].finding_type == CanonicalFindingType.SCA
     assert payloads[0].ecosystem == "npm"
     assert payloads[0].title == "Remote code execution"
+    assert payloads[0].risk_scoring == {
+        "source": {
+            "source": "trivy",
+            "cvssVersion": "3.1",
+            "vector": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:H/A:N",
+            "score": "7.4",
+            "severity": "High",
+            "scannerTitle": "Remote code execution",
+            "fixedVersion": "1.2.4",
+        },
+        "context": {"fixAvailable": True},
+    }
     assert payloads[1].cve_id == "CVE-2024-5678"
     assert payloads[1].severity == CanonicalSeverity.CRITICAL
 

@@ -237,6 +237,14 @@ def _excel_value(v: Any) -> Any:
     return v
 
 
+def _risk_section(f: Mapping[str, Any], name: str) -> Mapping[str, Any]:
+    risk = f.get("riskScoring") or f.get("risk_scoring")
+    if not isinstance(risk, Mapping):
+        return {}
+    section = risk.get(name)
+    return section if isinstance(section, Mapping) else {}
+
+
 def _write_streaming_sheet(
     wb: Workbook,
     title: str,
@@ -303,6 +311,10 @@ def _build_readme_streaming_sheet(
 def _iter_finding_workbook_rows(findings: Iterable[dict]) -> Iterable[dict[str, Any]]:
     for f in findings:
         att = f.get("attestation") if isinstance(f.get("attestation"), dict) else {}
+        source_score = _risk_section(f, "source")
+        threat_score = _risk_section(f, "threat")
+        context_score = _risk_section(f, "context")
+        environmental_score = _risk_section(f, "environmental")
         yield {
             "id": f.get("id"),
             "fingerprintId": f.get("fingerprintId"),
@@ -329,6 +341,21 @@ def _iter_finding_workbook_rows(findings: Iterable[dict]) -> Iterable[dict[str, 
             "created": f.get("created"),
             "closedAt": f.get("closedAt"),
             "slaDue": f.get("slaDue"),
+            "sourceCvssScore": source_score.get("score"),
+            "sourceCvssSeverity": source_score.get("severity"),
+            "sourceCvssVector": source_score.get("vector"),
+            "fixedVersion": source_score.get("fixedVersion"),
+            "epss": threat_score.get("epss") or f.get("epss"),
+            "knownExploited": threat_score.get("knownExploited"),
+            "reachability": context_score.get("reachability"),
+            "fixAvailable": context_score.get("fixAvailable"),
+            "environmentalScore": environmental_score.get("score"),
+            "environmentalCvssVector": environmental_score.get("vector"),
+            "environmentalRationale": environmental_score.get("rationale"),
+            "knownScannerException": environmental_score.get(
+                "knownScannerException"
+            ),
+            "scopeNote": environmental_score.get("scopeNote"),
             "justification": f.get("justification"),
             "compensatingControls": f.get("compensatingControls"),
             "reviewerNote": f.get("reviewerNote"),
@@ -625,6 +652,19 @@ def build_auditor_workbook_bytes(
         "created",
         "closedAt",
         "slaDue",
+        "sourceCvssScore",
+        "sourceCvssSeverity",
+        "sourceCvssVector",
+        "fixedVersion",
+        "epss",
+        "knownExploited",
+        "reachability",
+        "fixAvailable",
+        "environmentalScore",
+        "environmentalCvssVector",
+        "environmentalRationale",
+        "knownScannerException",
+        "scopeNote",
         "justification",
         "compensatingControls",
         "reviewerNote",

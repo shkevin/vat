@@ -67,6 +67,7 @@ class FindingBase(BaseModel):
     sla_due: Optional[str] = None
     cvss: Optional[str] = None
     epss: Optional[str] = None
+    risk_scoring: Optional[dict] = None
     justification: Optional[str] = None
     compensating_controls: Optional[str] = None
     reviewer_note: Optional[str] = None
@@ -111,6 +112,7 @@ class FindingRead(BaseModel):
     sla_due: Optional[str] = None
     cvss: Optional[str] = None
     epss: Optional[str] = None
+    risk_scoring: Optional[dict] = None
     justification: Optional[str] = None
     compensating_controls: Optional[str] = None
     reviewer_note: Optional[str] = None
@@ -179,6 +181,7 @@ class FindingRead(BaseModel):
             sla_due=f.sla_due,
             cvss=f.cvss,
             epss=f.epss,
+            risk_scoring=f.risk_scoring,
             tracker_comment=bool(f.tracker_comment),
             sources=list(f.sources or []),
             suppression_scope=f.suppression_scope,
@@ -265,6 +268,7 @@ class FindingRead(BaseModel):
             "slaDue": self.sla_due,
             "cvss": self.cvss,
             "epss": self.epss,
+            "riskScoring": self.risk_scoring,
             "trackerComment": self.tracker_comment,
             "sources": slim_sources,
             "suppressionScope": self.suppression_scope.value
@@ -327,6 +331,7 @@ class FindingRead(BaseModel):
             "slaDue": self.sla_due,
             "cvss": self.cvss,
             "epss": self.epss,
+            "riskScoring": self.risk_scoring,
             "justification": self.justification,
             "compensatingControls": self.compensating_controls,
             "reviewerNote": self.reviewer_note,
@@ -378,6 +383,7 @@ class FindingUpdate(BaseModel):
     reviewer_note: Optional[str] = None
     suppression_scope: Optional[str] = None
     attestation: Optional[dict] = None
+    risk_scoring: Optional[dict] = None
 
 
 class FindingArchive(BaseModel):

@@ -96,6 +96,77 @@ describe("buildFindingEvidence", () => {
     );
   });
 
+  it("builds a dedicated risk scoring section from source, threat, context, and environmental fields", () => {
+    const evidence = buildFindingEvidence(
+      finding({
+        findingType: "SCA",
+        component: "ecdsa 0.19.2",
+        image: "ghcr.io/kamiwaza-internal/kamiwaza/images/core",
+        tag: "release-0.13.5",
+        cveId: "CVE-2024-23342",
+        title: "python-ecdsa: vulnerable to the Minerva attack",
+        cvss: "7.4",
+        epss: "0.012",
+        riskScoring: {
+          source: {
+            source: "trivy",
+            cvssVersion: "3.1",
+            vector: "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:H/A:N",
+            score: "7.4",
+            severity: "High",
+            scannerTitle: "python-ecdsa: vulnerable to the Minerva attack",
+            fixedVersion: "NONE",
+          },
+          threat: {
+            epss: "0.012",
+            knownExploited: false,
+            exploitMaturity: "No known exploit",
+          },
+          context: {
+            reachability: "No path found",
+            fixAvailable: false,
+            assetCriticality: "Production",
+            internetExposure: "Internal",
+          },
+          environmental: {
+            cvssVersion: "3.1",
+            vector:
+              "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:H/A:N/MC:N/MI:N/MA:N",
+            score: "0.0",
+            rationale: "The vulnerable ECDSA signing path is not reachable.",
+            knownScannerException: "Trivy reports one High in the core image.",
+            scopeNote: "Generated container image scan set.",
+          },
+        },
+      }),
+    );
+
+    expect(evidence.riskScoring).toContainEqual({
+      label: "Source CVSS",
+      value: "7.4 High",
+    });
+    expect(evidence.riskScoring).toContainEqual({
+      label: "Source vector",
+      value: "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:H/A:N",
+    });
+    expect(evidence.riskScoring).toContainEqual({
+      label: "Fixed version",
+      value: "NONE",
+    });
+    expect(evidence.riskScoring).toContainEqual({
+      label: "Environmental score",
+      value: "0.0",
+    });
+    expect(evidence.riskScoring).toContainEqual({
+      label: "Reachability",
+      value: "No path found",
+    });
+    expect(evidence.riskScoringNotes).toContainEqual({
+      label: "Environmental Scoring Rationale",
+      value: "The vulnerable ECDSA signing path is not reachable.",
+    });
+  });
+
   it("uses OpenSCAP benchmark fields and check output as evidence", () => {
     const evidence = buildFindingEvidence(
       finding({
