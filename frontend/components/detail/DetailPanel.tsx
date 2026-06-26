@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useFocusTrap } from "@/hooks/useFocusTrap";
 
 /** Collapsible section for supporting metadata */
@@ -82,6 +82,8 @@ interface DetailPanelProps {
   selectedSourceIndex?: number;
   detailLoadError?: string | null;
 }
+
+const DETAIL_PANEL_CLOSE_MS = 180;
 
 function displaySourceLabels(finding: Finding): string[] {
   const labels = [
@@ -174,13 +176,36 @@ export function DetailPanel({
   const [activeTab, setActiveTab] = useState<
     "details" | "decision" | "history"
   >("details");
+  const [isClosing, setIsClosing] = useState(false);
+  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const closingRef = useRef(false);
 
   const { token } = useAuth();
   const canEdit = !readOnly;
   const showAdminActions = canEdit && isAdmin;
   const repoFileUrl = getRepoFileUrl(finding, repoBaseUrl, repoUrlType);
 
+  const clearCloseTimer = useCallback(() => {
+    if (closeTimerRef.current) {
+      clearTimeout(closeTimerRef.current);
+      closeTimerRef.current = null;
+    }
+  }, []);
+
+  const requestClose = useCallback(() => {
+    if (closingRef.current) return;
+    closingRef.current = true;
+    setIsClosing(true);
+    closeTimerRef.current = setTimeout(() => {
+      closeTimerRef.current = null;
+      onClose();
+    }, DETAIL_PANEL_CLOSE_MS);
+  }, [onClose]);
+
   useEffect(() => {
+    clearCloseTimer();
+    closingRef.current = false;
+    setIsClosing(false);
     setJus(finding.justification ?? "");
     setComp(finding.compensatingControls ?? "");
     setRvNote(finding.reviewerNote ?? "");
@@ -191,26 +216,18 @@ export function DetailPanel({
     setSuppScope(
       (finding.suppressionScope as "global" | "contextual") ?? "contextual",
     );
-    const needsTriage = ![
-      "Resolved",
-      "False Positive",
-      "Suppressed",
-      "Not Applicable",
-      "Approved",
-      "Duplicate",
-      "Mitigated",
-      "Risk Accepted",
-    ].includes(finding.status);
-    setActiveTab(canEdit && needsTriage ? "decision" : "details");
-  }, [finding.id, finding.status, canEdit]);
+    setActiveTab("details");
+  }, [finding.id, finding.status, clearCloseTimer]);
+
+  useEffect(() => clearCloseTimer, [clearCloseTimer]);
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") requestClose();
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [onClose]);
+  }, [requestClose]);
 
   const doSaveNotes = useCallback(async () => {
     if (rvNote === (finding.reviewerNote ?? "")) return;
@@ -310,14 +327,22 @@ export function DetailPanel({
   );
 
   return (
-    <div
-      ref={dialogRef}
-      role="dialog"
-      aria-modal="true"
-      aria-label={`Finding details: ${finding.cveId}`}
-      tabIndex={-1}
-      className="detail-panel"
-    >
+    <>
+      <div
+        aria-hidden="true"
+        className={`detail-panel-backdrop${
+          isClosing ? " detail-panel-backdrop-closing" : ""
+        }`}
+        onMouseDown={requestClose}
+      />
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Finding details: ${finding.cveId}`}
+        tabIndex={-1}
+        className={`detail-panel${isClosing ? " detail-panel-closing" : ""}`}
+      >
       {finding.archived && (
         <div className="detail-panel-alert detail-panel-alert-archived">
           <span>🗄</span>
@@ -462,7 +487,7 @@ export function DetailPanel({
           </div>
           <button
             type="button"
-            onClick={onClose}
+            onClick={requestClose}
             aria-label="Close panel"
             className="detail-panel-close"
           >
@@ -709,7 +734,7 @@ export function DetailPanel({
                           className="detail-panel-kv-item"
                         >
                           <label>{row.label}</label>
-                          <div className="value">
+                          <div className="value detail-panel-breakable-value">
                             {row.href ? (
                               <a
                                 href={row.href}
@@ -2131,6 +2156,7 @@ export function DetailPanel({
 
         {toast && <div className="detail-panel-toast">{toast}</div>}
       </div>
-    </div>
+      </div>
+    </>
   );
 }

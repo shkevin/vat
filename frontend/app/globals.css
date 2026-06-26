@@ -1276,6 +1276,19 @@ select option {
 }
 
 /* ===== Detail Panel — Enterprise Finding Detail Pane ===== */
+.detail-panel-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 99;
+  background: rgba(0, 0, 0, 0.24);
+  animation: detail-panel-backdrop-in 180ms ease-out;
+  transition: opacity 180ms ease-in;
+}
+.detail-panel-backdrop-closing {
+  opacity: 0;
+  pointer-events: none;
+  animation: none;
+}
 .detail-panel {
   position: fixed;
   top: 0;
@@ -1290,6 +1303,39 @@ select option {
   flex-direction: column;
   box-shadow: -8px 0 24px rgba(0, 0, 0, 0.15);
   isolation: isolate;
+  transform: translateX(0);
+  animation: detail-panel-slide-in 180ms ease-out;
+  transition: transform 180ms ease-in;
+  will-change: transform;
+}
+.detail-panel-closing {
+  transform: translateX(100%);
+  animation: none;
+}
+@keyframes detail-panel-slide-in {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+@keyframes detail-panel-backdrop-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .detail-panel,
+  .detail-panel-closing,
+  .detail-panel-backdrop,
+  .detail-panel-backdrop-closing {
+    animation: none;
+    transition: none;
+  }
 }
 .detail-panel-header {
   padding: 24px 24px 20px;
@@ -1438,6 +1484,9 @@ html:not([data-theme="light"])
   grid-template-columns: repeat(2, 1fr);
   gap: 16px 24px;
 }
+.detail-panel-kv-item {
+  min-width: 0;
+}
 .detail-panel-kv-item label {
   display: block;
   font-family: var(--font-mono), "JetBrains Mono", monospace;
@@ -1453,6 +1502,12 @@ html:not([data-theme="light"])
   font-size: 13px;
   color: var(--app-fg);
   line-height: 1.5;
+  min-width: 0;
+}
+.detail-panel-breakable-value,
+.detail-panel-breakable-value a {
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 .detail-panel-kv-item .value a {
   color: var(--app-accent);
