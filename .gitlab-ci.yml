@@ -10,6 +10,10 @@
 #                 recipient. If set, the overlay validate job will render with
 #                 KSOPS; if unset, overlay validate is skipped and only the
 #                 KSOPS-free base is validated.
+#   HARBOR_DOCKERHUB_PROXY_PROJECT — Harbor proxy-cache project for Docker Hub
+#                 base images. Defaults to "dockerhub"; set empty to disable.
+#   KANIKO_SKIP_DEFAULT_REGISTRY_FALLBACK — "true" fails fast if the proxy
+#                 cannot serve an image instead of falling back to Docker Hub.
 
 stages:
   - validate
@@ -18,6 +22,8 @@ stages:
 variables:
   HARBOR_HOST: harbor.automatedhass.com
   HARBOR_PROJECT: vat
+  HARBOR_DOCKERHUB_PROXY_PROJECT: dockerhub
+  KANIKO_SKIP_DEFAULT_REGISTRY_FALLBACK: "true"
   # Folder inside the repo that carries the manifests.
   K8S_ROOT: deploy/k8s
   # Same flags the kamiwaza-argocd Argo repo-server uses; both are required for
@@ -140,12 +146,20 @@ validate:overlays:
   script:
     - |
       KANIKO_EXTRA_ARGS=""
+      KANIKO_REGISTRY_ARGS=""
+      if [ -n "${HARBOR_DOCKERHUB_PROXY_PROJECT:-}" ]; then
+        KANIKO_REGISTRY_ARGS="--registry-map=index.docker.io=${HARBOR_HOST}/${HARBOR_DOCKERHUB_PROXY_PROJECT} --registry-map=docker.io=${HARBOR_HOST}/${HARBOR_DOCKERHUB_PROXY_PROJECT}"
+        if [ "${KANIKO_SKIP_DEFAULT_REGISTRY_FALLBACK:-true}" = "true" ]; then
+          KANIKO_REGISTRY_ARGS="${KANIKO_REGISTRY_ARGS} --skip-default-registry-fallback"
+        fi
+      fi
       # Next.js rewrites bake API_UPSTREAM_URL at build time. Docker Compose uses
       # hostname "backend"; in Kubernetes the Service is vat-backend.
       if [ "${COMPONENT}" = "frontend" ]; then
         KANIKO_EXTRA_ARGS='--build-arg API_UPSTREAM_URL=http://vat-backend:8000'
       fi
       /kaniko/executor \
+        ${KANIKO_REGISTRY_ARGS} \
         --context "${CI_PROJECT_DIR}/${CONTEXT}" \
         --dockerfile "${CI_PROJECT_DIR}/${CONTEXT}/${DOCKERFILE}" \
         --cache=true \
