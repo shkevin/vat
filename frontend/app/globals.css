@@ -1762,6 +1762,56 @@ html:not([data-theme="light"])
   color: var(--app-success);
 }
 
+.detail-panel-metric-pill.score-critical .metric-value {
+  color: #f87060;
+}
+.detail-panel-metric-pill.score-high .metric-value {
+  color: #f5a623;
+}
+.detail-panel-metric-pill.score-medium .metric-value {
+  color: #f5d020;
+}
+.detail-panel-metric-pill.score-low .metric-value {
+  color: #50c878;
+}
+.detail-panel-metric-pill.score-informational .metric-value {
+  color: #7b8fa1;
+}
+
+.detail-panel-score-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-family: var(--font-mono), "JetBrains Mono", monospace;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+.detail-panel-score-badge-lg {
+  padding: 4px 10px;
+  font-size: 15px;
+  line-height: 1.3;
+}
+
+.detail-panel-metric-pill-score {
+  gap: 2px;
+}
+
+.detail-panel-metric-pill-score .detail-panel-score-badge {
+  margin-top: 2px;
+}
+
+.detail-panel-meta .detail-panel-score-badge {
+  vertical-align: baseline;
+}
+
+.detail-panel-kv-item .value .detail-panel-score-badge {
+  margin-top: 1px;
+}
+
 /* Decision tab — status card and action groups */
 .detail-panel-status-card {
   display: flex;

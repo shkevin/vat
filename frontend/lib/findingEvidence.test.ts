@@ -88,8 +88,8 @@ describe("buildFindingEvidence", () => {
       label: "Image digest",
       value: "sha256:abc123",
     });
-    expect(evidence.summary).toContainEqual({ label: "CVSS", value: "9.8" });
-    expect(evidence.summary).toContainEqual({ label: "EPSS", value: "0.42" });
+    expect(evidence.summary).toContainEqual({ label: "CVSS", value: "9.8", scoreKind: "cvss" });
+    expect(evidence.summary).toContainEqual({ label: "EPSS", value: "0.42", scoreKind: "epss" });
     expect(evidence.proof).toBeUndefined();
     expect(evidence.remediation).toBe(
       "Upgrade or replace the affected package in the image, rebuild it, and rescan the asset.",
@@ -144,6 +144,7 @@ describe("buildFindingEvidence", () => {
     expect(evidence.riskScoring).toContainEqual({
       label: "Source CVSS",
       value: "7.4 High",
+      scoreKind: "cvss",
     });
     expect(evidence.riskScoring).toContainEqual({
       label: "Source vector",
@@ -156,6 +157,7 @@ describe("buildFindingEvidence", () => {
     expect(evidence.riskScoring).toContainEqual({
       label: "Environmental score",
       value: "0.0",
+      scoreKind: "cvss",
     });
     expect(evidence.riskScoring).toContainEqual({
       label: "Reachability",

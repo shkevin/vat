@@ -43,6 +43,8 @@ import { SEV_ORDER } from "@/lib/constants";
 import { syncFindingToTracker } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 import { buildFindingEvidence } from "@/lib/findingEvidence";
+import type { FindingEvidenceSummaryRow } from "@/lib/findingEvidence";
+import { ScoreBadge } from "@/components/detail/ScoreBadge";
 import {
   daysLeft,
   displayTitle,
@@ -84,6 +86,28 @@ interface DetailPanelProps {
 }
 
 const DETAIL_PANEL_CLOSE_MS = 180;
+
+function renderEvidenceValue(row: FindingEvidenceSummaryRow) {
+  if (row.scoreKind) {
+    return <ScoreBadge value={row.value} kind={row.scoreKind} />;
+  }
+  if (row.href) {
+    return (
+      <a
+        href={row.href}
+        target="_blank"
+        rel="noopener noreferrer"
+        style={{
+          color: "var(--app-accent)",
+          textDecoration: "none",
+        }}
+      >
+        {row.value}
+      </a>
+    );
+  }
+  return row.value;
+}
 
 function displaySourceLabels(finding: Finding): string[] {
   const labels = [
@@ -534,12 +558,30 @@ export function DetailPanel({
                   {finding.image ?? finding.tag ?? "—"}
                 </>
               )}
-              {finding.cvss && finding.cvss !== "—"
-                ? ` · CVSS ${finding.cvss}`
-                : ""}
-              {finding.epss && finding.epss !== "—"
-                ? ` · EPSS ${finding.epss}`
-                : ""}
+              {finding.cvss && finding.cvss !== "—" ? (
+                <>
+                  {" · "}
+                  <ScoreBadge
+                    prefix="CVSS"
+                    value={finding.cvss}
+                    kind="cvss"
+                  />
+                </>
+              ) : (
+                ""
+              )}
+              {finding.epss && finding.epss !== "—" ? (
+                <>
+                  {" · "}
+                  <ScoreBadge
+                    prefix="EPSS"
+                    value={finding.epss}
+                    kind="epss"
+                  />
+                </>
+              ) : (
+                ""
+              )}
             </div>
           </div>
           <button
@@ -611,15 +653,25 @@ export function DetailPanel({
             {/* Risk metrics bar — visual callouts for key metrics */}
             <div className="detail-panel-risk-bar">
               {finding.cvss && finding.cvss !== "—" && (
-                <div className="detail-panel-metric-pill">
+                <div className="detail-panel-metric-pill detail-panel-metric-pill-score">
                   <span className="metric-label">CVSS</span>
-                  <span className="metric-value">{finding.cvss}</span>
+                  <ScoreBadge value={finding.cvss} kind="cvss" size="lg" />
+                </div>
+              )}
+              {finding.riskScoring?.environmental?.score && (
+                <div className="detail-panel-metric-pill detail-panel-metric-pill-score">
+                  <span className="metric-label">Env CVSS</span>
+                  <ScoreBadge
+                    value={finding.riskScoring.environmental.score}
+                    kind="cvss"
+                    size="lg"
+                  />
                 </div>
               )}
               {finding.epss && finding.epss !== "—" && (
-                <div className="detail-panel-metric-pill">
+                <div className="detail-panel-metric-pill detail-panel-metric-pill-score">
                   <span className="metric-label">EPSS</span>
-                  <span className="metric-value">{finding.epss}</span>
+                  <ScoreBadge value={finding.epss} kind="epss" size="lg" />
                 </div>
               )}
               {finding.slaDue && (
@@ -806,7 +858,7 @@ export function DetailPanel({
                           >
                             <label>{row.label}</label>
                             <div className="value detail-panel-breakable-value">
-                              {row.value}
+                              {renderEvidenceValue(row)}
                             </div>
                           </div>
                         ))}
@@ -848,21 +900,7 @@ export function DetailPanel({
                         >
                           <label>{row.label}</label>
                           <div className="value detail-panel-breakable-value">
-                            {row.href ? (
-                              <a
-                                href={row.href}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                style={{
-                                  color: "var(--app-accent)",
-                                  textDecoration: "none",
-                                }}
-                              >
-                                {row.value}
-                              </a>
-                            ) : (
-                              row.value
-                            )}
+                            {renderEvidenceValue(row)}
                           </div>
                         </div>
                       ))}

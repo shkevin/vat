@@ -5,6 +5,7 @@ export type FindingEvidenceSummaryRow = {
   label: string;
   value: string;
   href?: string;
+  scoreKind?: "cvss" | "epss";
 };
 
 export type FindingEvidenceProof = {
@@ -35,12 +36,14 @@ function addRow(
   label: string,
   value: string | null | undefined,
   href?: string | null,
+  scoreKind?: FindingEvidenceSummaryRow["scoreKind"],
 ) {
   const cleaned = clean(value);
   if (!cleaned) return;
   const row: FindingEvidenceSummaryRow = { label, value: cleaned };
   const cleanedHref = clean(href);
   if (cleanedHref) row.href = cleanedHref;
+  if (scoreKind) row.scoreKind = scoreKind;
   rows.push(row);
 }
 
@@ -109,14 +112,14 @@ function buildRiskScoringRows(finding: Finding): {
   const context = scoring.context;
   const environmental = scoring.environmental;
 
-  addRow(rows, "Source CVSS", sourceCvssValue(source));
+  addRow(rows, "Source CVSS", sourceCvssValue(source), undefined, "cvss");
   addRow(rows, "Source vector", source?.vector);
   addRow(rows, "Source score origin", source?.source);
   addRow(rows, "Scanner title", source?.scannerTitle);
   addRow(rows, "Fixed version", source?.fixedVersion);
   addRow(rows, "Environmental CVSS", environmental?.vector);
-  addRow(rows, "Environmental score", environmental?.score);
-  addRow(rows, "EPSS", threat?.epss ?? finding.epss);
+  addRow(rows, "Environmental score", environmental?.score, undefined, "cvss");
+  addRow(rows, "EPSS", threat?.epss ?? finding.epss, undefined, "epss");
   addRow(rows, "EPSS percentile", threat?.epssPercentile);
   addRow(rows, "Known exploited", boolLabel(threat?.knownExploited));
   addRow(rows, "Exploit maturity", threat?.exploitMaturity);
@@ -171,8 +174,8 @@ export function buildFindingEvidence(finding: Finding): FindingEvidenceView {
   addRow(summary, "Ecosystem", finding.ecosystem);
   addRow(summary, "Benchmark", finding.benchmarkId);
   addRow(summary, "Benchmark family", finding.benchmarkFamily);
-  addRow(summary, "CVSS", finding.cvss);
-  addRow(summary, "EPSS", finding.epss);
+  addRow(summary, "CVSS", finding.cvss, undefined, "cvss");
+  addRow(summary, "EPSS", finding.epss, undefined, "epss");
   addRow(summary, "Source", sourceName(finding));
 
   const sourceLink = finding.externalLinks?.find(
