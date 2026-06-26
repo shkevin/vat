@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.auth import get_current_user_context, require_admin, require_reviewer
+from app.core.auth import get_current_user_context, require_admin, require_reviewer, row_tenant_visible
 from app.core.config import get_settings
 from app.core.database import get_db
 from app.models.finding import Finding
@@ -49,14 +49,8 @@ router = APIRouter()
 
 
 def _finding_visible(ctx: UserContext, finding: Finding) -> bool:
-    """Tenant-scope check for a single finding. Fails closed when the caller
-    has no tenant and is not cross-tenant: a NULL-tenant finding (legacy
-    webhook ingest) is no longer visible to arbitrary callers."""
-    if ctx.cross_tenant:
-        return True
-    if ctx.tenant_id is None:
-        return False
-    return finding.tenant_id == ctx.tenant_id
+    """Tenant-scope check aligned with list queries and correlation endpoints."""
+    return row_tenant_visible(finding.tenant_id, ctx)
 
 
 class CorrelationEdgeActionRequest(BaseModel):
@@ -321,7 +315,7 @@ async def post_sync_finding_to_tracker(
     finding = await get_finding(db, finding_id)
     if not finding:
         raise HTTPException(status_code=404, detail="Finding not found")
-    if ctx.tenant_id and finding.tenant_id and finding.tenant_id != ctx.tenant_id:
+    if not row_tenant_visible(finding.tenant_id, ctx):
         raise HTTPException(status_code=404, detail="Finding not found")
     result = await sync_single_finding_to_tracker(db, finding_id)
     if result["enqueued"]:
@@ -339,7 +333,7 @@ async def get_finding_correlations(
     finding = await get_finding(db, finding_id)
     if not finding:
         raise HTTPException(status_code=404, detail="Finding not found")
-    if ctx.tenant_id and finding.tenant_id and finding.tenant_id != ctx.tenant_id:
+    if not row_tenant_visible(finding.tenant_id, ctx):
         raise HTTPException(status_code=404, detail="Finding not found")
 
     edges = await list_active_edges_for_finding(db, finding_id)
@@ -372,9 +366,8 @@ async def remove_finding_correlation(
     right = await get_finding(db, peer_finding_id)
     if not left or not right:
         raise HTTPException(status_code=404, detail="Finding not found")
-    if ctx.tenant_id and (
-        (left.tenant_id and left.tenant_id != ctx.tenant_id)
-        or (right.tenant_id and right.tenant_id != ctx.tenant_id)
+    if not row_tenant_visible(left.tenant_id, ctx) or not row_tenant_visible(
+        right.tenant_id, ctx
     ):
         raise HTTPException(status_code=404, detail="Finding not found")
 
@@ -410,9 +403,8 @@ async def restore_finding_correlation(
     right = await get_finding(db, peer_finding_id)
     if not left or not right:
         raise HTTPException(status_code=404, detail="Finding not found")
-    if ctx.tenant_id and (
-        (left.tenant_id and left.tenant_id != ctx.tenant_id)
-        or (right.tenant_id and right.tenant_id != ctx.tenant_id)
+    if not row_tenant_visible(left.tenant_id, ctx) or not row_tenant_visible(
+        right.tenant_id, ctx
     ):
         raise HTTPException(status_code=404, detail="Finding not found")
     actor = ctx.email or ctx.raw_identity or "reviewer"
@@ -444,7 +436,7 @@ async def get_finding_correlation_history(
     finding = await get_finding(db, finding_id)
     if not finding:
         raise HTTPException(status_code=404, detail="Finding not found")
-    if ctx.tenant_id and finding.tenant_id and finding.tenant_id != ctx.tenant_id:
+    if not row_tenant_visible(finding.tenant_id, ctx):
         raise HTTPException(status_code=404, detail="Finding not found")
     edges = await list_edges_for_finding(db, finding_id, include_inactive=True)
     out = []

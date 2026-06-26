@@ -260,3 +260,18 @@ def tenant_filter(_model: Any, ctx: UserContext) -> Any:
         # Fail closed.
         return sql_false()
     return sql_true()
+
+
+def row_tenant_visible(row_tenant_id: str | None, ctx: UserContext) -> bool:
+    """Post-load tenant visibility mirroring ``tenant_filter`` list semantics.
+
+    Authenticated tenant callers can read legacy rows with ``NULL`` tenant_id.
+    Hide rows only when both sides have a tenant id and they differ.
+    """
+    if ctx.cross_tenant:
+        return True
+    if ctx.tenant_id is None:
+        return False
+    if row_tenant_id and row_tenant_id != ctx.tenant_id:
+        return False
+    return True

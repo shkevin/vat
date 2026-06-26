@@ -15,7 +15,7 @@ def _ctx() -> UserContext:
     return UserContext(
         user_id="u-1",
         email="reviewer@vat.local",
-        tenant_id=None,
+        tenant_id="t-default",
         role="reviewer",
         raw_identity="reviewer@vat.local",
     )

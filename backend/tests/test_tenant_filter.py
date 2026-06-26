@@ -2,7 +2,7 @@
 
 from sqlalchemy import select
 
-from app.core.auth import tenant_filter
+from app.core.auth import row_tenant_visible, tenant_filter
 from app.models.finding import Finding
 from app.schemas.auth import UserContext
 
@@ -37,4 +37,21 @@ def test_tenant_filter_single_default_tenant_does_not_compare_tenant_ids() -> No
     )
     sql = str(q)
     assert "tenant_id" not in sql
+
+
+def test_row_tenant_visible_allows_legacy_null_tenant_rows() -> None:
+    ctx = _ctx(tenant_id="t-default", cross_tenant=False)
+    assert row_tenant_visible(None, ctx) is True
+    assert row_tenant_visible("t-default", ctx) is True
+
+
+def test_row_tenant_visible_hides_conflicting_tenant_ids() -> None:
+    ctx = _ctx(tenant_id="t-default", cross_tenant=False)
+    assert row_tenant_visible("t-other", ctx) is False
+
+
+def test_row_tenant_visible_fails_closed_without_caller_tenant() -> None:
+    ctx = _ctx(tenant_id=None, cross_tenant=False)
+    assert row_tenant_visible(None, ctx) is False
+    assert row_tenant_visible("t-default", ctx) is False
 
