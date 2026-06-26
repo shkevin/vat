@@ -21,7 +21,11 @@ import {
 } from "@/lib/assetUtils";
 import { getGroupedFindings } from "@/lib/findingGroupUtils";
 import { FINDING_TYPES, SEV_ORDER, SEV } from "@/lib/constants";
-import { displayTitle, displaySourceName } from "@/lib/utils";
+import { displayTitle } from "@/lib/utils";
+import {
+  buildSourceFilterOptions,
+  sourceFilterKey,
+} from "@/lib/sourceFilterOptions";
 import { FindingRow } from "@/components/findings/FindingRow";
 import { BulkBar } from "@/components/findings/BulkBar";
 import { DetailPanel } from "@/components/detail/DetailPanel";
@@ -905,21 +909,22 @@ export function AssetPage({ config }: AssetPageProps) {
   }, [branchTagFilteredFindings, sources]);
 
   const sourceOptionsWithCounts = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const finding of branchTagFilteredFindings) {
-      if (!finding.source) continue;
-      counts.set(finding.source, (counts.get(finding.source) ?? 0) + 1);
-    }
+    return buildSourceFilterOptions(branchTagFilteredFindings, sources);
+  }, [branchTagFilteredFindings, sources]);
 
-    const sourceNames = new Map(sources.map((source) => [source.id, source.name]));
-    return uniqueColumnValues.sources.map((id) => {
-      const label = displaySourceName(sourceNames.get(id) ?? id) || id;
-      return {
-        value: id,
-        label: `${label} (${counts.get(id) ?? 0})`,
-      };
-    });
-  }, [branchTagFilteredFindings, sources, uniqueColumnValues.sources]);
+  const sourceNamesById = useMemo(
+    () => new Map(sources.map((source) => [source.id, source.name])),
+    [sources],
+  );
+  const normalizedSourceFilter = useMemo(
+    () =>
+      new Set(
+        [...sourceFilter]
+          .map((source) => sourceFilterKey(source, sourceNamesById.get(source)))
+          .filter(Boolean),
+      ),
+    [sourceFilter, sourceNamesById],
+  );
 
   const filteredFindings = useMemo(() => {
     if (!asset) return [];
@@ -938,8 +943,14 @@ export function AssetPage({ config }: AssetPageProps) {
     if (severityFilter.size > 0) {
       list = list.filter((f) => f.severity && severityFilter.has(f.severity));
     }
-    if (sourceFilter.size > 0) {
-      list = list.filter((f) => f.source && sourceFilter.has(f.source));
+    if (normalizedSourceFilter.size > 0) {
+      list = list.filter(
+        (f) =>
+          f.source &&
+          normalizedSourceFilter.has(
+            sourceFilterKey(f.source, sourceNamesById.get(f.source)),
+          ),
+      );
     }
     if (findingTypeFilter.size > 0) {
       list = list.filter(
@@ -1013,7 +1024,8 @@ export function AssetPage({ config }: AssetPageProps) {
     sortBy,
     statusFilter,
     severityFilter,
-    sourceFilter,
+    normalizedSourceFilter,
+    sourceNamesById,
     findingTypeFilter,
   ]);
 
@@ -2500,7 +2512,7 @@ export function AssetPage({ config }: AssetPageProps) {
               <MultiSelectFilter
                 label="Source"
                 options={sourceOptionsWithCounts}
-                selected={sourceFilter}
+                selected={normalizedSourceFilter}
                 onChange={setSourceFilter}
               />
               <SearchInput
