@@ -68,8 +68,11 @@ import { isOpenRisk, isOverdueOpenRisk } from "@/lib/metricSemantics";
 import { mono, sans } from "@/lib/styles";
 import {
   fetchAssetMergeSuggestions,
+  fetchFinding,
+  type ApiFinding,
   type AssetMergeSuggestion,
 } from "@/lib/api";
+import type { Finding } from "@/types";
 import type { AppConfig } from "@/config/app";
 
 interface VATProps {
@@ -113,6 +116,10 @@ export default function VAT({ config }: VATProps) {
   >([]);
   const [mergeReviewLoading, setMergeReviewLoading] = useState(false);
   const [mergeReviewError, setMergeReviewError] = useState<string | null>(null);
+  const [selectedDetail, setSelectedDetail] = useState<Finding | null>(null);
+  const [selectedDetailError, setSelectedDetailError] = useState<string | null>(
+    null,
+  );
 
   const activityFeedCollapsed = preferences.activityFeedCollapsed ?? false;
   const activityFeedSourceFilter = preferences.activityFeedSourceFilter ?? "all";
@@ -172,6 +179,56 @@ export default function VAT({ config }: VATProps) {
     error,
     refetch,
   } = data;
+
+  const toDetailFinding = useCallback((raw: ApiFinding): Finding => {
+    return {
+      ...(raw as unknown as Finding),
+      source: raw.source ? String(raw.source) : undefined,
+      component: raw.component ? String(raw.component) : undefined,
+      image: raw.image ? String(raw.image) : undefined,
+      branch: raw.branch ? String(raw.branch) : undefined,
+      tag: raw.tag ? String(raw.tag) : undefined,
+      description: raw.description ? String(raw.description) : undefined,
+      filePath: raw.filePath ? String(raw.filePath) : undefined,
+      line: typeof raw.line === "number" ? raw.line : undefined,
+      snippetMasked: raw.snippetMasked ? String(raw.snippetMasked) : undefined,
+      sourceFileUrl: raw.sourceFileUrl ? String(raw.sourceFileUrl) : undefined,
+      audit: Array.isArray(raw.audit) ? (raw.audit as Finding["audit"]) : [],
+      sources: Array.isArray(raw.sources)
+        ? (raw.sources as Finding["sources"])
+        : [],
+      externalLinks: Array.isArray(raw.externalLinks)
+        ? (raw.externalLinks as Finding["externalLinks"])
+        : undefined,
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!selected?.id) {
+      setSelectedDetail(null);
+      setSelectedDetailError(null);
+      return;
+    }
+
+    let cancelled = false;
+    setSelectedDetail(null);
+    setSelectedDetailError(null);
+    fetchFinding(selected.id, { token, userEmail: user?.email })
+      .then((fullFinding) => {
+        if (!cancelled) setSelectedDetail(toDetailFinding(fullFinding));
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setSelectedDetailError(
+            err instanceof Error ? err.message : "Failed to load finding details",
+          );
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selected?.id, toDetailFinding, token, user?.email]);
 
   useEffect(() => {
     setFilterFindingStatuses(new Set(dashboardState.status ?? []));
@@ -712,7 +769,8 @@ export default function VAT({ config }: VATProps) {
       </VATLayout>
       {selected && (
         <DetailPanel
-          finding={selected}
+          finding={selectedDetail ?? selected}
+          detailLoadError={selectedDetailError}
           allFindings={data.findings}
           sources={data.sources}
           tracker={data.tracker}

@@ -80,6 +80,40 @@ interface DetailPanelProps {
   groupFindings?: boolean;
   /** When in instance mode, which source to show (index into finding.sources). Hides group view. */
   selectedSourceIndex?: number;
+  detailLoadError?: string | null;
+}
+
+function displaySourceLabels(finding: Finding): string[] {
+  const labels = [
+    finding.source,
+    ...(sourceAttributionEntries(finding) ?? []).map((source) => source.name),
+  ]
+    .map((source) => displaySourceName(source))
+    .filter((source): source is string => Boolean(source))
+    .filter((source, index, all) => all.indexOf(source) === index);
+  return labels.slice(0, 2);
+}
+
+function sourceAttributionEntries(finding: Finding): Finding["sources"] {
+  const rawSources = finding.sources ?? [];
+  if (rawSources.length > 0) return rawSources;
+  const currentSource = displaySourceName(finding.source);
+  if (currentSource) {
+    return [
+      {
+        name: finding.source ?? currentSource,
+        importedAt: finding.created ?? "",
+      },
+    ];
+  }
+  return rawSources;
+}
+
+function hasAnySourceAttribution(finding: Finding): boolean {
+  return (
+    Boolean(displaySourceName(finding.source)) ||
+    sourceAttributionEntries(finding).length > 0
+  );
 }
 
 export function DetailPanel({
@@ -100,6 +134,7 @@ export function DetailPanel({
   repoUrlType = "github",
   groupFindings = false,
   selectedSourceIndex,
+  detailLoadError,
 }: DetailPanelProps) {
   // Focus trap: while the panel is mounted (it acts as a modal dialog),
   // Tab cycles within it and Esc-close returns focus to whatever opened
@@ -215,6 +250,8 @@ export function DetailPanel({
     .map((id) => allFindings.find((f) => f.id === id))
     .filter(Boolean) as Finding[];
   const feedProvenance = getFeedProvenanceFromSources(finding.sources);
+  const headerSourceLabels = displaySourceLabels(finding);
+  const visibleSourceAttribution = sourceAttributionEntries(finding);
   const evidence = buildFindingEvidence(finding);
   const hasEvidence =
     evidence.summary.length > 0 ||
@@ -387,12 +424,9 @@ export function DetailPanel({
               </span>
               <SevTag sev={finding.severity} />
               <StTag status={finding.status} />
-              {(finding.sources?.length ?? 0) >= 1 &&
-                finding.sources
-                  ?.slice(0, 2)
-                  .map((s, i) => (
-                    <SrcTag key={i} source={s.name} sources={sources} />
-                  ))}
+              {headerSourceLabels.map((source) => (
+                <SrcTag key={source} source={source} sources={sources} />
+              ))}
             </div>
             <h2 className="detail-panel-title">{displayTitle(finding)}</h2>
             <div className="detail-panel-meta">
@@ -463,6 +497,33 @@ export function DetailPanel({
       </nav>
 
       <div className="detail-panel-body">
+        {detailLoadError && (
+          <div className="detail-panel-alert detail-panel-alert-regression">
+            <span style={{ fontSize: 14 }}>!</span>
+            <div style={{ flex: 1 }}>
+              <span
+                style={{
+                  ...mono,
+                  fontSize: 10,
+                  fontWeight: 700,
+                  color: "var(--app-warning)",
+                }}
+              >
+                DETAIL LOAD WARNING
+              </span>
+              <span
+                style={{
+                  ...sans,
+                  fontSize: 11,
+                  color: "var(--app-warning)",
+                  marginLeft: 8,
+                }}
+              >
+                Showing list data because full finding details failed to load.
+              </span>
+            </div>
+          </div>
+        )}
         {activeTab === "details" && (
           <div id="panel-details" role="tabpanel" aria-labelledby="tab-details">
             {/* Risk metrics bar — visual callouts for key metrics */}
@@ -599,7 +660,7 @@ export function DetailPanel({
                       )
                     : [];
                 const hasSubissues = sameGroup.length > 1;
-                const hasSources = (finding.sources?.length ?? 0) >= 1;
+                const hasSources = hasAnySourceAttribution(finding);
                 const isInstanceView = selectedSourceIndex != null;
                 const showScopeLinePreview =
                   finding.snippetMasked &&
@@ -1026,12 +1087,12 @@ export function DetailPanel({
             )}
 
             <CollapsibleSection title="Tracking & Sources" defaultOpen>
-              {(finding.sources?.length ?? 0) >= 1 &&
+              {visibleSourceAttribution.length >= 1 &&
                 (() => {
                   const sourcesToShow =
-                    selectedSourceIndex != null && finding.sources?.length
-                      ? [finding.sources[selectedSourceIndex]].filter(Boolean)
-                      : finding.sources ?? [];
+                    selectedSourceIndex != null && visibleSourceAttribution.length
+                      ? [visibleSourceAttribution[selectedSourceIndex]].filter(Boolean)
+                      : visibleSourceAttribution;
                   if (sourcesToShow.length === 0) return null;
                   return (
                     <div className="detail-panel-section">

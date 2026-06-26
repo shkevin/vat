@@ -12,6 +12,7 @@ from app.models.finding import Finding
 from app.models.sbom import SbomPackage
 from app.schemas.vat import VatFindingSchema, VatFindingType, VatSeverity
 from app.services.ingest import ingest_finding
+from app.services.ingest_identity import compute_ingest_fingerprint
 from app.services.ingest_tag_policy import IngestTagPolicy
 from app.services.sbom import backfill_derived_purls, import_sbom
 from app.services.sbom import _purl_from_osv_identity
@@ -112,6 +113,51 @@ async def test_ingest_source_issue_fallback_does_not_merge_different_assets(db) 
         )
     ).scalars().all()
     assert {row.image for row in rows} == {first_payload.image, second_payload.image}
+
+
+@pytest.mark.anyio
+async def test_ingest_non_aikido_merge_prunes_stale_aikido_source(db) -> None:
+    """A scanner re-import should not leave merged operator findings labeled as Aikido."""
+    uniq = uuid.uuid4().hex[:8]
+    payload = VatFindingSchema(
+        cve_id=f"CVE-2026-{uniq}",
+        severity=VatSeverity.HIGH,
+        description="OpenSSL vulnerability",
+        finding_type=VatFindingType.SCA,
+        title="OpenSSL vulnerability",
+        component="openssl 3.0.0",
+        image=f"registry.example.com/api-{uniq}:v1",
+        tag="v1",
+    )
+
+    first, created_first = await ingest_finding(
+        db,
+        payload,
+        source_name="Aikido",
+        parser_id="aikido",
+        auto_sync_to_tracker=False,
+    )
+    assert created_first is True
+    assert first.source == "Aikido"
+    first.fingerprint_id = compute_ingest_fingerprint(
+        payload,
+        "trivy",
+        parser_id="trivy",
+    )
+    await db.flush()
+
+    second, created_second = await ingest_finding(
+        db,
+        payload,
+        source_name="trivy",
+        parser_id="trivy",
+        auto_sync_to_tracker=False,
+    )
+
+    assert created_second is False
+    assert second.id == first.id
+    assert second.source == "trivy"
+    assert [source["name"] for source in second.sources] == ["trivy"]
 
 
 @pytest.mark.anyio

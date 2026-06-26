@@ -349,11 +349,22 @@ async def ingest_finding(
     if existing:
         # Merge: append source (avoid duplicate), add audit
         sources = list(existing.sources or [])
+        if source_name and source_name != "Aikido":
+            sources = [
+                s
+                for s in sources
+                if not (
+                    isinstance(s, dict)
+                    and str(s.get("name") or "").strip().lower() == "aikido"
+                )
+            ]
         if not any(
             s.get("name") == source_name for s in sources if isinstance(s, dict)
         ):
             sources.append(source_entry)
-            existing.sources = sources
+        existing.sources = sources
+        if source_name and source_name != "Aikido":
+            existing.source = source_name
         if getattr(payload, "source_issue_id", None):
             from app.services.external_links_service import add_source_link
 

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
-import { render, screen } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import React from "react";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { DetailPanel } from "./DetailPanel";
 import type { Finding, Tracker } from "@/types";
@@ -13,6 +13,10 @@ import type { Finding, Tracker } from "@/types";
 vi.mock("@/contexts/AuthContext", () => ({
   useAuth: () => ({ token: null }),
 }));
+
+afterEach(() => {
+  cleanup();
+});
 
 function finding(overrides: Partial<Finding> = {}): Finding {
   return {
@@ -64,5 +68,32 @@ describe("DetailPanel evidence", () => {
       screen.getAllByText('const token = "***REDACTED***";').length,
     ).toBeGreaterThan(0);
     expect(screen.getByText("Reviewer Next Step")).toBeTruthy();
+  });
+
+  it("renders the canonical scanner source for operator findings", () => {
+    const { container } = render(
+      <DetailPanel
+        finding={finding({
+          findingType: "SCA",
+          source: "trivy",
+          sources: [{ name: "trivy", importedAt: "2026-06-26T00:00:00Z" }],
+          snippetMasked: null,
+        })}
+        sources={[]}
+        tracker={tracker}
+        onArchive={vi.fn()}
+        onClose={vi.fn()}
+        onRevert={vi.fn()}
+        onUnarchive={vi.fn()}
+        onUpdate={vi.fn()}
+        readOnly
+      />,
+    );
+    const badges = container.querySelector(".detail-panel-badges");
+    expect(badges).toBeTruthy();
+
+    expect(within(badges as HTMLElement).getByText("trivy")).toBeTruthy();
+    expect(within(badges as HTMLElement).queryByText("Aikido")).toBeNull();
+    expect(screen.queryByText("Aikido")).toBeNull();
   });
 });

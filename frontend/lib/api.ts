@@ -127,6 +127,21 @@ export async function fetchFindings(
   return res.json();
 }
 
+export async function fetchFinding(
+  id: string,
+  auth?: Auth,
+): Promise<ApiFinding> {
+  const res = await vatFetch(
+    `${API_BASE}/findings/${encodeURIComponent(id)}`,
+    { headers: authHeaders(auth?.token, auth?.userEmail) },
+    auth,
+  );
+  if (!res.ok) {
+    throw new Error(`API error: ${res.status} ${res.statusText}`);
+  }
+  return res.json();
+}
+
 export interface VATDataResponse {
   findings: ApiFinding[];
   assets: Array<{
@@ -2026,5 +2041,34 @@ export interface ApiFinding {
   archived?: boolean;
   archivedAt?: string | null;
   archivedReason?: string | null;
+  archivedBy?: string | null;
+  sourceFileUrl?: string | null;
+  sourceIssueGroupId?: string | null;
+  aikidoSourceId?: string | null;
+  externalLinks?: Array<{
+    adapterKey: string;
+    kind: "tracker" | "source";
+    issueId?: string | null;
+    url?: string | null;
+    createdAt?: string | null;
+    lastSyncedAt?: string | null;
+  }>;
+  filePath?: string | null;
+  line?: number | null;
+  snippetMasked?: string | null;
+  ruleId?: string | null;
+  cweId?: string | null;
+  ecosystem?: string | null;
+  secretType?: string | null;
+  resource?: string | null;
+  benchmarkId?: string | null;
+  benchmarkFamily?: string | null;
+  correlationKey?: string | null;
+  correlationConfidence?: string | null;
+  correlatedTo?: string[] | null;
+  imageDigest?: string | null;
+  firstDetectedAt?: string | null;
+  closedAt?: string | null;
+  groupKey?: string | null;
   created?: string | null;
 }
