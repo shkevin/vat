@@ -2478,6 +2478,257 @@ def cmd_scan_node(args: argparse.Namespace) -> int:
     return 1 if failures and getattr(args, "fail_on_error", False) else 0
 
 
+_QUEUE_SCAN_TYPES = ("image-sca", "image-sbom", "container-stig")
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _scan_request_scan_types(spec: dict) -> list[str]:
+    """ScanTypes from the CR spec, filtered to the supported set; default all three."""
+    raw = spec.get("scanTypes") if isinstance(spec, dict) else None
+    if isinstance(raw, list):
+        chosen = [str(t).strip() for t in raw if str(t).strip() in _QUEUE_SCAN_TYPES]
+        if chosen:
+            return chosen
+    return list(_QUEUE_SCAN_TYPES)
+
+
+def _repo_without_tag(ref: str) -> str:
+    r = ref.split("@", 1)[0]
+    slash = r.rfind("/")
+    colon = r.rfind(":")
+    return r[:colon] if colon > slash else r
+
+
+def _scan_request_pull_target(spec: dict) -> tuple[str, str, str | None, str | None]:
+    """Resolve (pull_ref, asset, tag, image_digest) for a ScanRequest.
+
+    Pull by digest (``repo@sha256:…``) for content-addressed scanning, but ingest
+    under the tag ref so it maps to the same canonical container asset.
+    """
+    image_ref = str(spec.get("imageRef") or "").strip()
+    digest = str(spec.get("digest") or "").strip() or None
+    asset = image_ref.split("@", 1)[0]  # strip any digest from the asset/tag ref
+    tag = _image_ref_tag(image_ref)
+    if not tag:
+        tags = spec.get("tags") if isinstance(spec, dict) else None
+        if isinstance(tags, list) and tags:
+            tag = str(tags[0]).strip() or None
+    pull_ref = f"{_repo_without_tag(image_ref)}@{digest}" if digest else image_ref
+    return pull_ref, asset, tag, digest
+
+
+def _backoff_ready(status: dict, now: float, base: float = 30.0) -> bool:
+    """Whether a previously-failed request is past its exponential backoff window."""
+    attempts = int((status or {}).get("attempts") or 0)
+    if attempts <= 0:
+        return True
+    finished = (status or {}).get("finishedAt")
+    try:
+        ts = datetime.fromisoformat(str(finished).replace("Z", "+00:00")).timestamp()
+    except (TypeError, ValueError):
+        return True
+    return now >= ts + base * (2 ** (attempts - 1))
+
+
+def _scan_and_ingest_image(
+    *,
+    pull_ref: str,
+    asset: str,
+    tag: str | None,
+    image_digest: str | None,
+    scan_types: list[str],
+    vat_url: str,
+    parser_keys: dict[str, str],
+    api_key: str,
+    auth_item: dict,
+    no_snippets: bool = False,
+) -> bool:
+    """Pull + scan one image ref and ingest. Returns True iff every requested
+    scan produced a report and ingested cleanly."""
+    with _temporary_registry_auth_config(auth_item) as docker_config_path:
+        report = (
+            run_trivy_image_ref(pull_ref, timeout=120, docker_config_path=docker_config_path)
+            if "image-sca" in scan_types
+            else None
+        )
+        sbom_report = (
+            run_trivy_image_ref_cyclonedx(pull_ref, timeout=180, docker_config_path=docker_config_path)
+            if "image-sbom" in scan_types
+            else None
+        )
+        stig_xml = (
+            run_stig_image_ref(pull_ref, asset, timeout=600, docker_config_path=docker_config_path)
+            if "container-stig" in scan_types
+            else None
+        )
+
+    ok = True
+    if "image-sca" in scan_types:
+        if not report:
+            print("  ERROR: trivy image scan produced no report", file=sys.stderr)
+            ok = False
+        else:
+            tr = normalize_trivy(report, asset)
+            if no_snippets:
+                tr = strip_snippets(tr)
+            try:
+                resp = _ingest_trivy_report_with_retry(
+                    vat_url=vat_url, key=parser_keys.get("trivy") or api_key,
+                    report=tr, asset_name=asset, tag=tag, image_digest=image_digest,
+                )
+                print(f"  trivy: {resp}")
+            except VATClientError as e:
+                print(f"  ERROR: trivy ingest: {e}", file=sys.stderr)
+                ok = False
+
+    if "image-sbom" in scan_types:
+        if not sbom_report:
+            print("  ERROR: trivy cyclonedx scan produced no report", file=sys.stderr)
+            ok = False
+        else:
+            try:
+                resp = _ingest_json_report_with_retry(
+                    vat_url=vat_url, key=parser_keys.get("cyclonedx") or api_key,
+                    report=sbom_report, asset_name=asset, tag=tag, image_digest=image_digest,
+                    label="cyclonedx",
+                )
+                print(f"  cyclonedx: {resp}")
+            except VATClientError as e:
+                print(f"  ERROR: cyclonedx ingest: {e}", file=sys.stderr)
+                ok = False
+
+    if "container-stig" in scan_types:
+        if not stig_xml:
+            print("  ERROR: openscap STIG scan produced no report", file=sys.stderr)
+            ok = False
+        else:
+            try:
+                resp = ingest_openscap_report(
+                    vat_url, parser_keys.get("openscap") or api_key, stig_xml,
+                    asset=asset, tag=tag, image_digest=image_digest,
+                    idempotency_key=f"openscap:{asset}:{image_digest or pull_ref}",
+                )
+                print(f"  openscap: {resp}")
+            except VATClientError as e:
+                print(f"  ERROR: openscap ingest: {e}", file=sys.stderr)
+                ok = False
+    return ok
+
+
+def _resolve_queue_parser_keys(
+    vat_url: str, admin_token: str, api_key: str, scan_types: set[str], reset_keys: bool
+) -> dict[str, str]:
+    """Mint/cache per-parser ingest keys (admin-token mode) or reuse the API key."""
+    if admin_token:
+        keys: dict[str, str] = {}
+        wanted = [
+            ("trivy", "image-sca", "package"),
+            ("cyclonedx", "image-sbom", "package"),
+            ("openscap", "container-stig", "container"),
+        ]
+        for parser_id, scan_type, asset_type in wanted:
+            if scan_type not in scan_types:
+                continue
+            _, key = _ensure_parser_ingest_key(
+                vat_url, admin_token, parser_id, reset_keys=reset_keys, asset_type=asset_type
+            )
+            if key:
+                keys[parser_id] = key
+        return keys
+    return {"trivy": api_key, "cyclonedx": api_key, "openscap": api_key} if api_key else {}
+
+
+def cmd_scan_queue(args: argparse.Namespace) -> int:
+    """Drain pending ScanRequest CRs once: claim, pull-by-digest, scan, ingest, report."""
+    import time
+
+    from vat_scanner.scanrequests import K8sConflict, K8sError, ScanRequestClient
+
+    vat_url = (getattr(args, "vat_url", "") or os.environ.get("VAT_URL", "")).strip()
+    api_key = (getattr(args, "api_key", "") or os.environ.get("VAT_API_KEY", "")).strip()
+    admin_token = (getattr(args, "admin_token", "") or os.environ.get("VAT_ADMIN_TOKEN", "")).strip()
+    if not vat_url or not (api_key or admin_token):
+        print("\nERROR: Set VAT_URL and VAT_API_KEY or VAT_ADMIN_TOKEN.", file=sys.stderr)
+        return 1
+
+    client = ScanRequestClient()
+    if not client.available():
+        print("ERROR: scan-queue requires in-cluster service account token.", file=sys.stderr)
+        return 1
+    try:
+        items = client.list()
+    except K8sError as e:
+        print(f"ERROR: listing ScanRequests: {e}", file=sys.stderr)
+        return 1
+
+    pod_namespace = os.environ.get("POD_NAMESPACE", "").strip() or client.namespace
+    auth_item = {"targets": [{"namespace": pod_namespace}]}
+    max_attempts = int(getattr(args, "max_attempts", 0) or os.environ.get("VAT_SCAN_QUEUE_MAX_ATTEMPTS", "") or 5)
+    now = time.time()
+
+    claimed = succeeded = failed = 0
+    for obj in items:
+        status = obj.get("status") or {}
+        if str(status.get("phase") or "pending") not in ("", "pending"):
+            continue
+        if not _backoff_ready(status, now):
+            continue
+
+        prev_attempts = int(status.get("attempts") or 0)
+        obj["status"] = {**status, "phase": "scanning", "startedAt": _now_iso(), "attempts": prev_attempts}
+        try:
+            obj = client.update_status(obj)
+        except K8sConflict:
+            continue  # another worker claimed it first
+        except K8sError as e:
+            print(f"  WARN: claim failed: {e}", file=sys.stderr)
+            continue
+        claimed += 1
+
+        spec = obj.get("spec") or {}
+        pull_ref, asset, tag, image_digest = _scan_request_pull_target(spec)
+        scan_types = _scan_request_scan_types(spec)
+        parser_keys = _resolve_queue_parser_keys(
+            vat_url, admin_token, api_key, set(scan_types), bool(getattr(args, "reset_keys", False))
+        )
+        print(f"Scanning ScanRequest {obj['metadata']['name']}: pull={pull_ref} asset={asset} tag={tag}")
+
+        ok = False
+        try:
+            ok = _scan_and_ingest_image(
+                pull_ref=pull_ref, asset=asset, tag=tag, image_digest=image_digest,
+                scan_types=scan_types, vat_url=vat_url, parser_keys=parser_keys,
+                api_key=api_key, auth_item=auth_item, no_snippets=getattr(args, "no_snippets", False),
+            )
+        except Exception as e:  # noqa: BLE001 - never let one bad image kill the drain
+            print(f"  ERROR: scan crashed: {e}", file=sys.stderr)
+
+        result = obj.get("status") or {}
+        if ok:
+            succeeded += 1
+            result.update({"phase": "done", "finishedAt": _now_iso(), "lastError": ""})
+        else:
+            failed += 1
+            attempts = prev_attempts + 1
+            result.update({
+                "phase": "failed" if attempts >= max_attempts else "pending",
+                "attempts": attempts,
+                "finishedAt": _now_iso(),
+                "lastError": "scan or ingest failed; see worker logs",
+            })
+        obj["status"] = result
+        try:
+            client.update_status(obj)
+        except (K8sConflict, K8sError) as e:
+            print(f"  WARN: status update failed: {e}", file=sys.stderr)
+
+    print(f"\nscan-queue pass complete. claimed={claimed} done={succeeded} failed={failed}")
+    return 0
+
+
 def cmd_config(args: argparse.Namespace) -> int:
     """Validate and show effective config."""
     path = Path(args.path).resolve() if args.path else Path.cwd()
@@ -2774,6 +3025,21 @@ def main() -> int:
     sp_node.add_argument("--timeout", type=int, default=600, help="OpenSCAP timeout in seconds")
     sp_node.add_argument("-v", "--verbose", action="store_true", help="Output scan progress")
     sp_node.set_defaults(func=cmd_scan_node)
+
+    # scan-queue (event-driven consumer)
+    sp_queue = subparsers.add_parser(
+        "scan-queue", help="Drain pending ScanRequest CRs: claim, pull-by-digest, scan, ingest"
+    )
+    sp_queue.add_argument("--vat-url", default="", help="VAT base URL (env: VAT_URL)")
+    sp_queue.add_argument("--api-key", default="", help="Ingest API key (env: VAT_API_KEY)")
+    sp_queue.add_argument("--admin-token", default="", help="Admin token to mint keys (env: VAT_ADMIN_TOKEN)")
+    sp_queue.add_argument("--reset-keys", action="store_true", help="Regenerate API keys (admin-token mode)")
+    sp_queue.add_argument("--no-snippets", action="store_true", help="Omit code snippets")
+    sp_queue.add_argument(
+        "--max-attempts", type=int, default=0,
+        help="Fail after N attempts, then park for the backstop (env: VAT_SCAN_QUEUE_MAX_ATTEMPTS, default 5)",
+    )
+    sp_queue.set_defaults(func=cmd_scan_queue)
 
     # config
     sp_cfg = subparsers.add_parser("config", help="Validate and show effective config")

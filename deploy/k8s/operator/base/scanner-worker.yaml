@@ -106,13 +106,34 @@ spec:
                 done
               }
 
+              run_scan_queue_loop() {
+                while true; do
+                  vat-scan scan-queue || echo "vat-scan scan-queue pass failed"
+                  sleep "${VAT_SCAN_QUEUE_INTERVAL_SECONDS:-15}"
+                done
+              }
+
               prewarm_ingest_keys
               run_image_inventory_loop &
               run_k8s_inventory_loop &
+              # Event-driven consumer (Phase 3): dormant until enabled; runs
+              # alongside the inventory poll, which stays source of truth.
+              if [ "${VAT_WORKER_SCAN_QUEUE_ENABLED:-false}" = "true" ]; then
+                run_scan_queue_loop &
+              fi
               wait
           env:
             - name: VAT_URL
               value: http://vat-backend.vat.svc.cluster.local:8000
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            # Event-driven scan-queue consumer (Phase 3): off by default.
+            - name: VAT_WORKER_SCAN_QUEUE_ENABLED
+              value: "false"
+            - name: VAT_SCAN_QUEUE_INTERVAL_SECONDS
+              value: "15"
             - name: VAT_SCAN_INTERVAL_SECONDS
               value: "3600"
             - name: VAT_SCAN_RETRY_INTERVAL_SECONDS
