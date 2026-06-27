@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from datetime import datetime
 
 from sqlalchemy import select
@@ -208,6 +209,31 @@ async def upsert_digest_from_external_scan(
     )
 
 
+_FLOATING_TAGS = frozenset(
+    {
+        "latest", "develop", "main", "master", "stable", "edge", "nightly",
+        "dev", "prod", "production", "staging", "canary", "head", "rolling",
+        "release", "snapshot",
+    }
+)
+# Immutable-looking: semver (v1.19.4, 1.2.3[-suffix]), git-sha tags (sha-<hex>),
+# bare digests, or date stamps (20260627...). Everything else is treated as
+# mutable/floating.
+_IMMUTABLE_TAG_RE = re.compile(
+    r"^(v?\d+(\.\d+)+([.\-+].*)?|sha-[0-9a-f]{7,}|[0-9a-f]{12,}|\d{8}.*)$"
+)
+
+
+def _is_mutable_tag(tag: str | None) -> bool:
+    """True when the tag is expected to move (floating/branch) rather than pin a
+    fixed image. Mutable tags keep the latest observed digest (Aikido-style
+    last-write-wins) instead of raising a digest conflict."""
+    t = (tag or "").strip().lower()
+    if not t or t in _FLOATING_TAGS:
+        return True
+    return _IMMUTABLE_TAG_RE.match(t) is None
+
+
 def _digest_scan_vantage(source: str | None) -> str:
     """Classify a finding ``source`` by how it observes the image digest.
 
@@ -233,6 +259,23 @@ async def _upsert_digest_conflict(
     source: str | None,
     now: datetime,
 ) -> None:
+    if _is_mutable_tag(tag):
+        # Floating tag (latest/develop/branch): the digest is meant to move, so we
+        # keep the latest observed digest (asset_observed_tags.last_digest, already
+        # updated by the caller) and never raise a conflict — last-write-wins, as
+        # Aikido does. Clear any pre-existing row so the UI stops nagging.
+        existing = (
+            await db.execute(
+                select(AssetDigestConflict).where(
+                    AssetDigestConflict.asset_id == asset_id,
+                    AssetDigestConflict.tag == tag,
+                )
+            )
+        ).scalar_one_or_none()
+        if existing is not None:
+            await db.delete(existing)
+        return
+
     # Bucket every recorded digest for this tag by scan vantage. A real conflict
     # is one vantage seeing the same tag at two digests (the tag actually moved);
     # a difference only across vantages is a multi-arch index-vs-platform
