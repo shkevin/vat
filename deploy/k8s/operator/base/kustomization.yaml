@@ -5,6 +5,7 @@ resources:
   - crd-vatoperatorconfigs.yaml
   - crd-scanpolicies.yaml
   - crd-scanreports.yaml
+  - crd-scanrequests.yaml
   - serviceaccounts.yaml
   - rbac.yaml
   - deployment.yaml
