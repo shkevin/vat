@@ -1,7 +1,9 @@
 # Decision Ledger Design
 
-**Date:** 2026-06-26  
-**Status:** Implemented (phases 1–2)  
+**Date:** 2026-06-26 (finalized 2026-06-27)  
+**Status:** Implemented (phases 0–3). Deferred: physical DB split (phase 4) and the
+optional `decision_identifiers` fuzzy-match table — both explicitly optional in the
+original design.  
 **Problem:** Triage decisions live on `findings` rows and are hard-deleted with asset cleanup.
 
 ---
@@ -52,9 +54,19 @@ Migration: `048_decision_ledger.py`
 `backend/app/services/decision_ledger.py`
 
 - `record_decision_from_finding` — dual-write on reviewer update / bulk triage
-- `resolve_and_apply_decision` — ingest hook; idempotent re-link
+- `resolve_and_apply_decision` — ingest hook; idempotent re-link with conflict policy
 - `soft_unlink_findings` — asset delete preserves decisions
-- `register_subject_alias` — fingerprint override / asset merge (future)
+- `register_subject_alias` / `register_decision_aliases_for_asset_merge` — asset-merge
+  identity migration (wired into `upsert_asset_alias`)
+- `reconcile_decision_links` — nightly drift repair across findings
+- `decision_provenance` — finding-detail read overlay (ledger linkage + conflict flag)
+
+Fingerprint override needs no alias: the DSK excludes `fingerprint_id` by design, so a
+decision survives override automatically.
+
+Tables live in a dedicated `decisions` Postgres schema (migration 051) — the design's
+service/storage boundary. They are FK-free and ORM-only, so a later physical DB split
+(phase 4) is just a connection-string change.
 
 Config: `VAT_DECISION_LEDGER_ENABLED` (default `true`)
 
@@ -86,8 +98,34 @@ Config: `VAT_DECISION_LEDGER_ENABLED` (default `true`)
 - `GET /api/decisions/waivers` — durable waiver list (includes unlinked)
 - `POST /api/decisions/backfill` — admin backfill from existing findings
 - Export bundle + auditor workbook use `build_waiver_export_records`
-- `identity_snapshot` on decisions for display when finding is gone (migration 049)
+- `identity_snapshot` on decisions for display when finding is gone (migration 050)
 - Frontend Waivers tab + badge use `/api/decisions/waivers`
+
+---
+
+## Phase 3 / finalization (complete)
+
+- **Conflict policy** (`decision_apply_action`): terminal compliance states
+  (RiskAccepted/FalsePositive/Suppressed/NotApplicable/Mitigated/Duplicate) auto-apply;
+  **Approved/Rejected are never auto-applied**; a decision is **not** projected onto a
+  finding a human edited after the decision — both emit `decision.relink.conflict`.
+- **Asset-merge identity migration**: `upsert_asset_alias` re-keys the merged asset
+  segment of affected DSKs and registers `decision_subject_aliases`, so a prior
+  Risk Accepted follows an AssetAlias-based merge. (Container *digest* merges recompute
+  the DSK at ingest via `correlation_asset_image_for_ingest` — a separate path.)
+- **Reconciliation**: `reconcile_decision_links` Celery beat (02:30 UTC, `vat-maintenance`)
+  re-runs re-linking across findings to repair drift; idempotent.
+- **Read-path overlay**: finding detail returns `decisionId`, `subjectKey`,
+  `decisionVersion`, `decisionLinkMethod`, `decisionRelinked`, `decisionConflict`
+  (annotates, never clobbers the projection cache).
+- **Schema separation**: tables moved to the `decisions` schema (migration 051).
+
+### Deferred (optional in the original design)
+
+- **Phase 4 physical DB split** — boundary is ready (FK-free, ORM-only, own schema);
+  only the connection string changes.
+- **`decision_identifiers`** fuzzy re-link table — for medium/low DSK-confidence matches.
+- **Container digest-merge → decision** bridging beyond ingest-time recomputation.
 
 ---
 

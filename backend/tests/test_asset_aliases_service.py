@@ -10,6 +10,15 @@ import pytest
 from app.services import asset_aliases
 
 
+@pytest.fixture(autouse=True)
+def _no_ledger_alias(monkeypatch):
+    """These unit tests mock the DB; the asset-merge ledger hook is tested separately."""
+    monkeypatch.setattr(
+        "app.services.decision_ledger.register_decision_aliases_for_asset_merge",
+        AsyncMock(return_value=0),
+    )
+
+
 class _Scalars:
     def __init__(self, rows):
         self._rows = rows

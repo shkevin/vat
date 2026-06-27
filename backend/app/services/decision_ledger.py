@@ -26,11 +26,10 @@ from app.services.audit_events import emit_audit_event, new_trace_id
 from app.services.decision_subject_key import (
     DecisionSubjectCandidate,
     decision_subject_keys_for_finding,
-    decision_subject_keys_for_payload,
 )
 
-# Statuses where a stored decision should auto-apply on re-import.
-_AUTO_APPLY_DECISION_STATUSES = frozenset(
+# Terminal compliance decisions auto-apply on re-import (design should_apply policy).
+_TERMINAL_DECISION_STATUSES = frozenset(
     {
         Status.RiskAccepted.value,
         Status.FalsePositive.value,
@@ -38,9 +37,16 @@ _AUTO_APPLY_DECISION_STATUSES = frozenset(
         Status.NotApplicable.value,
         Status.Mitigated.value,
         Status.Duplicate.value,
-        Status.Approved.value,
     }
 )
+
+# Approved/Rejected are reviewer judgements — never auto-applied; flagged for confirmation.
+_REVIEW_REQUIRED_STATUSES = frozenset(
+    {Status.Approved.value, Status.Rejected.value}
+)
+
+# Statuses a stored decision acts on at all (apply or flag).
+_AUTO_APPLY_DECISION_STATUSES = _TERMINAL_DECISION_STATUSES | _REVIEW_REQUIRED_STATUSES
 
 _PRE_DECISION_STATUSES = frozenset(
     {
@@ -70,6 +76,7 @@ class DecisionApplyResult:
     decision_id: str | None = None
     subject_key: str | None = None
     link_method: str | None = None
+    conflict: bool = False
 
 
 def _now() -> datetime:
@@ -198,16 +205,69 @@ async def lookup_decision(
     return None, None
 
 
-def should_apply_decision(finding: Finding, decision: TriageDecision) -> bool:
-    if finding.status.value in _PRE_DECISION_STATUSES:
-        return decision.status in _AUTO_APPLY_DECISION_STATUSES
-    if decision.status not in _AUTO_APPLY_DECISION_STATUSES:
+def _parse_audit_ts(ts: object) -> datetime | None:
+    text = str(ts or "").strip().rstrip("Z")
+    if not text:
+        return None
+    try:
+        return datetime.fromisoformat(text)
+    except ValueError:
+        return None
+
+
+def _finding_has_newer_human_edit(
+    finding: Finding, decision: TriageDecision
+) -> bool:
+    """True when the finding was edited by a human after the decision's last update."""
+    decision_updated = getattr(decision, "updated_at", None)
+    if not decision_updated:
         return False
-    # Re-apply when decision was updated after finding last reflected it.
+    latest: datetime | None = None
+    for entry in getattr(finding, "audit", None) or []:
+        if not isinstance(entry, dict):
+            continue
+        if str(entry.get("user") or "").strip().lower() in ("", "system"):
+            continue
+        ts = _parse_audit_ts(entry.get("ts"))
+        if ts and (latest is None or ts > latest):
+            latest = ts
+    # decision.updated_at is naive UTC (utcnow); audit ts are naive UTC too.
+    return bool(latest and latest > decision_updated)
+
+
+def decision_apply_action(finding: Finding, decision: TriageDecision) -> str:
+    """Return 'apply', 'skip', or 'conflict' for re-linking a decision to a finding.
+
+    Policy (design should_apply):
+    - Approved/Rejected are reviewer judgements → never auto-applied (conflict to confirm).
+    - Terminal compliance states auto-apply onto pre-decision findings.
+    - Re-apply when the decision is newer than what the finding last reflected.
+    - Never clobber a finding a human edited after the decision → conflict.
+    """
+    dstatus = decision.status
+    fstatus = finding.status.value
+
+    if dstatus in _REVIEW_REQUIRED_STATUSES:
+        return "skip" if fstatus == dstatus else "conflict"
+    if dstatus not in _TERMINAL_DECISION_STATUSES:
+        return "skip"
+
+    if fstatus in _PRE_DECISION_STATUSES:
+        return "apply"
+
     link_applied = getattr(finding, "_decision_applied_version", None)
-    if link_applied is not None and decision.decision_version > link_applied:
-        return True
-    return finding.status.value != decision.status
+    decision_is_newer = link_applied is not None and decision.decision_version > link_applied
+    if fstatus == dstatus and not decision_is_newer:
+        return "skip"
+    # Applying would change the finding — don't overwrite newer human work.
+    if _finding_has_newer_human_edit(finding, decision):
+        return "conflict"
+    return "apply"
+
+
+def should_apply_decision(finding: Finding, decision: TriageDecision) -> bool:
+    """Backwards-compatible boolean wrapper over decision_apply_action."""
+    return decision_apply_action(finding, decision) == "apply"
 
 
 def apply_decision_projection(finding: Finding, decision: TriageDecision) -> None:
@@ -289,10 +349,10 @@ async def resolve_and_apply_decision(
         existing_link.applied_decision_version if existing_link else None
     )
 
-    applied = False
-    if should_apply_decision(finding, decision):
+    action = decision_apply_action(finding, decision)
+    applied = action == "apply"
+    if applied:
         apply_decision_projection(finding, decision)
-        applied = True
 
     await upsert_decision_link(
         db,
@@ -308,8 +368,27 @@ async def resolve_and_apply_decision(
     decision.last_finding_id = finding.id
     decision.last_applied_at = _now()
 
-    # Audit only real changes / first link; no-op re-imports would flood the ledger.
-    if applied or existing_link is None:
+    if action == "conflict":
+        # Decision differs from a finding a human edited (or needs Approved/Rejected
+        # confirmation); link but don't project — surface for reviewer follow-up.
+        await emit_audit_event(
+            db,
+            trace_id=trace_id or new_trace_id(),
+            event_type="decision.relink.conflict",
+            actor_type="system",
+            finding_id=finding.id,
+            decision_name="decision_relink",
+            decision_reason_code=matched.kind,
+            decision_confidence=matched.confidence,
+            decision_result=decision.status,
+            data={
+                "decision_id": decision.id,
+                "subject_key": decision.subject_key,
+                "finding_status": finding.status.value,
+            },
+        )
+    elif applied or existing_link is None:
+        # Audit only real changes / first link; no-op re-imports would flood the ledger.
         await emit_audit_event(
             db,
             trace_id=trace_id or new_trace_id(),
@@ -331,6 +410,7 @@ async def resolve_and_apply_decision(
         decision_id=decision.id,
         subject_key=decision.subject_key,
         link_method=matched.kind,
+        conflict=action == "conflict",
     )
 
 
@@ -518,47 +598,103 @@ async def register_subject_alias(
     )
 
 
-async def candidates_for_payload(
-    db: AsyncSession,
-    *,
-    tenant_id: str | None,
-    payload: object,
-    source_name: str,
-    parser_id: str | None = None,
-) -> list[DecisionSubjectCandidate]:
-    """DSK candidates at ingest time (uses canonical asset resolution)."""
-    image = getattr(payload, "image", None) or ""
-    component = getattr(payload, "component", None) or ""
-    raw_asset = (image or component or "").strip()
-    if raw_asset:
-        kind = infer_asset_kind(raw_asset, parser_id or "")
-        if kind == "container":
-            canonical = await correlation_asset_image_for_ingest(
-                db, image=raw_asset, parser_id=parser_id
-            )
-        else:
-            canonical = await resolve_canonical_asset_id(db, raw_asset)
-    else:
-        canonical = ""
+def _rekey_subject_key_asset(
+    subject_key: str, old_norm: str, new_norm: str
+) -> str | None:
+    """Substitute the canonical-asset token in a primary DSK (asset is field index 4)."""
+    parts = subject_key.split(":")
+    if len(parts) < 5 or parts[0] != "decision":
+        return None
+    asset_seg = parts[4].split("|")
+    if not asset_seg or asset_seg[0] != old_norm:
+        return None
+    asset_seg[0] = new_norm
+    parts[4] = "|".join(asset_seg)
+    return ":".join(parts)
 
-    return decision_subject_keys_for_payload(
-        tenant_id=tenant_id,
-        finding_type=str(getattr(getattr(payload, "finding_type", None), "value", "")),
-        canonical_asset=canonical,
-        branch=getattr(payload, "branch", None) or "",
-        tag=getattr(payload, "tag", None) or "",
-        cve_id=getattr(payload, "cve_id", None) or "",
-        component=getattr(payload, "component", None) or "",
-        ecosystem=getattr(payload, "ecosystem", None),
-        rule_id=getattr(payload, "rule_id", None),
-        file_path=getattr(payload, "file_path", None),
-        benchmark_family=getattr(payload, "benchmark_family", None),
-        license_expression=getattr(payload, "license_expression", None),
-        stable_rule_key=getattr(payload, "stable_rule_key", None),
-        profile_scope=getattr(payload, "profile_scope", None),
-        source_name=source_name,
-        source_issue_id=getattr(payload, "source_issue_id", None),
+
+async def register_decision_aliases_for_asset_merge(
+    db: AsyncSession, *, old_asset_id: str, new_asset_id: str
+) -> int:
+    """Alias decisions keyed on a merged-away asset to their new canonical DSK.
+
+    After asset ``old`` merges into ``new``, future findings resolve canonical→new
+    and compute the new DSK; this alias bridges them to the decision recorded under
+    the old key so a prior Risk Accepted survives the merge.
+    """
+    if not get_settings().decision_ledger_enabled:
+        return 0
+    from app.services.dedup import normalize
+
+    old_norm = normalize(old_asset_id or "")
+    new_norm = normalize(new_asset_id or "")
+    if not old_norm or not new_norm or old_norm == new_norm:
+        return 0
+
+    # ponytail: LIKE narrows to decisions carrying the old asset token (small ledger);
+    # _rekey re-confirms the token is in asset position before aliasing.
+    rows = (
+        (
+            await db.execute(
+                select(TriageDecision).where(
+                    TriageDecision.subject_key.like(f"decision:v1:%:{old_norm}|%")
+                )
+            )
+        )
+        .scalars()
+        .all()
     )
+    count = 0
+    for decision in rows:
+        new_key = _rekey_subject_key_asset(decision.subject_key, old_norm, new_norm)
+        if not new_key or new_key == decision.subject_key:
+            continue
+        await register_subject_alias(
+            db,
+            tenant_id=decision.tenant_id,
+            alias_key=new_key,
+            canonical_key=decision.subject_key,
+            reason="asset_merge",
+        )
+        count += 1
+    return count
+
+
+async def decision_provenance(
+    db: AsyncSession, finding: Finding
+) -> dict[str, Any] | None:
+    """Ledger provenance for a finding's detail view (Phase 3 read-path).
+
+    Annotates rather than overrides: the finding row already reflects applied
+    decisions (projection cache), so we surface the durable link + a conflict flag
+    when a linked decision was NOT applied (e.g. a newer human edit) instead of
+    clobbering the cached compliance fields.
+    """
+    if not get_settings().decision_ledger_enabled:
+        return None
+    link = await db.scalar(
+        select(DecisionFindingLink).where(
+            DecisionFindingLink.finding_id == finding.id,
+            DecisionFindingLink.unlinked_at.is_(None),
+        )
+    )
+    if not link:
+        return None
+    decision = await db.get(TriageDecision, link.decision_id)
+    if not decision:
+        return None
+    fstatus = getattr(finding.status, "value", str(finding.status))
+    return {
+        "decisionId": decision.id,
+        "subjectKey": decision.subject_key,
+        "decisionVersion": decision.decision_version,
+        "decisionLinkMethod": link.link_method,
+        "decisionRelinked": link.link_method != "primary",
+        "decisionConflict": (
+            decision.status in _AUTO_APPLY_DECISION_STATUSES
+            and decision.status != fstatus
+        ),
+    }
 
 
 def _waiver_matches_asset(record: dict[str, Any], asset_id: str) -> bool:
@@ -814,6 +950,55 @@ async def backfill_decisions_from_findings(
         else:
             skipped += 1
     return {"created": created, "skipped": skipped, "scanned": len(findings)}
+
+
+async def reconcile_decision_links(
+    db: AsyncSession,
+    *,
+    tenant_id: str | None = None,
+    cross_tenant: bool = True,
+    limit: int = 5000,
+) -> dict[str, int]:
+    """Re-run decision re-linking across findings to repair drift (nightly job).
+
+    Idempotent: findings without a matching decision are no-ops; matching ones get
+    re-projected/linked and conflicts get flagged via ``decision.relink.conflict``.
+    """
+    if not get_settings().decision_ledger_enabled:
+        return {"scanned": 0, "applied": 0, "conflicts": 0, "relinked": 0}
+
+    from types import SimpleNamespace
+
+    from app.core.auth import tenant_filter
+
+    q = select(Finding)
+    if not cross_tenant:
+        ctx = SimpleNamespace(tenant_id=tenant_id, cross_tenant=False)
+        q = q.where(tenant_filter(Finding, ctx))
+    if limit > 0:
+        q = q.limit(limit)
+
+    findings = list((await db.execute(q)).scalars().all())
+    scanned = applied = conflicts = relinked = 0
+    # ponytail: per-finding resolve, fine nightly under `limit`; most are no-op skips
+    for finding in findings:
+        result = await resolve_and_apply_decision(db, finding)
+        scanned += 1
+        if result.decision_id:
+            relinked += 1
+        if result.applied:
+            applied += 1
+        if result.conflict:
+            conflicts += 1
+        if scanned % 500 == 0:
+            await db.commit()
+    await db.commit()
+    return {
+        "scanned": scanned,
+        "applied": applied,
+        "conflicts": conflicts,
+        "relinked": relinked,
+    }
 
 
 async def expire_decision_waivers(db: AsyncSession) -> int:

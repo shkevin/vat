@@ -13,6 +13,7 @@ class DecisionFindingLink(Base):
     __tablename__ = "decision_finding_links"
     __table_args__ = (
         UniqueConstraint("decision_id", "finding_id", name="uq_decision_finding_link"),
+        {"schema": "decisions"},
     )
 
     decision_id: Mapped[str] = mapped_column(String(64), primary_key=True)

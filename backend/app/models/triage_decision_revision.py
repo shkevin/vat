@@ -13,6 +13,7 @@ class TriageDecisionRevision(Base):
     __tablename__ = "triage_decision_revisions"
     __table_args__ = (
         UniqueConstraint("decision_id", "revision", name="uq_triage_decision_revision"),
+        {"schema": "decisions"},
     )
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)

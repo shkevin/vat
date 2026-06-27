@@ -43,6 +43,7 @@ from app.services.correlation_edges import (
     reactivate_edge,
 )
 from app.services.crosswalks import ingest_crosswalk_entries, resolve_crosswalk_values
+from app.services.decision_ledger import decision_provenance
 from app.services.sync_service import sync_single_finding_to_tracker
 from app.tasks.sync_tasks import trigger_sync_worker
 
@@ -211,7 +212,11 @@ async def get_finding_by_id(
         raise HTTPException(status_code=404, detail="Finding not found")
     if not finding:
         raise HTTPException(status_code=404, detail="Finding not found")
-    return finding_to_api_dict_with_group_key(finding)
+    data = finding_to_api_dict_with_group_key(finding)
+    provenance = await decision_provenance(db, finding)
+    if provenance:
+        data.update(provenance)
+    return data
 
 
 @router.patch("/{finding_id}")

@@ -16,6 +16,7 @@ class TriageDecision(Base):
     __tablename__ = "triage_decisions"
     __table_args__ = (
         UniqueConstraint("tenant_id", "subject_key", name="uq_triage_decisions_subject"),
+        {"schema": "decisions"},
     )
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)

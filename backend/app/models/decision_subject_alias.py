@@ -10,6 +10,7 @@ from app.models.base import Base
 
 class DecisionSubjectAlias(Base):
     __tablename__ = "decision_subject_aliases"
+    __table_args__ = ({"schema": "decisions"},)
 
     tenant_id: Mapped[str] = mapped_column(String(64), primary_key=True)
     alias_key: Mapped[str] = mapped_column(String(512), primary_key=True)

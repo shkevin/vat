@@ -53,11 +53,20 @@ async def upsert_asset_alias(
     if source == canonical:
         raise ValueError("source_asset_id cannot equal canonical_asset_id")
 
+    # Bridge durable decisions across the merge: alias old-asset DSKs to the new
+    # canonical so a prior Risk Accepted survives. Deferred import avoids a cycle.
+    from app.services.decision_ledger import register_decision_aliases_for_asset_merge
+
     row = await db.get(AssetAlias, source)
     if row:
+        changed = row.canonical_asset_id != canonical
         row.canonical_asset_id = canonical
         if created_by:
             row.created_by = created_by
+        if changed:
+            await register_decision_aliases_for_asset_merge(
+                db, old_asset_id=source, new_asset_id=canonical
+            )
         return row
 
     row = AssetAlias(
@@ -66,6 +75,9 @@ async def upsert_asset_alias(
         created_by=created_by,
     )
     db.add(row)
+    await register_decision_aliases_for_asset_merge(
+        db, old_asset_id=source, new_asset_id=canonical
+    )
     return row
 
 

@@ -105,6 +105,11 @@ app.conf.beat_schedule = {
         "schedule": crontab(hour=1, minute=0),
         "options": {"queue": "vat-maintenance"},
     },
+    "reconcile-decision-links": {
+        "task": "app.tasks.maintenance_tasks.reconcile_decisions",
+        "schedule": crontab(hour=2, minute=30),
+        "options": {"queue": "vat-maintenance"},
+    },
 }
 
 app.conf.task_default_queue = "vat-sync"

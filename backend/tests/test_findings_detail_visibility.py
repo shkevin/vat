@@ -30,6 +30,10 @@ async def test_get_finding_by_id_allows_legacy_null_tenant(monkeypatch):
         "finding_to_api_dict_with_group_key",
         lambda f: {"id": "f-1", "tenantId": f.tenant_id},
     )
+    # Ledger provenance is exercised separately; neutralize it for the visibility test.
+    monkeypatch.setattr(
+        findings_api, "decision_provenance", AsyncMock(return_value=None)
+    )
 
     out = await findings_api.get_finding_by_id("f-1", db=db, ctx=_ctx())
 
