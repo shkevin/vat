@@ -1538,16 +1538,13 @@ def _ensure_parser_ingest_key(
             regenerate_key=reset_keys,
             asset_type=asset_type,
         )
+        # ensure_source mints a key only when the source has none yet; an existing
+        # source returns key=None and we fall back to our persistent cache. We do
+        # NOT auto-regenerate on a cache miss: rotating here invalidates the key
+        # every other scanner already holds for this source. Persistent state
+        # (node-agent hostPath, worker PVC) keeps the cache; a genuine reset needs
+        # an explicit --reset-keys run.
         key = ensured_key or get_cached_key(source_id)
-        if not key and not reset_keys:
-            source_id, key = ensure_source(
-                vat_url,
-                admin_token,
-                parser_id,
-                create_key=True,
-                regenerate_key=True,
-                asset_type=asset_type,
-            )
         if key:
             cache_key(source_id, key)
     if key:

@@ -28,14 +28,10 @@ async def test_create_key_requires_source_id():
 async def test_create_key_persists_trimmed_source(monkeypatch):
     saved: dict = {}
 
-    async def fake_get_store(_db):
-        return {}
+    async def fake_mutate(_db, mutator):
+        return mutator(saved)
 
-    async def fake_save_store(_db, store):
-        saved.update(store)
-
-    monkeypatch.setattr(ingest_keys, "_get_keys_store", fake_get_store)
-    monkeypatch.setattr(ingest_keys, "_save_keys_store", fake_save_store)
+    monkeypatch.setattr(ingest_keys, "_mutate_keys_store", fake_mutate)
     monkeypatch.setattr(
         ingest_keys, "generate_key", lambda: ("vat_k1", ingest_keys._hash_key("vat_k1"), "vat_k1")
     )
@@ -61,23 +57,18 @@ async def test_regenerate_key_existing_and_new_source(monkeypatch):
             "sourceId": "src-1",
         }
     }
-    saved: dict = {}
+    saved: dict = store
     key_index = {"n": 0}
 
-    async def fake_get_store(_db):
-        return store
-
-    async def fake_save_store(_db, s):
-        saved.clear()
-        saved.update(s)
+    async def fake_mutate(_db, mutator):
+        return mutator(saved)
 
     def fake_generate():
         key_index["n"] += 1
         key = f"vat_new_{key_index['n']}"
         return key, ingest_keys._hash_key(key), key[: ingest_keys.KEY_PREFIX_LEN]
 
-    monkeypatch.setattr(ingest_keys, "_get_keys_store", fake_get_store)
-    monkeypatch.setattr(ingest_keys, "_save_keys_store", fake_save_store)
+    monkeypatch.setattr(ingest_keys, "_mutate_keys_store", fake_mutate)
     monkeypatch.setattr(ingest_keys, "generate_key", fake_generate)
     monkeypatch.setattr(ingest_keys, "_now", lambda: "2026-03-22T00:00:00Z")
 
@@ -109,17 +100,16 @@ async def test_revoke_list_and_validate(monkeypatch):
         "src-2": {"authType": "api_token", "keyHash": "", "keyPrefix": "vat_x"},
         "bad": "not-a-dict",
     }
-    saved: dict = {}
+    saved: dict = store
 
     async def fake_get_store(_db):
         return store
 
-    async def fake_save_store(_db, s):
-        saved.clear()
-        saved.update(s)
+    async def fake_mutate(_db, mutator):
+        return mutator(saved)
 
     monkeypatch.setattr(ingest_keys, "_get_keys_store", fake_get_store)
-    monkeypatch.setattr(ingest_keys, "_save_keys_store", fake_save_store)
+    monkeypatch.setattr(ingest_keys, "_mutate_keys_store", fake_mutate)
 
     listed = await ingest_keys.list_keys(SimpleNamespace())
     assert [(x.source_id, x.key_prefix, x.configured) for x in listed] == [

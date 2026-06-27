@@ -131,6 +131,11 @@ spec:
               value: "86400"
             - name: VAT_CLUSTER_NAME
               value: cluster
+            # Own source-id namespace so the inventory worker mints its own
+            # ingest keys (inventory-trivy, ...) instead of bare shared ones
+            # that node agents / CI also write — no cross-writer key clobber.
+            - name: VAT_SOURCE_ID_PREFIX
+              value: inventory
             - name: VAT_SCANNER_KEY_CACHE_DIR
               value: /state
             - name: HTTP_PROXY

@@ -68,6 +68,31 @@ async def _save_keys_store(db: AsyncSession, store: dict) -> None:
     await db.commit()
 
 
+async def _mutate_keys_store(db: AsyncSession, mutator):
+    """Atomically read-modify-write the ingest key store under a row lock.
+
+    Every scanner (node agents, inventory worker, CI) mints keys into this one
+    SettingsKV blob. Without the lock, two concurrent minters each read the old
+    blob and the second write drops the first's entry — the source then 401s.
+    SELECT ... FOR UPDATE serialises the read-modify-write so entries survive.
+    ponytail: assumes the row already exists (it does after first mint); a brand
+    new store races only on the one-time bootstrap insert, which is harmless.
+    """
+    r = await db.execute(
+        select(SettingsKV).where(SettingsKV.key == INGEST_KEYS_KEY).with_for_update()
+    )
+    row = r.scalar_one_or_none()
+    store = dict(row.value) if row and isinstance(row.value, dict) else {}
+    result = mutator(store)
+    if row:
+        row.value = store
+        row.updated_at = _utc_now_naive()
+    else:
+        db.add(SettingsKV(key=INGEST_KEYS_KEY, value=store, updated_at=_utc_now_naive()))
+    await db.commit()
+    return result
+
+
 @dataclass
 class IngestKeyInfo:
     source_id: str
@@ -88,54 +113,60 @@ async def create_key(db: AsyncSession, source_id: str) -> tuple[str, str, str]:
         raise ValueError("sourceId is required")
 
     full_key, key_hash, key_prefix = generate_key()
-    store = await _get_keys_store(db)
-    store[source_id] = {
-        "authType": "api_token",
-        "keyHash": key_hash,
-        "keyPrefix": key_prefix,
-        "createdAt": _now(),
-        "sourceId": source_id,
-    }
-    await _save_keys_store(db, store)
+
+    def _mut(store: dict) -> None:
+        store[source_id] = {
+            "authType": "api_token",
+            "keyHash": key_hash,
+            "keyPrefix": key_prefix,
+            "createdAt": _now(),
+            "sourceId": source_id,
+        }
+
+    await _mutate_keys_store(db, _mut)
     return full_key, key_prefix, "Store this key securely. It will not be shown again."
 
 
 async def regenerate_key(db: AsyncSession, source_id: str) -> tuple[str, str, str]:
     """Regenerate key for source_id. Returns (full_key, key_prefix, message)."""
     full_key, key_hash, key_prefix = generate_key()
-    store = await _get_keys_store(db)
-    if source_id in store and isinstance(store[source_id], dict):
-        store[source_id].update(
-            {
+
+    def _mut(store: dict) -> None:
+        if source_id in store and isinstance(store[source_id], dict):
+            store[source_id].update(
+                {
+                    "authType": "api_token",
+                    "keyHash": key_hash,
+                    "keyPrefix": key_prefix,
+                    "createdAt": store[source_id].get("createdAt", _now()),
+                    "rotatedAt": _now(),
+                    "sourceId": source_id,
+                }
+            )
+        else:
+            store[source_id] = {
                 "authType": "api_token",
                 "keyHash": key_hash,
                 "keyPrefix": key_prefix,
-                "createdAt": store[source_id].get("createdAt", _now()),
+                "createdAt": _now(),
                 "rotatedAt": _now(),
                 "sourceId": source_id,
             }
-        )
-    else:
-        store[source_id] = {
-            "authType": "api_token",
-            "keyHash": key_hash,
-            "keyPrefix": key_prefix,
-            "createdAt": _now(),
-            "rotatedAt": _now(),
-            "sourceId": source_id,
-        }
-    await _save_keys_store(db, store)
+
+    await _mutate_keys_store(db, _mut)
     return full_key, key_prefix, "Previous key invalidated. Store this key securely."
 
 
 async def revoke_key(db: AsyncSession, source_id: str) -> bool:
     """Revoke key for source_id. Returns True if key existed."""
-    store = await _get_keys_store(db)
-    if source_id in store:
-        del store[source_id]
-        await _save_keys_store(db, store)
-        return True
-    return False
+
+    def _mut(store: dict) -> bool:
+        if source_id in store:
+            del store[source_id]
+            return True
+        return False
+
+    return await _mutate_keys_store(db, _mut)
 
 
 async def list_keys(db: AsyncSession) -> list[IngestKeyInfo]:

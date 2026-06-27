@@ -110,20 +110,17 @@ spec:
 
               for parser_id, asset_type in parsers:
                   source_id = f"{prefix}-{parser_id}"
-                  key = cache.get(source_id) or cache.get(parser_id)
+                  key = cache.get(source_id)
                   if not key:
                       data = ensure(parser_id, asset_type, regenerate=False)
                       key = data.get("key")
-                  if not key:
-                      data = ensure(parser_id, asset_type, regenerate=True)
-                      key = data.get("key")
                       source_id = data.get("sourceId") or source_id
+                  # No regenerate-on-miss: this node owns its prefixed source, but
+                  # rotating still churns the shared key store. Persistent /state
+                  # (hostPath) keeps the cache warm across restarts.
                   if not key:
                       raise SystemExit(f"{source_id}: no key")
                   cache[source_id] = key
-                  # Current published scanner images do not yet understand
-                  # VAT_SOURCE_ID_PREFIX, so keep the legacy lookup warm too.
-                  cache[parser_id] = key
                   print(f"prewarmed {source_id} ingest key", file=sys.stderr)
 
               cache_file.write_text(json.dumps(cache, indent=2), encoding="utf-8")
