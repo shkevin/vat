@@ -57,6 +57,7 @@ async def record_container_asset_observation(
     *,
     payload: VatFindingSchema,
     scan_session_id: str | None,
+    source: str | None = None,
 ) -> None:
     """
     Record canonical asset tag observation and update digest conflict state.
@@ -110,7 +111,9 @@ async def record_container_asset_observation(
             row.observation_count = int(row.observation_count or 0) + 1
 
     if digest:
-        await _upsert_digest_conflict(db, asset_id=asset_id, tag=tag, digest=digest, now=now)
+        await _upsert_digest_conflict(
+            db, asset_id=asset_id, tag=tag, digest=digest, source=source, now=now
+        )
 
 
 async def ensure_container_tags_observed(
@@ -199,7 +202,26 @@ async def upsert_digest_from_external_scan(
     else:
         row.last_digest = norm
         row.last_seen_at = now
-    await _upsert_digest_conflict(db, asset_id=asset_id, tag=tag, digest=norm, now=now)
+    # External SBOM/API enrichment (e.g. Aikido) is a registry-side observation.
+    await _upsert_digest_conflict(
+        db, asset_id=asset_id, tag=tag, digest=norm, source=None, now=now
+    )
+
+
+def _digest_scan_vantage(source: str | None) -> str:
+    """Classify a finding ``source`` by how it observes the image digest.
+
+    Runtime scanners (node agents) read the digest from the local container
+    runtime (containerd); for a multi-arch image that is the platform/host
+    manifest digest, which legitimately differs from the registry index digest a
+    registry-pull scanner (inventory worker, Aikido, CI) reports for the same
+    tag. Comparing across vantages flags the same image as a conflict, so we only
+    treat a tag as conflicting when a single vantage observes multiple digests.
+
+    ponytail: vantage is inferred from the node-agent source-id convention
+    (``node-<node>-<parser>``); revisit if findings gain an explicit scan-method.
+    """
+    return "runtime" if (source or "").strip().lower().startswith("node-") else "registry"
 
 
 async def _upsert_digest_conflict(
@@ -208,27 +230,33 @@ async def _upsert_digest_conflict(
     asset_id: str,
     tag: str,
     digest: str,
+    source: str | None,
     now: datetime,
 ) -> None:
-    digests = set(
-        (
-            await db.execute(
-                select(Finding.image_digest).where(
-                    Finding.image == asset_id,
-                    Finding.tag == tag,
-                    Finding.image_digest.is_not(None),
-                )
+    # Bucket every recorded digest for this tag by scan vantage. A real conflict
+    # is one vantage seeing the same tag at two digests (the tag actually moved);
+    # a difference only across vantages is a multi-arch index-vs-platform
+    # representation of the same image and must not be flagged.
+    rows = (
+        await db.execute(
+            select(Finding.source, Finding.image_digest).where(
+                Finding.image == asset_id,
+                Finding.tag == tag,
+                Finding.image_digest.is_not(None),
             )
         )
-        .scalars()
-        .all()
-    )
-    digests = {str(d).strip() for d in digests if str(d).strip()}
-    digests.add(digest)
-    if len(digests) < 2:
-        return
+    ).all()
+    by_vantage: dict[str, set[str]] = {}
+    for f_source, f_digest in rows:
+        d = str(f_digest or "").strip()
+        if d:
+            by_vantage.setdefault(_digest_scan_vantage(f_source), set()).add(d)
+    by_vantage.setdefault(_digest_scan_vantage(source), set()).add(digest)
 
-    normalized = sorted(digests)
+    conflicting = sorted(
+        {d for ds in by_vantage.values() if len(ds) >= 2 for d in ds}
+    )
+
     conflict = (
         await db.execute(
             select(AssetDigestConflict).where(
@@ -237,13 +265,21 @@ async def _upsert_digest_conflict(
             )
         )
     ).scalar_one_or_none()
+
+    if not conflicting:
+        # No within-vantage conflict — drop any stale/false-positive row so the
+        # UI clears (derived telemetry, safe to delete and re-derive).
+        if conflict is not None:
+            await db.delete(conflict)
+        return
+
     if conflict is None:
         db.add(
             AssetDigestConflict(
                 asset_id=asset_id,
                 tag=tag,
                 status="open",
-                digests=normalized,
+                digests=conflicting,
                 first_seen_at=now,
                 last_seen_at=now,
             )
@@ -251,9 +287,9 @@ async def _upsert_digest_conflict(
         return
 
     previous = set(str(d).strip() for d in (conflict.digests or []) if str(d).strip())
-    conflict.digests = sorted(previous | set(normalized))
+    conflict.digests = conflicting
     conflict.last_seen_at = now
-    if digest not in previous:
+    if set(conflicting) - previous:
         conflict.status = "open"
         conflict.acknowledged_at = None
         conflict.acknowledged_by = None

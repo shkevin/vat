@@ -40,12 +40,13 @@ async def _record_container_asset_observations(
     db: AsyncSession,
     payload: VatFindingSchema,
     scan_session_id: str | None,
+    source: str | None = None,
 ) -> None:
     """Record tag observations; uses ``observed_container_tags`` when set (e.g. Aikido)."""
     observed = getattr(payload, "observed_container_tags", None)
     if observed is None:
         await record_container_asset_observation(
-            db, payload=payload, scan_session_id=scan_session_id
+            db, payload=payload, scan_session_id=scan_session_id, source=source
         )
         return
     tags: list[str] = []
@@ -65,7 +66,7 @@ async def _record_container_asset_observations(
     for t in tags:
         sub = payload.model_copy(update={"tag": t})
         await record_container_asset_observation(
-            db, payload=sub, scan_session_id=scan_session_id
+            db, payload=sub, scan_session_id=scan_session_id, source=source
         )
 
 
@@ -518,7 +519,7 @@ async def ingest_finding(
         # return. A crash mid-pipeline rolls back cleanly instead of leaving
         # orphan observations or correlation edges without their finding.
         await _record_container_asset_observations(
-            db, payload, scan_session_id=scan_session_id
+            db, payload, scan_session_id=scan_session_id, source=source_name
         )
         await db.flush()
         await _upsert_observation(
@@ -646,7 +647,7 @@ async def ingest_finding(
     )
     db.add(finding)
     await _record_container_asset_observations(
-        db, payload, scan_session_id=scan_session_id
+        db, payload, scan_session_id=scan_session_id, source=source_name
     )
     # Flush so the new Finding row is visible to subsequent SELECTs in this
     # transaction (correlation linking, observation upsert, identifier facts).
