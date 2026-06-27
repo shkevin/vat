@@ -359,6 +359,9 @@ def _build_waiver_records(rows: list[dict]) -> list[dict]:
 def _waivers_csv_bytes(records: list[dict]) -> bytes:
     buf = io.StringIO()
     cols = [
+        "decisionId",
+        "subjectKey",
+        "linked",
         "findingId",
         "cveId",
         "title",
@@ -371,6 +374,7 @@ def _waivers_csv_bytes(records: list[dict]) -> bytes:
         "approvedAt",
         "expiresAt",
         "controlRef",
+        "justification",
     ]
     w = csv.DictWriter(buf, fieldnames=cols, extrasaction="ignore")
     w.writeheader()
@@ -766,7 +770,14 @@ async def build_export_bundle(
     summary_from = slice_from or (summary_to - timedelta(days=365))
     html_report = _build_executive_summary_html(rows, assets, summary_from, summary_to)
 
-    waiver_records = _build_waiver_records(rows)
+    from app.services.decision_ledger import build_waiver_export_records
+
+    waiver_records = await build_waiver_export_records(
+        db,
+        tenant_id=ctx.tenant_id,
+        cross_tenant=ctx.cross_tenant,
+        finding_rows=rows,
+    )
     export_warnings: list[str] = []
 
     buf = io.BytesIO()

@@ -684,6 +684,9 @@ def build_auditor_workbook_bytes(
 
     # --- Waivers ---
     w_headers = [
+        "decisionId",
+        "subjectKey",
+        "linked",
         "findingId",
         "cveId",
         "ruleId",
@@ -697,6 +700,7 @@ def build_auditor_workbook_bytes(
         "approvedAt",
         "expiresAt",
         "controlRef",
+        "justification",
     ]
     _write_streaming_sheet(wb, "Waivers_Risk_Acceptance", w_headers, waiver_records)
 

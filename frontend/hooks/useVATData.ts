@@ -14,7 +14,9 @@ import {
   deleteLoadout as apiDeleteLoadout,
   fetchSettings,
   fetchSbomPackages,
+  fetchLedgerWaivers,
   fetchVATData,
+  type LedgerWaiver,
   type VATDataResponse,
   type LoadoutDTO,
   listLoadouts as apiListLoadouts,
@@ -458,6 +460,26 @@ export interface UseVATDataReturn {
   /** Findings filtered by sidebar (displayedAssets) — report respects sidebar filters */
   reportFilteredFindings: Finding[];
   totalAssets: number;
+}
+
+function ledgerWaiverToFinding(w: LedgerWaiver): Finding {
+  return {
+    id: w.findingId ?? w.decisionId,
+    findingType: w.findingType as Finding["findingType"],
+    fingerprintId: w.subjectKey,
+    cveId: w.cveId,
+    severity: (w.severity ?? "Medium") as Finding["severity"],
+    status: "Risk Accepted",
+    title: w.title ?? undefined,
+    component: w.component ?? undefined,
+    image: w.image ?? undefined,
+    ruleId: w.ruleId ?? undefined,
+    controlRef: w.controlRef ?? undefined,
+    attestation: (w.attestation ?? undefined) as Finding["attestation"],
+    justification: w.justification ?? undefined,
+    sources: [],
+    audit: [],
+  };
 }
 
 /** Internal hook — use via VATDataContext's useVATData. */
@@ -953,6 +975,14 @@ export function useVATDataCore(): UseVATDataReturn {
     refetchOnWindowFocus: false,
   });
 
+  const waiversQuery = useQuery({
+    queryKey: ["vat-waivers", userScope],
+    enabled: Boolean(token || userEmail),
+    queryFn: async () => fetchLedgerWaivers(undefined, auth),
+    staleTime: 30_000,
+    refetchOnWindowFocus: false,
+  });
+
   useEffect(() => {
     if (!vatQuery.data) return;
     const mapped = vatQuery.data.findings.map((r) =>
@@ -1057,14 +1087,19 @@ export function useVATDataCore(): UseVATDataReturn {
     async (opts?: { silent?: boolean; includeAuxiliary?: boolean }) => {
       await vatQuery.refetch();
       if (opts?.includeAuxiliary) {
-        await Promise.all([settingsQuery.refetch(), sbomQuery.refetch()]);
+        await Promise.all([
+          settingsQuery.refetch(),
+          sbomQuery.refetch(),
+          waiversQuery.refetch(),
+        ]);
       }
     },
-    [vatQuery, settingsQuery, sbomQuery],
+    [vatQuery, settingsQuery, sbomQuery, waiversQuery],
   );
 
   const invalidateVatData = useCallback(async () => {
     await queryClient.invalidateQueries({ queryKey: ["vat-data"] });
+    await queryClient.invalidateQueries({ queryKey: ["vat-waivers"] });
   }, [queryClient]);
 
   const handleUpdate = useCallback(
@@ -1268,14 +1303,20 @@ export function useVATDataCore(): UseVATDataReturn {
   const overdue = active.filter((f) =>
     isOverdueOpenRisk(f.status, f.slaDue),
   ).length;
-  const waiverExpiring = active.filter((f) => {
-    const d = daysLeft(f.attestation?.expiresAt);
-    return !!f.attestation && d !== null && d >= 0 && d <= 30;
-  }).length;
+  const waivers = useMemo(() => {
+    if (waiversQuery.data && waiversQuery.data.length > 0) {
+      return applyWaiverExpiry(waiversQuery.data.map(ledgerWaiverToFinding));
+    }
+    return active.filter((f) => isRiskAccepted(f.status) && f.attestation);
+  }, [waiversQuery.data, active]);
 
-  const waivers = useMemo(
-    () => active.filter((f) => isRiskAccepted(f.status) && f.attestation),
-    [active],
+  const waiverExpiring = useMemo(
+    () =>
+      waivers.filter((f) => {
+        const d = daysLeft(f.attestation?.expiresAt);
+        return !!f.attestation && d !== null && d >= 0 && d <= 30;
+      }).length,
+    [waivers],
   );
 
   const displayed = useMemo(() => {

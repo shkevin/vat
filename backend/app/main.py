@@ -36,6 +36,7 @@ from app.api import (
     assets,
     auth,
     client_config,
+    decisions,
     export,
     findings,
     health,
@@ -312,6 +313,7 @@ app.include_router(client_config.router, prefix="/api/config", tags=["client-con
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
 app.include_router(audit.router, prefix="/api/audit", tags=["audit"])
 app.include_router(findings.router, prefix="/api/findings", tags=["findings"])
+app.include_router(decisions.router, prefix="/api/decisions", tags=["decisions"])
 app.include_router(assets.router, prefix="/api/assets", tags=["assets"])
 app.include_router(vat_data.router, prefix="/api/vat-data", tags=["vat-data"])
 app.include_router(export.router, prefix="/api/export", tags=["export"])

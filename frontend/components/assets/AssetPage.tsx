@@ -337,7 +337,13 @@ export function AssetPage({ config }: AssetPageProps) {
   const assetWaivers = useMemo(
     () =>
       asset
-        ? waivers.filter((f) => asset.findings.some((af) => af.id === f.id))
+        ? waivers.filter(
+            (f) =>
+              asset.findings.some((af) => af.id === f.id) ||
+              f.image === asset.id ||
+              f.component === asset.id ||
+              f.componentBase === asset.id,
+          )
         : [],
     [asset, waivers],
   );

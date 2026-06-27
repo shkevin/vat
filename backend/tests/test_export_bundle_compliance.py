@@ -23,6 +23,19 @@ from app.services.export_service import (
 from app.services.audit_workbook_export import _iter_finding_workbook_rows
 
 
+@pytest.fixture(autouse=True)
+def _mock_ledger_waiver_export(monkeypatch):
+    """Export tests use a MagicMock db; avoid hitting the decision ledger SQL."""
+
+    async def _build(db, *, tenant_id, cross_tenant, finding_rows):
+        return _build_waiver_records(finding_rows)
+
+    monkeypatch.setattr(
+        "app.services.decision_ledger.build_waiver_export_records",
+        _build,
+    )
+
+
 def _waiver_finding(finding_id: str = "wf1", image: str = "api:latest") -> Finding:
     ts = datetime(2025, 1, 10, 12, 0, 0, tzinfo=timezone.utc)
     return Finding(

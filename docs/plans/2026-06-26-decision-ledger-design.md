@@ -1,7 +1,7 @@
 # Decision Ledger Design
 
 **Date:** 2026-06-26  
-**Status:** Implemented (phase 1)  
+**Status:** Implemented (phases 1–2)  
 **Problem:** Triage decisions live on `findings` rows and are hard-deleted with asset cleanup.
 
 ---
@@ -79,13 +79,15 @@ Config: `VAT_DECISION_LEDGER_ENABLED` (default `true`)
 
 ---
 
-## Phase 2 (not in this PR)
+## Phase 2 (complete)
 
-- Waiver expiry Celery job reads ledger first
-- Waivers tab queries ledger + active links
-- Backfill job for existing findings with decisions
-- Export/auditor workbook reads from ledger
-- Asset-merge auto-alias registration
+- Waiver expiry reads `triage_decisions` first (`expire_decision_waivers`), finding scan fallback
+- Celery beat: `enforce-waiver-expiry` daily at 01:00 UTC (`maintenance_tasks.py`)
+- `GET /api/decisions/waivers` — durable waiver list (includes unlinked)
+- `POST /api/decisions/backfill` — admin backfill from existing findings
+- Export bundle + auditor workbook use `build_waiver_export_records`
+- `identity_snapshot` on decisions for display when finding is gone (migration 049)
+- Frontend Waivers tab + badge use `/api/decisions/waivers`
 
 ---
 
@@ -93,3 +95,4 @@ Config: `VAT_DECISION_LEDGER_ENABLED` (default `true`)
 
 - `tests/test_decision_subject_key.py` — golden DSK stability (no DB)
 - `tests/test_decision_ledger.py` — survive delete + idempotent re-link (`integration_db`)
+- `tests/test_decision_ledger_phase2.py` — export + expiry helpers (no DB)

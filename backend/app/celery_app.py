@@ -43,6 +43,7 @@ app = Celery(
         "app.tasks.sync_tasks",
         "app.tasks.audit_tasks",
         "app.tasks.vuln_feed_tasks",
+        "app.tasks.maintenance_tasks",
     ],
 )
 
@@ -99,6 +100,11 @@ app.conf.beat_schedule = {
         "schedule": crontab(hour=2, minute=15),
         "options": {"queue": "vat-feeds"},
     },
+    "enforce-waiver-expiry": {
+        "task": "app.tasks.maintenance_tasks.enforce_waiver_expiry_task",
+        "schedule": crontab(hour=1, minute=0),
+        "options": {"queue": "vat-maintenance"},
+    },
 }
 
 app.conf.task_default_queue = "vat-sync"
@@ -106,5 +112,6 @@ app.conf.task_routes = {
     "app.tasks.aikido_tasks.*": {"queue": "vat-sync"},
     "app.tasks.sync_tasks.*": {"queue": "vat-sync"},
     "app.tasks.audit_tasks.*": {"queue": "vat-maintenance"},
+    "app.tasks.maintenance_tasks.*": {"queue": "vat-maintenance"},
     "app.tasks.vuln_feed_tasks.*": {"queue": "vat-feeds"},
 }

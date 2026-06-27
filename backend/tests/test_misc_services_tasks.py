@@ -119,6 +119,11 @@ async def test_waiver_expiry_enforcement(monkeypatch):
             return False
 
     monkeypatch.setattr(waiver_expiry, "async_session", lambda: _Ctx())
+    monkeypatch.setattr(
+        waiver_expiry,
+        "get_settings",
+        lambda: SimpleNamespace(decision_ledger_enabled=False),
+    )
     count = await waiver_expiry.enforce_waiver_expiry()
     assert count == 1
     assert old.status == Status.Open

@@ -30,6 +30,7 @@ class TriageDecision(Base):
     compensating_controls: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     reviewer_note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     attestation: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    identity_snapshot: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
 
     decision_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     created_by: Mapped[str] = mapped_column(String(256), nullable=False)

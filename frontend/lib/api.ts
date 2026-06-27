@@ -143,6 +143,45 @@ export async function fetchFinding(
   return res.json();
 }
 
+export interface LedgerWaiver {
+  decisionId: string;
+  subjectKey: string;
+  tenantId: string;
+  findingId?: string | null;
+  linked: boolean;
+  findingType: string;
+  status: string;
+  cveId: string;
+  title?: string | null;
+  severity?: string | null;
+  component?: string | null;
+  image?: string | null;
+  ruleId?: string | null;
+  controlRef?: string | null;
+  attestation?: Record<string, unknown> | null;
+  justification?: string | null;
+  decisionVersion: number;
+  updatedAt?: string | null;
+}
+
+export async function fetchLedgerWaivers(
+  params?: { assetId?: string },
+  auth?: Auth,
+): Promise<LedgerWaiver[]> {
+  const search = new URLSearchParams();
+  if (params?.assetId) search.set("assetId", params.assetId);
+  const qs = search.toString();
+  const res = await vatFetch(
+    `${API_BASE}/decisions/waivers${qs ? `?${qs}` : ""}`,
+    { headers: authHeaders(auth?.token, auth?.userEmail) },
+    auth,
+  );
+  if (!res.ok) {
+    throw new Error(`API error: ${res.status} ${res.statusText}`);
+  }
+  return res.json();
+}
+
 export interface VATDataResponse {
   findings: ApiFinding[];
   assets: Array<{
