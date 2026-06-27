@@ -44,6 +44,7 @@ from app.api import (
     loadouts,
     oauth,
     sbom,
+    scan,
     seed,
     settings,
     sync_worker,
@@ -318,6 +319,7 @@ app.include_router(assets.router, prefix="/api/assets", tags=["assets"])
 app.include_router(vat_data.router, prefix="/api/vat-data", tags=["vat-data"])
 app.include_router(export.router, prefix="/api/export", tags=["export"])
 app.include_router(sbom.router, prefix="/api/sbom", tags=["sbom"])
+app.include_router(scan.router, prefix="/api/scan", tags=["scan"])
 app.include_router(seed.router, prefix="/api/seed", tags=["seed"])
 app.include_router(settings.router, prefix="/api/settings", tags=["settings"])
 app.include_router(tenants.router, prefix="/api/tenants", tags=["tenants"])
