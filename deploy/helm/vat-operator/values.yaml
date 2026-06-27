@@ -93,6 +93,9 @@ nodeAgent:
   imagePullPolicy: Always
   runtimeProfile: generic
   scanTypes: node-stig,node-oval-cve
+  # Phase 5: node agents do host scans only by default — the worker's registry
+  # pull is the single image vantage. Set true for air-gapped on-node scanning.
+  imageScans: false
   runtimeScanTypes: image-sca,image-sbom,container-stig
   runtimeImagePullSecrets: ""
   scanIntervalSeconds: 86400
