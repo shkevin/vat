@@ -14,6 +14,11 @@ spec:
     metadata:
       labels:
         app.kubernetes.io/name: vat-operator
+      annotations:
+        # Annotation-based scrape (event-driven metrics, active mode only).
+        prometheus.io/scrape: {{ .Values.operator.eventDrivenScans | quote }}
+        prometheus.io/port: "9095"
+        prometheus.io/path: /metrics
     spec:
       serviceAccountName: vat-operator
       {{- with .Values.imagePullSecrets }}
@@ -26,6 +31,9 @@ spec:
         - name: operator
           image: {{ include "vat-operator.operatorImage" . }}
           imagePullPolicy: {{ .Values.operator.image.pullPolicy }}
+          ports:
+            - name: metrics
+              containerPort: 9095
           env:
             - name: VAT_URL
               value: {{ .Values.vat.url | quote }}

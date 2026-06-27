@@ -89,17 +89,21 @@ func (c *Client) Create(ctx context.Context, item watch.WorkItem) (bool, error) 
 	return true, nil
 }
 
-// GC deletes done/failed ScanRequests older than ttl, bounding CR accumulation.
-// Keyed on creationTimestamp (always present) rather than parsing status times.
-func (c *Client) GC(ctx context.Context, ttl time.Duration, now time.Time) (int, error) {
+// GC deletes done/failed ScanRequests older than ttl, bounding CR accumulation,
+// and returns (deleted, pending) — pending feeds the backlog gauge. Keyed on
+// creationTimestamp (always present) rather than parsing status times.
+func (c *Client) GC(ctx context.Context, ttl time.Duration, now time.Time) (int, int, error) {
 	list, err := c.dyn.Resource(gvr).Namespace(c.namespace).List(ctx, metav1.ListOptions{})
 	if err != nil {
-		return 0, err
+		return 0, 0, err
 	}
-	deleted := 0
+	deleted, pending := 0, 0
 	for i := range list.Items {
 		it := &list.Items[i]
 		phase, _, _ := unstructured.NestedString(it.Object, "status", "phase")
+		if phase == "" || phase == "pending" {
+			pending++
+		}
 		if phase != "done" && phase != "failed" {
 			continue
 		}
@@ -112,5 +116,5 @@ func (c *Client) GC(ctx context.Context, ttl time.Duration, now time.Time) (int,
 		}
 		deleted++
 	}
-	return deleted, nil
+	return deleted, pending, nil
 }

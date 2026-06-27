@@ -67,12 +67,15 @@ func TestGCDeletesFinishedPastTTLOnly(t *testing.T) {
 		sr("pending-old", "pending", old), // keep (not finished)
 	)
 
-	deleted, err := c.GC(context.Background(), time.Hour, now)
+	deleted, pending, err := c.GC(context.Background(), time.Hour, now)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if deleted != 2 {
 		t.Fatalf("want 2 deleted, got %d", deleted)
+	}
+	if pending != 1 {
+		t.Fatalf("want 1 pending (pending-old), got %d", pending)
 	}
 	list, _ := c.dyn.Resource(gvr).Namespace("vat-operator").List(context.Background(), metav1.ListOptions{})
 	got := map[string]bool{}

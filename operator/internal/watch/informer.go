@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	"gitlab.automatedhass.com/personal/vat/operator/internal/metrics"
+
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/informers"
@@ -39,7 +41,10 @@ func Run(ctx context.Context, client kubernetes.Interface, writer ScanRequestWri
 		if !ok || pod == nil || excluded[pod.Namespace] {
 			return
 		}
-		for _, it := range tracker.Observe(WorkItemsFromPod(pod)) {
+		items := WorkItemsFromPod(pod)
+		fresh := tracker.Observe(items)
+		metrics.AddDedupHits(len(items) - len(fresh))
+		for _, it := range fresh {
 			if shadow {
 				log.Printf(
 					"event-driven shadow: WOULD scan digest=%q imageRef=%q tag=%q observedRef=%s/%s/%s",
@@ -50,6 +55,7 @@ func Run(ctx context.Context, client kubernetes.Interface, writer ScanRequestWri
 			if created, err := writer.Create(ctx, it); err != nil {
 				log.Printf("event-driven: create ScanRequest for digest=%q imageRef=%q failed: %v", it.Digest, it.ImageRef, err)
 			} else if created {
+				metrics.IncCreated("event")
 				log.Printf("event-driven: queued scan digest=%q imageRef=%q tag=%q", it.Digest, it.ImageRef, it.Tag)
 			}
 		}
@@ -80,7 +86,10 @@ func Backstop(ctx context.Context, client kubernetes.Interface, writer ScanReque
 		if excluded[pod.Namespace] || pod.Status.Phase == corev1.PodSucceeded {
 			continue
 		}
-		for _, it := range tracker.Observe(WorkItemsFromPod(pod)) {
+		items := WorkItemsFromPod(pod)
+		fresh := tracker.Observe(items)
+		metrics.AddDedupHits(len(items) - len(fresh))
+		for _, it := range fresh {
 			didCreate, err := writer.Create(ctx, it)
 			if err != nil {
 				log.Printf("event-driven backstop: create for digest=%q failed: %v", it.Digest, err)
@@ -91,6 +100,7 @@ func Backstop(ctx context.Context, client kubernetes.Interface, writer ScanReque
 			}
 		}
 	}
+	metrics.AddCreatedBackstop(created)
 	return created, nil
 }
 

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"gitlab.automatedhass.com/personal/vat/operator/internal/config"
+	"gitlab.automatedhass.com/personal/vat/operator/internal/metrics"
 	"gitlab.automatedhass.com/personal/vat/operator/internal/reconcile"
 	"gitlab.automatedhass.com/personal/vat/operator/internal/scanrequest"
 	"gitlab.automatedhass.com/personal/vat/operator/internal/watch"
@@ -53,6 +54,11 @@ func main() {
 	// Event-driven informer runs alongside the poll, which stays the fallback
 	// through Phase 4. Shadow mode logs only; active mode creates ScanRequests.
 	if cfg.EventDrivenScansEnabled {
+		go func() {
+			if err := metrics.Serve(":9095"); err != nil {
+				log.Printf("metrics server stopped: %v", err)
+			}
+		}()
 		go runEventDriven(ctx, client, restConfig, cfg)
 	}
 
@@ -106,10 +112,13 @@ func runBackstop(ctx context.Context, client kubernetes.Interface, writer *scanr
 			} else if created > 0 {
 				log.Printf("event-driven backstop: created %d missing ScanRequest(s)", created)
 			}
-			if deleted, err := writer.GC(ctx, ttl, time.Now()); err != nil {
+			if deleted, pending, err := writer.GC(ctx, ttl, time.Now()); err != nil {
 				log.Printf("event-driven GC: list failed: %v", err)
-			} else if deleted > 0 {
-				log.Printf("event-driven GC: deleted %d finished ScanRequest(s)", deleted)
+			} else {
+				metrics.SetBacklog(pending)
+				if deleted > 0 {
+					log.Printf("event-driven GC: deleted %d finished ScanRequest(s); backlog=%d", deleted, pending)
+				}
 			}
 		}
 	}

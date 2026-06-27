@@ -1,0 +1,34 @@
+# Prometheus alert rules for event-driven container scanning (Phase 6).
+#
+# Load into the Prometheus that scrapes the vat-operator /metrics endpoint
+# (annotation-based scrape: prometheus.io/scrape on the operator pod, port 9095).
+# Not wired into observability/prometheus.yml — that stack is docker-compose and
+# does not run the operator; point your cluster Prometheus's rule_files here.
+groups:
+  - name: vat-event-driven-scanning
+    rules:
+      # Backstop should be a small tail. A high backstop:event ratio means the
+      # informer is missing events (watch unhealthy / operator flapping).
+      - alert: VatScanBackstopRatioHigh
+        expr: |
+          sum(rate(vat_scanrequests_created_total{trigger="backstop"}[1h]))
+            /
+          clamp_min(sum(rate(vat_scanrequests_created_total[1h])), 1e-9)
+            > 0.5
+        for: 2h
+        labels:
+          severity: warning
+        annotations:
+          summary: "Event-driven scans are mostly backstop-triggered"
+          description: "Over half of ScanRequests in the last hour came from the backstop, not the informer — the Pod watch is likely unhealthy."
+
+      # A persistent backlog means the worker isn't draining the queue (consumer
+      # down, pull failures exhausting retries, or burst beyond capacity).
+      - alert: VatScanRequestBacklogStuck
+        expr: vat_scanrequest_backlog > 20
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "ScanRequest backlog is not draining"
+          description: "{{ $value }} ScanRequests have been pending for over an hour — check the vat-scanner-worker scan-queue consumer."
