@@ -43,6 +43,10 @@ spec:
               value: workload
             - name: VAT_OPERATOR_NODE_SCANNING_ENABLED
               value: "false"
+            # Event-driven shadow informer (Phase 2): log-only, creates no
+            # ScanRequests. Poll stays source of truth until Phase 4.
+            - name: VAT_OPERATOR_EVENT_DRIVEN_SCANS
+              value: "false"
           resources:
             requests:
               cpu: 50m

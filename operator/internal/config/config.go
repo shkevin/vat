@@ -34,6 +34,7 @@ type Config struct {
 	RescanIntervalSeconds   int
 	ExcludedNamespaceNames  []string
 	ImageInventoryMode      string
+	EventDrivenScansEnabled bool
 }
 
 func LoadFromEnv() (Config, error) {
@@ -46,6 +47,7 @@ func LoadFromEnv() (Config, error) {
 		"VAT_OPERATOR_RUNTIME_PROFILE":       os.Getenv("VAT_OPERATOR_RUNTIME_PROFILE"),
 		"VAT_OPERATOR_NODE_SCANNING_ENABLED": os.Getenv("VAT_OPERATOR_NODE_SCANNING_ENABLED"),
 		"VAT_OPERATOR_IMAGE_INVENTORY_MODE":  os.Getenv("VAT_OPERATOR_IMAGE_INVENTORY_MODE"),
+		"VAT_OPERATOR_EVENT_DRIVEN_SCANS":    os.Getenv("VAT_OPERATOR_EVENT_DRIVEN_SCANS"),
 	})
 }
 
@@ -79,6 +81,7 @@ func LoadFromMap(env map[string]string) (Config, error) {
 		RescanIntervalSeconds:   3600,
 		ExcludedNamespaceNames:  []string{"kube-system", "kube-public", "kube-node-lease"},
 		ImageInventoryMode:      imageInventoryMode(env["VAT_OPERATOR_IMAGE_INVENTORY_MODE"]),
+		EventDrivenScansEnabled: parseBool(env["VAT_OPERATOR_EVENT_DRIVEN_SCANS"]),
 	}, nil
 }
 

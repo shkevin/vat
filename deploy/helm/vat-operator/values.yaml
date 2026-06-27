@@ -19,6 +19,9 @@ operator:
   maxConcurrentScanJobs: 5
   nodeScanning:
     enabled: false
+  # Event-driven shadow informer (Phase 2): log-only, creates no ScanRequests.
+  # Gates the whole new path; the poll stays source of truth until Phase 4.
+  eventDrivenScans: false
   resources:
     requests:
       cpu: 50m

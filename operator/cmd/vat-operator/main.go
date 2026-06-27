@@ -11,6 +11,7 @@ import (
 
 	"gitlab.automatedhass.com/personal/vat/operator/internal/config"
 	"gitlab.automatedhass.com/personal/vat/operator/internal/reconcile"
+	"gitlab.automatedhass.com/personal/vat/operator/internal/watch"
 
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -40,14 +41,38 @@ func main() {
 	defer stop()
 
 	log.Printf(
-		"starting VAT operator: namespace=%s scannerImage=%s runtimeProfile=%s nodeScanning=%t",
+		"starting VAT operator: namespace=%s scannerImage=%s runtimeProfile=%s nodeScanning=%t eventDrivenScans=%t",
 		cfg.Namespace,
 		cfg.ScannerImage,
 		cfg.RuntimeProfile.Name,
 		cfg.NodeScanningEnabled,
+		cfg.EventDrivenScansEnabled,
 	)
 
+	// Event-driven shadow informer runs alongside the poll (which stays the
+	// source of truth until Phase 4). Log-only: it creates no ScanRequests.
+	if cfg.EventDrivenScansEnabled {
+		go runShadow(ctx, client, cfg)
+	}
+
 	run(ctx, client, cfg)
+}
+
+func runShadow(ctx context.Context, client kubernetes.Interface, cfg config.Config) {
+	var warm []string
+	if apiKey, err := watch.ReadAPIKey(ctx, client, cfg.Namespace, cfg.CredentialsSecretName, cfg.APIKeyKey); err != nil {
+		log.Printf("event-driven shadow: read api key failed, warming empty: %v", err)
+	} else if digests, err := watch.FetchKnownDigests(ctx, cfg.VatURL, apiKey); err != nil {
+		log.Printf("event-driven shadow: known-digests warm-up failed, warming empty: %v", err)
+	} else {
+		warm = digests
+	}
+
+	excluded := make(map[string]bool, len(cfg.ExcludedNamespaceNames))
+	for _, ns := range cfg.ExcludedNamespaceNames {
+		excluded[ns] = true
+	}
+	watch.RunShadow(ctx, client, excluded, warm)
 }
 
 func run(ctx context.Context, client kubernetes.Interface, cfg config.Config) {
