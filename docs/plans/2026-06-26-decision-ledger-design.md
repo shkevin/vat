@@ -1,9 +1,8 @@
 # Decision Ledger Design
 
 **Date:** 2026-06-26 (finalized 2026-06-27)  
-**Status:** Implemented (phases 0–3). Deferred: physical DB split (phase 4) and the
-optional `decision_identifiers` fuzzy-match table — both explicitly optional in the
-original design.  
+**Status:** Implemented (phases 0–3 + phase 4 read-only compliance role). Deferred:
+the physical DB split itself and the optional `decision_identifiers` fuzzy-match table.  
 **Problem:** Triage decisions live on `findings` rows and are hard-deleted with asset cleanup.
 
 ---
@@ -120,10 +119,25 @@ Config: `VAT_DECISION_LEDGER_ENABLED` (default `true`)
   (annotates, never clobbers the projection cache).
 - **Schema separation**: tables moved to the `decisions` schema (migration 051).
 
+## Phase 4 — compliance isolation (read-only role)
+
+The physical DB split is **deliberately not done**: it breaks the atomic
+"upsert finding + attach decision" transaction (ingest/triage commit both on one
+engine), and its real goal — read-only compliance access — is met on the existing
+schema. Delivered instead:
+
+- **`vat_compliance_ro`** — a NOLOGIN group role with `SELECT` on the `decisions`
+  schema only (no write, no access to operational `public` tables).
+  `deploy/sql/compliance_ro_role.sql` (idempotent). Attach a login user out of band
+  so the credential stays a secret.
+
+The split stays cheap to add later (FK-free, ORM-only, own schema → "only the
+connection string changes") if a hard storage-isolation requirement appears.
+
 ### Deferred (optional in the original design)
 
-- **Phase 4 physical DB split** — boundary is ready (FK-free, ORM-only, own schema);
-  only the connection string changes.
+- **Physical DB split** — separate engine/connection; trades atomic finding+decision
+  writes for eventual consistency (reconcile repairs drift). Not justified today.
 - **`decision_identifiers`** fuzzy re-link table — for medium/low DSK-confidence matches.
 - **Container digest-merge → decision** bridging beyond ingest-time recomputation.
 
