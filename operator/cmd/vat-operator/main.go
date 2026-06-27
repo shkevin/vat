@@ -11,6 +11,7 @@ import (
 
 	"gitlab.automatedhass.com/personal/vat/operator/internal/config"
 	"gitlab.automatedhass.com/personal/vat/operator/internal/reconcile"
+	"gitlab.automatedhass.com/personal/vat/operator/internal/scanrequest"
 	"gitlab.automatedhass.com/personal/vat/operator/internal/watch"
 
 	"k8s.io/client-go/kubernetes"
@@ -49,30 +50,69 @@ func main() {
 		cfg.EventDrivenScansEnabled,
 	)
 
-	// Event-driven shadow informer runs alongside the poll (which stays the
-	// source of truth until Phase 4). Log-only: it creates no ScanRequests.
+	// Event-driven informer runs alongside the poll, which stays the fallback
+	// through Phase 4. Shadow mode logs only; active mode creates ScanRequests.
 	if cfg.EventDrivenScansEnabled {
-		go runShadow(ctx, client, cfg)
+		go runEventDriven(ctx, client, restConfig, cfg)
 	}
 
 	run(ctx, client, cfg)
 }
 
-func runShadow(ctx context.Context, client kubernetes.Interface, cfg config.Config) {
+func runEventDriven(ctx context.Context, client kubernetes.Interface, restConfig *rest.Config, cfg config.Config) {
 	var warm []string
 	if apiKey, err := watch.ReadAPIKey(ctx, client, cfg.Namespace, cfg.CredentialsSecretName, cfg.APIKeyKey); err != nil {
-		log.Printf("event-driven shadow: read api key failed, warming empty: %v", err)
+		log.Printf("event-driven: read api key failed, warming empty: %v", err)
 	} else if digests, err := watch.FetchKnownDigests(ctx, cfg.VatURL, apiKey); err != nil {
-		log.Printf("event-driven shadow: known-digests warm-up failed, warming empty: %v", err)
+		log.Printf("event-driven: known-digests warm-up failed, warming empty: %v", err)
 	} else {
 		warm = digests
 	}
+	tracker := watch.NewTracker(warm)
+	log.Printf("event-driven: warmed dedup set with %d known digests (shadow=%t)", tracker.Size(), cfg.EventDrivenShadow)
 
 	excluded := make(map[string]bool, len(cfg.ExcludedNamespaceNames))
 	for _, ns := range cfg.ExcludedNamespaceNames {
 		excluded[ns] = true
 	}
-	watch.RunShadow(ctx, client, excluded, warm)
+
+	var writer watch.ScanRequestWriter
+	if !cfg.EventDrivenShadow {
+		w, err := scanrequest.NewClient(restConfig, cfg.Namespace)
+		if err != nil {
+			log.Fatalf("event-driven: build ScanRequest client: %v", err)
+		}
+		writer = w
+		go runBackstop(ctx, client, w, tracker, excluded, cfg)
+	}
+
+	watch.Run(ctx, client, writer, tracker, excluded, cfg.EventDrivenShadow)
+}
+
+// runBackstop periodically fills coverage gaps (informer-missed pods) and GCs
+// finished ScanRequests. The informer's resync is the fast backstop; this is the
+// correctness floor for operator downtime / total watch failure.
+func runBackstop(ctx context.Context, client kubernetes.Interface, writer *scanrequest.Client, tracker *watch.Tracker, excluded map[string]bool, cfg config.Config) {
+	ticker := time.NewTicker(time.Duration(cfg.BackstopIntervalSeconds) * time.Second)
+	defer ticker.Stop()
+	ttl := time.Duration(cfg.ScanRequestTTLSeconds) * time.Second
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if created, err := watch.Backstop(ctx, client, writer, tracker, excluded); err != nil {
+				log.Printf("event-driven backstop: list pods failed: %v", err)
+			} else if created > 0 {
+				log.Printf("event-driven backstop: created %d missing ScanRequest(s)", created)
+			}
+			if deleted, err := writer.GC(ctx, ttl, time.Now()); err != nil {
+				log.Printf("event-driven GC: list failed: %v", err)
+			} else if deleted > 0 {
+				log.Printf("event-driven GC: deleted %d finished ScanRequest(s)", deleted)
+			}
+		}
+	}
 }
 
 func run(ctx context.Context, client kubernetes.Interface, cfg config.Config) {

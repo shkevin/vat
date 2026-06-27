@@ -19,9 +19,11 @@ operator:
   maxConcurrentScanJobs: 5
   nodeScanning:
     enabled: false
-  # Event-driven shadow informer (Phase 2): log-only, creates no ScanRequests.
-  # Gates the whole new path; the poll stays source of truth until Phase 4.
+  # Event-driven informer. eventDrivenScans gates the whole path (false = pure
+  # poll). eventDrivenShadow=true logs only; set false to create ScanRequests
+  # (Phase 4) — that also starts the backstop + GC.
   eventDrivenScans: false
+  eventDrivenShadow: true
   resources:
     requests:
       cpu: 50m

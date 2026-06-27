@@ -45,5 +45,7 @@ spec:
               value: {{ or .Values.operator.nodeScanning.enabled .Values.nodeAgent.enabled | quote }}
             - name: VAT_OPERATOR_EVENT_DRIVEN_SCANS
               value: {{ .Values.operator.eventDrivenScans | quote }}
+            - name: VAT_OPERATOR_EVENT_DRIVEN_SHADOW
+              value: {{ .Values.operator.eventDrivenShadow | default true | quote }}
           resources:
             {{- toYaml .Values.operator.resources | nindent 12 }}

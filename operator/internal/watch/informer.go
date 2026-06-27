@@ -17,16 +17,20 @@ import (
 )
 
 // resyncPeriod re-delivers all known pods periodically so a dropped watch event
-// can't permanently miss an image. Cheap — it's metadata, not a scan.
+// can't permanently miss an image. Cheap — it's metadata, not a scan. It also
+// makes the informer itself a backstop for transient watch gaps.
 const resyncPeriod = 20 * time.Minute
 
-// RunShadow starts a cluster-wide Pod informer and, in shadow mode, logs the
-// scans the operator WOULD trigger for newly-seen image digests. It creates no
-// ScanRequests. Blocks until ctx is cancelled.
-func RunShadow(ctx context.Context, client kubernetes.Interface, excluded map[string]bool, warm []string) {
-	tracker := NewTracker(warm)
-	log.Printf("event-driven shadow: warmed dedup set with %d known digests", tracker.Size())
+// ScanRequestWriter creates a ScanRequest for a work item (idempotent by name).
+// Returns true when it actually created one, false on an AlreadyExists dedup hit.
+type ScanRequestWriter interface {
+	Create(ctx context.Context, item WorkItem) (bool, error)
+}
 
+// Run starts a cluster-wide Pod informer. In shadow mode it only LOGS the scans
+// it would trigger; in active mode it creates a ScanRequest per fresh digest via
+// writer. Blocks until ctx is cancelled.
+func Run(ctx context.Context, client kubernetes.Interface, writer ScanRequestWriter, tracker *Tracker, excluded map[string]bool, shadow bool) {
 	factory := informers.NewSharedInformerFactory(client, resyncPeriod)
 	podInformer := factory.Core().V1().Pods().Informer()
 
@@ -36,10 +40,18 @@ func RunShadow(ctx context.Context, client kubernetes.Interface, excluded map[st
 			return
 		}
 		for _, it := range tracker.Observe(WorkItemsFromPod(pod)) {
-			log.Printf(
-				"event-driven shadow: WOULD scan digest=%q imageRef=%q tag=%q scanTypes=%v observedRef=%s/%s/%s",
-				it.Digest, it.ImageRef, it.Tag, it.ScanTypes, pod.Namespace, pod.Name, it.ObservedRefs[0].Container,
-			)
+			if shadow {
+				log.Printf(
+					"event-driven shadow: WOULD scan digest=%q imageRef=%q tag=%q observedRef=%s/%s/%s",
+					it.Digest, it.ImageRef, it.Tag, pod.Namespace, pod.Name, it.ObservedRefs[0].Container,
+				)
+				continue
+			}
+			if created, err := writer.Create(ctx, it); err != nil {
+				log.Printf("event-driven: create ScanRequest for digest=%q imageRef=%q failed: %v", it.Digest, it.ImageRef, err)
+			} else if created {
+				log.Printf("event-driven: queued scan digest=%q imageRef=%q tag=%q", it.Digest, it.ImageRef, it.Tag)
+			}
 		}
 	}
 
@@ -50,8 +62,36 @@ func RunShadow(ctx context.Context, client kubernetes.Interface, excluded map[st
 
 	factory.Start(ctx.Done())
 	factory.WaitForCacheSync(ctx.Done())
-	log.Printf("event-driven shadow: Pod informer synced; watching all non-excluded namespaces")
+	log.Printf("event-driven: Pod informer synced (shadow=%t); watching all non-excluded namespaces", shadow)
 	<-ctx.Done()
+}
+
+// Backstop lists all pods once and creates ScanRequests for anything the tracker
+// hasn't already seen — the correctness floor for when the informer missed events
+// (operator downtime, watch gaps). Idempotent CR naming makes re-creates no-ops.
+func Backstop(ctx context.Context, client kubernetes.Interface, writer ScanRequestWriter, tracker *Tracker, excluded map[string]bool) (int, error) {
+	pods, err := client.CoreV1().Pods("").List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return 0, err
+	}
+	created := 0
+	for i := range pods.Items {
+		pod := &pods.Items[i]
+		if excluded[pod.Namespace] || pod.Status.Phase == corev1.PodSucceeded {
+			continue
+		}
+		for _, it := range tracker.Observe(WorkItemsFromPod(pod)) {
+			didCreate, err := writer.Create(ctx, it)
+			if err != nil {
+				log.Printf("event-driven backstop: create for digest=%q failed: %v", it.Digest, err)
+				continue
+			}
+			if didCreate {
+				created++
+			}
+		}
+	}
+	return created, nil
 }
 
 // FetchKnownDigests warms the dedup set from the backend's read-only projection

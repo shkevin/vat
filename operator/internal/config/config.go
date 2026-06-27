@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 
 	"gitlab.automatedhass.com/personal/vat/operator/internal/profiles"
@@ -35,19 +36,25 @@ type Config struct {
 	ExcludedNamespaceNames  []string
 	ImageInventoryMode      string
 	EventDrivenScansEnabled bool
+	EventDrivenShadow       bool
+	BackstopIntervalSeconds int
+	ScanRequestTTLSeconds   int
 }
 
 func LoadFromEnv() (Config, error) {
 	return LoadFromMap(map[string]string{
-		"VAT_URL":                            os.Getenv("VAT_URL"),
-		"VAT_OPERATOR_SCANNER_IMAGE":         os.Getenv("VAT_OPERATOR_SCANNER_IMAGE"),
-		"VAT_OPERATOR_NAMESPACE":             os.Getenv("VAT_OPERATOR_NAMESPACE"),
-		"VAT_OPERATOR_CREDENTIAL_SECRET":     os.Getenv("VAT_OPERATOR_CREDENTIAL_SECRET"),
-		"VAT_OPERATOR_ADMIN_TOKEN_KEY":       os.Getenv("VAT_OPERATOR_ADMIN_TOKEN_KEY"),
-		"VAT_OPERATOR_RUNTIME_PROFILE":       os.Getenv("VAT_OPERATOR_RUNTIME_PROFILE"),
-		"VAT_OPERATOR_NODE_SCANNING_ENABLED": os.Getenv("VAT_OPERATOR_NODE_SCANNING_ENABLED"),
-		"VAT_OPERATOR_IMAGE_INVENTORY_MODE":  os.Getenv("VAT_OPERATOR_IMAGE_INVENTORY_MODE"),
-		"VAT_OPERATOR_EVENT_DRIVEN_SCANS":    os.Getenv("VAT_OPERATOR_EVENT_DRIVEN_SCANS"),
+		"VAT_URL":                                os.Getenv("VAT_URL"),
+		"VAT_OPERATOR_SCANNER_IMAGE":             os.Getenv("VAT_OPERATOR_SCANNER_IMAGE"),
+		"VAT_OPERATOR_NAMESPACE":                 os.Getenv("VAT_OPERATOR_NAMESPACE"),
+		"VAT_OPERATOR_CREDENTIAL_SECRET":         os.Getenv("VAT_OPERATOR_CREDENTIAL_SECRET"),
+		"VAT_OPERATOR_ADMIN_TOKEN_KEY":           os.Getenv("VAT_OPERATOR_ADMIN_TOKEN_KEY"),
+		"VAT_OPERATOR_RUNTIME_PROFILE":           os.Getenv("VAT_OPERATOR_RUNTIME_PROFILE"),
+		"VAT_OPERATOR_NODE_SCANNING_ENABLED":     os.Getenv("VAT_OPERATOR_NODE_SCANNING_ENABLED"),
+		"VAT_OPERATOR_IMAGE_INVENTORY_MODE":      os.Getenv("VAT_OPERATOR_IMAGE_INVENTORY_MODE"),
+		"VAT_OPERATOR_EVENT_DRIVEN_SCANS":        os.Getenv("VAT_OPERATOR_EVENT_DRIVEN_SCANS"),
+		"VAT_OPERATOR_EVENT_DRIVEN_SHADOW":       os.Getenv("VAT_OPERATOR_EVENT_DRIVEN_SHADOW"),
+		"VAT_OPERATOR_BACKSTOP_INTERVAL_SECONDS": os.Getenv("VAT_OPERATOR_BACKSTOP_INTERVAL_SECONDS"),
+		"VAT_OPERATOR_SCANREQUEST_TTL_SECONDS":   os.Getenv("VAT_OPERATOR_SCANREQUEST_TTL_SECONDS"),
 	})
 }
 
@@ -82,6 +89,11 @@ func LoadFromMap(env map[string]string) (Config, error) {
 		ExcludedNamespaceNames:  []string{"kube-system", "kube-public", "kube-node-lease"},
 		ImageInventoryMode:      imageInventoryMode(env["VAT_OPERATOR_IMAGE_INVENTORY_MODE"]),
 		EventDrivenScansEnabled: parseBool(env["VAT_OPERATOR_EVENT_DRIVEN_SCANS"]),
+		// Shadow defaults ON: enabling event-driven scans observes first; flip
+		// VAT_OPERATOR_EVENT_DRIVEN_SHADOW=false to actually create ScanRequests.
+		EventDrivenShadow:       parseBoolDefault(env["VAT_OPERATOR_EVENT_DRIVEN_SHADOW"], true),
+		BackstopIntervalSeconds: parseIntDefault(env["VAT_OPERATOR_BACKSTOP_INTERVAL_SECONDS"], 18000), // 5h
+		ScanRequestTTLSeconds:   parseIntDefault(env["VAT_OPERATOR_SCANREQUEST_TTL_SECONDS"], 86400),   // 24h
 	}, nil
 }
 
@@ -100,6 +112,25 @@ func parseBool(value string) bool {
 	default:
 		return false
 	}
+}
+
+func parseBoolDefault(value string, def bool) bool {
+	if strings.TrimSpace(value) == "" {
+		return def
+	}
+	return parseBool(value)
+}
+
+func parseIntDefault(value string, def int) int {
+	v := strings.TrimSpace(value)
+	if v == "" {
+		return def
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n <= 0 {
+		return def
+	}
+	return n
 }
 
 func imageInventoryMode(value string) string {
