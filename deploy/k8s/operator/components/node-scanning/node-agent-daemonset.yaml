@@ -126,8 +126,11 @@ spec:
               PY
               }
 
-              prewarm_node_ingest_keys
+              # Prewarm is best-effort: a transient backend blip must not crash
+              # the container — the scan loop re-ensures keys with retry.
+              prewarm_node_ingest_keys || echo "prewarm failed; scan loop will ensure keys"
               while true; do
+                scan_ok=1
                 vat-scan scan-runtime \
                   --node-name "${NODE_NAME:-unknown-node}" \
                   --containerd-socket "${VAT_CONTAINERD_SOCKET_PATH:-/run/containerd/containerd.sock}" \
@@ -135,13 +138,20 @@ spec:
                   --docker-socket "${VAT_DOCKER_SOCKET_PATH:-/host/var/run/docker.sock}" \
                   --scan-types "${VAT_RUNTIME_SCAN_TYPES:-image-sca,image-sbom,container-stig}" \
                   --state-file /state/runtime-scan-state.json \
-                  --full-rescan-interval-seconds "${VAT_RUNTIME_FULL_RESCAN_INTERVAL_SECONDS:-86400}" || true
+                  --full-rescan-interval-seconds "${VAT_RUNTIME_FULL_RESCAN_INTERVAL_SECONDS:-86400}" || scan_ok=0
                 vat-scan scan-node \
                   --host-root "${VAT_HOST_ROOT:-/host}" \
                   --node-name "${NODE_NAME:-unknown-node}" \
                   --scan-types "${VAT_NODE_SCAN_TYPES:-node-stig,node-oval-cve}" \
-                  --timeout "${VAT_NODE_SCAN_TIMEOUT_SECONDS:-600}" || true
-                sleep "${VAT_NODE_SCAN_INTERVAL_SECONDS:-86400}"
+                  --timeout "${VAT_NODE_SCAN_TIMEOUT_SECONDS:-600}" || scan_ok=0
+                # Retry soon on failure instead of parking for a full interval —
+                # a transient error must not blank out this node's coverage for 24h.
+                if [ "$scan_ok" = 1 ]; then
+                  sleep "${VAT_NODE_SCAN_INTERVAL_SECONDS:-86400}"
+                else
+                  echo "node scan cycle failed; retrying in ${VAT_NODE_SCAN_RETRY_INTERVAL_SECONDS:-300}s"
+                  sleep "${VAT_NODE_SCAN_RETRY_INTERVAL_SECONDS:-300}"
+                fi
               done
           securityContext:
             privileged: true
@@ -170,7 +180,7 @@ spec:
             - name: VAT_RUNTIME_SCAN_TYPES
               value: image-sca,image-sbom,container-stig
             - name: VAT_RUNTIME_IMAGE_PULL_SECRETS
-              value: ""
+              value: vat-operator/harbor-creds
             - name: VAT_NODE_SCAN_INTERVAL_SECONDS
               value: "86400"
             - name: VAT_RUNTIME_FULL_RESCAN_INTERVAL_SECONDS

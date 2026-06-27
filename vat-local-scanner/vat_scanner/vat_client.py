@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -104,25 +105,35 @@ def ensure_source(
         "createKey": create_key,
         "regenerateKey": regenerate_key,
     }
-    req = urllib.request.Request(
-        url,
-        data=json.dumps(body).encode(),
-        method="POST",
-        headers={
-            "Authorization": f"Bearer {admin_token}",
-            "Content-Type": "application/json",
-        },
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            data = json.loads(resp.read().decode())
-    except urllib.error.HTTPError as e:
-        body_text = e.read().decode() if e.fp else ""
-        raise VATClientError(f"Ensure source failed (HTTP {e.code}): {body_text}") from e
-    except urllib.error.URLError as e:
-        raise VATClientError(f"Ensure source failed: {e.reason}") from e
-
-    return data.get("sourceId", ""), data.get("key")
+    data_bytes = json.dumps(body).encode()
+    headers = {
+        "Authorization": f"Bearer {admin_token}",
+        "Content-Type": "application/json",
+    }
+    # Retry transient failures (connection refused, 5xx) with backoff so a brief
+    # backend blip doesn't abort the whole scan. A 4xx (e.g. 401) is a real
+    # error — fail fast. Mirrors the ingest path's retry behaviour.
+    last_reason = "unknown error"
+    for attempt in range(1, 6):
+        req = urllib.request.Request(
+            url, data=data_bytes, method="POST", headers=headers
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                data = json.loads(resp.read().decode())
+            return data.get("sourceId", ""), data.get("key")
+        except urllib.error.HTTPError as e:
+            if e.code < 500:
+                body_text = e.read().decode() if e.fp else ""
+                raise VATClientError(
+                    f"Ensure source failed (HTTP {e.code}): {body_text}"
+                ) from e
+            last_reason = f"HTTP {e.code}"
+        except urllib.error.URLError as e:
+            last_reason = str(e.reason)
+        if attempt < 5:
+            time.sleep(min(2**attempt, 16))
+    raise VATClientError(f"Ensure source failed after retries: {last_reason}")
 
 
 def _ingest_headers(

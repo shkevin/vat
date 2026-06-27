@@ -35,8 +35,12 @@ spec:
               value: vat-operator-credentials
             - name: VAT_OPERATOR_RUNTIME_PROFILE
               value: auto
+            # workload = inventory worker scans ALL desired-state workload
+            # images (not just non-running ones). Node agents add runtime depth
+            # on top; the overlap is deliberate so running-image coverage does
+            # not depend on per-node agent health (which can fail/parked).
             - name: VAT_OPERATOR_IMAGE_INVENTORY_MODE
-              value: non-running
+              value: workload
             - name: VAT_OPERATOR_NODE_SCANNING_ENABLED
               value: "false"
           resources:
