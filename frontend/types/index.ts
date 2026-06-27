@@ -98,6 +98,15 @@ export interface Finding {
   justification?: string;
   compensatingControls?: string;
   reviewerNote?: string;
+  /** Decision-ledger provenance — populated on the finding-detail response only. */
+  decisionId?: string | null;
+  subjectKey?: string | null;
+  decisionVersion?: number;
+  decisionLinkMethod?: string | null;
+  /** True when the active decision link was matched via alias/asset-merge, not a direct DSK. */
+  decisionRelinked?: boolean;
+  /** True when a durable decision differs from this finding and was not auto-applied. */
+  decisionConflict?: boolean;
   trackerComment?: boolean;
   archived?: boolean;
   archivedAt?: string | null;

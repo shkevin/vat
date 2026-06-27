@@ -132,6 +132,41 @@ describe("DetailPanel evidence", () => {
     expect(screen.queryByText("Aikido")).toBeNull();
   });
 
+  it("shows decision-ledger re-linked and conflict badges from provenance", () => {
+    const { container, rerender } = render(
+      <DetailPanel
+        finding={finding({ decisionRelinked: true, decisionId: "td-abc" })}
+        sources={[]}
+        tracker={tracker}
+        onArchive={vi.fn()}
+        onClose={vi.fn()}
+        onRevert={vi.fn()}
+        onUnarchive={vi.fn()}
+        onUpdate={vi.fn()}
+        readOnly
+      />,
+    );
+    const badges = container.querySelector(".detail-panel-badges") as HTMLElement;
+    expect(within(badges).getByText("Re-linked")).toBeTruthy();
+    expect(within(badges).queryByText("⚠ Decision conflict")).toBeNull();
+
+    rerender(
+      <DetailPanel
+        finding={finding({ decisionConflict: true })}
+        sources={[]}
+        tracker={tracker}
+        onArchive={vi.fn()}
+        onClose={vi.fn()}
+        onRevert={vi.fn()}
+        onUnarchive={vi.fn()}
+        onUpdate={vi.fn()}
+        readOnly
+      />,
+    );
+    expect(screen.getByText("⚠ Decision conflict")).toBeTruthy();
+    expect(screen.queryByText("Re-linked")).toBeNull();
+  });
+
   it("marks long image digest evidence values as breakable", () => {
     const digest =
       "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";

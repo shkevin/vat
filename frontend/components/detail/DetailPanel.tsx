@@ -533,6 +533,42 @@ export function DetailPanel({
               {headerSourceLabels.map((source) => (
                 <SrcTag key={source} source={source} sources={sources} />
               ))}
+              {finding.decisionRelinked ? (
+                <span
+                  title={`Re-linked from a durable triage decision${
+                    finding.decisionId ? ` (${finding.decisionId})` : ""
+                  }${
+                    finding.decisionLinkMethod
+                      ? ` via ${finding.decisionLinkMethod}`
+                      : ""
+                  }`}
+                  style={{
+                    fontSize: 11,
+                    fontWeight: 700,
+                    padding: "2px 6px",
+                    borderRadius: 4,
+                    background: "var(--app-accent-soft, rgba(99,102,241,0.15))",
+                    color: "var(--app-accent)",
+                  }}
+                >
+                  Re-linked
+                </span>
+              ) : null}
+              {finding.decisionConflict ? (
+                <span
+                  title="A durable decision differs from this finding and was not auto-applied — reviewer confirmation needed."
+                  style={{
+                    fontSize: 11,
+                    fontWeight: 700,
+                    padding: "2px 6px",
+                    borderRadius: 4,
+                    background: "var(--app-warning-soft, rgba(245,158,11,0.18))",
+                    color: "var(--app-warning, #b45309)",
+                  }}
+                >
+                  ⚠ Decision conflict
+                </span>
+              ) : null}
             </div>
             <h2 className="detail-panel-title">{displayTitle(finding)}</h2>
             <div className="detail-panel-meta">

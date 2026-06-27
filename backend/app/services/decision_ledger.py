@@ -822,6 +822,99 @@ async def list_waiver_decisions(
     return out
 
 
+async def get_decision_detail(
+    db: AsyncSession,
+    *,
+    tenant_id: str | None,
+    cross_tenant: bool = False,
+    subject_key: str | None = None,
+    decision_id: str | None = None,
+) -> dict[str, Any] | None:
+    """Auditor drill-down: a decision + its append-only revision history + live links."""
+    if not get_settings().decision_ledger_enabled:
+        return None
+    tenant = _tenant_key(tenant_id)
+
+    q = select(TriageDecision)
+    if decision_id:
+        q = q.where(TriageDecision.id == decision_id)
+    elif subject_key:
+        q = q.where(TriageDecision.subject_key == subject_key)
+    else:
+        return None
+    if not cross_tenant:
+        q = q.where(TriageDecision.tenant_id == tenant)
+    decision = await db.scalar(q)
+
+    # Resolve a subject_key that's an alias of the canonical decision.
+    if not decision and subject_key:
+        alias = await db.get(
+            DecisionSubjectAlias, {"tenant_id": tenant, "alias_key": subject_key}
+        )
+        if alias:
+            aq = select(TriageDecision).where(
+                TriageDecision.subject_key == alias.canonical_key
+            )
+            if not cross_tenant:
+                aq = aq.where(TriageDecision.tenant_id == tenant)
+            decision = await db.scalar(aq)
+    if not decision:
+        return None
+
+    revisions = list(
+        (
+            await db.execute(
+                select(TriageDecisionRevision)
+                .where(TriageDecisionRevision.decision_id == decision.id)
+                .order_by(TriageDecisionRevision.revision)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    link_rows = list(
+        (
+            await db.execute(
+                select(DecisionFindingLink).where(
+                    DecisionFindingLink.decision_id == decision.id,
+                    DecisionFindingLink.unlinked_at.is_(None),
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    return {
+        "decision_id": decision.id,
+        "tenant_id": decision.tenant_id,
+        "subject_key": decision.subject_key,
+        "finding_type": decision.finding_type,
+        "status": decision.status,
+        "decision_version": decision.decision_version,
+        "justification": decision.justification,
+        "compensating_controls": decision.compensating_controls,
+        "reviewer_note": decision.reviewer_note,
+        "attestation": decision.attestation,
+        "identity_snapshot": decision.identity_snapshot,
+        "created_by": decision.created_by,
+        "created_at": decision.created_at.isoformat() if decision.created_at else None,
+        "updated_by": decision.updated_by,
+        "updated_at": decision.updated_at.isoformat() if decision.updated_at else None,
+        "linked_finding_ids": [link.finding_id for link in link_rows],
+        "revisions": [
+            {
+                "revision": r.revision,
+                "actor_id": r.actor_id,
+                "reason": r.reason,
+                "snapshot": r.snapshot,
+                "created_at": r.created_at.isoformat() if r.created_at else None,
+            }
+            for r in revisions
+        ],
+    }
+
+
 def waiver_records_for_export(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Normalize ledger waiver rows for CSV/JSON/PDF export."""
     out: list[dict[str, Any]] = []

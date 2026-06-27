@@ -17,21 +17,27 @@ def _digest(hex64: str) -> str:
 @pytest.fixture
 async def _merge_suggestions_cleanup(db):
     prefix = "merge-sug-test-"
-    await db.execute(
-        text(
-            "DELETE FROM asset_observed_tags WHERE asset_id LIKE :p",
-        ).bindparams(p=f"{prefix}%")
-    )
-    await db.execute(text("DELETE FROM findings WHERE id LIKE 'merge-sug-%'"))
-    await db.commit()
+
+    async def _clean():
+        await db.execute(
+            text("DELETE FROM asset_observed_tags WHERE asset_id LIKE :p").bindparams(
+                p=f"{prefix}%"
+            )
+        )
+        await db.execute(text("DELETE FROM findings WHERE id LIKE 'merge-sug-%'"))
+        # Aliases would survive a digest/auto-merge and make resolve_canonical_asset_id
+        # collapse merge-a/merge-b to one identity, hiding the suggestion. Clean them too.
+        await db.execute(
+            text(
+                "DELETE FROM asset_aliases WHERE source_asset_id LIKE :p "
+                "OR canonical_asset_id LIKE :p"
+            ).bindparams(p=f"{prefix}%")
+        )
+        await db.commit()
+
+    await _clean()
     yield
-    await db.execute(
-        text(
-            "DELETE FROM asset_observed_tags WHERE asset_id LIKE :p",
-        ).bindparams(p=f"{prefix}%")
-    )
-    await db.execute(text("DELETE FROM findings WHERE id LIKE 'merge-sug-%'"))
-    await db.commit()
+    await _clean()
 
 
 @pytest.mark.anyio
