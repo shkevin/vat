@@ -241,8 +241,9 @@ def _digest_scan_vantage(source: str | None) -> str:
     runtime (containerd); for a multi-arch image that is the platform/host
     manifest digest, which legitimately differs from the registry index digest a
     registry-pull scanner (inventory worker, Aikido, CI) reports for the same
-    tag. Comparing across vantages flags the same image as a conflict, so we only
-    treat a tag as conflicting when a single vantage observes multiple digests.
+    tag. Only the runtime vantage is trusted for conflict detection — it is
+    deterministic, whereas the registry vantage is non-deterministic about index
+    vs platform digests for multi-arch images and produced false positives.
 
     ponytail: vantage is inferred from the node-agent source-id convention
     (``node-<node>-<parser>``); revisit if findings gain an explicit scan-method.
@@ -276,10 +277,17 @@ async def _upsert_digest_conflict(
             await db.delete(existing)
         return
 
-    # Bucket every recorded digest for this tag by scan vantage. A real conflict
-    # is one vantage seeing the same tag at two digests (the tag actually moved);
-    # a difference only across vantages is a multi-arch index-vs-platform
-    # representation of the same image and must not be flagged.
+    # Bucket every recorded digest for this tag by scan vantage, then trust only
+    # the runtime (containerd/node-agent) vantage. containerd records one
+    # deterministic platform digest per image, so two distinct runtime digests
+    # for a pinned tag means the running image actually changed — a real
+    # supply-chain event. The registry/inventory vantage, by contrast, flaps
+    # between an image's manifest-list (index) and platform digests for
+    # multi-arch images — same content, different label — which is pure noise and
+    # was the source of persistent false-positive conflicts.
+    # ponytail: assumes a single-architecture node pool; for a mixed-arch cluster
+    # bucket the runtime set per node architecture (each arch has its own
+    # platform digest) before counting.
     rows = (
         await db.execute(
             select(Finding.source, Finding.image_digest).where(
@@ -296,9 +304,8 @@ async def _upsert_digest_conflict(
             by_vantage.setdefault(_digest_scan_vantage(f_source), set()).add(d)
     by_vantage.setdefault(_digest_scan_vantage(source), set()).add(digest)
 
-    conflicting = sorted(
-        {d for ds in by_vantage.values() if len(ds) >= 2 for d in ds}
-    )
+    runtime_digests = by_vantage.get("runtime", set())
+    conflicting = sorted(runtime_digests) if len(runtime_digests) >= 2 else []
 
     conflict = (
         await db.execute(

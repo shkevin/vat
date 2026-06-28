@@ -2,9 +2,11 @@
 
 - Mutable/floating tags (latest, develop, branches) keep the latest observed
   digest and never raise a conflict (Aikido-style last-write-wins).
-- Immutable tags (semver, sha-pinned) are vantage-aware: a cross-vantage digest
-  difference (node-agent containerd vs registry pull, e.g. multi-arch index vs
-  platform) is NOT a conflict; only a single vantage seeing two digests is.
+- Immutable tags (semver, sha-pinned) are flagged only when the RUNTIME
+  (containerd/node-agent) vantage sees two digests — that means the running
+  image actually changed. The registry/inventory vantage flaps between an
+  image's index and platform digests for multi-arch images (same content,
+  different label), so two registry digests is noise and must NOT be flagged.
 """
 
 from __future__ import annotations
@@ -102,19 +104,38 @@ async def test_immutable_cross_vantage_is_not_a_conflict_and_clears_stale_row():
 
 
 @pytest.mark.asyncio
-async def test_immutable_same_vantage_two_digests_is_a_real_conflict():
-    # A pinned tag served two digests to the same vantage = real supply-chain drift.
+async def test_runtime_vantage_two_digests_is_a_real_conflict():
+    # containerd saw a pinned tag at two platform digests over time = the running
+    # image changed under us = real supply-chain drift worth flagging.
+    db = _FakeDB(
+        finding_rows=[("node-k3s-agent-1-trivy", "sha256:aaa")],
+        existing_conflict=None,
+    )
+    await obs._upsert_digest_conflict(
+        db, asset_id="containers/images/app", tag="v2.0.0",
+        digest="sha256:bbb", source="node-k3s-master-trivy", now=_NOW,
+    )
+    assert len(db.added) == 1
+    assert sorted(db.added[0].digests) == ["sha256:aaa", "sha256:bbb"]
+    assert db.deleted == []
+
+
+@pytest.mark.asyncio
+async def test_registry_vantage_two_digests_is_not_a_conflict():
+    # Two digests from the registry/inventory scanner for one pinned tag is the
+    # multi-arch index-vs-platform flap (same image, different label) — pure
+    # noise. Must not flag, and clears any stale false-positive row.
+    stale = SimpleNamespace(digests=["sha256:aaa", "sha256:bbb"], status="open")
     db = _FakeDB(
         finding_rows=[("inventory-trivy", "sha256:aaa")],
-        existing_conflict=None,
+        existing_conflict=stale,
     )
     await obs._upsert_digest_conflict(
         db, asset_id="containers/images/app", tag="v2.0.0",
         digest="sha256:bbb", source="trivy", now=_NOW,
     )
-    assert len(db.added) == 1
-    assert sorted(db.added[0].digests) == ["sha256:aaa", "sha256:bbb"]
-    assert db.deleted == []
+    assert db.added == []
+    assert db.deleted == [stale]
 
 
 @pytest.mark.asyncio
