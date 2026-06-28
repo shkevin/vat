@@ -131,14 +131,20 @@ spec:
               prewarm_node_ingest_keys || echo "prewarm failed; scan loop will ensure keys"
               while true; do
                 scan_ok=1
-                vat-scan scan-runtime \
-                  --node-name "${NODE_NAME:-unknown-node}" \
-                  --containerd-socket "${VAT_CONTAINERD_SOCKET_PATH:-/run/containerd/containerd.sock}" \
-                  --containerd-namespace "${VAT_CONTAINERD_NAMESPACE:-k8s.io}" \
-                  --docker-socket "${VAT_DOCKER_SOCKET_PATH:-/host/var/run/docker.sock}" \
-                  --scan-types "${VAT_RUNTIME_SCAN_TYPES:-image-sca,image-sbom,container-stig}" \
-                  --state-file /state/runtime-scan-state.json \
-                  --full-rescan-interval-seconds "${VAT_RUNTIME_FULL_RESCAN_INTERVAL_SECONDS:-86400}" || scan_ok=0
+                # Image scanning is off by default (Phase 5): the worker's
+                # registry-pull is the single image vantage, so node agents do
+                # host scans only. Opt in (air-gapped: image cached on-node,
+                # registry unreachable) with VAT_NODE_AGENT_IMAGE_SCANS=true.
+                if [ "${VAT_NODE_AGENT_IMAGE_SCANS:-false}" = "true" ]; then
+                  vat-scan scan-runtime \
+                    --node-name "${NODE_NAME:-unknown-node}" \
+                    --containerd-socket "${VAT_CONTAINERD_SOCKET_PATH:-/run/containerd/containerd.sock}" \
+                    --containerd-namespace "${VAT_CONTAINERD_NAMESPACE:-k8s.io}" \
+                    --docker-socket "${VAT_DOCKER_SOCKET_PATH:-/host/var/run/docker.sock}" \
+                    --scan-types "${VAT_RUNTIME_SCAN_TYPES:-image-sca,image-sbom,container-stig}" \
+                    --state-file /state/runtime-scan-state.json \
+                    --full-rescan-interval-seconds "${VAT_RUNTIME_FULL_RESCAN_INTERVAL_SECONDS:-86400}" || scan_ok=0
+                fi
                 vat-scan scan-node \
                   --host-root "${VAT_HOST_ROOT:-/host}" \
                   --node-name "${NODE_NAME:-unknown-node}" \
@@ -177,6 +183,10 @@ spec:
               value: /host
             - name: VAT_NODE_SCAN_TYPES
               value: node-stig,node-oval-cve
+            # Phase 5: node agents do host scans only by default; the worker's
+            # registry pull is the single image vantage. Set true for air-gapped.
+            - name: VAT_NODE_AGENT_IMAGE_SCANS
+              value: "false"
             - name: VAT_RUNTIME_SCAN_TYPES
               value: image-sca,image-sbom,container-stig
             - name: VAT_RUNTIME_IMAGE_PULL_SECRETS
