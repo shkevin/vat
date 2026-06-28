@@ -12,6 +12,7 @@ logging.getLogger("httpx").setLevel(
     logging.DEBUG if get_settings().log_http_requests else logging.WARNING
 )
 from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.middleware.gzip import GZipMiddleware
 from starlette.requests import Request
 
 from fastapi import FastAPI
@@ -300,6 +301,10 @@ app.add_middleware(TraceIdMiddleware)
 app.add_middleware(RequestObservabilityMiddleware)
 app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(CSRFMiddleware)
+# Compress large JSON responses (vat-data full=true is ~79MB raw; JSON with
+# repeated keys gzips ~10-15x). Stdlib middleware, no new dependency. Only
+# responses >= minimum_size and with Accept-Encoding: gzip are compressed.
+app.add_middleware(GZipMiddleware, minimum_size=1024)
 _cors_origins = [o.strip() for o in get_settings().cors_origins.split(",") if o.strip()]
 app.add_middleware(
     CORSMiddleware,
