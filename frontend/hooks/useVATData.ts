@@ -913,12 +913,12 @@ export function useVATDataCore(): UseVATDataReturn {
     [auth, refreshLoadouts],
   );
 
-  const vatQueryKey = [
-    "vat-data",
-    userScope,
-    showArchived,
-    showEmptyAssets,
-  ] as const;
+  // showEmptyAssets is deliberately NOT in the key: empty assets are always
+  // fetched (they cost ~nothing — findings dominate the payload) and the toggle
+  // is a pure client-side filter in displayedAssets. Keeping it out avoids a
+  // full refetch (and the keepPreviousData "loads some, then the rest" stagger)
+  // every time the toggle flips.
+  const vatQueryKey = ["vat-data", userScope, showArchived] as const;
   const vatQuery = useQuery({
     queryKey: vatQueryKey,
     enabled: Boolean(token || userEmail),
@@ -948,7 +948,7 @@ export function useVATDataCore(): UseVATDataReturn {
         limit: 0,
         include_assets: true,
         include_asset_findings: false,
-        include_zero_assets: showEmptyAssets,
+        include_zero_assets: true,
       };
       if (showArchived !== "both") params.archived = showArchived;
       return fetchVATData(params, auth);
