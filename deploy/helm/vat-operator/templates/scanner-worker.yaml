@@ -134,7 +134,7 @@ spec:
                 fieldRef:
                   fieldPath: metadata.namespace
             - name: VAT_WORKER_SCAN_QUEUE_ENABLED
-              value: {{ .Values.scanner.worker.scanQueueEnabled | default false | quote }}
+              value: {{ .Values.scanner.worker.scanQueueEnabled | quote }}
             - name: VAT_SCAN_QUEUE_INTERVAL_SECONDS
               value: {{ .Values.scanner.worker.scanQueueIntervalSeconds | default 15 | quote }}
             - name: VAT_SCAN_INTERVAL_SECONDS

@@ -129,9 +129,10 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.namespace
-            # Event-driven scan-queue consumer (Phase 3): off by default.
+            # Event-driven scan-queue consumer (production default on). Runs
+            # alongside the inventory poll, which stays as the fallback.
             - name: VAT_WORKER_SCAN_QUEUE_ENABLED
-              value: "false"
+              value: "true"
             - name: VAT_SCAN_QUEUE_INTERVAL_SECONDS
               value: "15"
             - name: VAT_SCAN_INTERVAL_SECONDS

@@ -15,8 +15,8 @@ spec:
       labels:
         app.kubernetes.io/name: vat-operator
       annotations:
-        # Event-driven metrics endpoint (scraped only when active; flip with the flag).
-        prometheus.io/scrape: "false"
+        # Event-driven metrics endpoint (active in production).
+        prometheus.io/scrape: "true"
         prometheus.io/port: "9095"
         prometheus.io/path: /metrics
     spec:
@@ -51,13 +51,15 @@ spec:
               value: workload
             - name: VAT_OPERATOR_NODE_SCANNING_ENABLED
               value: "false"
-            # Event-driven informer. SCANS gates the whole path (off = pure poll).
-            # SHADOW=true logs only; flip to "false" to actually create
-            # ScanRequests (Phase 4). Backstop + GC run only in active mode.
+            # Event-driven scanning is the primary path (production default):
+            # the informer creates a ScanRequest per new digest, the worker
+            # scan-queue consumes it, and the backstop + GC run. The inventory
+            # poll + full rescans stay on as the fallback. To roll back to pure
+            # polling, set SCANS=false. To observe without creating, SHADOW=true.
             - name: VAT_OPERATOR_EVENT_DRIVEN_SCANS
-              value: "false"
-            - name: VAT_OPERATOR_EVENT_DRIVEN_SHADOW
               value: "true"
+            - name: VAT_OPERATOR_EVENT_DRIVEN_SHADOW
+              value: "false"
           resources:
             requests:
               cpu: 50m

@@ -189,7 +189,7 @@ spec:
             - name: VAT_NODE_SCAN_TYPES
               value: {{ .Values.nodeAgent.scanTypes | quote }}
             - name: VAT_NODE_AGENT_IMAGE_SCANS
-              value: {{ .Values.nodeAgent.imageScans | default false | quote }}
+              value: {{ .Values.nodeAgent.imageScans | quote }}
             - name: VAT_RUNTIME_SCAN_TYPES
               value: {{ .Values.nodeAgent.runtimeScanTypes | quote }}
             - name: VAT_RUNTIME_IMAGE_PULL_SECRETS

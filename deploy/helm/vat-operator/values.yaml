@@ -19,11 +19,12 @@ operator:
   maxConcurrentScanJobs: 5
   nodeScanning:
     enabled: false
-  # Event-driven informer. eventDrivenScans gates the whole path (false = pure
-  # poll). eventDrivenShadow=true logs only; set false to create ScanRequests
-  # (Phase 4) — that also starts the backstop + GC.
-  eventDrivenScans: false
-  eventDrivenShadow: true
+  # Event-driven scanning is the production default: the informer creates a
+  # ScanRequest per new digest (the backstop + GC run too). The inventory poll
+  # stays as fallback. Roll back with eventDrivenScans=false; observe-only with
+  # eventDrivenShadow=true.
+  eventDrivenScans: true
+  eventDrivenShadow: false
   resources:
     requests:
       cpu: 50m
@@ -50,8 +51,9 @@ scanner:
     scanRetryIntervalSeconds: 300
     fullRescanIntervalSeconds: 86400
     scanTypes: image-sca,image-sbom
-    # Event-driven scan-queue consumer (Phase 3): dormant until Phase 4.
-    scanQueueEnabled: false
+    # Event-driven scan-queue consumer (production default on); inventory poll
+    # stays as the fallback.
+    scanQueueEnabled: true
     scanQueueIntervalSeconds: 15
     state:
       persistence:
