@@ -277,17 +277,20 @@ async def _upsert_digest_conflict(
             await db.delete(existing)
         return
 
-    # Bucket every recorded digest for this tag by scan vantage, then trust only
-    # the runtime (containerd/node-agent) vantage. containerd records one
-    # deterministic platform digest per image, so two distinct runtime digests
-    # for a pinned tag means the running image actually changed — a real
-    # supply-chain event. The registry/inventory vantage, by contrast, flaps
-    # between an image's manifest-list (index) and platform digests for
-    # multi-arch images — same content, different label — which is pure noise and
-    # was the source of persistent false-positive conflicts.
-    # ponytail: assumes a single-architecture node pool; for a mixed-arch cluster
-    # bucket the runtime set per node architecture (each arch has its own
-    # platform digest) before counting.
+    # A conflict is a SINGLE runtime source (one node-agent = one node = one
+    # architecture) reporting two digests for a pinned tag over time — the image
+    # actually running on that node changed (a real supply-chain event). Two
+    # things are deliberately NOT conflicts:
+    #   - registry/inventory sources, which flap between an image's manifest-list
+    #     (index) and platform digests for multi-arch images (same content); and
+    #   - two *different* runtime nodes reporting different digests, which on a
+    #     mixed-arch cluster is just amd64 vs arm64 of the same image.
+    # So we bucket per runtime source and flag only when one source alone sees
+    # two digests — multi-arch safe without needing an explicit architecture field.
+    # ponytail: per-source is a proxy for per-architecture (node->arch is 1:1);
+    # it won't catch two same-arch nodes diverging without either changing over
+    # time. Add an explicit platform field and bucket by arch if that edge ever
+    # matters.
     rows = (
         await db.execute(
             select(Finding.source, Finding.image_digest).where(
@@ -297,15 +300,19 @@ async def _upsert_digest_conflict(
             )
         )
     ).all()
-    by_vantage: dict[str, set[str]] = {}
+    by_runtime_source: dict[str, set[str]] = {}
     for f_source, f_digest in rows:
+        if _digest_scan_vantage(f_source) != "runtime":
+            continue
         d = str(f_digest or "").strip()
         if d:
-            by_vantage.setdefault(_digest_scan_vantage(f_source), set()).add(d)
-    by_vantage.setdefault(_digest_scan_vantage(source), set()).add(digest)
+            by_runtime_source.setdefault(str(f_source or ""), set()).add(d)
+    if _digest_scan_vantage(source) == "runtime":
+        by_runtime_source.setdefault(str(source or ""), set()).add(digest)
 
-    runtime_digests = by_vantage.get("runtime", set())
-    conflicting = sorted(runtime_digests) if len(runtime_digests) >= 2 else []
+    conflicting = sorted(
+        {d for ds in by_runtime_source.values() if len(ds) >= 2 for d in ds}
+    )
 
     conflict = (
         await db.execute(

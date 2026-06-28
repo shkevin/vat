@@ -2,11 +2,13 @@
 
 - Mutable/floating tags (latest, develop, branches) keep the latest observed
   digest and never raise a conflict (Aikido-style last-write-wins).
-- Immutable tags (semver, sha-pinned) are flagged only when the RUNTIME
-  (containerd/node-agent) vantage sees two digests — that means the running
-  image actually changed. The registry/inventory vantage flaps between an
-  image's index and platform digests for multi-arch images (same content,
-  different label), so two registry digests is noise and must NOT be flagged.
+- Immutable tags (semver, sha-pinned) are flagged only when a SINGLE runtime
+  source (one node-agent = one node = one architecture) reports two digests
+  over time — the image running on that node changed. NOT flagged:
+    * registry/inventory sources (they flap between an image's index and
+      platform digests for multi-arch images), and
+    * two different runtime nodes with different digests — on a mixed-arch
+      cluster that's just amd64 vs arm64 of the same logical image.
 """
 
 from __future__ import annotations
@@ -104,11 +106,11 @@ async def test_immutable_cross_vantage_is_not_a_conflict_and_clears_stale_row():
 
 
 @pytest.mark.asyncio
-async def test_runtime_vantage_two_digests_is_a_real_conflict():
-    # containerd saw a pinned tag at two platform digests over time = the running
-    # image changed under us = real supply-chain drift worth flagging.
+async def test_same_runtime_node_two_digests_is_a_real_conflict():
+    # ONE node-agent saw a pinned tag at two digests over time = the image
+    # running on that node changed under us = real supply-chain drift.
     db = _FakeDB(
-        finding_rows=[("node-k3s-agent-1-trivy", "sha256:aaa")],
+        finding_rows=[("node-k3s-master-trivy", "sha256:aaa")],
         existing_conflict=None,
     )
     await obs._upsert_digest_conflict(
@@ -118,6 +120,24 @@ async def test_runtime_vantage_two_digests_is_a_real_conflict():
     assert len(db.added) == 1
     assert sorted(db.added[0].digests) == ["sha256:aaa", "sha256:bbb"]
     assert db.deleted == []
+
+
+@pytest.mark.asyncio
+async def test_different_runtime_nodes_two_digests_is_multiarch_not_a_conflict():
+    # An amd64 node and an arm64 node report different platform digests for the
+    # same pinned tag — multi-arch, the same logical image. Must not flag, and
+    # clears any stale row. (Each node alone sees only its own one digest.)
+    stale = SimpleNamespace(digests=["sha256:aaa", "sha256:bbb"], status="open")
+    db = _FakeDB(
+        finding_rows=[("node-k3s-amd64-trivy", "sha256:aaa")],
+        existing_conflict=stale,
+    )
+    await obs._upsert_digest_conflict(
+        db, asset_id="containers/images/app", tag="v2.0.0",
+        digest="sha256:bbb", source="node-k3s-arm64-trivy", now=_NOW,
+    )
+    assert db.added == []
+    assert db.deleted == [stale]
 
 
 @pytest.mark.asyncio
