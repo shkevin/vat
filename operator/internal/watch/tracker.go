@@ -21,27 +21,43 @@ func NewTracker(warm []string) *Tracker {
 	return &Tracker{known: known}
 }
 
-func key(it WorkItem) string {
+// keysFor returns every dedup key an item can be known by: the digest (when
+// resolved) and the image ref. A pod is first seen on Add with no digest yet
+// (ref only), then again on Update once the image pulls (digest + ref); keying
+// on both — and deduping if EITHER is known — collapses that pair to one scan
+// instead of creating a second, digest-keyed ScanRequest for the same image.
+func keysFor(it WorkItem) []string {
+	keys := make([]string, 0, 2)
 	if it.Digest != "" {
-		return it.Digest
+		keys = append(keys, it.Digest)
 	}
-	return "ref:" + it.ImageRef
+	keys = append(keys, "ref:"+it.ImageRef)
+	return keys
 }
 
-// Observe returns the subset of items not seen before, marking them seen. The
-// first observation of a digest/ref is "fresh" (would be scanned); repeats are
-// dedup hits.
+// Observe returns the subset of items not seen before, marking them seen. An item
+// is a dedup hit if ANY of its keys (digest or ref) is already known; otherwise
+// it's fresh. Either way all its keys are recorded, so a later observation of the
+// same image — by ref or by digest — dedups.
 func (t *Tracker) Observe(items []WorkItem) []WorkItem {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	var fresh []WorkItem
 	for _, it := range items {
-		k := key(it)
-		if _, ok := t.known[k]; ok {
-			continue
+		ks := keysFor(it)
+		seen := false
+		for _, k := range ks {
+			if _, ok := t.known[k]; ok {
+				seen = true
+				break
+			}
 		}
-		t.known[k] = struct{}{}
-		fresh = append(fresh, it)
+		for _, k := range ks {
+			t.known[k] = struct{}{}
+		}
+		if !seen {
+			fresh = append(fresh, it)
+		}
 	}
 	return fresh
 }
