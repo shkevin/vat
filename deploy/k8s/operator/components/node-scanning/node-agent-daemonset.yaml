@@ -67,12 +67,18 @@ spec:
               if not vat_url or not admin_token:
                   raise SystemExit(0)
 
+              # Match the scan loop: image (runtime) scans only warm trivy/cyclonedx
+              # when VAT_NODE_AGENT_IMAGE_SCANS is on. openscap is still needed for
+              # the host node-stig scan regardless of image scanning.
+              image_scans = os.environ.get("VAT_NODE_AGENT_IMAGE_SCANS", "false").strip().lower() in (
+                  "1", "true", "yes", "y", "on"
+              )
               parsers = []
-              if "image-sca" in runtime_scan_types:
+              if image_scans and "image-sca" in runtime_scan_types:
                   parsers.append(("trivy", "package"))
-              if "image-sbom" in runtime_scan_types:
+              if image_scans and "image-sbom" in runtime_scan_types:
                   parsers.append(("cyclonedx", "package"))
-              if "container-stig" in runtime_scan_types or "node-stig" in node_scan_types:
+              if "node-stig" in node_scan_types or (image_scans and "container-stig" in runtime_scan_types):
                   parsers.append(("openscap", "container"))
               if "node-oval-cve" in node_scan_types:
                   parsers.append(("openscap_oval", "container"))
