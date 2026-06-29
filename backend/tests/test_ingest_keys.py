@@ -81,6 +81,24 @@ async def test_regenerate_invalidates_old(db):
 
 
 @pytest.mark.asyncio
+async def test_regenerate_persists_across_reload(db):
+    """Regression: a rotated key must survive a reload from the DB, not just the
+    session's in-memory copy. _mutate_keys_store used to shallow-copy the store
+    and mutate a nested dict in place, so SQLAlchemy saw no diff on the JSONB
+    column and skipped the UPDATE — the new hash never persisted and every ingest
+    401'd. expire_all() drops in-memory state so the next read hits the committed
+    DB row, which is what the real ingest path (a separate request) sees."""
+    await _clear_ingest_keys(db)
+    old_key, _, _ = await create_key(db, "folder-scan-trivy")
+    new_key, _, _ = await regenerate_key(db, "folder-scan-trivy")
+
+    db.expire_all()
+
+    assert await validate_key(db, new_key) is not None  # rotated key persisted
+    assert await validate_key(db, old_key) is None  # old key invalidated
+
+
+@pytest.mark.asyncio
 async def test_revoke_key(db):
     """Revoke removes key."""
     full_key, _, _ = await create_key(db, "trivy-ci")

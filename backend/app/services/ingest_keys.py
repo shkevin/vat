@@ -1,5 +1,6 @@
 """Ingest API key service — generate, hash, validate, store. Design doc 2026-02-24."""
 
+import copy
 import secrets
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -82,7 +83,11 @@ async def _mutate_keys_store(db: AsyncSession, mutator):
         select(SettingsKV).where(SettingsKV.key == INGEST_KEYS_KEY).with_for_update()
     )
     row = r.scalar_one_or_none()
-    store = dict(row.value) if row and isinstance(row.value, dict) else {}
+    # deepcopy, not dict(): a shallow copy shares the nested per-source dicts with
+    # row.value, so a mutator doing store[id].update(...) edits them in place. The
+    # JSON column then sees no diff against its loaded snapshot and SQLAlchemy skips
+    # the UPDATE — rotated key hashes silently never persist, and ingest 401s.
+    store = copy.deepcopy(row.value) if row and isinstance(row.value, dict) else {}
     result = mutator(store)
     if row:
         row.value = store
