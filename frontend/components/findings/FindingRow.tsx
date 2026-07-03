@@ -25,6 +25,9 @@ interface FindingRowProps {
   groupCount?: number;
   /** When in instance mode with multi-source finding, which source this row represents */
   instanceSource?: string;
+  /** False on secondary source-rows of the same finding so one finding has exactly
+   * one checkbox (the row checked-state is keyed by finding id). Default true. */
+  showCheckbox?: boolean;
 }
 
 function FindingRowBase({
@@ -37,6 +40,7 @@ function FindingRowBase({
   onClick,
   groupCount,
   instanceSource,
+  showCheckbox = true,
 }: FindingRowProps) {
   const [hov, setHov] = useState(false);
   const d = daysLeft(finding.slaDue);
@@ -71,13 +75,17 @@ function FindingRowBase({
         opacity: finding.archived ? 0.7 : 1,
       }}
     >
-      <input
-        type="checkbox"
-        checked={checked}
-        onClick={(e) => e.stopPropagation()}
-        onChange={(e) => onCheck(e.target.checked)}
-        style={{ accentColor: "var(--app-accent)", cursor: "pointer" }}
-      />
+      {showCheckbox ? (
+        <input
+          type="checkbox"
+          checked={checked}
+          onClick={(e) => e.stopPropagation()}
+          onChange={(e) => onCheck(e.target.checked)}
+          style={{ accentColor: "var(--app-accent)", cursor: "pointer" }}
+        />
+      ) : (
+        <div aria-hidden />
+      )}
       <div
         style={{
           width: 4,
@@ -231,7 +239,8 @@ export const FindingRow = memo(FindingRowBase, (prev, next) => {
     prev.selected === next.selected &&
     prev.checked === next.checked &&
     prev.groupCount === next.groupCount &&
-    prev.instanceSource === next.instanceSource
+    prev.instanceSource === next.instanceSource &&
+    prev.showCheckbox === next.showCheckbox
   );
 });
 FindingRow.displayName = "FindingRow";

@@ -2717,6 +2717,9 @@ export function AssetPage({ config }: AssetPageProps) {
                       }}
                       groupCount={groupCount}
                       instanceSource={sourceName}
+                      // One checkbox per finding: secondary source-rows share the
+                      // same finding id, so only the first row carries the checkbox.
+                      showCheckbox={sourceIndex == null || sourceIndex === 0}
                     />
                   ),
                 )
