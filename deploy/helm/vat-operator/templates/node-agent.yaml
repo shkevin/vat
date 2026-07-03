@@ -47,10 +47,10 @@ spec:
 
               vat_url = os.environ.get("VAT_URL", "").rstrip("/")
               admin_token = os.environ.get("VAT_ADMIN_TOKEN", "").strip()
-              prefix = (
-                  os.environ.get("VAT_SOURCE_ID_PREFIX", "").strip()
-                  or f"node-{os.environ.get('NODE_NAME', 'unknown-node')}"
-              )
+              # Empty prefix -> logical parser source id (e.g. "openscap"), matching
+              # source_id_for_parser on the push path. No node-<name> fallback: that
+              # duplicated one source per (node x parser). Node is already the asset.
+              prefix = os.environ.get("VAT_SOURCE_ID_PREFIX", "").strip()
               cache_dir = Path(os.environ.get("VAT_SCANNER_KEY_CACHE_DIR", "/state"))
               cache_file = cache_dir / "scanner-keys.json"
               legacy_cache_file = Path.home() / ".config" / "vat" / "scanner-keys.json"
@@ -115,7 +115,7 @@ spec:
                       return json.loads(resp.read().decode())
 
               for parser_id, asset_type in parsers:
-                  source_id = f"{prefix}-{parser_id}"
+                  source_id = f"{prefix}-{parser_id}" if prefix else parser_id
                   key = cache.get(source_id)
                   if not key:
                       data = ensure(parser_id, asset_type, regenerate=False)
