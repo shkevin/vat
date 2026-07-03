@@ -61,6 +61,7 @@ import {
   fetchAssetMergeReviews,
   fetchAssetAliases,
   fetchFinding,
+  fetchSbomPackages,
   groupAssetInto,
   upsertAssetMergeReview,
   type AssetMergeReviewRecord,
@@ -77,7 +78,22 @@ const HEADER_PADDING = {
 } as const;
 import type { AppConfig } from "@/config/app";
 import type { Asset, Finding, Source } from "@/types";
-import { normalizeContainerRef } from "@/lib/containerRefNormalization";
+import {
+  normalizeContainerRef,
+  containerDisplayPathWithoutRegistry,
+} from "@/lib/containerRefNormalization";
+import { useQuery } from "@tanstack/react-query";
+
+/** SBOM row shape shared with SBOMTab (structural). */
+type AssetSbomPackage = {
+  id: string;
+  name: string;
+  version: string;
+  license: string;
+  licenseRisk?: string;
+  component: string;
+  language: string;
+};
 
 function findingMatchesContainerVariant(
   f: Finding,
@@ -213,8 +229,6 @@ export function AssetPage({ config }: AssetPageProps) {
     sources,
     tracker,
     trackers,
-    sbom,
-    setSbom,
     waivers,
     reviewQueue,
     selected,
@@ -623,41 +637,64 @@ export function AssetPage({ config }: AssetPageProps) {
     [asset?.id, canReviewAssets, refreshMergeReviewData, token, user?.email],
   );
 
-  const assetSbom = useMemo(() => {
+  // Registry-stripped component paths for this asset (asset id + each finding's
+  // image). These are what the backend stores as SBOM `component`, so they make
+  // reliable substring queries. Single-segment ids (e.g. "kamiwaza-debug") are
+  // used as-is since stripping would wrongly add a "library/" prefix.
+  const assetSbomComponents = useMemo(() => {
     if (!asset) return [];
-    const id = (asset.id ?? "").trim();
-    const candidates = new Set<string>();
-    if (id) candidates.add(id);
-    for (const f of asset.findings ?? []) {
-      const img = (f.image ?? "").trim();
-      if (img) candidates.add(img);
-    }
-    const candidateLeaves = new Set<string>();
-    for (const c of candidates) {
-      if (!c.includes("/")) continue;
-      const canonical = normalizeContainerRef(c).canonicalAssetKey;
-      const leaf = canonical.split("/").filter(Boolean).at(-1) ?? "";
-      if (leaf) candidateLeaves.add(leaf.toLowerCase());
-    }
-    return sbom.filter((p) => {
-      const comp = (p.component ?? "").trim();
-      if (!comp) return false;
-      for (const cand of candidates) {
-        if (sameAssetIdentity(comp, cand)) return true;
-      }
-      // Fallback: handle registry-prefix drift where logical image name matches.
-      if (comp.includes("/")) {
-        const compLeaf =
-          normalizeContainerRef(comp)
-            .canonicalAssetKey.split("/")
-            .filter(Boolean)
-            .at(-1) ?? "";
-        if (compLeaf && candidateLeaves.has(compLeaf.toLowerCase()))
-          return true;
-      }
-      return false;
-    });
-  }, [asset, sbom]);
+    const set = new Set<string>();
+    const add = (ref: string | null | undefined) => {
+      const r = (ref ?? "").trim();
+      if (!r) return;
+      set.add(r.includes("/") ? containerDisplayPathWithoutRegistry(r) : r);
+    };
+    add(asset.id);
+    for (const f of asset.findings ?? []) add(f.image);
+    return Array.from(set).filter(Boolean).slice(0, 12);
+  }, [asset]);
+
+  // Fetch this asset's SBOM directly from the backend (component filter) instead
+  // of client-filtering a globally capped list — that cap hid SBOM for most
+  // assets. Only runs when the SBOM tab is open.
+  const assetSbomQuery = useQuery({
+    queryKey: ["asset-sbom", asset?.id, assetSbomComponents],
+    enabled:
+      assetTab === "sbom" && !!asset && assetSbomComponents.length > 0,
+    staleTime: 60_000,
+    queryFn: async () => {
+      const auth = { token: token ?? undefined, userEmail: user?.email };
+      const lists = await Promise.all(
+        assetSbomComponents.map((c) =>
+          fetchSbomPackages({ component: c, limit: 5000 }, auth).catch(
+            () => [],
+          ),
+        ),
+      );
+      const byId = new Map<string, (typeof lists)[number][number]>();
+      for (const list of lists) for (const p of list) byId.set(p.id, p);
+      return Array.from(byId.values()).map(
+        (p): AssetSbomPackage => ({
+          id: p.id,
+          name: p.name,
+          version: p.version,
+          license: p.licenseId ?? "",
+          licenseRisk: p.licenseRisk,
+          component: p.component ?? "",
+          language: p.language ?? "",
+        }),
+      );
+    },
+  });
+
+  // Local override so the client-side import preview (onImport) still works.
+  const [sbomImportOverride, setSbomImportOverride] = useState<
+    AssetSbomPackage[] | null
+  >(null);
+  useEffect(() => {
+    setSbomImportOverride(null);
+  }, [asset?.id]);
+  const assetSbom = sbomImportOverride ?? assetSbomQuery.data ?? [];
 
   const filters = useAssetFilters(assetId);
   const {
@@ -1411,11 +1448,28 @@ export function AssetPage({ config }: AssetPageProps) {
     }
 
     if (assetTab === "sbom") {
+      if (assetSbomQuery.isLoading && assetSbom.length === 0) {
+        return (
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              minHeight: 200,
+              color: "var(--app-accent)",
+              ...mono,
+              fontSize: 12,
+            }}
+          >
+            ▣ Loading SBOM…
+          </div>
+        );
+      }
       return (
         <SBOMTab
           sbom={assetSbom}
           findings={asset.findings}
-          onImport={(pkg) => setSbom((prev) => [...prev, ...pkg])}
+          onImport={(pkg) => setSbomImportOverride(pkg)}
           assetId={assetId ?? asset?.id}
         />
       );

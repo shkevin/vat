@@ -15,7 +15,6 @@ import {
   createLoadout as apiCreateLoadout,
   deleteLoadout as apiDeleteLoadout,
   fetchSettings,
-  fetchSbomPackages,
   fetchLedgerWaivers,
   fetchVATData,
   type LedgerWaiver,
@@ -40,7 +39,6 @@ import {
 import {
   DEFAULT_TRACKER,
   DEFAULT_LABELS,
-  SAMPLE_SBOM,
   SEV_ORDER,
 } from "@/lib/constants";
 import {
@@ -208,30 +206,6 @@ function normalizeSettings(
   return { sources: src, tracker: trk, trackers: trkList, labels: lbl };
 }
 
-function mapSbom(
-  sbomRes: Awaited<ReturnType<typeof fetchSbomPackages>>,
-): Array<{
-  id: string;
-  name: string;
-  version: string;
-  license: string;
-  licenseRisk?: string;
-  component: string;
-  language: string;
-}> {
-  const apiSbom = Array.isArray(sbomRes) ? sbomRes : [];
-  if (apiSbom.length === 0) return SAMPLE_SBOM;
-  return apiSbom.map((p) => ({
-    id: p.id,
-    name: p.name,
-    version: p.version,
-    license: p.licenseId ?? "",
-    licenseRisk: p.licenseRisk,
-    component: p.component ?? "",
-    language: p.language ?? "",
-  }));
-}
-
 /**
  * Snapshot persists each finding ONCE (top-level `findings`); assets carry only
  * finding IDs and are rehydrated on load. Previously every finding was stored
@@ -350,16 +324,6 @@ export interface UseVATDataReturn {
   tracker: Tracker;
   trackers: Tracker[];
   labels: WatchedLabel[];
-  sbom: Array<{
-    id: string;
-    name: string;
-    version: string;
-    license: string;
-    licenseRisk?: string;
-    component: string;
-    language: string;
-  }>;
-  setSbom: React.Dispatch<React.SetStateAction<typeof SAMPLE_SBOM>>;
   loading: boolean;
   refreshing: boolean;
   error: string | null;
@@ -521,7 +485,6 @@ export function useVATDataCore(): UseVATDataReturn {
   const [tracker, setTracker] = useState<Tracker>(DEFAULT_TRACKER);
   const [trackers, setTrackers] = useState<Tracker[]>([]);
   const [labels, setLabels] = useState<WatchedLabel[]>(DEFAULT_LABELS);
-  const [sbom, setSbom] = useState(SAMPLE_SBOM);
   const [selected, setSelected] = useState<Finding | null>(null);
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const [view, setView] = useState("findings");
@@ -921,14 +884,6 @@ export function useVATDataCore(): UseVATDataReturn {
     staleTime: 60_000,
   });
 
-  const sbomQuery = useQuery({
-    queryKey: ["vat-sbom", userScope],
-    enabled: Boolean(token || userEmail),
-    queryFn: async () => fetchSbomPackages({ limit: 1000 }, auth),
-    staleTime: 5 * 60_000,
-    refetchOnWindowFocus: false,
-  });
-
   const waiversQuery = useQuery({
     queryKey: ["vat-waivers", userScope],
     enabled: Boolean(token || userEmail),
@@ -1032,23 +987,14 @@ export function useVATDataCore(): UseVATDataReturn {
       setLabels(stored.labels as unknown as WatchedLabel[]);
   }, [settingsQuery.error]);
 
-  useEffect(() => {
-    if (!sbomQuery.data) return;
-    setSbom(mapSbom(sbomQuery.data));
-  }, [sbomQuery.data]);
-
   const refetch = useCallback(
     async (opts?: { silent?: boolean; includeAuxiliary?: boolean }) => {
       await vatQuery.refetch();
       if (opts?.includeAuxiliary) {
-        await Promise.all([
-          settingsQuery.refetch(),
-          sbomQuery.refetch(),
-          waiversQuery.refetch(),
-        ]);
+        await Promise.all([settingsQuery.refetch(), waiversQuery.refetch()]);
       }
     },
-    [vatQuery, settingsQuery, sbomQuery, waiversQuery],
+    [vatQuery, settingsQuery, waiversQuery],
   );
 
   const invalidateVatData = useCallback(async () => {
@@ -1530,8 +1476,6 @@ export function useVATDataCore(): UseVATDataReturn {
     tracker,
     trackers,
     labels,
-    sbom,
-    setSbom,
     loading,
     refreshing,
     error,
