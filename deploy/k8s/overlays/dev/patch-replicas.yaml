@@ -4,7 +4,9 @@ metadata:
   name: vat-backend
   namespace: vat
 spec:
-  replicas: 1
+  # 2 replicas: tolerate the scan-ingest herd (single replica refused connections
+  # under load) and keep the API up during rolling restarts. Matches base.
+  replicas: 2
 ---
 apiVersion: apps/v1
 kind: Deployment

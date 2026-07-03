@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import random
 import time
 import urllib.error
 import urllib.parse
@@ -83,6 +84,41 @@ def _save_key_cache(cache: dict[str, str]) -> None:
     cache_file.chmod(0o600)
 
 
+def _urlopen_json_with_retry(
+    req: urllib.request.Request,
+    *,
+    timeout: float,
+    label: str,
+    attempts: int = 7,
+) -> dict:
+    """POST with retry on transient failures (connection refused, 5xx) using
+    jittered exponential backoff, so a scan isn't lost to a brief backend herd
+    (single-replica backend refusing connections under load). A 4xx is a real
+    error and fails fast. ``req`` must carry bytes data — it is re-sent verbatim.
+    Ingest is idempotent (idempotency_key), so retries can't double-count.
+    """
+    last_reason = "unknown error"
+    for attempt in range(1, attempts + 1):
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                return json.loads(resp.read().decode())
+        except urllib.error.HTTPError as e:
+            if e.code < 500:
+                body_text = e.read().decode() if e.fp else ""
+                raise VATClientError(
+                    f"{label} failed (HTTP {e.code}): {body_text}"
+                ) from e
+            last_reason = f"HTTP {e.code}"
+        except urllib.error.URLError as e:
+            last_reason = str(e.reason)
+        if attempt < attempts:
+            # Jittered backoff (~1-3, 2-6, 4-12, 8-24, 15-45, 15-45s): spans a
+            # multi-minute herd without synchronizing retries across agents.
+            base = min(2**attempt, 30)
+            time.sleep(base * (0.5 + random.random()))
+    raise VATClientError(f"{label} failed after {attempts} retries: {last_reason}")
+
+
 def ensure_source(
     base_url: str,
     admin_token: str,
@@ -106,34 +142,17 @@ def ensure_source(
         "regenerateKey": regenerate_key,
     }
     data_bytes = json.dumps(body).encode()
-    headers = {
-        "Authorization": f"Bearer {admin_token}",
-        "Content-Type": "application/json",
-    }
-    # Retry transient failures (connection refused, 5xx) with backoff so a brief
-    # backend blip doesn't abort the whole scan. A 4xx (e.g. 401) is a real
-    # error — fail fast. Mirrors the ingest path's retry behaviour.
-    last_reason = "unknown error"
-    for attempt in range(1, 6):
-        req = urllib.request.Request(
-            url, data=data_bytes, method="POST", headers=headers
-        )
-        try:
-            with urllib.request.urlopen(req, timeout=30) as resp:
-                data = json.loads(resp.read().decode())
-            return data.get("sourceId", ""), data.get("key")
-        except urllib.error.HTTPError as e:
-            if e.code < 500:
-                body_text = e.read().decode() if e.fp else ""
-                raise VATClientError(
-                    f"Ensure source failed (HTTP {e.code}): {body_text}"
-                ) from e
-            last_reason = f"HTTP {e.code}"
-        except urllib.error.URLError as e:
-            last_reason = str(e.reason)
-        if attempt < 5:
-            time.sleep(min(2**attempt, 16))
-    raise VATClientError(f"Ensure source failed after retries: {last_reason}")
+    req = urllib.request.Request(
+        url,
+        data=data_bytes,
+        method="POST",
+        headers={
+            "Authorization": f"Bearer {admin_token}",
+            "Content-Type": "application/json",
+        },
+    )
+    data = _urlopen_json_with_retry(req, timeout=30, label="Ensure source")
+    return data.get("sourceId", ""), data.get("key")
 
 
 def _ingest_headers(
@@ -203,14 +222,7 @@ def ingest_report(
             idempotency_key=idempotency_key,
         ),
     )
-    try:
-        with urllib.request.urlopen(req, timeout=60) as resp:
-            return json.loads(resp.read().decode())
-    except urllib.error.HTTPError as e:
-        body_text = e.read().decode() if e.fp else ""
-        raise VATClientError(f"Ingest failed (HTTP {e.code}): {body_text}") from e
-    except urllib.error.URLError as e:
-        raise VATClientError(f"Ingest failed: {e.reason}") from e
+    return _urlopen_json_with_retry(req, timeout=60, label="Ingest")
 
 
 def ingest_openscap_report(
@@ -253,14 +265,7 @@ def ingest_openscap_report(
             "Content-Type": "application/xml",
         },
     )
-    try:
-        with urllib.request.urlopen(req, timeout=120) as resp:
-            return json.loads(resp.read().decode())
-    except urllib.error.HTTPError as e:
-        body_text = e.read().decode() if e.fp else ""
-        raise VATClientError(f"Ingest failed (HTTP {e.code}): {body_text}") from e
-    except urllib.error.URLError as e:
-        raise VATClientError(f"Ingest failed: {e.reason}") from e
+    return _urlopen_json_with_retry(req, timeout=120, label="Ingest")
 
 
 def ingest_openscap_oval_report(
@@ -302,14 +307,7 @@ def ingest_openscap_oval_report(
             "Content-Type": "application/xml",
         },
     )
-    try:
-        with urllib.request.urlopen(req, timeout=120) as resp:
-            return json.loads(resp.read().decode())
-    except urllib.error.HTTPError as e:
-        body_text = e.read().decode() if e.fp else ""
-        raise VATClientError(f"Ingest failed (HTTP {e.code}): {body_text}") from e
-    except urllib.error.URLError as e:
-        raise VATClientError(f"Ingest failed: {e.reason}") from e
+    return _urlopen_json_with_retry(req, timeout=120, label="Ingest")
 
 
 def get_cached_key(source_id: str) -> str | None:
