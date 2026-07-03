@@ -228,8 +228,11 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.namespace
+            # Empty: push under the logical scanner source id (e.g. "trivy"), not
+            # "node-<node>-<parser>". The node is already the asset (k8s/.../node/<n>/host),
+            # so per-node source ids only duplicated the integration nodes in the UI.
             - name: VAT_SOURCE_ID_PREFIX
-              value: node-$(NODE_NAME)
+              value: ""
             - name: VAT_SCANNER_KEY_CACHE_DIR
               value: /state
             - name: VAT_ADMIN_TOKEN
