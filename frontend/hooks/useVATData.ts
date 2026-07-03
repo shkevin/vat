@@ -1,11 +1,13 @@
 "use client";
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { usePathname } from "next/navigation";
 import {
   keepPreviousData,
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
+import { useDashboardFilters } from "@/hooks/useDashboardFilters";
 import { now, daysLeft, computeAlerts } from "@/lib/utils";
 import {
   archiveFinding,
@@ -53,6 +55,10 @@ import {
   isRiskAccepted,
   isVerifiedDisposition,
 } from "@/lib/metricSemantics";
+// Dashboard filters have a single persistence store (vat-dashboard-filters),
+// written by useDashboardFilters. useVATData reads it once for a correct first
+// paint; there is no second sidebar store.
+import { loadDashboardFiltersFromStorage } from "@/lib/dashboardFilterStorage";
 import {
   FAVORITES_KEY,
   loadFavoriteEntries,
@@ -82,48 +88,13 @@ import type {
 // restored before the cleaned API payload arrives.
 const VAT_SNAPSHOT_KEY = "vat:lastFindingsSnapshot:v3";
 
-/** localStorage key for persisted sidebar filter state. v1 = first persisted shape;
- * bump if the schema changes incompatibly. */
-const SIDEBAR_STATE_KEY = "vat:sidebarState:v1";
-
-interface PersistedSidebarState {
-  showArchived?: boolean | "both";
-  needsJustification?: boolean;
-  search?: string;
-  searchFields?: string[]; // serialized Set
-  filterFindingStatuses?: string[];
-  filterABC?: string[];
-  filterVerifiedRange?: [number, number];
-  filterORARange?: [number, number];
-  filterAssetTypes?: string[];
-  onlyFavorites?: boolean;
-  showEmptyAssets?: boolean;
-}
-
-function loadSidebarState(): PersistedSidebarState {
-  if (typeof window === "undefined") return {};
-  try {
-    const raw = window.localStorage.getItem(SIDEBAR_STATE_KEY);
-    if (!raw) return {};
-    const parsed = JSON.parse(raw);
-    if (!parsed || typeof parsed !== "object") return {};
-    return parsed as PersistedSidebarState;
-  } catch {
-    return {};
-  }
-}
-
-function saveSidebarState(s: PersistedSidebarState): void {
-  if (typeof window === "undefined") return;
-  try {
-    window.localStorage.setItem(SIDEBAR_STATE_KEY, JSON.stringify(s));
-  } catch {
-    // ignore quota / serialization issues — sidebar state is best-effort
-  }
-}
-// Caps tuned for ~14k-finding deployments after the v2 slim projection. Pre-v2
-// any deployment with >1500 findings silently failed to persist a snapshot, so
-// every page refresh blanked to "Loading VAT" while waiting on the full fetch.
+// The snapshot is a best-effort first-paint cache in localStorage (sync read, so
+// it must fit the ~5MB per-origin quota). After the v2 slim projection + storing
+// each finding once (dehydrated assets), a slim finding is ~1.6KB, so the 6MB cap
+// covers deployments up to ~3.5k findings. Larger deployments exceed the cap and
+// fall back to the "Loading VAT" splash on refresh — correct, since a synchronous
+// store can't hold tens of MB. (Async stores like IndexedDB don't help: they
+// can't be read before the first paint anyway.)
 const SNAPSHOT_MAX_FINDINGS = 50_000;
 const SNAPSHOT_MAX_RAW_BYTES = 6_000_000;
 
@@ -261,6 +232,40 @@ function mapSbom(
   }));
 }
 
+/**
+ * Snapshot persists each finding ONCE (top-level `findings`); assets carry only
+ * finding IDs and are rehydrated on load. Previously every finding was stored
+ * twice — slim in `findings` and full nested in `assets[].findings` — which
+ * ~doubled the payload and pushed mid-size deployments over the size cap.
+ */
+type SnapshotAsset = Omit<Asset, "findings"> & { findingIds: string[] };
+
+export function dehydrateSnapshotAssets(assets: Asset[]): SnapshotAsset[] {
+  return assets.map(({ findings, ...rest }) => ({
+    ...rest,
+    findingIds: findings.map((f) => f.id),
+  }));
+}
+
+export function rehydrateSnapshotAssets(
+  assets: Array<SnapshotAsset | Asset>,
+  findings: Finding[],
+): Asset[] {
+  const byId = new Map(findings.map((f) => [f.id, f] as const));
+  return assets.map((a) => {
+    // Back-compat: older snapshots stored full nested findings — keep as-is.
+    const nested = (a as Asset).findings;
+    if (Array.isArray(nested) && nested.length > 0) return a as Asset;
+    const { findingIds = [], ...rest } = a as SnapshotAsset;
+    return {
+      ...(rest as Omit<Asset, "findings">),
+      findings: findingIds
+        .map((id) => byId.get(String(id)))
+        .filter((f): f is Finding => Boolean(f)),
+    };
+  });
+}
+
 function loadVatSnapshot(): {
   findings: Finding[];
   assets: Asset[];
@@ -273,7 +278,7 @@ function loadVatSnapshot(): {
     if (raw.length > SNAPSHOT_MAX_RAW_BYTES) return null;
     const parsed = JSON.parse(raw) as {
       findings?: Finding[];
-      assets?: Asset[];
+      assets?: Array<SnapshotAsset | Asset>;
       updatedAt?: number;
     };
     if (!Array.isArray(parsed.findings) || !Array.isArray(parsed.assets))
@@ -281,7 +286,7 @@ function loadVatSnapshot(): {
     if (typeof parsed.updatedAt !== "number") return null;
     return {
       findings: parsed.findings,
-      assets: parsed.assets,
+      assets: rehydrateSnapshotAssets(parsed.assets, parsed.findings),
       updatedAt: parsed.updatedAt,
     };
   } catch {
@@ -329,7 +334,7 @@ function saveVatSnapshot(findings: Finding[], assets: Asset[]) {
     const slim = findings.map(slimFindingForSnapshot);
     const payload = JSON.stringify({
       findings: slim,
-      assets,
+      assets: dehydrateSnapshotAssets(assets),
       updatedAt: Date.now(),
     });
     if (payload.length > SNAPSHOT_MAX_RAW_BYTES) return;
@@ -460,6 +465,10 @@ export interface UseVATDataReturn {
   /** Findings filtered by sidebar (displayedAssets) — report respects sidebar filters */
   reportFilteredFindings: Finding[];
   totalAssets: number;
+  /** The single dashboard-filter URL state + writer (nuqs). Owned here so there
+   * is one instance app-wide; MainAppShell/VAT read it from context. */
+  dashboardState: ReturnType<typeof useDashboardFilters>[0];
+  setDashboardState: ReturnType<typeof useDashboardFilters>[1];
 }
 
 function ledgerWaiverToFinding(w: LedgerWaiver): Finding {
@@ -495,6 +504,12 @@ export function useVATDataCore(): UseVATDataReturn {
   // shouldn't thrash the cache, and DevTools / persistence shouldn't leak
   // the bearer.
   const userScope = user?.id ?? "anon";
+  // The single app-wide dashboard-filter instance (nuqs URL + one persistence
+  // store). MainAppShell/VAT consume it from context instead of calling the hook
+  // themselves, so there is exactly one restore/persist/URL owner.
+  const pathname = usePathname();
+  const isAssetPage = Boolean(pathname?.startsWith("/assets/"));
+  const [dashboardState, setDashboardState] = useDashboardFilters();
   const [snapshot] = useState(() => loadVatSnapshot());
   const [findings, setFindings] = useState<Finding[]>(
     () => snapshot?.findings ?? [],
@@ -510,43 +525,45 @@ export function useVATDataCore(): UseVATDataReturn {
   const [selected, setSelected] = useState<Finding | null>(null);
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const [view, setView] = useState("findings");
-  // Sidebar filter state hydrates from localStorage on first render so the
-  // selected loadout / filters / archive toggle persist across refresh and
-  // navigation between routes. Saving happens in the effect below so every
-  // setter is automatically persisted without each call site needing to
-  // know about storage.
-  const [_sidebarInit] = useState(() => loadSidebarState());
-  const [search, setSearch] = useState(() => _sidebarInit.search ?? "");
+  // Dashboard filter state hydrates once from the single persistence store
+  // (vat-dashboard-filters) so the first paint is correct. The URL (nuqs, via
+  // the single useDashboardFilters instance above) is the source of truth
+  // thereafter; the one sync effect below keeps this working copy in step, and
+  // useDashboardFilters owns the single write-back to storage.
+  const [_filterInit] = useState(() => loadDashboardFiltersFromStorage() ?? {});
+  // ponytail: search is ephemeral (resets on refresh) — never restored or in the URL.
+  const [search, setSearch] = useState("");
+  // searchFields (search scope) is ephemeral too — not persisted, resets on refresh.
   const [searchFields, setSearchFields] = useState<Set<string>>(
-    () => new Set(_sidebarInit.searchFields ?? []),
+    () => new Set(),
   );
   const [showArchived, setShowArchived] = useState<boolean | "both">(
-    () => _sidebarInit.showArchived ?? false,
+    () => _filterInit.archived ?? false,
   );
   const [needsJustification, setNeedsJustification] = useState(
-    () => _sidebarInit.needsJustification ?? false,
+    () => _filterInit.needsJustification ?? false,
   );
 
   const [filterFindingStatuses, setFilterFindingStatuses] = useState<
     Set<string>
-  >(() => new Set(_sidebarInit.filterFindingStatuses ?? []));
+  >(() => new Set(_filterInit.status ?? []));
   const [filterABC, setFilterABC] = useState<Set<string>>(
-    () => new Set(_sidebarInit.filterABC ?? []),
+    () => new Set(_filterInit.abc ?? []),
   );
   const [filterVerifiedRange, setFilterVerifiedRange] = useState<
     [number, number]
-  >(() => _sidebarInit.filterVerifiedRange ?? [0, 100]);
+  >(() => [_filterInit.verifiedMin ?? 0, _filterInit.verifiedMax ?? 100]);
   const [filterORARange, setFilterORARange] = useState<[number, number]>(
-    () => _sidebarInit.filterORARange ?? [0, 100],
+    () => [_filterInit.oraMin ?? 0, _filterInit.oraMax ?? 100],
   );
   const [filterAssetTypes, setFilterAssetTypes] = useState<Set<string>>(
-    () => new Set(_sidebarInit.filterAssetTypes ?? []),
+    () => new Set(_filterInit.assetTypes ?? []),
   );
   const [onlyFavorites, setOnlyFavorites] = useState(
-    () => _sidebarInit.onlyFavorites ?? false,
+    () => _filterInit.favorites ?? false,
   );
   const [showEmptyAssets, setShowEmptyAssets] = useState(
-    () => _sidebarInit.showEmptyAssets ?? false,
+    () => _filterInit.showEmptyAssets ?? false,
   );
   const [favoriteEntries, setFavoriteEntries] = useState<FavoriteEntry[]>(
     () => {
@@ -560,73 +577,10 @@ export function useVATDataCore(): UseVATDataReturn {
     [favoriteEntries],
   );
 
-  // Persist sidebar filter state on every change so refresh + navigation
-  // between routes keeps the user's selection (loadout toggle, asset-type
-  // filters, range sliders, etc.). Sets are serialized to arrays. Saving
-  // is best-effort — quota errors silently no-op.
-  useEffect(() => {
-    saveSidebarState({
-      showArchived,
-      needsJustification,
-      search,
-      searchFields: Array.from(searchFields),
-      filterFindingStatuses: Array.from(filterFindingStatuses),
-      filterABC: Array.from(filterABC),
-      filterVerifiedRange,
-      filterORARange,
-      filterAssetTypes: Array.from(filterAssetTypes),
-      onlyFavorites,
-      showEmptyAssets,
-    });
-  }, [
-    showArchived,
-    needsJustification,
-    search,
-    searchFields,
-    filterFindingStatuses,
-    filterABC,
-    filterVerifiedRange,
-    filterORARange,
-    filterAssetTypes,
-    onlyFavorites,
-    showEmptyAssets,
-  ]);
-
-  // Cross-tab sync: when another tab updates the sidebar state, mirror it.
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const onStorage = (e: StorageEvent) => {
-      if (e.key !== SIDEBAR_STATE_KEY || !e.newValue) return;
-      try {
-        const next = JSON.parse(e.newValue) as PersistedSidebarState;
-        if (typeof next.showArchived !== "undefined")
-          setShowArchived(next.showArchived);
-        if (typeof next.needsJustification === "boolean")
-          setNeedsJustification(next.needsJustification);
-        if (typeof next.search === "string") setSearch(next.search);
-        if (Array.isArray(next.searchFields))
-          setSearchFields(new Set(next.searchFields));
-        if (Array.isArray(next.filterFindingStatuses))
-          setFilterFindingStatuses(new Set(next.filterFindingStatuses));
-        if (Array.isArray(next.filterABC))
-          setFilterABC(new Set(next.filterABC));
-        if (Array.isArray(next.filterVerifiedRange))
-          setFilterVerifiedRange(next.filterVerifiedRange);
-        if (Array.isArray(next.filterORARange))
-          setFilterORARange(next.filterORARange);
-        if (Array.isArray(next.filterAssetTypes))
-          setFilterAssetTypes(new Set(next.filterAssetTypes));
-        if (typeof next.onlyFavorites === "boolean")
-          setOnlyFavorites(next.onlyFavorites);
-        if (typeof next.showEmptyAssets === "boolean")
-          setShowEmptyAssets(next.showEmptyAssets);
-      } catch {
-        // ignore malformed updates
-      }
-    };
-    window.addEventListener("storage", onStorage);
-    return () => window.removeEventListener("storage", onStorage);
-  }, []);
+  // Persistence of dashboard filters is owned solely by useDashboardFilters
+  // (single writer to vat-dashboard-filters). This working copy is kept in sync
+  // from the URL by the one sync effect below, so no separate persist/cross-tab
+  // wiring lives here anymore.
 
   /** Sync favorites from localStorage (e.g. after another tab changes them or on focus) */
   const syncFavoritesFromStorage = useCallback(() => {
@@ -1477,6 +1431,99 @@ export function useVATDataCore(): UseVATDataReturn {
   const refreshing = vatQuery.isFetching;
   const error = vatQuery.error instanceof Error ? vatQuery.error.message : null;
 
+  // The ONE place that mirrors the URL (nuqs) into this working copy. Reads
+  // current values via a ref so the effect only depends on the URL state +
+  // loading (not on the values it writes). Search is never synced — it's
+  // ephemeral and never in the URL.
+  const filterSyncRef = useRef({
+    view,
+    filterFindingStatuses,
+    filterABC,
+    filterVerifiedRange,
+    filterORARange,
+    filterAssetTypes,
+    showArchived,
+    onlyFavorites,
+    showEmptyAssets,
+    needsJustification,
+  });
+  filterSyncRef.current = {
+    view,
+    filterFindingStatuses,
+    filterABC,
+    filterVerifiedRange,
+    filterORARange,
+    filterAssetTypes,
+    showArchived,
+    onlyFavorites,
+    showEmptyAssets,
+    needsJustification,
+  };
+  const lastUrlStateRef = useRef<string>("");
+  const prevLoadingRef = useRef(loading);
+  useEffect(() => {
+    if (isAssetPage) return;
+    // When loading finishes, force re-apply so URL state wins over initial defaults.
+    if (prevLoadingRef.current && !loading) lastUrlStateRef.current = "";
+    prevLoadingRef.current = loading;
+
+    const s = dashboardState;
+    const urlKey = JSON.stringify({
+      tab: s.tab,
+      status: s.status ?? [],
+      abc: s.abc ?? [],
+      verifiedMin: s.verifiedMin,
+      verifiedMax: s.verifiedMax,
+      oraMin: s.oraMin,
+      oraMax: s.oraMax,
+      assetTypes: s.assetTypes ?? [],
+      archived: s.archived,
+      favorites: s.favorites,
+      showEmptyAssets: s.showEmptyAssets,
+      needsJustification: s.needsJustification,
+    });
+    if (lastUrlStateRef.current === urlKey) return;
+    lastUrlStateRef.current = urlKey;
+
+    const d = filterSyncRef.current;
+    if (s.tab !== d.view) setView(s.tab);
+    const statusSet = new Set(s.status ?? []);
+    if (
+      statusSet.size !== d.filterFindingStatuses.size ||
+      [...statusSet].some((x) => !d.filterFindingStatuses.has(x))
+    ) {
+      setFilterFindingStatuses(statusSet);
+    }
+    const abcSet = new Set(s.abc ?? []);
+    if (
+      abcSet.size !== d.filterABC.size ||
+      [...abcSet].some((x) => !d.filterABC.has(x))
+    ) {
+      setFilterABC(abcSet);
+    }
+    const vr: [number, number] = [s.verifiedMin ?? 0, s.verifiedMax ?? 100];
+    if (vr[0] !== d.filterVerifiedRange[0] || vr[1] !== d.filterVerifiedRange[1]) {
+      setFilterVerifiedRange(vr);
+    }
+    const or: [number, number] = [s.oraMin ?? 0, s.oraMax ?? 100];
+    if (or[0] !== d.filterORARange[0] || or[1] !== d.filterORARange[1]) {
+      setFilterORARange(or);
+    }
+    const atSet = new Set(s.assetTypes ?? []);
+    if (
+      atSet.size !== d.filterAssetTypes.size ||
+      [...atSet].some((x) => !d.filterAssetTypes.has(x))
+    ) {
+      setFilterAssetTypes(atSet);
+    }
+    if (s.archived !== d.showArchived) setShowArchived(s.archived);
+    if (s.favorites !== d.onlyFavorites) setOnlyFavorites(s.favorites);
+    if (s.showEmptyAssets !== d.showEmptyAssets)
+      setShowEmptyAssets(s.showEmptyAssets);
+    if (s.needsJustification !== d.needsJustification)
+      setNeedsJustification(s.needsJustification);
+  }, [isAssetPage, dashboardState, loading]);
+
   return {
     findings,
     sources,
@@ -1554,5 +1601,7 @@ export function useVATDataCore(): UseVATDataReturn {
     reportAssets,
     reportFilteredFindings,
     totalAssets,
+    dashboardState,
+    setDashboardState,
   };
 }

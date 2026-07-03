@@ -60,7 +60,6 @@ const SettingsTab = dynamic(
 );
 import { useAuth } from "@/contexts/AuthContext";
 import { useUserPreferences } from "@/contexts/UserPreferencesContext";
-import { useDashboardFilters } from "@/hooks/useDashboardFilters";
 import { getGroupedFindings } from "@/lib/findingGroupUtils";
 import { SEV_ORDER } from "@/lib/constants";
 import { daysLeft } from "@/lib/utils";
@@ -99,7 +98,8 @@ export default function VAT({ config }: VATProps) {
   const isAdmin = user?.role === "admin";
   const canReviewAssets = user?.role === "admin" || user?.role === "reviewer";
   const groupFindings = preferences.groupFindings ?? true;
-  const [dashboardState, setDashboardState] = useDashboardFilters();
+  // Single dashboard-filter instance lives in useVATData; read it from context.
+  const { dashboardState, setDashboardState } = data;
   const [mergeReviewItems, setMergeReviewItems] = useState<
     Array<{
       assetId: string;
@@ -157,20 +157,11 @@ export default function VAT({ config }: VATProps) {
     filterVerifiedRange,
     filterORARange,
     filterAssetTypes,
-    setFilterAssetTypes,
     showArchived,
     setSearch,
-    setFilterFindingStatuses,
-    setFilterABC,
-    setFilterVerifiedRange,
-    setFilterORARange,
-    setShowArchived,
     onlyFavorites,
-    setOnlyFavorites,
     showEmptyAssets,
-    setShowEmptyAssets,
     needsJustification,
-    setNeedsJustification,
     searchFields,
     setSearchFields,
     handleBulk,
@@ -212,41 +203,9 @@ export default function VAT({ config }: VATProps) {
     [selected, selectedDetail],
   );
 
-  useEffect(() => {
-    setFilterFindingStatuses(new Set(dashboardState.status ?? []));
-    setFilterAssetTypes(new Set(dashboardState.assetTypes ?? []));
-    setFilterABC(new Set(dashboardState.abc ?? []));
-    setFilterVerifiedRange([
-      dashboardState.verifiedMin ?? 0,
-      dashboardState.verifiedMax ?? 100,
-    ]);
-    setFilterORARange([dashboardState.oraMin ?? 0, dashboardState.oraMax ?? 100]);
-    setShowArchived(dashboardState.archived ?? false);
-    setOnlyFavorites(dashboardState.favorites ?? false);
-    setShowEmptyAssets(dashboardState.showEmptyAssets ?? false);
-    setNeedsJustification(dashboardState.needsJustification ?? false);
-  }, [
-    dashboardState.abc,
-    dashboardState.archived,
-    dashboardState.assetTypes,
-    dashboardState.favorites,
-    dashboardState.needsJustification,
-    dashboardState.oraMax,
-    dashboardState.oraMin,
-    dashboardState.showEmptyAssets,
-    dashboardState.status,
-    dashboardState.verifiedMax,
-    dashboardState.verifiedMin,
-    setFilterABC,
-    setFilterAssetTypes,
-    setFilterFindingStatuses,
-    setFilterORARange,
-    setFilterVerifiedRange,
-    setNeedsJustification,
-    setOnlyFavorites,
-    setShowArchived,
-    setShowEmptyAssets,
-  ]);
+  // URL→state sync for dashboard filters lives in ONE place (MainAppShell). This
+  // component reads the synced values from useVATData and writes changes to the
+  // URL via setDashboardState below; it no longer mirrors the sync itself.
 
   const activityFeed = useActivityFeed({
     findings,

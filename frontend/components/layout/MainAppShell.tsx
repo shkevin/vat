@@ -9,11 +9,7 @@ import { ShellProvider } from "@/contexts/ShellContext";
 import { FilterSidebarProvider } from "@/contexts/FilterSidebarContext";
 import { useVATData } from "@/contexts/VATDataContext";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
-import { useDashboardFilters } from "@/hooks/useDashboardFilters";
-import {
-  loadDashboardFiltersFromStorage,
-  saveDashboardFiltersToStorage,
-} from "@/lib/dashboardFilterStorage";
+import { loadDashboardFiltersFromStorage } from "@/lib/dashboardFilterStorage";
 import type { AppConfig } from "@/config/app";
 
 interface MainAppShellProps {
@@ -41,119 +37,10 @@ export function MainAppShell({ config, children }: MainAppShellProps) {
   const isAssetPage = pathname?.startsWith("/assets/");
   const currentView = isAssetPage ? "findings" : data.view;
 
-  const [dashboardState, setDashboardState] = useDashboardFilters();
-
-  // Sync nuqs (URL) -> useVATData when on dashboard.
-  // Use ref to skip when URL state hasn't actually changed (nuqs may return new ref each render).
-  // Re-run when loading finishes so we apply URL state after VAT data is ready.
-  const dataRef = useRef(data);
-  dataRef.current = data;
-  const lastUrlStateRef = useRef<string>("");
-  const prevLoadingRef = useRef(data.loading);
-  useEffect(() => {
-    if (isAssetPage) return;
-    // When loading finishes, force re-apply so URL state wins over any initial defaults
-    if (prevLoadingRef.current && !data.loading) {
-      lastUrlStateRef.current = "";
-    }
-    prevLoadingRef.current = data.loading;
-
-    const s = dashboardState;
-    const urlKey = JSON.stringify({
-      tab: s.tab,
-      search: s.search,
-      status: s.status ?? [],
-      abc: s.abc ?? [],
-      verifiedMin: s.verifiedMin,
-      verifiedMax: s.verifiedMax,
-      oraMin: s.oraMin,
-      oraMax: s.oraMax,
-      assetTypes: s.assetTypes ?? [],
-      archived: s.archived,
-      favorites: s.favorites,
-      showEmptyAssets: s.showEmptyAssets,
-      needsJustification: s.needsJustification,
-    });
-    if (lastUrlStateRef.current === urlKey) return;
-    lastUrlStateRef.current = urlKey;
-
-    const d = dataRef.current;
-    if (s.tab !== d.view) d.setView(s.tab);
-    if (s.search !== d.search) d.setSearch(s.search);
-    const statusSet = new Set(s.status ?? []);
-    if (
-      statusSet.size !== d.filterFindingStatuses.size ||
-      [...statusSet].some((x) => !d.filterFindingStatuses.has(x))
-    ) {
-      d.setFilterFindingStatuses(statusSet);
-    }
-    const abcSet = new Set(s.abc ?? []);
-    if (
-      abcSet.size !== d.filterABC.size ||
-      [...abcSet].some((x) => !d.filterABC.has(x))
-    ) {
-      d.setFilterABC(abcSet);
-    }
-    const vr: [number, number] = [s.verifiedMin ?? 0, s.verifiedMax ?? 100];
-    if (
-      vr[0] !== d.filterVerifiedRange[0] ||
-      vr[1] !== d.filterVerifiedRange[1]
-    ) {
-      d.setFilterVerifiedRange(vr);
-    }
-    const or: [number, number] = [s.oraMin ?? 0, s.oraMax ?? 100];
-    if (or[0] !== d.filterORARange[0] || or[1] !== d.filterORARange[1]) {
-      d.setFilterORARange(or);
-    }
-    const atSet = new Set(s.assetTypes ?? []);
-    if (
-      atSet.size !== d.filterAssetTypes.size ||
-      [...atSet].some((x) => !d.filterAssetTypes.has(x))
-    ) {
-      d.setFilterAssetTypes(atSet);
-    }
-    if (s.archived !== d.showArchived) d.setShowArchived(s.archived);
-    if (s.favorites !== d.onlyFavorites) d.setOnlyFavorites(s.favorites);
-    if (s.showEmptyAssets !== d.showEmptyAssets)
-      d.setShowEmptyAssets(s.showEmptyAssets);
-    if (s.needsJustification !== d.needsJustification)
-      d.setNeedsJustification(s.needsJustification);
-  }, [isAssetPage, dashboardState, data.loading]);
-
-  // Persist VAT filter state to localStorage when user changes filters in sidebar.
-  // This ensures favorites, archived, status, etc. survive refresh.
-  useEffect(() => {
-    if (isAssetPage) return;
-    if (typeof window === "undefined") return;
-    saveDashboardFiltersToStorage({
-      tab: data.view,
-      search: data.search,
-      status: [...data.filterFindingStatuses],
-      abc: [...data.filterABC],
-      verifiedMin: data.filterVerifiedRange[0],
-      verifiedMax: data.filterVerifiedRange[1],
-      oraMin: data.filterORARange[0],
-      oraMax: data.filterORARange[1],
-      assetTypes: [...data.filterAssetTypes],
-      archived: data.showArchived === true,
-      favorites: data.onlyFavorites,
-      showEmptyAssets: data.showEmptyAssets,
-      needsJustification: data.needsJustification,
-    });
-  }, [
-    isAssetPage,
-    data.view,
-    data.search,
-    data.filterFindingStatuses,
-    data.filterABC,
-    data.filterVerifiedRange,
-    data.filterORARange,
-    data.filterAssetTypes,
-    data.showArchived,
-    data.onlyFavorites,
-    data.showEmptyAssets,
-    data.needsJustification,
-  ]);
+  // Dashboard filter URL state + writer come from the single useDashboardFilters
+  // instance owned by useVATData (which also runs the one URL->state sync). No
+  // second instance, sync, or persist effect lives here.
+  const { dashboardState, setDashboardState } = data;
 
   // Restore selected finding from URL when findings are loaded
   useEffect(() => {
