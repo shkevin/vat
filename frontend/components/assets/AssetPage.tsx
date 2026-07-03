@@ -1413,7 +1413,7 @@ export function AssetPage({ config }: AssetPageProps) {
     if (assetTab === "sbom") {
       return (
         <SBOMTab
-          sbom={assetSbom.length > 0 ? assetSbom : sbom}
+          sbom={assetSbom}
           findings={asset.findings}
           onImport={(pkg) => setSbom((prev) => [...prev, ...pkg])}
           assetId={assetId ?? asset?.id}

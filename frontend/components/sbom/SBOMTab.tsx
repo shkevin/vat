@@ -3,7 +3,7 @@
 import { useState, useMemo, useCallback } from "react";
 import { SearchInput } from "@/components/ui/SearchInput";
 import { mono } from "@/lib/styles";
-import { LICENSE_RISK, SAMPLE_SBOM } from "@/lib/constants";
+import { LICENSE_RISK } from "@/lib/constants";
 import type { Finding } from "@/types";
 
 /** Map language hint to purl type for NTIA unique identifiers. */
@@ -268,7 +268,8 @@ export function SBOMTab({ sbom, findings, onImport, assetId }: SBOMTabProps) {
     "package",
   );
 
-  const packages = sbom.length > 0 ? sbom : SAMPLE_SBOM;
+  // ponytail: show only this asset's packages; empty → empty table, never demo/global fallback
+  const packages = sbom;
 
   const findingCountByComponent = useMemo(() => {
     const m = new Map<string, number>();
