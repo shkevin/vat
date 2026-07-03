@@ -31,6 +31,12 @@ db_url = settings.database_url.replace("+asyncpg", "").replace(
 )
 config.set_main_option("sqlalchemy.url", db_url)
 
+# Session-level advisory lock key so only one process runs `alembic upgrade` at a
+# time. With 2+ backend replicas, both pods' alembic-migrate init containers can
+# start together; the second blocks until the first finishes, then its upgrade is
+# a no-op. Arbitrary but must be identical across replicas.
+_MIGRATION_LOCK_KEY = 728_532_119
+
 
 def run_migrations_offline() -> None:
     url = config.get_main_option("sqlalchemy.url")
@@ -51,6 +57,12 @@ def run_migrations_online() -> None:
         poolclass=NullPool,
     )
     with connectable.connect() as connection:
+        # Serialize concurrent migrations across replicas: block until the lock is
+        # free (a second pod waits for the first). Commit so alembic starts with a
+        # clean transaction; the session-level lock persists across it and is
+        # released when this connection closes — including if a migration raises.
+        connection.exec_driver_sql(f"SELECT pg_advisory_lock({_MIGRATION_LOCK_KEY})")
+        connection.commit()
         do_run_migrations(connection)
 
 
