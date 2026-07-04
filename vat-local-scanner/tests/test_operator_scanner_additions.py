@@ -116,6 +116,56 @@ def test_grype_reuses_sbom_without_second_image_pull(monkeypatch, tmp_path: Path
     assert any("matches" in r for r in ingested), "grype-from-sbom report ingested"
 
 
+def test_grype_failure_stays_incremental(monkeypatch, tmp_path: Path) -> None:
+    """A failing grype (best-effort second opinion) must not block the per-image
+    checkpoint — the image still gets skipped on the next pass."""
+    inventory_path = tmp_path / "images.json"
+    state_path = tmp_path / "state.json"
+    inventory_path.write_text(
+        json.dumps(
+            {
+                "items": [
+                    {
+                        "image": "registry.example.com/api:v1",
+                        "imageDigest": "sha256:abc",
+                        "targets": [
+                            {"namespace": "apps", "kind": "Deployment", "name": "api", "containerName": "api"}
+                        ],
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(cli, "run_trivy_image_ref", lambda *a, **k: {"Results": []})
+    monkeypatch.setattr(cli, "run_grype_sbom", lambda *a, **k: None)  # grype fails
+    monkeypatch.setattr(cli, "run_grype_image_ref", lambda *a, **k: None)  # fallback also fails
+    monkeypatch.setattr(cli, "ingest_report", lambda *a, **k: {"ok": 1})
+
+    def _args() -> argparse.Namespace:
+        return argparse.Namespace(
+            inventory=inventory_path,
+            dry_run=False,
+            fail_on_error=False,
+            vat_url="https://vat",
+            api_key="k",
+            admin_token="",
+            no_snippets=False,
+            reset_keys=False,
+            cluster_name="c",
+            state_file=state_path,
+            full_rescan_interval_seconds=86400,
+            force_full_rescan=False,
+            scan_types="image-sca,image-grype",
+        )
+
+    assert cli.cmd_scan_inventory(_args()) == 0  # first pass checkpoints despite grype miss
+    scanned: list[int] = []
+    monkeypatch.setattr(cli, "run_trivy_image_ref", lambda *a, **k: scanned.append(1) or {"Results": []})
+    assert cli.cmd_scan_inventory(_args()) == 0
+    assert scanned == [], "unchanged image must be skipped on the second pass"
+
+
 def test_cmd_scan_k8s_inventory_ingests_gitleaks_under_namespace_asset(monkeypatch, tmp_path: Path) -> None:
     inventory_path = tmp_path / "kubernetes.json"
     inventory_path.write_text(

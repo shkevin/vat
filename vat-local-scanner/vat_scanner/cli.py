@@ -1894,7 +1894,8 @@ def cmd_scan_runtime(args: argparse.Namespace) -> int:
         if "image-grype" in scan_types and not grype_report:
             if getattr(args, "fail_on_error", False) or getattr(args, "verbose", False):
                 print("ERROR: Grype runtime image scan failed or grype not found.", file=sys.stderr)
-            failures += 1
+            # Best-effort second opinion: don't add to `failures` (which gates
+            # checkpoint/full-rescan seeding) so grype flakiness stays incremental.
             scanner_failures += 1
             if getattr(args, "fail_on_error", False):
                 return 1
@@ -2183,8 +2184,10 @@ def cmd_scan_inventory(args: argparse.Namespace) -> int:
         if "image-grype" in scan_types and not grype_report:
             if getattr(args, "fail_on_error", False) or getattr(args, "verbose", False):
                 print("ERROR: Grype image scan failed or grype not found.", file=sys.stderr)
+            # Grype is a best-effort second opinion: surface the miss but do NOT
+            # touch image_scanner_failures, so a flaky grype never blocks the
+            # per-image checkpoint and forces perpetual rescans.
             scanner_failures += 1
-            image_scanner_failures += 1
             if getattr(args, "fail_on_error", False):
                 return 1
         if "image-sbom" in scan_types and not sbom_report:
