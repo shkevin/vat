@@ -68,6 +68,7 @@ func ReconcileWorkloadImageScans(
 	cfg config.Config,
 ) (Result, error) {
 	result := Result{}
+	excluded := namespaceExcluder(cfg.ExcludedNamespaceNames)
 	targets := make([]inventory.ImageTarget, 0)
 	if cfg.ImageInventoryMode == "runtime" {
 		doc := BuildImageInventory(targets)
@@ -85,6 +86,7 @@ func ReconcileWorkloadImageScans(
 			targets = append(targets, inventory.ImageTargetsFromRunningPod(&pods.Items[i])...)
 		}
 
+		targets = filterImageTargets(targets, excluded)
 		doc := BuildImageInventory(targets)
 		if err := publishInventory(ctx, client, cfg, doc); err != nil {
 			return result, err
@@ -160,12 +162,37 @@ func ReconcileWorkloadImageScans(
 	if cfg.ImageInventoryMode == "non-running" {
 		targets = filterRunningImageTargets(targets, runningImages)
 	}
+	targets = filterImageTargets(targets, excluded)
 
 	doc := BuildImageInventory(targets)
 	if err := publishInventory(ctx, client, cfg, doc); err != nil {
 		return result, err
 	}
 	return Result{PublishedImages: len(doc.Items), WorkloadTargets: len(targets)}, nil
+}
+
+// namespaceExcluder reports whether a namespace should be skipped. Cluster-scoped
+// objects (empty namespace) are never excluded.
+func namespaceExcluder(names []string) func(string) bool {
+	if len(names) == 0 {
+		return func(string) bool { return false }
+	}
+	set := make(map[string]bool, len(names))
+	for _, n := range names {
+		set[n] = true
+	}
+	return func(ns string) bool { return ns != "" && set[ns] }
+}
+
+func filterImageTargets(targets []inventory.ImageTarget, excluded func(string) bool) []inventory.ImageTarget {
+	filtered := make([]inventory.ImageTarget, 0, len(targets))
+	for _, t := range targets {
+		if excluded(t.TargetNamespace) {
+			continue
+		}
+		filtered = append(filtered, t)
+	}
+	return filtered
 }
 
 func BuildImageInventory(targets []inventory.ImageTarget) ImageInventory {

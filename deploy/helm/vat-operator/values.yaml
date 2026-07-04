@@ -15,6 +15,10 @@ operator:
   # images covered even if a node agent is down). non-running = lighter, but
   # relies on node agents for all running-image coverage.
   imageInventoryMode: workload
+  # Extra namespaces to skip during inventory/scan. The operator's own namespace
+  # and the cluster system namespaces (kube-system/public/node-lease) are always
+  # excluded; these are added on top.
+  excludedNamespaces: []
   rescanIntervalSeconds: 3600
   maxConcurrentScanJobs: 5
   nodeScanning:

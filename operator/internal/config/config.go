@@ -49,6 +49,7 @@ func LoadFromEnv() (Config, error) {
 		"VAT_OPERATOR_CREDENTIAL_SECRET":         os.Getenv("VAT_OPERATOR_CREDENTIAL_SECRET"),
 		"VAT_OPERATOR_ADMIN_TOKEN_KEY":           os.Getenv("VAT_OPERATOR_ADMIN_TOKEN_KEY"),
 		"VAT_OPERATOR_RUNTIME_PROFILE":           os.Getenv("VAT_OPERATOR_RUNTIME_PROFILE"),
+		"VAT_OPERATOR_EXCLUDED_NAMESPACES":       os.Getenv("VAT_OPERATOR_EXCLUDED_NAMESPACES"),
 		"VAT_OPERATOR_NODE_SCANNING_ENABLED":     os.Getenv("VAT_OPERATOR_NODE_SCANNING_ENABLED"),
 		"VAT_OPERATOR_IMAGE_INVENTORY_MODE":      os.Getenv("VAT_OPERATOR_IMAGE_INVENTORY_MODE"),
 		"VAT_OPERATOR_EVENT_DRIVEN_SCANS":        os.Getenv("VAT_OPERATOR_EVENT_DRIVEN_SCANS"),
@@ -69,10 +70,12 @@ func LoadFromMap(env map[string]string) (Config, error) {
 		return Config{}, err
 	}
 
+	namespace := valueOrDefault(env["VAT_OPERATOR_NAMESPACE"], defaultOperatorNamepace)
+
 	return Config{
 		VatURL:                  vatURL,
 		ScannerImage:            valueOrDefault(env["VAT_OPERATOR_SCANNER_IMAGE"], defaultScannerImage),
-		Namespace:               valueOrDefault(env["VAT_OPERATOR_NAMESPACE"], defaultOperatorNamepace),
+		Namespace:               namespace,
 		CredentialsSecretName:   valueOrDefault(env["VAT_OPERATOR_CREDENTIAL_SECRET"], defaultCredentialsName),
 		AdminTokenKey:           valueOrDefault(env["VAT_OPERATOR_ADMIN_TOKEN_KEY"], defaultAdminTokenKey),
 		APIKeyKey:               "apiKey",
@@ -86,7 +89,7 @@ func LoadFromMap(env map[string]string) (Config, error) {
 		TTLSecondsAfterFinish:   3600,
 		MaxConcurrentScanJobs:   5,
 		RescanIntervalSeconds:   3600,
-		ExcludedNamespaceNames:  []string{"kube-system", "kube-public", "kube-node-lease"},
+		ExcludedNamespaceNames:  excludedNamespaces(env["VAT_OPERATOR_EXCLUDED_NAMESPACES"], namespace),
 		ImageInventoryMode:      imageInventoryMode(env["VAT_OPERATOR_IMAGE_INVENTORY_MODE"]),
 		EventDrivenScansEnabled: parseBool(env["VAT_OPERATOR_EVENT_DRIVEN_SCANS"]),
 		// Shadow defaults ON: enabling event-driven scans observes first; flip
@@ -95,6 +98,24 @@ func LoadFromMap(env map[string]string) (Config, error) {
 		BackstopIntervalSeconds: parseIntDefault(env["VAT_OPERATOR_BACKSTOP_INTERVAL_SECONDS"], 18000), // 5h
 		ScanRequestTTLSeconds:   parseIntDefault(env["VAT_OPERATOR_SCANREQUEST_TTL_SECONDS"], 86400),   // 24h
 	}, nil
+}
+
+// excludedNamespaces returns namespaces skipped during inventory/scan. The
+// operator's own namespace and the cluster system namespaces are always
+// excluded (don't scan yourself); VAT_OPERATOR_EXCLUDED_NAMESPACES
+// (comma-separated) adds more.
+func excludedNamespaces(value, ownNamespace string) []string {
+	names := make([]string, 0, 4)
+	seen := map[string]bool{}
+	defaults := []string{ownNamespace, "kube-system", "kube-public", "kube-node-lease"}
+	for _, ns := range append(defaults, strings.Split(value, ",")...) {
+		ns = strings.TrimSpace(ns)
+		if ns != "" && !seen[ns] {
+			seen[ns] = true
+			names = append(names, ns)
+		}
+	}
+	return names
 }
 
 func valueOrDefault(value string, fallback string) string {

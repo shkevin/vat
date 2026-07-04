@@ -213,11 +213,24 @@ func ReconcileKubernetesInventory(
 		items = append(items, kubernetesInventoryItem("ClusterRoleBinding", &obj, obj))
 	}
 
+	items = filterInventoryItems(items, namespaceExcluder(cfg.ExcludedNamespaceNames))
+
 	doc := BuildKubernetesInventory(items)
 	if err := publishKubernetesInventory(ctx, client, cfg, doc); err != nil {
 		return Result{}, err
 	}
 	return Result{KubernetesObjects: len(doc.Items)}, nil
+}
+
+func filterInventoryItems(items []KubernetesInventoryItem, excluded func(string) bool) []KubernetesInventoryItem {
+	filtered := make([]KubernetesInventoryItem, 0, len(items))
+	for _, it := range items {
+		if excluded(it.Namespace) {
+			continue
+		}
+		filtered = append(filtered, it)
+	}
+	return filtered
 }
 
 func BuildKubernetesInventory(items []KubernetesInventoryItem) KubernetesInventory {

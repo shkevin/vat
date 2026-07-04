@@ -67,3 +67,46 @@ func TestLoadFromEnvAllowsWorkloadImageInventoryMode(t *testing.T) {
 		t.Fatalf("ImageInventoryMode = %q, want workload", cfg.ImageInventoryMode)
 	}
 }
+
+func TestExcludedNamespacesDefaultsToSelf(t *testing.T) {
+	cfg, err := LoadFromMap(map[string]string{
+		"VAT_URL":                "http://vat-backend.vat.svc.cluster.local:8000",
+		"VAT_OPERATOR_NAMESPACE": "vat-operator",
+	})
+	if err != nil {
+		t.Fatalf("LoadFromMap returned error: %v", err)
+	}
+	want := map[string]bool{"vat-operator": true, "kube-system": true, "kube-public": true, "kube-node-lease": true}
+	if len(cfg.ExcludedNamespaceNames) != len(want) {
+		t.Fatalf("ExcludedNamespaceNames = %v", cfg.ExcludedNamespaceNames)
+	}
+	for _, ns := range cfg.ExcludedNamespaceNames {
+		if !want[ns] {
+			t.Fatalf("unexpected excluded namespace %q in %v", ns, cfg.ExcludedNamespaceNames)
+		}
+	}
+}
+
+func TestExcludedNamespacesAddsCustomAndDedups(t *testing.T) {
+	cfg, err := LoadFromMap(map[string]string{
+		"VAT_URL":                          "http://vat-backend.vat.svc.cluster.local:8000",
+		"VAT_OPERATOR_NAMESPACE":           "vat-operator",
+		"VAT_OPERATOR_EXCLUDED_NAMESPACES": "team-a, vat-operator , team-b",
+	})
+	if err != nil {
+		t.Fatalf("LoadFromMap returned error: %v", err)
+	}
+	got := map[string]bool{}
+	for _, ns := range cfg.ExcludedNamespaceNames {
+		if got[ns] {
+			t.Fatalf("duplicate namespace %q in %v", ns, cfg.ExcludedNamespaceNames)
+		}
+		got[ns] = true
+	}
+	// self always excluded, custom appended, no dup for repeated self
+	for _, ns := range []string{"vat-operator", "team-a", "team-b"} {
+		if !got[ns] {
+			t.Fatalf("missing excluded namespace %q in %v", ns, cfg.ExcludedNamespaceNames)
+		}
+	}
+}

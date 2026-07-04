@@ -49,6 +49,10 @@ spec:
               value: {{ .Values.operator.runtimeProfile | quote }}
             - name: VAT_OPERATOR_IMAGE_INVENTORY_MODE
               value: {{ .Values.operator.imageInventoryMode | quote }}
+            {{- with .Values.operator.excludedNamespaces }}
+            - name: VAT_OPERATOR_EXCLUDED_NAMESPACES
+              value: {{ join "," . | quote }}
+            {{- end }}
             - name: VAT_OPERATOR_NODE_SCANNING_ENABLED
               value: {{ or .Values.operator.nodeScanning.enabled .Values.nodeAgent.enabled | quote }}
             - name: VAT_OPERATOR_EVENT_DRIVEN_SCANS
