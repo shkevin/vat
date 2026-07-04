@@ -2611,8 +2611,10 @@ export function AssetPage({ config }: AssetPageProps) {
               display: "flex",
               flexDirection: "column",
               overflow: "hidden",
+              background: "var(--app-card-raised)",
               border: "1px solid var(--app-border)",
-              borderRadius: 2,
+              borderRadius: "var(--radius-md)",
+              boxShadow: "var(--app-elev-shadow)",
             }}
           >
             <div
@@ -2622,7 +2624,8 @@ export function AssetPage({ config }: AssetPageProps) {
                   "26px 4px 32px 130px 1fr 160px 60px 100px 90px 80px",
                 gap: 8,
                 padding: HEADER_PADDING[density],
-                background: "var(--app-header-bg)",
+                background: "transparent",
+                borderBottom: "1px solid var(--app-border-subtle)",
                 ...mono,
                 fontSize: 9,
                 fontWeight: 700,
