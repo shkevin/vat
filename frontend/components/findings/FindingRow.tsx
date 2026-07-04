@@ -61,18 +61,14 @@ function FindingRowBase({
         padding: ROW_PADDING[density],
         cursor: "pointer",
         alignItems: "center",
-        // Non-archived rows sit on the card surface (transparent) and use an
-        // accent tint for hover/selected — same language as the assets table —
-        // so they read consistently on any raised container. Archived rows keep
-        // a solid, darker fill to stay visibly de-emphasized.
         background: finding.archived
           ? hov
             ? "var(--app-input-bg)"
             : "var(--app-card-bg)"
           : selected
-            ? "color-mix(in srgb, var(--app-accent) 16%, transparent)"
+            ? "var(--app-input-bg)"
             : hov
-              ? "color-mix(in srgb, var(--app-accent) 11%, transparent)"
+              ? "var(--app-card-bg)"
               : "transparent",
         borderBottom: "1px solid var(--app-border-subtle)",
         transition: "background 0.1s",

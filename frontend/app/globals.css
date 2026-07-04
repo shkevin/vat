@@ -660,12 +660,11 @@ select option {
   border-radius: 3px;
 }
 .report-builder-section {
-  background: var(--app-card-raised);
+  background: var(--app-card-bg);
   border: 1px solid var(--app-border);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-sm);
   margin-bottom: 20px;
   overflow: hidden;
-  box-shadow: var(--app-elev-shadow);
 }
 .report-builder-section:last-child {
   margin-bottom: 0;
@@ -2181,14 +2180,14 @@ html[data-theme] {
   );
 }
 
-/* The one app-wide card surface. Same elevation language as the detail
-   pane (raised bg + full border + tokenized shadow) so overview cards,
-   heroes, metric/review/feed cards, and the pane all read alike. */
+/* The one app-wide card surface. Flat and dense like the asset findings
+   view — a plain bordered panel on the base bg, no drop shadow, tight
+   radius. Only the detail-pane slide-over keeps real elevation. */
 .modern-card {
-  background: var(--app-card-raised);
+  background: var(--app-card-bg);
   border: 1px solid var(--app-border);
-  border-radius: var(--radius-md);
-  box-shadow: var(--app-elev-shadow);
+  border-radius: var(--radius-sm);
+  box-shadow: none;
 }
 
 .modern-input {
@@ -2460,25 +2459,24 @@ button,
 }
 
 .assets-table-header {
-  border-radius: 12px 12px 0 0 !important;
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0 !important;
 }
 
 .assets-table-body {
   border-top: none;
-  border-radius: 0 0 12px 12px !important;
+  border-radius: 0 0 var(--radius-sm) var(--radius-sm) !important;
 }
 
+/* Dense, full-width rows with dividers — no floating-chip margin/lift. */
 .assets-table-row {
-  transition:
-    background var(--motion-fast) ease,
-    transform var(--motion-fast) ease;
-  border-radius: 10px;
-  margin: 3px 6px;
+  transition: background var(--motion-fast) ease;
+  border-radius: 0;
+  margin: 0;
+  border-bottom: 1px solid var(--app-border-subtle);
 }
 
 .assets-table-row:hover {
   background: color-mix(in srgb, var(--ui-accent) 11%, transparent) !important;
-  transform: translateY(-1px);
 }
 
 .assets-table-row > * {
@@ -2509,17 +2507,12 @@ button,
 }
 
 .review-queue-card {
-  border-radius: 12px !important;
-  transition:
-    transform var(--motion-fast) ease,
-    box-shadow var(--motion-fast) ease;
+  border-radius: var(--radius-sm) !important;
+  transition: border-color var(--motion-fast) ease;
 }
 
 .review-queue-card:hover {
-  transform: translateY(-2px);
-  box-shadow:
-    0 14px 28px rgba(0, 0, 0, 0.24),
-    inset 0 1px 0 color-mix(in srgb, white 10%, transparent);
+  border-color: color-mix(in srgb, var(--ui-accent) 45%, var(--app-border));
 }
 
 .review-queue-card {

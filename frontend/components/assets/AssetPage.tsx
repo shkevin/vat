@@ -1506,11 +1506,10 @@ export function AssetPage({ config }: AssetPageProps) {
           {canReviewAssets && (
             <section
               style={{
-                background: "var(--app-card-raised)",
+                background: "var(--app-card-bg)",
                 border: "1px solid var(--app-border)",
                 borderRadius: 8,
                 padding: 14,
-                boxShadow: "var(--app-elev-shadow)",
               }}
             >
               <div
@@ -2168,10 +2167,9 @@ export function AssetPage({ config }: AssetPageProps) {
                 alignItems: "flex-start",
                 marginTop: 12,
                 padding: 20,
-                background: "var(--app-card-raised)",
+                background: "var(--app-card-bg)",
                 borderRadius: 8,
                 border: "1px solid var(--app-border)",
-                boxShadow: "var(--app-elev-shadow)",
               }}
             >
               {/* Asset name + branch/tag dropdown */}
@@ -2611,10 +2609,8 @@ export function AssetPage({ config }: AssetPageProps) {
               display: "flex",
               flexDirection: "column",
               overflow: "hidden",
-              background: "var(--app-card-raised)",
               border: "1px solid var(--app-border)",
-              borderRadius: "var(--radius-md)",
-              boxShadow: "var(--app-elev-shadow)",
+              borderRadius: 2,
             }}
           >
             <div
@@ -2624,8 +2620,7 @@ export function AssetPage({ config }: AssetPageProps) {
                   "26px 4px 32px 130px 1fr 160px 60px 100px 90px 80px",
                 gap: 8,
                 padding: HEADER_PADDING[density],
-                background: "transparent",
-                borderBottom: "1px solid var(--app-border-subtle)",
+                background: "var(--app-header-bg)",
                 ...mono,
                 fontSize: 9,
                 fontWeight: 700,
