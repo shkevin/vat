@@ -41,14 +41,7 @@ function KeyMetricsTable({
   metrics: { label: string; value: number; color?: string; warn?: boolean }[];
 }) {
   return (
-    <div
-      className="modern-card"
-      style={{
-        background: "var(--app-card-bg)",
-        borderRadius: 8,
-        overflow: "hidden",
-      }}
-    >
+    <div className="modern-card" style={{ overflow: "hidden" }}>
       <table style={{ width: "100%", borderCollapse: "collapse" }}>
         <tbody>
           {metrics.map((m, i) => {
@@ -117,12 +110,11 @@ function TypeCard({
     <div
       className="modern-card"
       style={{
-        background: "var(--app-card-bg)",
+        // keep the per-type colored border as a semantic accent; bg + shadow
+        // inherit the unified .modern-card elevation.
         border: `1px solid ${color}35`,
-        borderRadius: 10,
         padding: "16px 18px",
         overflow: "hidden",
-        boxShadow: "0 1px 3px rgba(0,0,0,0.08)",
       }}
     >
       <div

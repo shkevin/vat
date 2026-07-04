@@ -1506,10 +1506,11 @@ export function AssetPage({ config }: AssetPageProps) {
           {canReviewAssets && (
             <section
               style={{
-                background: "var(--app-card-bg)",
+                background: "var(--app-card-raised)",
                 border: "1px solid var(--app-border)",
                 borderRadius: 8,
                 padding: 14,
+                boxShadow: "var(--app-elev-shadow)",
               }}
             >
               <div
@@ -2167,9 +2168,10 @@ export function AssetPage({ config }: AssetPageProps) {
                 alignItems: "flex-start",
                 marginTop: 12,
                 padding: 20,
-                background: "var(--app-card-bg)",
+                background: "var(--app-card-raised)",
                 borderRadius: 8,
                 border: "1px solid var(--app-border)",
+                boxShadow: "var(--app-elev-shadow)",
               }}
             >
               {/* Asset name + branch/tag dropdown */}

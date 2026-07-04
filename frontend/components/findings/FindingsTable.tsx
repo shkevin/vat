@@ -141,9 +141,10 @@ export function FindingsTable({
           gap: 8,
           padding: HEADER_PADDING[density],
           background: "var(--app-pane-header-bg)",
-          borderRadius: "4px 4px 0 0",
-          border: "1px solid var(--app-border-subtle)",
+          borderRadius: "var(--radius-md) var(--radius-md) 0 0",
+          border: "1px solid var(--app-border)",
           borderBottom: "none",
+          boxShadow: "var(--app-elev-shadow)",
         }}
       >
         {[
@@ -176,10 +177,12 @@ export function FindingsTable({
       <div
         ref={containerRef}
         style={{
-          border: "1px solid var(--app-border-subtle)",
-          borderRadius: "0 0 4px 4px",
+          border: "1px solid var(--app-border)",
+          borderTop: "none",
+          borderRadius: "0 0 var(--radius-md) var(--radius-md)",
           overflow: "auto",
           maxHeight: "62vh",
+          boxShadow: "var(--app-elev-shadow)",
         }}
         onScroll={(event) => {
           // Single setState per scroll frame; React batches the update and
