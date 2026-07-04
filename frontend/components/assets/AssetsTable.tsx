@@ -726,6 +726,9 @@ export function AssetsTable({
           style={{
             flex: 1,
             minHeight: 0,
+            // Dark base surface so rows read like the individual asset
+            // findings table (near-black), not the lighter card panel.
+            background: "var(--app-bg)",
             borderRadius: "0 0 4px 4px",
             overflow: "auto",
           }}

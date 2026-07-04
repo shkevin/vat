@@ -2459,12 +2459,12 @@ button,
 }
 
 .assets-table-header {
-  border-radius: var(--radius-sm) var(--radius-sm) 0 0 !important;
+  border-radius: 2px 2px 0 0 !important;
 }
 
 .assets-table-body {
   border-top: none;
-  border-radius: 0 0 var(--radius-sm) var(--radius-sm) !important;
+  border-radius: 0 0 2px 2px !important;
 }
 
 /* Dense, full-width rows with dividers — no floating-chip margin/lift. */
