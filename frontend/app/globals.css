@@ -21,6 +21,14 @@
   --app-classification-secret: #c8102e;
   --app-classification-topsecret: #ff8c00;
   --app-classification-cui: #502b85;
+
+  /* Elevation — raised surface + shadow for detail-pane cards/pills.
+     Defaults suit dark themes; each theme overrides --app-card-raised, and
+     light overrides --app-elev-shadow with a softer, ink-tinted cast. */
+  --app-card-raised: #1a2336;
+  --app-elev-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.28),
+    0 8px 20px -12px rgba(0, 0, 0, 0.45);
 }
 
 /* Theme variables — applied via data-theme on html
@@ -46,6 +54,7 @@
   --app-border: #2b3752;
   --app-border-subtle: #1a2336;
   --app-card-bg: #10192a;
+  --app-card-raised: #18233a;
   --app-input-bg: #141f33;
   --app-node-bg: #17263f;
   --app-pane-header-bg: #121c2f;
@@ -69,6 +78,7 @@
   --app-border: #2e3c58;
   --app-border-subtle: #1d273a;
   --app-card-bg: #141b2a;
+  --app-card-raised: #1d2740;
   --app-input-bg: #192337;
   --app-node-bg: #1a2338;
   --app-pane-header-bg: #11192a;
@@ -90,6 +100,7 @@
   --app-border: #cbd5e1;
   --app-border-subtle: #e2e8f0;
   --app-card-bg: #ffffff;
+  --app-card-raised: #ffffff;
   --app-input-bg: #f8fafc;
   --app-node-bg: #ffffff;
   --app-pane-header-bg: #f8fafc;
@@ -100,6 +111,10 @@
   --app-warning: #d97706;
   --app-header-bg: #ffffff;
   --app-header-border: #e2e8f0;
+  /* Soft, ink-tinted shadow — the dark default is far too heavy on white. */
+  --app-elev-shadow:
+    0 1px 2px rgba(15, 23, 42, 0.06),
+    0 6px 16px -10px rgba(15, 23, 42, 0.16);
 }
 
 [data-theme="slate"] {
@@ -111,6 +126,7 @@
   --app-border: #334155;
   --app-border-subtle: #1e293b;
   --app-card-bg: #1e293b;
+  --app-card-raised: #26344a;
   --app-input-bg: #252d3d;
   --app-node-bg: #263548;
   --app-pane-header-bg: #1e293b;
@@ -132,6 +148,7 @@
   --app-border: #44475a;
   --app-border-subtle: #343746;
   --app-card-bg: #343746;
+  --app-card-raised: #3e4256;
   --app-input-bg: #424450;
   --app-node-bg: #3d4050;
   --app-pane-header-bg: #343746;
@@ -153,6 +170,7 @@
   --app-border: #4c566a;
   --app-border-subtle: #3b4252;
   --app-card-bg: #3b4252;
+  --app-card-raised: #454d61;
   --app-input-bg: #434c5e;
   --app-node-bg: #434c5e;
   --app-pane-header-bg: #3b4252;
@@ -174,6 +192,7 @@
   --app-border: #45475a;
   --app-border-subtle: #313244;
   --app-card-bg: #313244;
+  --app-card-raised: #3a3c52;
   --app-input-bg: #45475a;
   --app-node-bg: #363a4f;
   --app-pane-header-bg: #313244;
@@ -195,6 +214,7 @@
   --app-border: #3d59a1;
   --app-border-subtle: #1f2335;
   --app-card-bg: #1f2335;
+  --app-card-raised: #282d45;
   --app-input-bg: #14141b;
   --app-node-bg: #24283b;
   --app-pane-header-bg: #1f2335;
@@ -223,6 +243,7 @@ html:not([data-theme]) {
   --app-border: #2b3752;
   --app-border-subtle: #1a2336;
   --app-card-bg: #10192a;
+  --app-card-raised: #18233a;
   --app-input-bg: #141f33;
   --app-node-bg: #17263f;
   --app-pane-header-bg: #121c2f;
@@ -1445,15 +1466,26 @@ select option {
   margin-bottom: 0;
 }
 .detail-panel-section-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   font-family: var(--font-mono), "JetBrains Mono", monospace;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.12em;
   color: var(--app-accent);
   text-transform: uppercase;
   margin: 0 0 12px;
   padding-bottom: 8px;
-  border-bottom: 1px solid var(--app-border-subtle);
+  border-bottom: 1px solid var(--app-border);
+}
+.detail-panel-section-title::before {
+  content: "";
+  width: 3px;
+  height: 12px;
+  border-radius: 2px;
+  background: var(--app-accent);
+  flex-shrink: 0;
 }
 /* Date input: visible calendar icon on dark themes */
 .detail-panel input[type="date"]::-webkit-calendar-picker-indicator {
@@ -1470,11 +1502,12 @@ html:not([data-theme="light"])
   cursor: pointer;
 }
 .detail-panel-card {
-  background: var(--app-card-bg);
-  border: 1px solid var(--app-border-subtle);
+  background: var(--app-card-raised);
+  border: 1px solid var(--app-border);
   border-radius: 8px;
   padding: 16px;
   margin-bottom: 16px;
+  box-shadow: var(--app-elev-shadow);
 }
 .detail-panel-card:last-child {
   margin-bottom: 0;
@@ -1490,12 +1523,12 @@ html:not([data-theme="light"])
 .detail-panel-kv-item label {
   display: block;
   font-family: var(--font-mono), "JetBrains Mono", monospace;
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 600;
   letter-spacing: 0.1em;
-  color: var(--app-muted);
+  color: color-mix(in srgb, var(--app-muted) 55%, var(--app-fg));
   text-transform: uppercase;
-  margin-bottom: 4px;
+  margin-bottom: 5px;
 }
 .detail-panel-kv-item .value {
   font-family: var(--font-sans), "IBM Plex Sans", system-ui, sans-serif;
@@ -1519,7 +1552,7 @@ html:not([data-theme="light"])
 .detail-panel-prose {
   font-family: var(--font-sans), "IBM Plex Sans", system-ui, sans-serif;
   font-size: 13px;
-  color: var(--app-fg-secondary);
+  color: color-mix(in srgb, var(--app-fg-secondary) 55%, var(--app-fg));
   line-height: 1.7;
   margin: 0;
 }
@@ -1648,7 +1681,7 @@ html:not([data-theme="light"])
   font-size: 11px;
   color: var(--app-fg);
   background: var(--app-input-bg);
-  border: 1px solid var(--app-border-subtle);
+  border: 1px solid var(--app-border);
   border-radius: 6px;
   padding: 12px 14px;
   margin: 0;
@@ -1731,24 +1764,25 @@ html:not([data-theme="light"])
   display: flex;
   flex-direction: column;
   align-items: center;
-  min-width: 64px;
-  padding: 10px 14px;
-  background: var(--app-input-bg);
-  border: 1px solid var(--app-border-subtle);
-  border-radius: 8px;
+  min-width: 74px;
+  padding: 12px 16px;
+  background: var(--app-card-raised);
+  border: 1px solid var(--app-border);
+  border-radius: 10px;
+  box-shadow: var(--app-elev-shadow);
 }
 .detail-panel-metric-pill .metric-label {
   font-family: var(--font-mono), "JetBrains Mono", monospace;
   font-size: 9px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  color: var(--app-muted);
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  color: color-mix(in srgb, var(--app-muted) 40%, var(--app-fg));
   text-transform: uppercase;
-  margin-bottom: 4px;
+  margin-bottom: 5px;
 }
 .detail-panel-metric-pill .metric-value {
   font-family: var(--font-mono), "JetBrains Mono", monospace;
-  font-size: 14px;
+  font-size: 16px;
   font-weight: 700;
   color: var(--app-fg);
 }
@@ -1820,10 +1854,11 @@ html:not([data-theme="light"])
   justify-content: space-between;
   gap: 16px;
   padding: 16px 20px;
-  background: var(--app-pane-header-bg);
+  background: var(--app-card-raised);
   border: 1px solid var(--app-border);
   border-radius: 8px;
   margin-bottom: 20px;
+  box-shadow: var(--app-elev-shadow);
 }
 .detail-panel-status-card-main {
   display: flex;
@@ -1885,11 +1920,12 @@ html:not([data-theme="light"])
   line-height: 1.4;
 }
 .detail-panel-form-card {
-  background: var(--app-card-bg);
-  border: 1px solid var(--app-border-subtle);
+  background: var(--app-card-raised);
+  border: 1px solid var(--app-border);
   border-radius: 8px;
   padding: 16px 18px;
   margin-bottom: 16px;
+  box-shadow: var(--app-elev-shadow);
 }
 .detail-panel-form-card-title {
   font-family: var(--font-mono), "JetBrains Mono", monospace;

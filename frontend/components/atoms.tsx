@@ -24,10 +24,10 @@ export function Tag({
         fontWeight: 600,
         letterSpacing: "0.01em",
         color,
-        background: bg || color + "18",
+        background: bg || color + "22",
         padding: "3px 9px",
         borderRadius: 999,
-        border: `1px solid ${color}28`,
+        border: `1px solid ${color}59`,
         whiteSpace: "nowrap" as const,
         textTransform: "none",
       }}

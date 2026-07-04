@@ -14,28 +14,32 @@ export const SEV_ORDER = [
   "Informational",
 ] as const;
 
+// Chip fills sit at ~0.18 so the pill reads against near-black panel/table
+// backgrounds; the Tag border (color @ ~35%) carries the crisp outline.
 export const SEV: Record<string, { c: string; bg: string }> = {
-  Critical: { c: "#f87060", bg: "rgba(248,112,96,0.1)" },
-  High: { c: "#f5a623", bg: "rgba(245,166,35,0.1)" },
-  Medium: { c: "#f5d020", bg: "rgba(245,208,32,0.1)" },
-  Low: { c: "#50c878", bg: "rgba(80,200,120,0.1)" },
-  Informational: { c: "#7b8fa1", bg: "rgba(123,143,161,0.1)" },
+  Critical: { c: "#f87060", bg: "rgba(248,112,96,0.18)" },
+  High: { c: "#f5a623", bg: "rgba(245,166,35,0.18)" },
+  Medium: { c: "#f5d020", bg: "rgba(245,208,32,0.18)" },
+  Low: { c: "#50c878", bg: "rgba(80,200,120,0.18)" },
+  Informational: { c: "#7b8fa1", bg: "rgba(123,143,161,0.18)" },
 };
 
+// Active states at ~0.16; terminal/muted states (FP, Suppressed, N/A,
+// Duplicate) kept lower to stay de-emphasized while still visible.
 export const ST: Record<string, { c: string; b: string }> = {
-  Open: { c: "#94a3b8", b: "rgba(148,163,184,0.08)" },
-  "Synced to Tracker": { c: "#38bdf8", b: "rgba(56,189,248,0.1)" },
-  "In Review": { c: "#818cf8", b: "rgba(129,140,248,0.12)" },
-  Approved: { c: "#50c878", b: "rgba(80,200,120,0.1)" },
-  Rejected: { c: "#f87060", b: "rgba(248,112,96,0.1)" },
-  "Risk Accepted": { c: "#c084fc", b: "rgba(192,132,252,0.1)" },
-  "False Positive": { c: "#64748b", b: "rgba(100,116,139,0.07)" },
-  Suppressed: { c: "#475569", b: "rgba(71,85,105,0.09)" },
-  "Not Applicable": { c: "#334155", b: "rgba(51,65,85,0.07)" },
-  Mitigated: { c: "#fbbf24", b: "rgba(251,191,36,0.1)" },
-  Resolved: { c: "#34d399", b: "rgba(52,211,153,0.1)" },
-  Duplicate: { c: "#1e293b", b: "rgba(30,41,59,0.07)" },
-  Reopened: { c: "#fb923c", b: "rgba(251,146,60,0.12)" },
+  Open: { c: "#94a3b8", b: "rgba(148,163,184,0.16)" },
+  "Synced to Tracker": { c: "#38bdf8", b: "rgba(56,189,248,0.16)" },
+  "In Review": { c: "#818cf8", b: "rgba(129,140,248,0.18)" },
+  Approved: { c: "#50c878", b: "rgba(80,200,120,0.16)" },
+  Rejected: { c: "#f87060", b: "rgba(248,112,96,0.16)" },
+  "Risk Accepted": { c: "#c084fc", b: "rgba(192,132,252,0.16)" },
+  "False Positive": { c: "#64748b", b: "rgba(100,116,139,0.12)" },
+  Suppressed: { c: "#475569", b: "rgba(71,85,105,0.12)" },
+  "Not Applicable": { c: "#334155", b: "rgba(51,65,85,0.12)" },
+  Mitigated: { c: "#fbbf24", b: "rgba(251,191,36,0.16)" },
+  Resolved: { c: "#34d399", b: "rgba(52,211,153,0.16)" },
+  Duplicate: { c: "#1e293b", b: "rgba(30,41,59,0.12)" },
+  Reopened: { c: "#fb923c", b: "rgba(251,146,60,0.18)" },
 };
 
 export const FINDING_TYPES: Record<
