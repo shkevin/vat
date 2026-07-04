@@ -53,6 +53,9 @@ from vat_scanner.vat_client import (
 )
 from vat_scanner.sarif_output import reports_to_sarif
 from vat_scanner.scanners import (
+    run_gitleaks,
+    run_grype_image_ref,
+    run_grype_sbom,
     run_node_oval_cve,
     run_node_stig,
     run_stig_image_ref,
@@ -61,7 +64,7 @@ from vat_scanner.scanners import (
     run_trivy_image_ref,
     run_trivy_image_ref_cyclonedx,
 )
-from vat_scanner.scanners.normalize import normalize_trivy
+from vat_scanner.scanners.normalize import normalize_gitleaks, normalize_grype, normalize_trivy
 from vat_scanner.archive import extract_archive, is_archive, remove_extracted
 from vat_scanner.container_identity import canonical_container_asset, image_digest_from_ref
 from vat_scanner.openscap_utils import (
@@ -222,8 +225,13 @@ def _parse_scan_types(s: str) -> list[str]:
     return valid if valid else list(ALL_SCAN_TYPES)
 
 
+# Base default when scan types are unspecified. image-grype is recognized (and
+# enabled by default in the operator via VAT_INVENTORY_SCAN_TYPES) but kept out
+# of the bare-CLI default so a lone `scan-inventory` stays Trivy-only.
 INVENTORY_SCAN_TYPES = ("image-sca", "image-sbom")
+INVENTORY_SCAN_TYPES_ALL = ("image-sca", "image-grype", "image-sbom")
 RUNTIME_SCAN_TYPES = ("image-sca", "image-sbom", "container-stig")
+RUNTIME_SCAN_TYPES_ALL = ("image-sca", "image-grype", "image-sbom", "container-stig")
 NODE_SCAN_TYPES = ("node-stig", "node-oval-cve")
 
 
@@ -233,17 +241,18 @@ def _parse_inventory_scan_types(raw: str | None) -> list[str]:
         value = os.environ.get("VAT_INVENTORY_SCAN_TYPES", "") or ",".join(INVENTORY_SCAN_TYPES)
     requested = [part.strip().lower() for part in value.split(",") if part.strip()]
     if any(part in ("all", "*") for part in requested):
-        return list(INVENTORY_SCAN_TYPES)
+        return list(INVENTORY_SCAN_TYPES_ALL)
     aliases = {
         "trivy": "image-sca",
         "sca": "image-sca",
+        "grype": "image-grype",
         "sbom": "image-sbom",
         "cyclonedx": "image-sbom",
     }
     out: list[str] = []
     for part in requested:
         normalized = aliases.get(part, part)
-        if normalized in INVENTORY_SCAN_TYPES and normalized not in out:
+        if normalized in INVENTORY_SCAN_TYPES_ALL and normalized not in out:
             out.append(normalized)
     return out or list(INVENTORY_SCAN_TYPES)
 
@@ -275,10 +284,11 @@ def _parse_runtime_scan_types(raw: str | None) -> list[str]:
         value = os.environ.get("VAT_RUNTIME_SCAN_TYPES", "") or ",".join(RUNTIME_SCAN_TYPES)
     requested = [part.strip().lower() for part in value.split(",") if part.strip()]
     if any(part in ("all", "*") for part in requested):
-        return list(RUNTIME_SCAN_TYPES)
+        return list(RUNTIME_SCAN_TYPES_ALL)
     aliases = {
         "trivy": "image-sca",
         "sca": "image-sca",
+        "grype": "image-grype",
         "sbom": "image-sbom",
         "cyclonedx": "image-sbom",
         "stig": "container-stig",
@@ -288,7 +298,7 @@ def _parse_runtime_scan_types(raw: str | None) -> list[str]:
     out: list[str] = []
     for part in requested:
         normalized = aliases.get(part, part)
-        if normalized in RUNTIME_SCAN_TYPES and normalized not in out:
+        if normalized in RUNTIME_SCAN_TYPES_ALL and normalized not in out:
             out.append(normalized)
     return out or list(RUNTIME_SCAN_TYPES)
 
@@ -1417,7 +1427,10 @@ def _k8s_inventory_asset_and_tag(item: dict, cluster_name: str) -> tuple[str | N
         return None, None
     cluster = (cluster_name or "cluster").strip() or "cluster"
     namespace_part = namespace or "cluster"
-    asset = f"k8s/{cluster}/{namespace_part}/{kind.lower()}/{name}"
+    # Scope config/RBAC posture to one asset per namespace (cluster-scoped objects
+    # roll into the cluster asset) rather than a separate asset per object. Per-object
+    # finding identity is preserved via the manifest filename (see the scan loop).
+    asset = f"k8s/{cluster}/{namespace_part}"
     rbac_kinds = {"role", "rolebinding", "clusterrole", "clusterrolebinding"}
     tag = "rbac" if kind.lower() in rbac_kinds else "k8s-config"
     return asset, tag
@@ -1434,6 +1447,22 @@ def _read_k8s_inventory_doc(path: Path) -> dict:
         decoded = base64.b64decode(raw)
         return json.loads(gzip.decompress(decoded).decode("utf-8"))
     return json.loads(raw)
+
+
+def _grype_scan(
+    image: str,
+    sbom_report: dict | None,
+    docker_config_path: Path | None,
+) -> dict | None:
+    """Grype SCA second opinion. Reuses the CycloneDX SBOM when one was produced
+    (grype scans the SBOM — no second registry pull); otherwise falls back to a
+    direct image scan. grype's own vuln DB still differs from Trivy's."""
+    if sbom_report:
+        with tempfile.NamedTemporaryFile("w", suffix=".cdx.json") as f:
+            json.dump(sbom_report, f)
+            f.flush()
+            return run_grype_sbom(Path(f.name), timeout=180)
+    return run_grype_image_ref(image, timeout=240, docker_config_path=docker_config_path)
 
 
 def _ingest_trivy_report_with_retry(
@@ -1678,10 +1707,12 @@ def cmd_scan_runtime(args: argparse.Namespace) -> int:
     scan_types = _parse_runtime_scan_types(getattr(args, "scan_types", "") or None)
     parser_keys: dict[str, str] = {}
     if not args.dry_run and admin_token:
-        for parser_id in ("trivy", "cyclonedx", "openscap"):
+        for parser_id in ("trivy", "grype", "cyclonedx", "openscap"):
             if parser_id == "cyclonedx" and "image-sbom" not in scan_types:
                 continue
             if parser_id == "trivy" and "image-sca" not in scan_types:
+                continue
+            if parser_id == "grype" and "image-grype" not in scan_types:
                 continue
             if parser_id == "openscap" and "container-stig" not in scan_types:
                 continue
@@ -1700,6 +1731,7 @@ def cmd_scan_runtime(args: argparse.Namespace) -> int:
                 parser_keys[parser_id] = key
     elif api_key:
         parser_keys["trivy"] = api_key
+        parser_keys["grype"] = api_key
         parser_keys["cyclonedx"] = api_key
         parser_keys["openscap"] = api_key
 
@@ -1823,6 +1855,11 @@ def cmd_scan_runtime(args: argparse.Namespace) -> int:
                 if "image-sbom" in scan_types
                 else None
             )
+            grype_report = (
+                _grype_scan(image, sbom_report, docker_config_path)
+                if "image-grype" in scan_types
+                else None
+            )
             stig_xml = None
             if "container-stig" in scan_types:
                 if local_rootfs:
@@ -1854,6 +1891,13 @@ def cmd_scan_runtime(args: argparse.Namespace) -> int:
             scanner_failures += 1
             if getattr(args, "fail_on_error", False):
                 return 1
+        if "image-grype" in scan_types and not grype_report:
+            if getattr(args, "fail_on_error", False) or getattr(args, "verbose", False):
+                print("ERROR: Grype runtime image scan failed or grype not found.", file=sys.stderr)
+            failures += 1
+            scanner_failures += 1
+            if getattr(args, "fail_on_error", False):
+                return 1
         if "container-stig" in scan_types and not stig_xml:
             if getattr(args, "fail_on_error", False) or getattr(args, "verbose", False):
                 print("ERROR: OpenSCAP runtime STIG scan produced no results.", file=sys.stderr)
@@ -1877,11 +1921,14 @@ def cmd_scan_runtime(args: argparse.Namespace) -> int:
             target_report = normalize_trivy(copy.deepcopy(report), asset) if report else None
             if target_report and getattr(args, "no_snippets", False):
                 target_report = strip_snippets(target_report)
+            target_grype_report = normalize_grype(copy.deepcopy(grype_report), asset) if grype_report else None
             target_sbom_report = copy.deepcopy(sbom_report) if sbom_report else None
             target_stig_xml = stig_xml
             if args.dry_run:
                 if target_report:
                     print(f"  trivy: {len(target_report.get('Results') or [])} result(s)")
+                if target_grype_report:
+                    print(f"  grype: {len(target_grype_report.get('matches') or [])} result(s)")
                 if target_sbom_report:
                     print(f"  cyclonedx: {len(target_sbom_report.get('components') or [])} component(s)")
                 if target_stig_xml:
@@ -1898,6 +1945,30 @@ def cmd_scan_runtime(args: argparse.Namespace) -> int:
                         image_digest=target_image_digest,
                     )
                     print(f"  trivy: {resp}")
+                except VATClientError as e:
+                    target_failures += 1
+                    print(f"\nERROR: {e}", file=sys.stderr)
+                    if getattr(args, "fail_on_error", False):
+                        return 1
+            if target_grype_report:
+                grype_key = parser_keys.get("grype") or api_key
+                if not grype_key:
+                    target_failures += 1
+                    print("\nERROR: No Grype ingest key available.", file=sys.stderr)
+                    if getattr(args, "fail_on_error", False):
+                        return 1
+                    continue
+                try:
+                    resp = _ingest_json_report_with_retry(
+                        vat_url=vat_url,
+                        key=grype_key,
+                        report=target_grype_report,
+                        asset_name=asset,
+                        tag=tag,
+                        image_digest=target_image_digest,
+                        label="grype",
+                    )
+                    print(f"  grype: {resp}")
                 except VATClientError as e:
                     target_failures += 1
                     print(f"\nERROR: {e}", file=sys.stderr)
@@ -1996,10 +2067,12 @@ def cmd_scan_inventory(args: argparse.Namespace) -> int:
     scan_types = _parse_inventory_scan_types(getattr(args, "scan_types", None))
     parser_keys: dict[str, str] = {}
     if not args.dry_run and admin_token:
-        for parser_id in ("trivy", "cyclonedx"):
+        for parser_id in ("trivy", "grype", "cyclonedx"):
             if parser_id == "cyclonedx" and "image-sbom" not in scan_types:
                 continue
             if parser_id == "trivy" and "image-sca" not in scan_types:
+                continue
+            if parser_id == "grype" and "image-grype" not in scan_types:
                 continue
             try:
                 source_id, key_to_cache = _ensure_parser_ingest_key(
@@ -2018,6 +2091,7 @@ def cmd_scan_inventory(args: argparse.Namespace) -> int:
             parser_keys[parser_id] = key_to_cache
     elif api_key:
         parser_keys["trivy"] = api_key
+        parser_keys["grype"] = api_key
         parser_keys["cyclonedx"] = api_key
 
     key = parser_keys.get("trivy") or (api_key if not admin_token else "")
@@ -2093,10 +2167,22 @@ def cmd_scan_inventory(args: argparse.Namespace) -> int:
                 if "image-sbom" in scan_types
                 else None
             )
+            grype_report = (
+                _grype_scan(image, sbom_report, docker_config_path)
+                if "image-grype" in scan_types
+                else None
+            )
         image_scanner_failures = 0
         if "image-sca" in scan_types and not report:
             if getattr(args, "fail_on_error", False) or getattr(args, "verbose", False):
                 print("ERROR: Trivy image scan failed or trivy not found.", file=sys.stderr)
+            scanner_failures += 1
+            image_scanner_failures += 1
+            if getattr(args, "fail_on_error", False):
+                return 1
+        if "image-grype" in scan_types and not grype_report:
+            if getattr(args, "fail_on_error", False) or getattr(args, "verbose", False):
+                print("ERROR: Grype image scan failed or grype not found.", file=sys.stderr)
             scanner_failures += 1
             image_scanner_failures += 1
             if getattr(args, "fail_on_error", False):
@@ -2128,11 +2214,19 @@ def cmd_scan_inventory(args: argparse.Namespace) -> int:
                     target_report = strip_snippets(target_report)
             else:
                 target_report = None
+            target_grype_report = (
+                normalize_grype(copy.deepcopy(grype_report), asset)
+                if ("image-grype" in scan_types and grype_report)
+                else None
+            )
             target_sbom_report = copy.deepcopy(sbom_report) if sbom_report else None
             if args.dry_run:
                 if target_report:
                     count = len(target_report.get("Results") or [])
                     print(f"  trivy: {count} result(s)")
+                if target_grype_report:
+                    count = len(target_grype_report.get("matches") or [])
+                    print(f"  grype: {count} result(s)")
                 if target_sbom_report:
                     count = len(target_sbom_report.get("components") or [])
                     print(f"  cyclonedx: {count} component(s)")
@@ -2148,6 +2242,30 @@ def cmd_scan_inventory(args: argparse.Namespace) -> int:
                         image_digest=image_digest,
                     )
                     print(f"  trivy: {resp}")
+                except VATClientError as e:
+                    target_failures += 1
+                    print(f"\nERROR: {e}", file=sys.stderr)
+                    if getattr(args, "fail_on_error", False):
+                        return 1
+            if target_grype_report:
+                grype_key = parser_keys.get("grype")
+                if not grype_key:
+                    target_failures += 1
+                    print("\nERROR: No Grype ingest key available.", file=sys.stderr)
+                    if getattr(args, "fail_on_error", False):
+                        return 1
+                    continue
+                try:
+                    resp = _ingest_json_report_with_retry(
+                        vat_url=vat_url,
+                        key=grype_key,
+                        report=target_grype_report,
+                        asset_name=asset,
+                        tag=tag,
+                        image_digest=image_digest,
+                        label="grype",
+                    )
+                    print(f"  grype: {resp}")
                 except VATClientError as e:
                     target_failures += 1
                     print(f"\nERROR: {e}", file=sys.stderr)
@@ -2242,6 +2360,24 @@ def cmd_scan_k8s_inventory(args: argparse.Namespace) -> int:
         print("\nERROR: No Trivy ingest key available.", file=sys.stderr)
         return 1
 
+    # Gitleaks secret detection on the manifests (best-effort; catches inline env /
+    # args secrets in workload specs). No key or binary => skip silently.
+    gitleaks_key = ""
+    if not args.dry_run and admin_token:
+        try:
+            _, gitleaks_key = _ensure_parser_ingest_key(
+                vat_url,
+                admin_token,
+                "gitleaks",
+                reset_keys=args.reset_keys,
+                asset_type="repo",
+            )
+        except VATClientError as e:
+            print(f"\nERROR: {e}", file=sys.stderr)
+            return 1
+    elif api_key:
+        gitleaks_key = api_key
+
     cluster_name = (
         getattr(args, "cluster_name", None)
         or os.environ.get("VAT_CLUSTER_NAME", "")
@@ -2278,9 +2414,12 @@ def cmd_scan_k8s_inventory(args: argparse.Namespace) -> int:
             if not manifest:
                 skipped += 1
                 continue
-            object_dir = root / _safe_k8s_manifest_filename(raw_item)
+            safe_name = _safe_k8s_manifest_filename(raw_item)
+            object_dir = root / safe_name
             object_dir.mkdir(parents=True, exist_ok=True)
-            manifest_path = object_dir / "manifest.yaml"
+            # Encode object identity in the filename so findings stay distinct once
+            # every object in a namespace ingests under the same namespace asset.
+            manifest_path = object_dir / f"{safe_name}.yaml"
             manifest_path.write_text(manifest + "\n", encoding="utf-8")
             print("Scanning object:", item_key)
             try:
@@ -2320,6 +2459,31 @@ def cmd_scan_k8s_inventory(args: argparse.Namespace) -> int:
                     if getattr(args, "fail_on_error", False):
                         return 1
                     continue
+
+            gl_report = run_gitleaks(object_dir, timeout=120, temp_dir=root)
+            if gl_report:
+                gl_norm = normalize_gitleaks(gl_report, asset, tag)
+                if args.dry_run:
+                    findings = gl_norm.get("findings") if isinstance(gl_norm, dict) else gl_norm
+                    print(f"  gitleaks: {len(findings or [])} finding(s)")
+                elif gitleaks_key:
+                    try:
+                        resp = _ingest_json_report_with_retry(
+                            vat_url=vat_url,
+                            key=gitleaks_key,
+                            report=gl_norm,
+                            asset_name=asset,
+                            tag=tag,
+                            image_digest=None,
+                            label="gitleaks",
+                        )
+                        print(f"  gitleaks: {resp}")
+                    except VATClientError as e:
+                        failures += 1
+                        print(f"\nERROR: {e}", file=sys.stderr)
+                        if getattr(args, "fail_on_error", False):
+                            return 1
+                        continue
 
             state.setdefault("objects", {})[item_key] = {
                 "signature": signature,

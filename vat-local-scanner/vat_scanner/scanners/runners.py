@@ -1191,6 +1191,57 @@ def run_grype(
     return json.loads(result.stdout)
 
 
+def run_grype_image_ref(
+    image_ref: str,
+    timeout: int = 180,
+    docker_config_path: Path | None = None,
+) -> dict | None:
+    """Run grype on an image reference (registry pull). Returns JSON or None if not installed."""
+    env = os.environ.copy()
+    env.setdefault("GRYPE_DB_CACHE_DIR", "/tmp/grype-db")
+    env.setdefault("XDG_CACHE_HOME", "/tmp")
+    if docker_config_path is not None:
+        env["DOCKER_CONFIG"] = str(docker_config_path)
+    try:
+        result = subprocess.run(
+            ["grype", image_ref, "-o", "json"],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            env=env,
+        )
+    except FileNotFoundError:
+        return None
+    except subprocess.TimeoutExpired:
+        return None
+    if result.returncode != 0 or not result.stdout.strip():
+        return None
+    return json.loads(result.stdout)
+
+
+def run_grype_sbom(sbom_path: Path, timeout: int = 180) -> dict | None:
+    """Run grype against an existing CycloneDX/SPDX SBOM file — no image pull.
+    Returns JSON or None if grype is missing or the SBOM is unreadable."""
+    env = os.environ.copy()
+    env.setdefault("GRYPE_DB_CACHE_DIR", "/tmp/grype-db")
+    env.setdefault("XDG_CACHE_HOME", "/tmp")
+    try:
+        result = subprocess.run(
+            ["grype", f"sbom:{sbom_path}", "-o", "json"],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            env=env,
+        )
+    except FileNotFoundError:
+        return None
+    except subprocess.TimeoutExpired:
+        return None
+    if result.returncode != 0 or not result.stdout.strip():
+        return None
+    return json.loads(result.stdout)
+
+
 def run_npm_audit(folder: Path, timeout: int = 60) -> dict | None:
     """Run npm audit --json in folder. Returns JSON or None."""
     if not (folder / "package.json").is_file():

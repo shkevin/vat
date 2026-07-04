@@ -11,6 +11,8 @@ from vat_scanner.scanners.detection import (
 from vat_scanner.scanners.runners import (
     run_gitleaks,
     run_grype,
+    run_grype_image_ref,
+    run_grype_sbom,
     run_node_oval_cve,
     run_node_stig,
     run_npm_audit,
@@ -46,6 +48,8 @@ __all__ = [
     "has_semgrep_content",
     "run_gitleaks",
     "run_grype",
+    "run_grype_image_ref",
+    "run_grype_sbom",
     "run_node_oval_cve",
     "run_node_stig",
     "run_npm_audit",

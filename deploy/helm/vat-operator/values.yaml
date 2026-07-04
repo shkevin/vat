@@ -54,7 +54,8 @@ scanner:
     scanIntervalSeconds: 3600
     scanRetryIntervalSeconds: 300
     fullRescanIntervalSeconds: 86400
-    scanTypes: image-sca,image-sbom
+    # image-sca (Trivy) + image-grype (Grype 2nd-opinion SCA) + image-sbom (CycloneDX).
+    scanTypes: image-sca,image-grype,image-sbom
     # Event-driven scan-queue consumer (production default on); inventory poll
     # stays as the fallback.
     scanQueueEnabled: true
@@ -102,7 +103,7 @@ nodeAgent:
   # Phase 5: node agents do host scans only by default — the worker's registry
   # pull is the single image vantage. Set true for air-gapped on-node scanning.
   imageScans: false
-  runtimeScanTypes: image-sca,image-sbom,container-stig
+  runtimeScanTypes: image-sca,image-grype,image-sbom,container-stig
   runtimeImagePullSecrets: ""
   scanIntervalSeconds: 86400
   runtimeFullRescanIntervalSeconds: 86400
