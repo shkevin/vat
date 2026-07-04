@@ -42,7 +42,7 @@ func Run(ctx context.Context, client kubernetes.Interface, writer ScanRequestWri
 			return
 		}
 		items := WorkItemsFromPod(pod)
-		fresh := tracker.Observe(items)
+		fresh := tracker.Observe(string(pod.UID), items)
 		metrics.AddDedupHits(len(items) - len(fresh))
 		for _, it := range fresh {
 			if shadow {
@@ -61,9 +61,28 @@ func Run(ctx context.Context, client kubernetes.Interface, writer ScanRequestWri
 		}
 	}
 
+	// forget drops a deleted pod's image keys so a re-created image scans fresh.
+	// Eviction is refcounted, so this only forgets an image once its last pod is
+	// gone. Handles DeletedFinalStateUnknown tombstones delivered on relist, which
+	// is how deletes during a watch gap are recovered.
+	forget := func(obj interface{}) {
+		pod, ok := obj.(*corev1.Pod)
+		if !ok {
+			tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
+			if !ok {
+				return
+			}
+			if pod, ok = tombstone.Obj.(*corev1.Pod); !ok {
+				return
+			}
+		}
+		tracker.Delete(string(pod.UID))
+	}
+
 	podInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    handle,
 		UpdateFunc: func(_, newObj interface{}) { handle(newObj) },
+		DeleteFunc: forget,
 	})
 
 	factory.Start(ctx.Done())
@@ -87,7 +106,7 @@ func Backstop(ctx context.Context, client kubernetes.Interface, writer ScanReque
 			continue
 		}
 		items := WorkItemsFromPod(pod)
-		fresh := tracker.Observe(items)
+		fresh := tracker.Observe(string(pod.UID), items)
 		metrics.AddDedupHits(len(items) - len(fresh))
 		for _, it := range fresh {
 			didCreate, err := writer.Create(ctx, it)
