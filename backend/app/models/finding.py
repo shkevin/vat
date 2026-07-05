@@ -133,6 +133,9 @@ class Finding(TenantScopedMixin, Base):
     tracker_comment: Mapped[bool] = mapped_column(Boolean, default=False)
 
     sources: Mapped[dict] = mapped_column(JSONB, default=list)  # [{name, importedAt}]
+    # Distinct clusters (X-VAT-Cluster) this finding has been observed in. Denormalized
+    # from finding_observations so "findings in cluster X" is a containment query.
+    observed_clusters: Mapped[list] = mapped_column(JSONB, default=list)  # [cluster_id, ...]
     suppression_scope: Mapped[Optional[SuppressionScope]] = mapped_column(
         Enum(SuppressionScope, values_callable=lambda obj: [e.value for e in obj]),
         nullable=True,

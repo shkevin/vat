@@ -24,6 +24,9 @@ class FindingObservation(Base):
     finding_id: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
     scan_session_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     source_name: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    # Cluster that observed this finding (X-VAT-Cluster). Multi-cluster attribution:
+    # distinct cluster_id over a finding's observations = the clusters it appears in.
+    cluster_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True, index=True)
     scanner_version: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     content_version: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     benchmark_id: Mapped[Optional[str]] = mapped_column(String(256), nullable=True)

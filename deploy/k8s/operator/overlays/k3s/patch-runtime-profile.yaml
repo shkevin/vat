@@ -9,7 +9,11 @@ spec:
       containers:
         - name: operator
           env:
-            - name: VAT_CLUSTER_NAME
+            # Friendly cluster name -> published to the vat-cluster-identity ConfigMap,
+            # which the scanner-worker and node-agent source VAT_CLUSTER_NAME from.
+            # Single source of truth. Leave unset to fall back to the kube-system UID
+            # (collision-safe default for multi-cluster installs).
+            - name: VAT_OPERATOR_CLUSTER_NAME
               value: k3s-remote
             - name: VAT_OPERATOR_RUNTIME_PROFILE
               value: k3s
@@ -25,8 +29,6 @@ spec:
       containers:
         - name: node-agent
           env:
-            - name: VAT_CLUSTER_NAME
-              value: k3s-remote
             - name: VAT_OPERATOR_RUNTIME_PROFILE
               value: k3s
             - name: VAT_CONTAINERD_SOCKET_PATH
@@ -35,17 +37,3 @@ spec:
               value: /host/var/lib/kubelet
             - name: VAT_STATIC_POD_MANIFEST_PATH
               value: /host/var/lib/rancher/k3s/server/manifests
----
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: vat-scanner-worker
-  namespace: vat-operator
-spec:
-  template:
-    spec:
-      containers:
-        - name: scanner
-          env:
-            - name: VAT_CLUSTER_NAME
-              value: k3s-remote

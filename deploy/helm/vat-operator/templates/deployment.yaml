@@ -47,6 +47,12 @@ spec:
               value: {{ .Values.vat.adminTokenKey | quote }}
             - name: VAT_OPERATOR_RUNTIME_PROFILE
               value: {{ .Values.operator.runtimeProfile | quote }}
+            {{- with .Values.operator.clusterName }}
+            # Friendly cluster name -> published to vat-cluster-identity; pods source
+            # VAT_CLUSTER_NAME from it. Unset -> kube-system UID (collision-safe).
+            - name: VAT_OPERATOR_CLUSTER_NAME
+              value: {{ . | quote }}
+            {{- end }}
             - name: VAT_OPERATOR_IMAGE_INVENTORY_MODE
               value: {{ .Values.operator.imageInventoryMode | quote }}
             {{- with .Values.operator.excludedNamespaces }}

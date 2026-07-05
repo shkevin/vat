@@ -155,8 +155,15 @@ spec:
               value: {{ .Values.scanner.configWorker.scanRetryIntervalSeconds | quote }}
             - name: VAT_K8S_FULL_RESCAN_INTERVAL_SECONDS
               value: {{ .Values.scanner.configWorker.fullRescanIntervalSeconds | quote }}
+            # Cluster identity published by the operator (kube-system UID or the
+            # operator.clusterName override). optional=true tolerates a fresh install
+            # before the operator's first reconcile.
             - name: VAT_CLUSTER_NAME
-              value: {{ .Values.scanner.clusterName | quote }}
+              valueFrom:
+                configMapKeyRef:
+                  name: vat-cluster-identity
+                  key: clusterName
+                  optional: true
             # Own source-id namespace so the inventory worker mints its own
             # ingest keys (inventory-trivy, ...) instead of bare shared ones
             # that node agents / CI also write — no cross-writer key clobber.

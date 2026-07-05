@@ -184,6 +184,17 @@ def _ingest_headers(
         h["X-VAT-Scan-Status"] = str(scan_status).strip()
     if idempotency_key and str(idempotency_key).strip():
         h["X-VAT-Idempotency-Key"] = str(idempotency_key).strip()
+    # Multi-cluster attribution: stamp which cluster produced this report. A
+    # deployment-wide constant, so read from env rather than threading it through
+    # every ingest call site. This is the SAME identifier used in k8s/node asset
+    # paths and the cluster->tenant map, so all three stay consistent.
+    cluster = (
+        os.environ.get("VAT_CLUSTER_NAME")
+        or os.environ.get("CLUSTER_NAME")
+        or ""
+    ).strip()
+    if cluster:
+        h["X-VAT-Cluster"] = cluster
     return h
 
 

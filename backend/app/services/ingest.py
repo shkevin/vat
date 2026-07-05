@@ -182,6 +182,7 @@ async def _upsert_observation(
     payload: VatFindingSchema,
     scanner_version: str | None,
     raw_evidence_ref: str | None,
+    cluster_id: str | None = None,
 ) -> None:
     """Insert or update per-session finding observation."""
     if not scan_session_id:
@@ -198,6 +199,7 @@ async def _upsert_observation(
         "finding_id": finding_id,
         "scan_session_id": scan_session_id,
         "source_name": source_name,
+        "cluster_id": cluster_id,
         "scanner_version": scanner_version,
         "content_version": getattr(payload, "content_version", None),
         "benchmark_id": getattr(payload, "benchmark_id", None),
@@ -230,6 +232,7 @@ async def ingest_finding(
     scanner_version: str | None = None,
     raw_evidence_ref: str | None = None,
     force_tag_override: bool = False,
+    cluster_id: str | None = None,
 ) -> tuple[Finding, bool]:
     """
     Ingest a finding from canonical payload. Deduplicates by fingerprint.
@@ -373,6 +376,11 @@ async def ingest_finding(
         ):
             sources.append(source_entry)
         existing.sources = sources
+        if cluster_id:
+            clusters = list(existing.observed_clusters or [])
+            if cluster_id not in clusters:
+                clusters.append(cluster_id)
+                existing.observed_clusters = clusters
         if source_name and source_name != "Aikido":
             existing.source = source_name
         if getattr(payload, "source_issue_id", None):
@@ -530,6 +538,7 @@ async def ingest_finding(
             payload=payload,
             scanner_version=scanner_version,
             raw_evidence_ref=raw_evidence_ref,
+            cluster_id=cluster_id,
         )
         await upsert_identifier_facts_for_finding(
             db, finding=existing, source=source_name
@@ -627,6 +636,7 @@ async def ingest_finding(
         epss=epss_value,
         risk_scoring=risk_scoring,
         sources=[source_entry],
+        observed_clusters=[cluster_id] if cluster_id else [],
         audit=[audit_entry],
         tenant_id=tenant_id,
         external_links=external_links,
@@ -660,6 +670,7 @@ async def ingest_finding(
         payload=payload,
         scanner_version=scanner_version,
         raw_evidence_ref=raw_evidence_ref,
+        cluster_id=cluster_id,
     )
     await upsert_identifier_facts_for_finding(db, finding=finding, source=source_name)
     await db.flush()

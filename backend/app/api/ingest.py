@@ -318,6 +318,7 @@ async def _ingest_from_parser(
     strict_asset_mapping: bool = False,
     scan_session_id: Optional[str] = None,
     scanner_version: Optional[str] = None,
+    cluster_id: Optional[str] = None,
 ) -> dict:
     """
     Parse payload with configured parser and ingest findings.
@@ -326,6 +327,8 @@ async def _ingest_from_parser(
     parser = get_parser(parser_id)
     trace_id = trace_id or uuid.uuid4().hex
     settings = get_settings()
+    # Layer 3: a cluster may be pinned to a tenant; unmapped clusters -> default tenant.
+    cluster_tenant_id = settings.cluster_tenant_map.get(cluster_id) if cluster_id else None
     rollup_enabled = settings.ingest_rollup_window_seconds > 0
     rollup = _IngestRollupAccumulator(
         db=db,
@@ -579,12 +582,14 @@ async def _ingest_from_parser(
                 db,
                 p,
                 source_name=source,
+                tenant_id=cluster_tenant_id,
                 trace_id=trace_id,
                 parser_id=parser_id,
                 scan_session_id=scan_session_id,
                 scanner_version=scanner_version,
                 raw_evidence_ref=raw_evidence_ref,
                 force_tag_override=tag_policy.force_override,
+                cluster_id=cluster_id,
             )
             if rollup.enabled:
                 await rollup.record_dedup(
@@ -805,6 +810,7 @@ async def post_ingest(
         scanner_version = (
             request.headers.get("X-VAT-Scanner-Version") or ""
         ).strip() or None
+        cluster_id = (request.headers.get("X-VAT-Cluster") or "").strip() or None
         if auth_source is None:
             await emit_audit_event(
                 db,
@@ -898,6 +904,7 @@ async def post_ingest(
             strict_asset_mapping=strict_asset_mapping,
             scan_session_id=scan_session_id,
             scanner_version=scanner_version,
+            cluster_id=cluster_id,
         )
 
 

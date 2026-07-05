@@ -130,6 +130,12 @@ func run(ctx context.Context, client kubernetes.Interface, cfg config.Config) {
 	defer ticker.Stop()
 
 	for {
+		if clusterName, err := reconcile.ReconcileClusterIdentity(ctx, client, cfg); err != nil {
+			log.Printf("cluster identity reconcile failed: %v", err)
+		} else {
+			log.Printf("cluster identity published: clusterName=%s", clusterName)
+		}
+
 		result, err := reconcile.ReconcileWorkloadImageScans(ctx, client, cfg)
 		if err != nil {
 			log.Printf("workload image inventory reconcile failed: %v", err)

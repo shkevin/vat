@@ -171,6 +171,11 @@ class Settings(BaseSettings):
     ingest_rollup_window_seconds: int = 20
     ingest_rollup_idle_timeout_seconds: int = 8
     ingest_rollup_sample_size: int = 10
+    # Multi-cluster (Layer 3): map a cluster identifier (X-VAT-Cluster) to a tenant id
+    # so findings from a given cluster land in that org instead of the default tenant.
+    # Set VAT_CLUSTER_TENANT_MAP='{"prod-east":"t-acme","prod-west":"t-acme"}'. Unmapped
+    # clusters (and requests with no cluster) fall back to the default tenant.
+    cluster_tenant_map: dict[str, str] = {}
 
     # UI-facing list/query caps
     finding_default_limit: int = 500

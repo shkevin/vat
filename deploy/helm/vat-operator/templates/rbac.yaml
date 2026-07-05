@@ -13,7 +13,7 @@ rules:
     verbs: ["create"]
   - apiGroups: [""]
     resources: ["configmaps"]
-    resourceNames: ["vat-scan-inventory", "vat-k8s-inventory"]
+    resourceNames: ["vat-scan-inventory", "vat-k8s-inventory", "vat-cluster-identity"]
     verbs: ["get", "patch", "update"]
   - apiGroups: ["apps"]
     resources: ["deployments", "statefulsets", "daemonsets", "replicasets"]

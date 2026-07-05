@@ -173,8 +173,13 @@ spec:
           env:
             - name: VAT_URL
               value: http://vat-backend.vat.svc.cluster.local:8000
+            # Cluster identity published by the operator (kube-system UID or override).
             - name: VAT_CLUSTER_NAME
-              value: cluster
+              valueFrom:
+                configMapKeyRef:
+                  name: vat-cluster-identity
+                  key: clusterName
+                  optional: true
             - name: VAT_OPERATOR_RUNTIME_PROFILE
               value: generic
             - name: VAT_CONTAINERD_SOCKET_PATH

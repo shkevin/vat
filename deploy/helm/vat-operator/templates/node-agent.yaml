@@ -179,7 +179,11 @@ spec:
             - name: VAT_URL
               value: {{ .Values.vat.url | quote }}
             - name: VAT_CLUSTER_NAME
-              value: {{ .Values.scanner.clusterName | quote }}
+              valueFrom:
+                configMapKeyRef:
+                  name: vat-cluster-identity
+                  key: clusterName
+                  optional: true
             - name: VAT_OPERATOR_RUNTIME_PROFILE
               value: {{ .Values.nodeAgent.runtimeProfile | quote }}
             - name: VAT_CONTAINERD_SOCKET_PATH

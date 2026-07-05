@@ -17,28 +17,30 @@ const (
 )
 
 type Config struct {
-	VatURL                  string
-	ScannerImage            string
-	Namespace               string
-	CredentialsSecretName   string
-	AdminTokenKey           string
-	APIKeyKey               string
-	InventoryConfigMapName  string
-	KubernetesConfigMapName string
-	RuntimeProfile          profiles.RuntimeProfile
-	NodeScanningEnabled     bool
-	ServiceAccountName      string
-	ImagePullSecretNames    []string
-	BackoffLimit            int32
-	TTLSecondsAfterFinish   int32
-	MaxConcurrentScanJobs   int
-	RescanIntervalSeconds   int
-	ExcludedNamespaceNames  []string
-	ImageInventoryMode      string
-	EventDrivenScansEnabled bool
-	EventDrivenShadow       bool
-	BackstopIntervalSeconds int
-	ScanRequestTTLSeconds   int
+	VatURL                       string
+	ScannerImage                 string
+	Namespace                    string
+	CredentialsSecretName        string
+	AdminTokenKey                string
+	APIKeyKey                    string
+	InventoryConfigMapName       string
+	KubernetesConfigMapName      string
+	ClusterIdentityConfigMapName string
+	ClusterNameOverride          string
+	RuntimeProfile               profiles.RuntimeProfile
+	NodeScanningEnabled          bool
+	ServiceAccountName           string
+	ImagePullSecretNames         []string
+	BackoffLimit                 int32
+	TTLSecondsAfterFinish        int32
+	MaxConcurrentScanJobs        int
+	RescanIntervalSeconds        int
+	ExcludedNamespaceNames       []string
+	ImageInventoryMode           string
+	EventDrivenScansEnabled      bool
+	EventDrivenShadow            bool
+	BackstopIntervalSeconds      int
+	ScanRequestTTLSeconds        int
 }
 
 func LoadFromEnv() (Config, error) {
@@ -49,6 +51,7 @@ func LoadFromEnv() (Config, error) {
 		"VAT_OPERATOR_CREDENTIAL_SECRET":         os.Getenv("VAT_OPERATOR_CREDENTIAL_SECRET"),
 		"VAT_OPERATOR_ADMIN_TOKEN_KEY":           os.Getenv("VAT_OPERATOR_ADMIN_TOKEN_KEY"),
 		"VAT_OPERATOR_RUNTIME_PROFILE":           os.Getenv("VAT_OPERATOR_RUNTIME_PROFILE"),
+		"VAT_OPERATOR_CLUSTER_NAME":              os.Getenv("VAT_OPERATOR_CLUSTER_NAME"),
 		"VAT_OPERATOR_EXCLUDED_NAMESPACES":       os.Getenv("VAT_OPERATOR_EXCLUDED_NAMESPACES"),
 		"VAT_OPERATOR_NODE_SCANNING_ENABLED":     os.Getenv("VAT_OPERATOR_NODE_SCANNING_ENABLED"),
 		"VAT_OPERATOR_IMAGE_INVENTORY_MODE":      os.Getenv("VAT_OPERATOR_IMAGE_INVENTORY_MODE"),
@@ -73,25 +76,27 @@ func LoadFromMap(env map[string]string) (Config, error) {
 	namespace := valueOrDefault(env["VAT_OPERATOR_NAMESPACE"], defaultOperatorNamepace)
 
 	return Config{
-		VatURL:                  vatURL,
-		ScannerImage:            valueOrDefault(env["VAT_OPERATOR_SCANNER_IMAGE"], defaultScannerImage),
-		Namespace:               namespace,
-		CredentialsSecretName:   valueOrDefault(env["VAT_OPERATOR_CREDENTIAL_SECRET"], defaultCredentialsName),
-		AdminTokenKey:           valueOrDefault(env["VAT_OPERATOR_ADMIN_TOKEN_KEY"], defaultAdminTokenKey),
-		APIKeyKey:               "apiKey",
-		InventoryConfigMapName:  "vat-scan-inventory",
-		KubernetesConfigMapName: "vat-k8s-inventory",
-		RuntimeProfile:          profile,
-		NodeScanningEnabled:     parseBool(env["VAT_OPERATOR_NODE_SCANNING_ENABLED"]),
-		ServiceAccountName:      "vat-operator-scanner",
-		ImagePullSecretNames:    []string{"harbor-creds"},
-		BackoffLimit:            1,
-		TTLSecondsAfterFinish:   3600,
-		MaxConcurrentScanJobs:   5,
-		RescanIntervalSeconds:   3600,
-		ExcludedNamespaceNames:  excludedNamespaces(env["VAT_OPERATOR_EXCLUDED_NAMESPACES"], namespace),
-		ImageInventoryMode:      imageInventoryMode(env["VAT_OPERATOR_IMAGE_INVENTORY_MODE"]),
-		EventDrivenScansEnabled: parseBool(env["VAT_OPERATOR_EVENT_DRIVEN_SCANS"]),
+		VatURL:                       vatURL,
+		ScannerImage:                 valueOrDefault(env["VAT_OPERATOR_SCANNER_IMAGE"], defaultScannerImage),
+		Namespace:                    namespace,
+		CredentialsSecretName:        valueOrDefault(env["VAT_OPERATOR_CREDENTIAL_SECRET"], defaultCredentialsName),
+		AdminTokenKey:                valueOrDefault(env["VAT_OPERATOR_ADMIN_TOKEN_KEY"], defaultAdminTokenKey),
+		APIKeyKey:                    "apiKey",
+		InventoryConfigMapName:       "vat-scan-inventory",
+		KubernetesConfigMapName:      "vat-k8s-inventory",
+		ClusterIdentityConfigMapName: "vat-cluster-identity",
+		ClusterNameOverride:          strings.TrimSpace(env["VAT_OPERATOR_CLUSTER_NAME"]),
+		RuntimeProfile:               profile,
+		NodeScanningEnabled:          parseBool(env["VAT_OPERATOR_NODE_SCANNING_ENABLED"]),
+		ServiceAccountName:           "vat-operator-scanner",
+		ImagePullSecretNames:         []string{"harbor-creds"},
+		BackoffLimit:                 1,
+		TTLSecondsAfterFinish:        3600,
+		MaxConcurrentScanJobs:        5,
+		RescanIntervalSeconds:        3600,
+		ExcludedNamespaceNames:       excludedNamespaces(env["VAT_OPERATOR_EXCLUDED_NAMESPACES"], namespace),
+		ImageInventoryMode:           imageInventoryMode(env["VAT_OPERATOR_IMAGE_INVENTORY_MODE"]),
+		EventDrivenScansEnabled:      parseBool(env["VAT_OPERATOR_EVENT_DRIVEN_SCANS"]),
 		// Shadow defaults ON: enabling event-driven scans observes first; flip
 		// VAT_OPERATOR_EVENT_DRIVEN_SHADOW=false to actually create ScanRequests.
 		EventDrivenShadow:       parseBoolDefault(env["VAT_OPERATOR_EVENT_DRIVEN_SHADOW"], true),
