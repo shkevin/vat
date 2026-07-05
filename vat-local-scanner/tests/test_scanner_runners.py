@@ -208,6 +208,12 @@ def test_run_stig_image_ref_uses_skopeo_and_oscap_chroot(monkeypatch, tmp_path: 
 
     monkeypatch.setattr(runners.subprocess, "run", _fake_run)
     monkeypatch.setattr(runners, "_extract_docker_archive_rootfs", lambda *args, **kwargs: True)
+    # OS-aware datastream/profile selection is tested separately; here fix it to the
+    # chainguard baseline so we assert the skopeo + oscap-chroot orchestration.
+    monkeypatch.setattr(
+        runners, "resolve_stig_content_for_rootfs",
+        lambda *a, **k: (Path(runners.STIG_DATASTREAM), runners.STIG_PROFILE),
+    )
 
     assert (
         runners.run_stig_image_ref(
@@ -246,6 +252,10 @@ def test_run_stig_rootfs_uses_oscap_chroot(monkeypatch, tmp_path: Path) -> None:
         return _Completed(0)
 
     monkeypatch.setattr(runners.subprocess, "run", _fake_run)
+    monkeypatch.setattr(
+        runners, "resolve_stig_content_for_rootfs",
+        lambda *a, **k: (Path(runners.STIG_DATASTREAM), runners.STIG_PROFILE),
+    )
 
     assert runners.run_stig_rootfs(rootfs, "asset", temp_dir=tmp_path) == "<xccdf/>"
 

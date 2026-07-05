@@ -16,6 +16,112 @@ OPENSCAP_IMAGE = "cgr.dev/chainguard/openscap:latest"
 STIG_PROFILE = "xccdf_basic_profile_.check"
 STIG_DATASTREAM = "/usr/share/xml/scap/ssg/content/ssg-chainguard-gpos-ds.xml"
 
+CONTAINER_STIG_CONTENT_DIR = "/usr/share/xml/scap/ssg/content"
+# OS IDs that share a ComplianceAsCode datastream for their DISA STIG profile.
+_RHEL_FAMILY = {"rhel", "centos", "rocky", "almalinux", "ol", "oraclelinux"}
+_SLE_FAMILY = {"sles", "sle", "opensuse-leap"}
+# Profile substrings preferred (in order) when none is explicitly requested.
+_STIG_PROFILE_PREFERENCE = ("stig", "cis_level2", "cis", "anssi_bp28_high", "standard")
+
+
+def _rootfs_os_id_version(root: Path) -> tuple[str | None, str | None]:
+    """Parse ID and VERSION_ID from <root>/etc/os-release (an image rootfs or host)."""
+    try:
+        text = (Path(root) / "etc" / "os-release").read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None, None
+    data: dict[str, str] = {}
+    for line in text.splitlines():
+        if "=" in line:
+            k, _, v = line.partition("=")
+            data[k.strip()] = v.strip().strip('"')
+    return data.get("ID"), data.get("VERSION_ID")
+
+
+def resolve_stig_profile(datastream: Path, preferred: str | None = None) -> str | None:
+    """List a datastream's XCCDF profiles and pick one — preferred (exact/suffix) if
+    present, else best by preference, else the first. Avoids hardcoding a profile id
+    that may not exist in a given distro's content. None if it has no profiles."""
+    try:
+        result = subprocess.run(
+            ["oscap", "info", "--profiles", str(datastream)],
+            capture_output=True, text=True, timeout=60,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+        return None
+    ids = [
+        line.split(":", 1)[0].strip()
+        for line in result.stdout.splitlines()
+        if line.strip().startswith("xccdf_")
+    ]
+    if not ids:
+        return None
+    if preferred:
+        for i in ids:
+            if i == preferred or i.endswith("_" + preferred) or i.endswith(preferred):
+                return i
+    for pref in _STIG_PROFILE_PREFERENCE:
+        for i in ids:
+            if pref in i:
+                return i
+    return ids[0]
+
+
+def resolve_stig_content_for_rootfs(
+    rootfs: Path, content_dir: str = CONTAINER_STIG_CONTENT_DIR
+) -> tuple[Path | None, str | None]:
+    """Pick (datastream, profile) for an extracted image rootfs by its base OS.
+
+    RHEL/Rocky/Alma/Oracle, Ubuntu and SLE map to the ComplianceAsCode DISA `stig`
+    profile (content must be bundled). Chainguard/Wolfi and unidentifiable
+    (distroless) images keep the existing minimal chainguard profile — no regression.
+    (None, None) for identified OSes with no bundled STIG content (Alpine, Debian)."""
+    cdir = Path(content_dir)
+    chainguard_ds = cdir / "ssg-chainguard-gpos-ds.xml"
+    os_id, ver = _rootfs_os_id_version(rootfs)
+    if not os_id:
+        # Distroless / unidentifiable: fall back to the minimal chainguard baseline.
+        return (chainguard_ds, STIG_PROFILE) if chainguard_ds.exists() else (None, None)
+    os_id = os_id.lower()
+    if os_id in ("chainguard", "wolfi"):
+        return (chainguard_ds, STIG_PROFILE) if chainguard_ds.exists() else (None, None)
+    ver_major = (ver or "").split(".")[0]
+    family = None
+    if os_id in _RHEL_FAMILY and ver_major:
+        family = f"rhel{ver_major}"
+    elif os_id == "ubuntu" and ver:
+        family = "ubuntu" + ver.replace(".", "")
+    elif os_id in _SLE_FAMILY and ver_major:
+        family = f"sle{ver_major}"
+    if not family:
+        return None, None  # Alpine / Debian / etc. — no DISA STIG content
+    ds = cdir / f"ssg-{family}-ds.xml"
+    if not ds.exists():
+        return None, None
+    profile = resolve_stig_profile(ds, preferred="stig")
+    return (ds, profile) if profile else (None, None)
+
+
+def _stig_eval_cmd(rootfs_path: Path, report_path: Path, results_path: Path) -> list[str] | None:
+    """oscap-chroot STIG eval command for a rootfs, choosing datastream+profile by the
+    image OS. None when the OS has no bundled STIG content (caller skips cleanly)."""
+    datastream, profile = resolve_stig_content_for_rootfs(Path(rootfs_path))
+    if not datastream or not profile:
+        return None
+    return [
+        "oscap-chroot",
+        str(rootfs_path),
+        "xccdf",
+        "eval",
+        "--profile",
+        profile,
+        "--report",
+        str(report_path),
+        "--results",
+        str(results_path),
+        str(datastream),
+    ]
+
 
 def _docker_rmi_best_effort(image_ref: str, timeout: int = 60) -> None:
     """Cleanup helper: ``docker rmi`` may hang under daemon contention.
@@ -502,19 +608,13 @@ def run_stig_image_ref(
 
                 print(f"    unable to extract image rootfs for {image_ref}", file=sys.stderr, flush=True)
             return None
-        cmd = [
-            "oscap-chroot",
-            str(rootfs_path),
-            "xccdf",
-            "eval",
-            "--profile",
-            STIG_PROFILE,
-            "--report",
-            str(report_path),
-            "--results",
-            str(results_path),
-            STIG_DATASTREAM,
-        ]
+        cmd = _stig_eval_cmd(rootfs_path, report_path, results_path)
+        if cmd is None:
+            if verbose:
+                import sys
+
+                print(f"    no bundled STIG content for {image_ref} base OS; skipping", file=sys.stderr, flush=True)
+            return None
         result = subprocess.run(
             cmd,
             capture_output=True,
@@ -565,19 +665,9 @@ def run_stig_rootfs(
     env["TMPDIR"] = str(out_dir)
     env["TMP"] = str(out_dir)
     env["TEMP"] = str(out_dir)
-    cmd = [
-        "oscap-chroot",
-        str(rootfs_path),
-        "xccdf",
-        "eval",
-        "--profile",
-        STIG_PROFILE,
-        "--report",
-        str(report_path),
-        "--results",
-        str(results_path),
-        STIG_DATASTREAM,
-    ]
+    cmd = _stig_eval_cmd(rootfs_path, report_path, results_path)
+    if cmd is None:
+        return None
     try:
         result = subprocess.run(
             cmd,

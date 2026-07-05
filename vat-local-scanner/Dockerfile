@@ -25,6 +25,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN mkdir -p /usr/share/xml/scap/ssg/content
 COPY --from=openscap-content /usr/share/xml/scap/ssg/content/ssg-chainguard-gpos-ds.xml /usr/share/xml/scap/ssg/content/ssg-chainguard-gpos-ds.xml
 
+# ComplianceAsCode SSG datastreams for DISA STIG scanning of non-chainguard base
+# images (RHEL/Rocky/Alma/Oracle, Ubuntu, SLE). run_stig_image_ref auto-selects
+# ssg-<os><ver>-ds.xml + the `stig` profile from the scanned image's os-release.
+# Non-fatal: a download hiccup leaves those images skipping; the chainguard path
+# (and everything else) still builds and works.
+ARG SSG_VERSION=0.1.73
+RUN (curl -fsSL -o /tmp/ssg.zip "https://github.com/ComplianceAsCode/content/releases/download/v${SSG_VERSION}/scap-security-guide-${SSG_VERSION}.zip" \
+    && python3 -c "import zipfile; z=zipfile.ZipFile('/tmp/ssg.zip'); [z.extract(m,'/tmp/ssg') for m in z.namelist() if m.endswith('-ds.xml')]" \
+    && find /tmp/ssg -type f \( -name 'ssg-rhel[89]-ds.xml' -o -name 'ssg-ubuntu2[024]04-ds.xml' -o -name 'ssg-sle15-ds.xml' -o -name 'ssg-ol[89]-ds.xml' \) -exec cp {} /usr/share/xml/scap/ssg/content/ \; \
+    && rm -rf /tmp/ssg /tmp/ssg.zip) \
+    || echo "WARN: SSG STIG content unavailable for v${SSG_VERSION}; non-chainguard STIG will skip"
+
 # Skopeo 1.20.0 from felipecrs/skopeo-bin (newer than apt; fixes "io: read/write on closed pipe" with Docker 26.x)
 ARG TARGETARCH=amd64
 RUN SKOPEO_VERSION=1.20.0 && \
