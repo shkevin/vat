@@ -385,56 +385,38 @@ def run_stig_image(
     verbose: bool = False,
 ) -> str | None:
     """
-    Run Chainguard OpenSCAP STIG scan on a container image from a tar file.
-    Uses Chainguard GPOS STIG profile (DISA-aligned).
-    Returns XCCDF results XML as string, or None on failure.
+    Run OpenSCAP STIG on a container image tar (docker-archive). Extracts the rootfs
+    and evaluates it with oscap-chroot against the OS-matched datastream+profile
+    (DISA STIG for RHEL/Ubuntu/SLE; chainguard baseline otherwise). Daemon-free —
+    unified with run_stig_image_ref. Returns XCCDF results XML, or None.
     """
     temp_dir = Path(temp_dir) if temp_dir else Path("/tmp")
     out_dir = temp_dir / f"stig-{uuid.uuid4().hex[:12]}"
     out_dir.mkdir(parents=True, exist_ok=True)
+    rootfs_path = out_dir / "rootfs"
+    rootfs_path.mkdir(parents=True, exist_ok=True)
+    report_path = out_dir / "report.html"
     results_path = out_dir / "results.xml"
+    env = os.environ.copy()
+    env["TMPDIR"] = str(out_dir)
+    env["TMP"] = str(out_dir)
+    env["TEMP"] = str(out_dir)
 
     try:
-        image_ref = _docker_load_and_get_image_ref(tar_path, timeout=min(60, timeout))
-        if not image_ref:
+        if not _extract_docker_archive_rootfs(Path(tar_path), rootfs_path):
             if verbose:
                 import sys
-                print("  WARN: docker load failed for", tar_path.name, file=sys.stderr, flush=True)
+                print("  WARN: unable to extract rootfs for", Path(tar_path).name, file=sys.stderr, flush=True)
             return None
-
-        # Run Chainguard openscap container (minimal image, no shell; use oscap-docker directly)
-        cmd = [
-            "docker",
-            "run",
-            "-i",
-            "--rm",
-            "-u",
-            "0:0",
-            "--pid=host",
-            "-v",
-            "/var/run/docker.sock:/var/run/docker.sock",
-            "-v",
-            f"{out_dir}:/out",
-            "--entrypoint",
-            "oscap-docker",
-            OPENSCAP_IMAGE,
-            "image",
-            image_ref,
-            "xccdf",
-            "eval",
-            "--profile",
-            STIG_PROFILE,
-            "--report",
-            "/out/report.html",
-            "--results",
-            "/out/results.xml",
-            STIG_DATASTREAM,
-        ]
+        cmd = _stig_eval_cmd(rootfs_path, report_path, results_path)
+        if cmd is None:
+            return None
         result = subprocess.run(
             cmd,
             capture_output=True,
             text=True,
             timeout=timeout,
+            env=env,
         )
         # oscap exit codes: 0=all pass, 1=error, 2=findings (fail/unknown) — treat 0 and 2 as success
         if result.returncode not in (0, 2) or not results_path.exists():
@@ -466,59 +448,57 @@ def run_stig_oci_layout(
     verbose: bool = False,
 ) -> str | None:
     """
-    Run Chainguard OpenSCAP STIG scan on an OCI image layout (e.g. from .wrap).
-    Uses skopeo to load into Docker, then oscap-docker. Returns XCCDF results XML.
+    Run OpenSCAP STIG on an OCI image layout (e.g. from .wrap). skopeo copies the
+    layout to a docker-archive, then it's evaluated with oscap-chroot against the
+    OS-matched datastream+profile (DISA STIG for RHEL/Ubuntu/SLE; chainguard
+    baseline otherwise). Daemon-free — unified with run_stig_image_ref.
     """
     temp_dir = Path(temp_dir) if temp_dir else Path("/tmp")
     out_dir = temp_dir / f"stig-{uuid.uuid4().hex[:12]}"
     out_dir.mkdir(parents=True, exist_ok=True)
+    archive_path = out_dir / "image.tar"
+    rootfs_path = out_dir / "rootfs"
+    rootfs_path.mkdir(parents=True, exist_ok=True)
+    report_path = out_dir / "report.html"
     results_path = out_dir / "results.xml"
-    image_ref = f"vat-scan-{uuid.uuid4().hex[:12]}:latest"
+    env = os.environ.copy()
+    env["TMPDIR"] = str(out_dir)
+    env["TMP"] = str(out_dir)
+    env["TEMP"] = str(out_dir)
 
     try:
-        if not _skopeo_copy_oci_to_docker(
-            oci_layout_dir, image_ref, timeout=min(300, timeout), verbose=verbose
-        ):
+        oci_path = Path(oci_layout_dir).resolve()
+        skopeo = subprocess.run(
+            ["skopeo", "--tmpdir", str(out_dir), "copy", "--retry-times", "3",
+             f"oci:{oci_path}", f"docker-archive:{archive_path}"],
+            capture_output=True,
+            text=True,
+            timeout=min(300, timeout),
+            env=env,
+        )
+        if skopeo.returncode != 0 or not archive_path.exists():
             if verbose:
                 import sys
-                print("  WARN: skopeo copy to docker-daemon failed for", oci_layout_dir.name, file=sys.stderr, flush=True)
+                err = (skopeo.stderr or skopeo.stdout or "").strip()
+                print("  WARN: skopeo copy oci->archive failed for", Path(oci_layout_dir).name, file=sys.stderr, flush=True)
+                for line in err.splitlines()[:5]:
+                    print(f"    {line}", file=sys.stderr, flush=True)
             return None
-
-        # Chainguard openscap is minimal (no shell); use oscap-docker directly
-        cmd = [
-            "docker",
-            "run",
-            "-i",
-            "--rm",
-            "-u",
-            "0:0",
-            "--pid=host",
-            "-v",
-            "/var/run/docker.sock:/var/run/docker.sock",
-            "-v",
-            f"{out_dir}:/out",
-            "--entrypoint",
-            "oscap-docker",
-            OPENSCAP_IMAGE,
-            "image",
-            image_ref,
-            "xccdf",
-            "eval",
-            "--profile",
-            STIG_PROFILE,
-            "--report",
-            "/out/report.html",
-            "--results",
-            "/out/results.xml",
-            STIG_DATASTREAM,
-        ]
+        if not _extract_docker_archive_rootfs(archive_path, rootfs_path):
+            if verbose:
+                import sys
+                print("  WARN: unable to extract rootfs for", Path(oci_layout_dir).name, file=sys.stderr, flush=True)
+            return None
+        cmd = _stig_eval_cmd(rootfs_path, report_path, results_path)
+        if cmd is None:
+            return None
         result = subprocess.run(
             cmd,
             capture_output=True,
             text=True,
             timeout=timeout,
+            env=env,
         )
-        _docker_rmi_best_effort(image_ref)
         # oscap exit codes: 0=all pass, 1=error, 2=findings — treat 0 and 2 as success
         if result.returncode not in (0, 2) or not results_path.exists():
             if verbose and (result.stderr or result.stdout):

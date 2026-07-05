@@ -179,13 +179,17 @@ def test_docker_load_and_get_image_ref_parses_output(monkeypatch, tmp_path: Path
 def test_run_stig_image_success(monkeypatch, tmp_path: Path) -> None:
     tar = tmp_path / "img.tar"
     tar.write_text("x", encoding="utf-8")
-    monkeypatch.setattr(runners, "_docker_load_and_get_image_ref", lambda *args, **kwargs: "repo:tag")
+    # Unified path: extract rootfs -> OS-aware oscap-chroot (mechanism tested separately).
+    monkeypatch.setattr(runners, "_extract_docker_archive_rootfs", lambda *a, **k: True)
+    monkeypatch.setattr(
+        runners, "resolve_stig_content_for_rootfs",
+        lambda *a, **k: (Path(runners.STIG_DATASTREAM), runners.STIG_PROFILE),
+    )
 
-    def _fake_run(cmd, capture_output=True, text=True, timeout=180):
-        if cmd[:2] == ["docker", "run"]:
-            out_mount = [part for part in cmd if part.endswith(":/out")][0]
-            out_dir = Path(out_mount.split(":", 1)[0])
-            (out_dir / "results.xml").write_text("<xml/>", encoding="utf-8")
+    def _fake_run(cmd, capture_output=True, text=True, timeout=180, env=None):
+        if cmd and cmd[0] == "oscap-chroot":
+            results_path = Path(cmd[cmd.index("--results") + 1])
+            results_path.write_text("<xml/>", encoding="utf-8")
             return _Completed(2)
         return _Completed(0)
 
@@ -263,10 +267,10 @@ def test_run_stig_rootfs_uses_oscap_chroot(monkeypatch, tmp_path: Path) -> None:
     assert commands[0][commands[0].index("--profile") + 1] == runners.STIG_PROFILE
 
 
-def test_run_stig_image_handles_missing_loaded_image(monkeypatch, tmp_path: Path) -> None:
+def test_run_stig_image_handles_unextractable_tar(monkeypatch, tmp_path: Path) -> None:
     tar = tmp_path / "img.tar"
     tar.write_text("x", encoding="utf-8")
-    monkeypatch.setattr(runners, "_docker_load_and_get_image_ref", lambda *args, **kwargs: None)
+    monkeypatch.setattr(runners, "_extract_docker_archive_rootfs", lambda *a, **k: False)
     assert runners.run_stig_image(tar, "asset", temp_dir=tmp_path) is None
 
 
@@ -274,20 +278,26 @@ def test_run_stig_oci_layout_success_and_failure(monkeypatch, tmp_path: Path) ->
     oci = tmp_path / "oci"
     oci.mkdir()
 
-    monkeypatch.setattr(runners, "_skopeo_copy_oci_to_docker", lambda *args, **kwargs: True)
+    monkeypatch.setattr(runners, "_extract_docker_archive_rootfs", lambda *a, **k: True)
+    monkeypatch.setattr(
+        runners, "resolve_stig_content_for_rootfs",
+        lambda *a, **k: (Path(runners.STIG_DATASTREAM), runners.STIG_PROFILE),
+    )
 
-    def _ok_run(cmd, capture_output=True, text=True, timeout=180):
-        if cmd[:2] == ["docker", "run"]:
-            out_mount = [part for part in cmd if part.endswith(":/out")][0]
-            out_dir = Path(out_mount.split(":", 1)[0])
-            (out_dir / "results.xml").write_text("<stig/>", encoding="utf-8")
+    def _ok_run(cmd, capture_output=True, text=True, timeout=180, env=None):
+        if cmd[0] == "skopeo":
+            Path(cmd[-1].split(":", 1)[1]).write_text("archive", encoding="utf-8")  # docker-archive:<path>
+            return _Completed(0)
+        if cmd and cmd[0] == "oscap-chroot":
+            Path(cmd[cmd.index("--results") + 1]).write_text("<stig/>", encoding="utf-8")
             return _Completed(0)
         return _Completed(0)
 
     monkeypatch.setattr(runners.subprocess, "run", _ok_run)
     assert runners.run_stig_oci_layout(oci, "asset", temp_dir=tmp_path) == "<stig/>"
 
-    monkeypatch.setattr(runners, "_skopeo_copy_oci_to_docker", lambda *args, **kwargs: False)
+    # skopeo copy failure -> None
+    monkeypatch.setattr(runners.subprocess, "run", lambda *a, **k: _Completed(1))
     assert runners.run_stig_oci_layout(oci, "asset", temp_dir=tmp_path, verbose=True) is None
 
 
