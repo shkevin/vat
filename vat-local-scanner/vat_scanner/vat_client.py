@@ -198,6 +198,24 @@ def _ingest_headers(
     return h
 
 
+def fetch_known_digests(base_url: str, api_key: str, timeout: int = 30) -> set[str] | None:
+    """GET /api/scan/known-digests -> set of normalized sha256 digests VAT already
+    has findings/SBOMs for. Used to reconcile incremental scan state against VAT's
+    actual state: if a previously-scanned digest is no longer known (asset deleted),
+    the scanner re-scans instead of skipping. Returns None on any failure, so the
+    caller falls back to pure local-state behavior (never a thundering re-scan)."""
+    try:
+        url = _api_url(base_url, "/api/scan/known-digests")
+        req = urllib.request.Request(url, headers={"Authorization": f"Bearer {api_key}"})
+        data = _urlopen_json_with_retry(req, timeout=timeout, label="known-digests")
+    except Exception:
+        return None
+    digests = data.get("digests") if isinstance(data, dict) else None
+    if not isinstance(digests, list):
+        return None
+    return {str(d).strip().lower() for d in digests if str(d).strip()}
+
+
 def ingest_report(
     base_url: str,
     api_key: str,

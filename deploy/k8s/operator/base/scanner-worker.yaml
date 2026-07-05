@@ -43,7 +43,7 @@ spec:
               scan_types = {
                   item.strip()
                   for item in os.environ.get(
-                      "VAT_INVENTORY_SCAN_TYPES", "image-sca,image-grype,image-sbom"
+                      "VAT_INVENTORY_SCAN_TYPES", "image-sca,image-grype,image-sbom,image-stig"
                   ).split(",")
                   if item.strip()
               }
@@ -55,6 +55,8 @@ spec:
                   parsers.append(("grype", "container"))
               if "image-sbom" in scan_types:
                   parsers.append(("cyclonedx", "container"))
+              if "image-stig" in scan_types:
+                  parsers.append(("openscap", "container"))
               # k8s config worker also runs gitleaks secret detection (repo asset).
               parsers.append(("gitleaks", "repo"))
 
@@ -76,7 +78,7 @@ spec:
                   if [ -s /image-inventory/images.json ]; then
                     if vat-scan scan-inventory /image-inventory/images.json \
                       --state-file /state/scan-state.json \
-                      --scan-types "${VAT_INVENTORY_SCAN_TYPES:-image-sca,image-grype,image-sbom}" \
+                      --scan-types "${VAT_INVENTORY_SCAN_TYPES:-image-sca,image-grype,image-sbom,image-stig}" \
                       --full-rescan-interval-seconds "${VAT_FULL_RESCAN_INTERVAL_SECONDS:-86400}"; then
                       sleep "${VAT_SCAN_INTERVAL_SECONDS:-3600}"
                       continue
@@ -146,7 +148,7 @@ spec:
             - name: VAT_FULL_RESCAN_INTERVAL_SECONDS
               value: "86400"
             - name: VAT_INVENTORY_SCAN_TYPES
-              value: image-sca,image-grype,image-sbom
+              value: image-sca,image-grype,image-sbom,image-stig
             - name: VAT_INVENTORY_FALLBACK_IMAGE_PULL_SECRET_NAMES
               value: harbor-creds,ghcr-creds
             - name: VAT_K8S_SCAN_INTERVAL_SECONDS

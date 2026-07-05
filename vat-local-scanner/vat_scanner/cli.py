@@ -41,6 +41,7 @@ from vat_scanner.scan import run_scan
 from vat_scanner.snippet_enrichment import enrich_reports
 from vat_scanner.snippets import strip_snippets
 from vat_scanner.vat_client import (
+    fetch_known_digests,
     VATClientError,
     cache_key,
     ensure_source,
@@ -229,7 +230,7 @@ def _parse_scan_types(s: str) -> list[str]:
 # enabled by default in the operator via VAT_INVENTORY_SCAN_TYPES) but kept out
 # of the bare-CLI default so a lone `scan-inventory` stays Trivy-only.
 INVENTORY_SCAN_TYPES = ("image-sca", "image-sbom")
-INVENTORY_SCAN_TYPES_ALL = ("image-sca", "image-grype", "image-sbom")
+INVENTORY_SCAN_TYPES_ALL = ("image-sca", "image-grype", "image-sbom", "image-stig")
 RUNTIME_SCAN_TYPES = ("image-sca", "image-sbom", "container-stig")
 RUNTIME_SCAN_TYPES_ALL = ("image-sca", "image-grype", "image-sbom", "container-stig")
 NODE_SCAN_TYPES = ("node-stig", "node-oval-cve")
@@ -248,6 +249,9 @@ def _parse_inventory_scan_types(raw: str | None) -> list[str]:
         "grype": "image-grype",
         "sbom": "image-sbom",
         "cyclonedx": "image-sbom",
+        "stig": "image-stig",
+        "openscap": "image-stig",
+        "container-stig": "image-stig",
     }
     out: list[str] = []
     for part in requested:
@@ -2068,12 +2072,14 @@ def cmd_scan_inventory(args: argparse.Namespace) -> int:
     scan_types = _parse_inventory_scan_types(getattr(args, "scan_types", None))
     parser_keys: dict[str, str] = {}
     if not args.dry_run and admin_token:
-        for parser_id in ("trivy", "grype", "cyclonedx"):
+        for parser_id in ("trivy", "grype", "cyclonedx", "openscap"):
             if parser_id == "cyclonedx" and "image-sbom" not in scan_types:
                 continue
             if parser_id == "trivy" and "image-sca" not in scan_types:
                 continue
             if parser_id == "grype" and "image-grype" not in scan_types:
+                continue
+            if parser_id == "openscap" and "image-stig" not in scan_types:
                 continue
             try:
                 source_id, key_to_cache = _ensure_parser_ingest_key(
@@ -2094,6 +2100,7 @@ def cmd_scan_inventory(args: argparse.Namespace) -> int:
         parser_keys["trivy"] = api_key
         parser_keys["grype"] = api_key
         parser_keys["cyclonedx"] = api_key
+        parser_keys["openscap"] = api_key
 
     key = parser_keys.get("trivy") or (api_key if not admin_token else "")
     if not args.dry_run and not key and "image-sca" in scan_types:
@@ -2132,6 +2139,17 @@ def cmd_scan_inventory(args: argparse.Namespace) -> int:
         bool(getattr(args, "force_full_rescan", False)),
     )
 
+    # Reconcile local scan state against VAT's actual state: an image whose digest
+    # VAT no longer knows (asset deleted) is re-scanned even if the local signature
+    # matches. None on fetch failure -> fall back to signature-only (no re-scan storm).
+    known_digests: set[str] | None = None
+    if not args.dry_run:
+        recon_key = parser_keys.get("trivy") or key or api_key
+        if recon_key:
+            known_digests = fetch_known_digests(vat_url, recon_key)
+            if known_digests is not None:
+                print(f"Reconcile: VAT knows {len(known_digests)} image digest(s)")
+
     failures = 0
     scanner_failures = 0
     scanned = 0
@@ -2144,9 +2162,19 @@ def cmd_scan_inventory(args: argparse.Namespace) -> int:
             continue
         item_key = _inventory_item_key(item)
         signature = _inventory_item_signature(item) + "|scanTypes=" + ",".join(scan_types)
+        image_digest = str(item.get("imageDigest") or "").strip() or None
+        # VAT still has this image's data unless we have a known-set AND a digest to
+        # check AND that digest is absent (deleted). Undigested / fetch-failure -> trust
+        # local state.
+        vat_has_it = (
+            known_digests is None
+            or image_digest is None
+            or image_digest.strip().lower() in known_digests
+        )
         image_state = (state.get("images") or {}).get(item_key)
         if (
             not full_rescan_due
+            and vat_has_it
             and isinstance(image_state, dict)
             and image_state.get("signature") == signature
         ):
@@ -2154,7 +2182,6 @@ def cmd_scan_inventory(args: argparse.Namespace) -> int:
             print("Skipping unchanged image:", image)
             continue
         scanned += 1
-        image_digest = str(item.get("imageDigest") or "").strip() or None
         targets = _inventory_targets(item)
         print("Scanning image:", image)
         with _temporary_registry_auth_config(item) as docker_config_path:
@@ -2171,6 +2198,11 @@ def cmd_scan_inventory(args: argparse.Namespace) -> int:
             grype_report = (
                 _grype_scan(image, sbom_report, docker_config_path)
                 if "image-grype" in scan_types
+                else None
+            )
+            stig_xml = (
+                run_stig_image_ref(image, image, timeout=600, docker_config_path=docker_config_path)
+                if "image-stig" in scan_types
                 else None
             )
         image_scanner_failures = 0
@@ -2195,6 +2227,14 @@ def cmd_scan_inventory(args: argparse.Namespace) -> int:
                 print("ERROR: Trivy CycloneDX image scan failed or trivy not found.", file=sys.stderr)
             scanner_failures += 1
             image_scanner_failures += 1
+            if getattr(args, "fail_on_error", False):
+                return 1
+        if "image-stig" in scan_types and not stig_xml:
+            if getattr(args, "fail_on_error", False) or getattr(args, "verbose", False):
+                print("ERROR: OpenSCAP STIG image scan produced no results.", file=sys.stderr)
+            # Best-effort: the chainguard STIG profile doesn't apply cleanly to every
+            # base image, so a miss must not block the per-image checkpoint.
+            scanner_failures += 1
             if getattr(args, "fail_on_error", False):
                 return 1
 
@@ -2233,6 +2273,8 @@ def cmd_scan_inventory(args: argparse.Namespace) -> int:
                 if target_sbom_report:
                     count = len(target_sbom_report.get("components") or [])
                     print(f"  cyclonedx: {count} component(s)")
+                if stig_xml:
+                    print(f"  openscap: {count_openscap_findings(stig_xml)} finding(s)")
                 continue
             if target_report:
                 try:
@@ -2269,6 +2311,30 @@ def cmd_scan_inventory(args: argparse.Namespace) -> int:
                         label="grype",
                     )
                     print(f"  grype: {resp}")
+                except VATClientError as e:
+                    target_failures += 1
+                    print(f"\nERROR: {e}", file=sys.stderr)
+                    if getattr(args, "fail_on_error", False):
+                        return 1
+            if stig_xml:
+                openscap_key = parser_keys.get("openscap") or api_key
+                if not openscap_key:
+                    target_failures += 1
+                    print("\nERROR: No OpenSCAP ingest key available.", file=sys.stderr)
+                    if getattr(args, "fail_on_error", False):
+                        return 1
+                    continue
+                try:
+                    resp = ingest_openscap_report(
+                        vat_url,
+                        openscap_key,
+                        stig_xml,
+                        asset=asset,
+                        tag="container-stig",
+                        image_digest=image_digest,
+                        idempotency_key=f"openscap:{asset}:{image}",
+                    )
+                    print(f"  openscap: {resp}")
                 except VATClientError as e:
                     target_failures += 1
                     print(f"\nERROR: {e}", file=sys.stderr)
