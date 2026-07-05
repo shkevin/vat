@@ -49,7 +49,7 @@ spec:
               value: {{ .Values.operator.runtimeProfile | quote }}
             {{- with .Values.operator.clusterName }}
             # Friendly cluster name -> published to vat-cluster-identity; pods source
-            # VAT_CLUSTER_NAME from it. Unset -> kube-system UID (collision-safe).
+            # VAT_CLUSTER_NAME from it. Unset -> <runtime-profile>-<short-uid> (e.g. k3s-1a2b3c4d).
             - name: VAT_OPERATOR_CLUSTER_NAME
               value: {{ . | quote }}
             {{- end }}

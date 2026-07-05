@@ -18,7 +18,7 @@ operator:
   # Friendly cluster name for multi-cluster attribution. Published to the
   # vat-cluster-identity ConfigMap and used in k8s/node asset paths, the
   # X-VAT-Cluster header, and the cluster->tenant map. Leave empty to default to
-  # the kube-system namespace UID (unique per cluster, collision-safe).
+  # <runtime-profile>-<short-uid> (e.g. k3s-1a2b3c4d) from the kube-system UID.
   clusterName: ""
   # Extra namespaces to skip during inventory/scan. The operator's own namespace
   # and the cluster system namespaces (kube-system/public/node-lease) are always

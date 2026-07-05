@@ -11,8 +11,8 @@ spec:
           env:
             # Friendly cluster name -> published to the vat-cluster-identity ConfigMap,
             # which the scanner-worker and node-agent source VAT_CLUSTER_NAME from.
-            # Single source of truth. Leave unset to fall back to the kube-system UID
-            # (collision-safe default for multi-cluster installs).
+            # Single source of truth. Leave unset to fall back to a friendlier auto
+            # default: <runtime-profile>-<short-uid> (e.g. k3s-1a2b3c4d), unique per cluster.
             - name: VAT_OPERATOR_CLUSTER_NAME
               value: k3s-remote
             - name: VAT_OPERATOR_RUNTIME_PROFILE

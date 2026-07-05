@@ -3,6 +3,7 @@ package reconcile
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"gitlab.automatedhass.com/personal/vat/operator/internal/config"
 
@@ -25,7 +26,7 @@ func ReconcileClusterIdentity(ctx context.Context, client kubernetes.Interface, 
 	clusterID := string(ns.UID)
 	clusterName := cfg.ClusterNameOverride
 	if clusterName == "" {
-		clusterName = clusterID
+		clusterName = defaultClusterName(string(cfg.RuntimeProfile.Name), clusterID)
 	}
 
 	name := cfg.ClusterIdentityConfigMapName
@@ -54,4 +55,23 @@ func ReconcileClusterIdentity(ctx context.Context, client kubernetes.Interface, 
 		return "", fmt.Errorf("publish cluster identity ConfigMap %s/%s: %w", cfg.Namespace, name, err)
 	}
 	return clusterName, nil
+}
+
+// defaultClusterName builds a readable, unique fallback when no friendly name is
+// set (VAT_OPERATOR_CLUSTER_NAME): "<runtime-profile>-<short-uid>", e.g.
+// k3s-1a2b3c4d. Readable (names the distro) and unique (carries the kube-system
+// UID prefix); the full UID stays in the ConfigMap's clusterId key.
+func defaultClusterName(profile, clusterID string) string {
+	profile = strings.TrimSpace(profile)
+	if profile == "" || profile == "auto" {
+		profile = "cluster"
+	}
+	short := clusterID
+	if len(short) > 8 {
+		short = short[:8]
+	}
+	if short == "" {
+		return profile
+	}
+	return profile + "-" + short
 }
