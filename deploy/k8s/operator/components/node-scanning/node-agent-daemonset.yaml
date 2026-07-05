@@ -52,7 +52,7 @@ spec:
               runtime_scan_types = {
                   item.strip()
                   for item in os.environ.get(
-                      "VAT_RUNTIME_SCAN_TYPES", "image-sca,image-sbom,container-stig"
+                      "VAT_RUNTIME_SCAN_TYPES", "image-sca,image-grype,image-sbom,container-stig"
                   ).split(",")
                   if item.strip()
               }
@@ -76,6 +76,8 @@ spec:
               parsers = []
               if image_scans and "image-sca" in runtime_scan_types:
                   parsers.append(("trivy", "package"))
+              if image_scans and "image-grype" in runtime_scan_types:
+                  parsers.append(("grype", "package"))
               if image_scans and "image-sbom" in runtime_scan_types:
                   parsers.append(("cyclonedx", "package"))
               if "node-stig" in node_scan_types or (image_scans and "container-stig" in runtime_scan_types):
@@ -147,7 +149,7 @@ spec:
                     --containerd-socket "${VAT_CONTAINERD_SOCKET_PATH:-/run/containerd/containerd.sock}" \
                     --containerd-namespace "${VAT_CONTAINERD_NAMESPACE:-k8s.io}" \
                     --docker-socket "${VAT_DOCKER_SOCKET_PATH:-/host/var/run/docker.sock}" \
-                    --scan-types "${VAT_RUNTIME_SCAN_TYPES:-image-sca,image-sbom,container-stig}" \
+                    --scan-types "${VAT_RUNTIME_SCAN_TYPES:-image-sca,image-grype,image-sbom,container-stig}" \
                     --state-file /state/runtime-scan-state.json \
                     --full-rescan-interval-seconds "${VAT_RUNTIME_FULL_RESCAN_INTERVAL_SECONDS:-86400}" || scan_ok=0
                 fi
@@ -194,7 +196,7 @@ spec:
             - name: VAT_NODE_AGENT_IMAGE_SCANS
               value: "false"
             - name: VAT_RUNTIME_SCAN_TYPES
-              value: image-sca,image-sbom,container-stig
+              value: image-sca,image-grype,image-sbom,container-stig
             - name: VAT_RUNTIME_IMAGE_PULL_SECRETS
               value: vat-operator/harbor-creds
             - name: VAT_NODE_SCAN_INTERVAL_SECONDS
