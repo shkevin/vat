@@ -2330,7 +2330,7 @@ def cmd_scan_inventory(args: argparse.Namespace) -> int:
                         openscap_key,
                         stig_xml,
                         asset=asset,
-                        tag="container-stig",
+                        tag=tag,
                         image_digest=image_digest,
                         idempotency_key=f"openscap:{asset}:{image}",
                     )

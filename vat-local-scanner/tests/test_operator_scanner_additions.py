@@ -254,7 +254,8 @@ def test_cmd_scan_inventory_ingests_container_stig(monkeypatch, tmp_path: Path) 
     assert cli.cmd_scan_inventory(args) == 0
     assert len(openscap_calls) == 1, "container STIG ingested once per image asset"
     assert openscap_calls[0]["asset"] == "registry.example.com/api:v1"
-    assert openscap_calls[0]["tag"] == "container-stig"
+    # tag is the image tag (same as trivy/grype/sbom on this asset), not the scan type
+    assert openscap_calls[0]["tag"] == "v1"
 
 
 def test_cmd_scan_k8s_inventory_ingests_gitleaks_under_namespace_asset(monkeypatch, tmp_path: Path) -> None:
