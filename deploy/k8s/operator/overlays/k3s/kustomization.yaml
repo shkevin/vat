@@ -6,7 +6,9 @@ components:
   - ../../components/node-scanning
 patches:
   - path: patch-runtime-profile.yaml
-# Operator intentionally stopped (scaled to 0) — 2026-07-13. Revert to resume.
+# Operator + worker intentionally stopped (scaled to 0) — 2026-07-13. Revert to resume.
 replicas:
   - name: vat-operator
+    count: 0
+  - name: vat-scanner-worker
     count: 0
