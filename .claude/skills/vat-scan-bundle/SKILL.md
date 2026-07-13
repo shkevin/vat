@@ -17,19 +17,22 @@ VAT_ADMIN_TOKEN='vat_…' \
   .claude/skills/vat-scan-bundle/scan-bundle.sh ./2026-04-13-1250.tar.gz
 ```
 
-Defaults: `--scan-types code,dependencies,stig`, `--asset kamiwaza-bundle`, tag auto-derived
-from `release_origination.md`, endpoint auto-discovered (NodePort preferred), `--reset-keys` on.
+Defaults: `--scan-types code,dependencies,container,stig`, `--asset kamiwaza-bundle`, tag auto-derived
+from `release_origination.md`, endpoint auto-discovered (LB VIP preferred — see below), `--reset-keys` on.
 The scan runs in the foreground and is **multi-hour** for full image scope — launch it with
 `run_in_background: true` and tail the log.
 
 ## What the script does (and why)
 
-1. **Picks a reachable VAT endpoint.** Probes `/api/findings` with the token. Order:
-   explicit `--vat-url`/`$VAT_URL` → **NodePort on each node IP** → LB external IP.
-   *Why NodePort first:* the frontend LoadBalancer **VIP `10.0.40.173:3000` is flaky** —
-   it has gone fully connection-refused mid-session while the cluster stayed healthy
-   (VIP failover / stale ARP). NodePort `:<nodePort>` on `10.0.40.60/61/62` is stable.
-   See `[[reference_vat_access_topology]]`.
+1. **Picks a reachable VAT endpoint — probed from INSIDE the scanner container.**
+   Order: explicit `--vat-url`/`$VAT_URL` → **LB VIP** → NodePort fallback.
+   *Why probe from the container, and VIP first:* the scan runs in a container. On
+   WSL2/Docker-Desktop the **host** can reach the NodePort node IPs `10.0.40.60/61/62:<nodePort>`
+   but the **container cannot** (Docker's network is the Docker VM, not the WSL2 distro) — even
+   `--network host` fails. A host-side probe would pick a NodePort the scan can't reach, dying at
+   `Ensure source failed: [Errno 113] No route to host`. The LB VIP `10.0.40.173:3000` IS
+   container-reachable, so `try_url` runs the probe in the scanner image and prefers the VIP.
+   See `[[scanner-container-reaches-vip-not-nodeport]]`.
 2. **Extracts the bundle and nested archives.** Top tarball → extensions `.tar.gz`,
    RPM payload (`rpm2cpio | cpio`), helm `.tar`. The scanner only descends **one level** into
    archives, so nested content must be pre-extracted or its code/deps are invisible.
@@ -47,9 +50,14 @@ The scan runs in the foreground and is **multi-hour** for full image scope — l
 
 ## Scan types — important
 
-- `code` → semgrep over source files (RPM payload, extension repo source).
-- `dependencies` → grype over the filesystem **and** over container images.
-- `stig` → OpenSCAP, runs **only on container images**. No images in scope ⇒ **zero STIG findings**.
+- `code` → semgrep + gitleaks over source files (RPM payload, extension repo source).
+- `dependencies` → CycloneDX **SBOM** per image (components + **License** findings, **NOT CVEs**) plus
+  grype over the *filesystem* (finds little — deps live inside the images).
+- `container` → **trivy image per tar = per-image CVE vulnerability findings.** This is the ONLY
+  scan-type that yields container CVEs; `dependencies` alone gives an SBOM but zero CVEs. Include it
+  for any real release/vuln scan (it's in the default set).
+- `stig` → OpenSCAP per image (DISA STIG). Runs **only on container images**; distroless/chainguard
+  images legitimately yield 0. No images in scope ⇒ zero STIG findings.
 
 So `--image-scope` controls coverage vs. time:
 
@@ -66,14 +74,22 @@ findings fast.
 
 - **Image scope** (above) — the time/coverage tradeoff. Default `all`.
 - `--reset-keys` rotates the asset's scan key (on by default, matches the established workflow).
-- Findings push **only at the end**; nothing partial lands in VAT if it's interrupted.
+- **Incremental push:** each parser pushes to VAT the moment it completes (`scan_status=running`),
+  not only at the end — so a mid-run crash KEEPS everything already pushed. To recover, re-run with
+  only the scan-types that hadn't pushed (e.g. drop `stig` if STIG already landed).
+  See `[[scanner-scan-types-and-incremental-resume]]`.
 
 ## Verifying it's working
 
 - `docker ps --filter ancestor=vat-scanner:latest` → container `Up`.
 - Tail the log for `→ STIG i/N` and `→ Trivy i/N` per-image progress, then
-  `Pushing to VAT…` and `pushed (N created, M merged)` at the end.
+  `Pushing to VAT…` and `Done. Asset(s): kamiwaza-bundle` at the end. `container` scans push the
+  merged trivy report in batches (20 Results/POST) to stay under the ingest timeout — a single giant
+  POST hits `ClientDisconnect` → HTTP 500.
 - Confirm in VAT: `GET /api/findings?asset=kamiwaza-bundle&tag=vX.Y.Z` via the selected endpoint.
+  All images roll up under the single `kamiwaza-bundle` asset (single mode); each finding records
+  its source image as provenance (`componentBase`/`file_path`). Use `--asset-mode multi` for one
+  asset per image instead.
 
 ## Cleanup
 
@@ -82,6 +98,8 @@ Remove it to reclaim disk once findings are confirmed in VAT.
 
 ## Related
 
-- `[[reference_vat_access_topology]]` — endpoints / why the VIP 502s and flakes.
+- `[[scanner-container-reaches-vip-not-nodeport]]` — why the scanner container reaches the VIP, not NodePort.
+- `[[scanner-scan-types-and-incremental-resume]]` — scan-type semantics, incremental push / crash recovery, the docker-load + ingest-batching fixes.
+- `[[reference_vat_access_topology]]` — endpoints (HOST access; opposite of the container case above).
 - `[[feedback_use_k8s_not_compose]]` — verify against the live cluster, not docker compose.
-- Scanner source: `vat-local-scanner/vat_scanner/` (`scan.py`, `scanners/detection.py`).
+- Scanner source: `vat-local-scanner/vat_scanner/` (`scan.py`, `cli.py`, `scanners/runners.py`).

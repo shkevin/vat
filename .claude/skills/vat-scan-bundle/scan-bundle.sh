@@ -33,7 +33,7 @@
 set -euo pipefail
 
 # ---- defaults ----
-SCAN_TYPES="code,dependencies,stig"
+SCAN_TYPES="code,dependencies,container,stig"
 ASSET="kamiwaza-bundle"
 ASSET_MODE="single"
 TAG=""
@@ -81,21 +81,39 @@ case "$ASSET_MODE" in single|multi) ;; *) die "--asset-mode must be single|multi
 
 # ---- endpoint selection -----------------------------------------------------
 # The frontend proxies /api -> backend. We probe /api/findings (needs token).
-# Preference: explicit URL > NodePort on each node IP > LB external IP.
+# CRITICAL: probe from INSIDE the scanner container, not the host. On
+# WSL2/Docker-Desktop the host can reach the NodePort node IPs but the scanner
+# container CANNOT (Docker's network is the Docker VM, not the WSL2 distro), so a
+# host-side probe picks an endpoint the scan can't reach -> the scan dies at
+# "Ensure source failed: [Errno 113] No route to host". Preference:
+# explicit URL > LB VIP (container-reachable) > NodePort (fallback).
 try_url() {
   local url="$1" code
-  code=$(curl -s -m 6 -o /dev/null -w "%{http_code}" \
-         -H "Authorization: Bearer ${VAT_ADMIN_TOKEN:-x}" \
-         "$url/api/findings?limit=1" 2>/dev/null || true)
+  # Probe in the scanner image so it uses the same network context as the scan.
+  # Returns the HTTP status (200 == reachable + authed).
+  code=$(docker run --rm --entrypoint python3 "$SCANNER_IMAGE" -c '
+import sys, urllib.request, urllib.error
+try:
+    req = urllib.request.Request(sys.argv[1] + "/api/findings?limit=1",
+                                 headers={"Authorization": "Bearer " + sys.argv[2]})
+    with urllib.request.urlopen(req, timeout=6) as r: print(r.status)
+except urllib.error.HTTPError as e: print(e.code)
+except Exception: print(0)
+' "$url" "${VAT_ADMIN_TOKEN:-x}" 2>/dev/null || true)
   [ "$code" = "200" ]
 }
 discover_url() {
   if [ -n "$VAT_URL" ]; then
     try_url "$VAT_URL" && { echo "$VAT_URL"; return 0; }
-    warn "Provided VAT_URL ($VAT_URL) did not return 200; falling back to discovery"
+    warn "Provided VAT_URL ($VAT_URL) not reachable from the scanner container; falling back to discovery"
   fi
   if command -v kubectl >/dev/null 2>&1; then
     local np port lb
+    # LB VIP first — it is what the scanner container can actually reach.
+    lb=$(kubectl get svc vat-frontend -n "$NAMESPACE" -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
+    port=$(kubectl get svc vat-frontend -n "$NAMESPACE" -o jsonpath='{.spec.ports[0].port}' 2>/dev/null || true)
+    if [ -n "$lb" ] && [ -n "$port" ] && try_url "http://$lb:$port"; then echo "http://$lb:$port"; return 0; fi
+    # NodePort fallback (only where the container can route to node IPs).
     np=$(kubectl get svc vat-frontend -n "$NAMESPACE" -o jsonpath='{.spec.ports[0].nodePort}' 2>/dev/null || true)
     if [ -n "$np" ]; then
       local ip
@@ -103,9 +121,6 @@ discover_url() {
         if try_url "http://$ip:$np"; then echo "http://$ip:$np"; return 0; fi
       done
     fi
-    lb=$(kubectl get svc vat-frontend -n "$NAMESPACE" -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
-    port=$(kubectl get svc vat-frontend -n "$NAMESPACE" -o jsonpath='{.spec.ports[0].port}' 2>/dev/null || true)
-    if [ -n "$lb" ] && [ -n "$port" ] && try_url "http://$lb:$port"; then echo "http://$lb:$port"; return 0; fi
   fi
   return 1
 }
