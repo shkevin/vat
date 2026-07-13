@@ -406,23 +406,33 @@ def run_scan(
             if doc:
                 cyclonedx_docs.append((doc, asset_name, None, None))
         if container_sources:
-            trivy_cdx_timeout = min(180, timeout_sec)
+            trivy_cdx_timeout = min(600, timeout_sec)
 
             def _scan_cyclonedx(src: object) -> tuple[dict | None, float, dict[str, int]]:
                 t0 = time.perf_counter()
                 local_modes: dict[str, int] = {}
-                if src.format == "docker-save":
-                    img_cdx = run_trivy_image_cyclonedx(
-                        src.path,
-                        timeout=trivy_cdx_timeout,
-                        mode_stats=local_modes,
-                    )
-                else:
-                    img_cdx = run_trivy_oci_layout_cyclonedx(
-                        src.path,
-                        timeout=trivy_cdx_timeout,
-                        mode_stats=local_modes,
-                    )
+                # ponytail: guard the whole per-image body — this runs under
+                # executor.map, so any unhandled exception (subprocess timeout,
+                # OOM, parse error) would propagate and abort the entire run,
+                # discarding all in-memory findings before the push. One bad
+                # image degrades to None, the rest still scan and push.
+                try:
+                    if src.format == "docker-save":
+                        img_cdx = run_trivy_image_cyclonedx(
+                            src.path,
+                            timeout=trivy_cdx_timeout,
+                            mode_stats=local_modes,
+                        )
+                    else:
+                        img_cdx = run_trivy_oci_layout_cyclonedx(
+                            src.path,
+                            timeout=trivy_cdx_timeout,
+                            mode_stats=local_modes,
+                        )
+                except Exception as exc:
+                    print(f"  WARN: cyclonedx scan failed for {getattr(src, 'path', src)}: {exc}",
+                          file=sys.stderr, flush=True)
+                    img_cdx = None
                 return img_cdx, time.perf_counter() - t0, local_modes
 
             max_workers = min(2, len(container_sources))

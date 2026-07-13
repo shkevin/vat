@@ -363,6 +363,12 @@ def _docker_load_and_get_image_ref(tar_path: Path, timeout: int = 60) -> str | N
         )
     except FileNotFoundError:
         return None
+    except subprocess.TimeoutExpired:
+        # ponytail: multi-GB image tars can exceed the load timeout. Degrade to
+        # "skip this image" (return None) instead of raising — a single slow load
+        # must never abort a multi-hour run before findings are pushed.
+        print(f"  WARN: docker load timed out after {timeout}s for {tar_path.name}", file=sys.stderr, flush=True)
+        return None
     if result.returncode != 0:
         return None
     out = result.stdout.strip() + "\n" + result.stderr.strip()
@@ -1141,7 +1147,7 @@ def run_trivy_image_cyclonedx(
             pass
 
     # Fallback path: load tar into Docker and scan by image ref.
-    image_ref = _docker_load_and_get_image_ref(tar_path, timeout=min(60, timeout))
+    image_ref = _docker_load_and_get_image_ref(tar_path, timeout=min(600, timeout))
     if not image_ref:
         return None
     try:

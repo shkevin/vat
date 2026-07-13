@@ -96,6 +96,11 @@ def _ingest_headers_for_item(
     return (can_img, None, can_tag)
 
 
+# Max trivy Results per ingest POST. Keeps container-bundle payloads small enough
+# to upload within the ingest timeout (see _push_report else branch).
+_TRIVY_RESULT_BATCH = 20
+
+
 def _push_report(
     base_url: str,
     api_key: str,
@@ -203,6 +208,31 @@ def _push_report(
                 )
                 responses.append(resp)
     else:
+        # ponytail: the container trivy scan merges ALL images into one
+        # {"Results": [...]} doc. For a 100+ image bundle that single POST is too
+        # large to upload within the ingest timeout -> ClientDisconnect -> HTTP 500
+        # and nothing lands. Batch the Results array so each POST stays small,
+        # matching the per-image chunking cyclonedx/openscap already use.
+        # ponytail: batches by Result count; a single Result with thousands of
+        # vulns could still be large — split per-vuln only if that ever bites.
+        results = report.get("Results") if isinstance(report, dict) else None
+        if results and len(results) > _TRIVY_RESULT_BATCH:
+            head = {k: v for k, v in report.items() if k != "Results"}
+            for bstart in range(0, len(results), _TRIVY_RESULT_BATCH):
+                batch = {**head, "Results": results[bstart : bstart + _TRIVY_RESULT_BATCH]}
+                ingest_report(
+                    base_url,
+                    api_key,
+                    batch,
+                    asset=asset,
+                    tag=tag,
+                    scan_id=scan_id,
+                    scan_status=scan_status,
+                    idempotency_key=(
+                        f"{idempotency_prefix}:batch{bstart}" if idempotency_prefix else None
+                    ),
+                )
+            return None
         ingest_report(
             base_url,
             api_key,
