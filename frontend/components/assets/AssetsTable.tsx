@@ -171,7 +171,7 @@ function normalizeSeverity(s: string): string {
  * (28px). Tags is column 5 — must not use a fixed narrow width or chips
  * truncate in the wrong column. */
 const ASSETS_TABLE_GRID_COLS =
-  "28px 28px minmax(280px, 3fr) 90px minmax(220px, 2fr) 90px 90px 90px 1fr";
+  "28px 28px minmax(280px, 3fr) 90px minmax(220px, 2fr) 90px 90px 90px minmax(150px, 1.4fr) 1fr";
 
 function AssetTagsCell({ asset }: { asset: Asset }) {
   const isContainer = getAssetTypeFromAsset(asset) === "container";
@@ -273,6 +273,7 @@ const ASSET_COLUMNS: { label: string; sortKey: string }[] = [
   { label: "Findings Verified", sortKey: "verified" },
   { label: "ABC", sortKey: "abc" },
   { label: "ORA", sortKey: "ora" },
+  { label: "Severity (Open)", sortKey: "" },
   { label: "Finding Statuses", sortKey: "statuses" },
 ];
 
@@ -438,6 +439,33 @@ export function AssetsTable({
           ? groupedStatusBreakdown(asset.findings)
           : asset.statusBreakdown,
       );
+    }
+    return out;
+  }, [displayedAssets, effectiveGroupFindings]);
+
+  // Per-asset open-finding counts by severity — powers the per-row Severity
+  // chips. Computed the same group/instance-aware way as the toolbar's
+  // aggregate `severityCounts` so per-row chips sum to the toolbar totals.
+  const severityCountsByAsset = useMemo(() => {
+    const out = new Map<string, Record<string, number>>();
+    for (const asset of displayedAssets) {
+      const counts: Record<string, number> = {};
+      for (const sev of SEV_ORDER) counts[sev] = 0;
+      const seenGroups = new Set<string>();
+      for (const f of asset.findings) {
+        if (!isOpenRisk(f.status)) continue;
+        if (effectiveGroupFindings) {
+          const gk = effectiveGroupKey(f);
+          if (seenGroups.has(gk)) continue;
+          seenGroups.add(gk);
+        }
+        const s = normalizeSeverity(f.severity ?? "Informational");
+        const key = (SEV_ORDER as readonly string[]).includes(s)
+          ? s
+          : "Informational";
+        counts[key] = (counts[key] ?? 0) + 1;
+      }
+      out.set(asset.id, counts);
     }
     return out;
   }, [displayedAssets, effectiveGroupFindings]);
@@ -877,6 +905,54 @@ export function AssetsTable({
                 <span style={{ ...mono, fontSize: 11, color: "var(--app-fg)" }}>
                   {asset.oraPct}%
                 </span>
+                <div
+                  style={{
+                    display: "flex",
+                    flexWrap: "wrap",
+                    gap: 4,
+                    alignItems: "center",
+                    minWidth: 0,
+                  }}
+                >
+                  {(() => {
+                    const c = severityCountsByAsset.get(asset.id);
+                    const chips = SEV_ORDER.filter((sev) => (c?.[sev] ?? 0) > 0);
+                    if (chips.length === 0)
+                      return (
+                        <span
+                          style={{
+                            ...mono,
+                            fontSize: 10,
+                            color: "var(--app-muted)",
+                          }}
+                        >
+                          —
+                        </span>
+                      );
+                    return chips.map((sev) => {
+                      const s = SEV[sev] ?? SEV.Informational;
+                      return (
+                        <span
+                          key={sev}
+                          title={`${sev}: ${c![sev]} open`}
+                          style={{
+                            ...mono,
+                            fontSize: 10,
+                            padding: "1px 5px",
+                            borderRadius: 3,
+                            background: s.bg,
+                            color: s.c,
+                            border: `1px solid ${s.c}40`,
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          {sev[0]}
+                          {c![sev]}
+                        </span>
+                      );
+                    });
+                  })()}
+                </div>
                 <div
                   style={{
                     ...sans,
