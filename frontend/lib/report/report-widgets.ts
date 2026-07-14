@@ -1212,13 +1212,15 @@ function renderRepoTable(
         repo.low > 0 ? "low-val" : ""
       }">${
         repo.low || "-"
+      }</td><td class="text-right mono repo-risk-compliance">${
+        repo.complianceTotal || "-"
       }</td><td class="text-right mono" style="font-weight:600">${
         repo.score
       }</td></tr>`;
     })
     .join("");
   const attrs = sectionFilterAttrs(ctx);
-  return `<div class="section"><div${attrs} data-report-aggregate="repo-risk" data-limit="${limit}"><h2>Repository Risk Ranking</h2><table><thead><tr><th>Repository</th><th class="text-right">Critical</th><th class="text-right">High</th><th class="text-right">Medium</th><th class="text-right">Low</th><th class="text-right">Risk Score</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
+  return `<div class="section"><div${attrs} data-report-aggregate="repo-risk" data-limit="${limit}"><h2>Repository Risk Ranking</h2><table><thead><tr><th>Repository</th><th class="text-right">Critical</th><th class="text-right">High</th><th class="text-right">Medium</th><th class="text-right">Low</th><th class="text-right" title="Compliance findings: License / IaC / STIG / Secret">Compliance</th><th class="text-right">Risk Score</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
 }
 
 function renderTopVulnsTable(
@@ -1816,13 +1818,15 @@ function renderContainerTable(
         c.low > 0 ? "low-val" : ""
       }">${
         c.low || "-"
+      }</td><td class="text-right mono repo-risk-compliance">${
+        c.complianceTotal || "-"
       }</td><td class="text-right mono" style="font-weight:600">${
         c.score
       }</td></tr>`;
     })
     .join("");
   const attrs = sectionFilterAttrs(ctx);
-  return `<div class="section"><div${attrs} data-report-aggregate="container-risk" data-limit="${limit}"><h2>Container Risk Ranking</h2><table><thead><tr><th>Container</th><th class="text-right">Critical</th><th class="text-right">High</th><th class="text-right">Medium</th><th class="text-right">Low</th><th class="text-right">Risk Score</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
+  return `<div class="section"><div${attrs} data-report-aggregate="container-risk" data-limit="${limit}"><h2>Container Risk Ranking</h2><table><thead><tr><th>Container</th><th class="text-right">Critical</th><th class="text-right">High</th><th class="text-right">Medium</th><th class="text-right">Low</th><th class="text-right" title="Compliance findings: License / IaC / STIG / Secret">Compliance</th><th class="text-right">Risk Score</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
 }
 
 function renderAssetMixDonut(

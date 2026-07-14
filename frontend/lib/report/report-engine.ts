@@ -1359,54 +1359,25 @@ function buildReportFilterBar(
     function renderRiskCell(n, cls) {
       return n > 0 ? '<td class="text-right mono ' + cls + '">' + n + '</td>' : '<td class="text-right mono">-</td>';
     }
-    function countsForRepoName(repoName) {
-      var candidates = getIssuesForNormRepo((repoName + "").trim().toLowerCase());
+    // Severity counts (countMode-aware) for an arbitrary candidate list — used
+    // to compute vulnerability-only risk-table columns from the vuln subset.
+    function sevCountsForList(list) {
       var c = blankCounts();
       if (countMode === "groups") {
-        var byGroup = {};
-        candidates.forEach(function(i) {
-          if (!i.r || isContainerOrVm(i.r)) return;
-          var gid = i.g != null ? i.g : (i.r + "|" + i.d + "|" + (i.s || ""));
-          var sev = normSev(i);
-          if (byGroup[gid]) return;
-          byGroup[gid] = { sev: sev };
-        });
-        Object.keys(byGroup).forEach(function(k) {
-          c[byGroup[k].sev] = (c[byGroup[k].sev] || 0) + 1;
-        });
+        var bg = {};
+        list.forEach(function(i) { var gid = i.g != null ? i.g : (i.r + "|" + i.d + "|" + (i.s || "")); if (bg[gid]) return; bg[gid] = normSev(i); });
+        Object.keys(bg).forEach(function(k) { c[bg[k]] = (c[bg[k]] || 0) + 1; });
       } else {
-        candidates.forEach(function(i) {
-          if (!i.r || isContainerOrVm(i.r)) return;
-          var sev = normSev(i);
-          c[sev] = (c[sev] || 0) + 1;
-        });
+        list.forEach(function(i) { c[normSev(i)] = (c[normSev(i)] || 0) + 1; });
       }
       return c;
     }
-    function countsForContainerName(containerName) {
-      var nr = normContainerName(containerName);
-      var candidates = getIssuesForNormRepo(nr);
-      var c = blankCounts();
-      if (countMode === "groups") {
-        var byGroup = {};
-        candidates.forEach(function(i) {
-          if (!i.r) return;
-          var gid = i.g != null ? i.g : (i.r + "|" + i.d + "|" + (i.s || ""));
-          var sev = normSev(i);
-          if (byGroup[gid]) return;
-          byGroup[gid] = { sev: sev };
-        });
-        Object.keys(byGroup).forEach(function(k) {
-          c[byGroup[k].sev] = (c[byGroup[k].sev] || 0) + 1;
-        });
-      } else {
-        candidates.forEach(function(i) {
-          if (!i.r) return;
-          var sev = normSev(i);
-          c[sev] = (c[sev] || 0) + 1;
-        });
-      }
-      return c;
+    // Total (countMode-aware) for an arbitrary list — used for the compliance column.
+    function groupTotalForList(list) {
+      if (countMode !== "groups") return list.length;
+      var g = {};
+      list.forEach(function(i) { var gid = i.g != null ? i.g : (i.r + "|" + i.d + "|" + (i.s || "")); g[gid] = 1; });
+      return Object.keys(g).length;
     }
     var allSev = (cfg.severities || []).length;
     var allAssetType = (cfg.assetTypes || []).length;
@@ -1641,8 +1612,14 @@ function buildReportFilterBar(
       var names = Array.prototype.map.call(tbody.querySelectorAll("tr td:first-child"), function(td) { return (td.textContent || "").trim(); }).filter(Boolean);
       if (!names.length) return;
       var rows = names.map(function(repoName) {
-        var c = countsForRepoName(repoName);
+        // Split vulnerability vs compliance so severity columns + score stay
+        // vuln-only and compliance rides in its own column (parity with server).
+        var candidates = getIssuesForNormRepo((repoName + "").trim().toLowerCase()).filter(function(i) { return i.r && !isContainerOrVm(i.r); });
+        var vuln = [], comp = [];
+        candidates.forEach(function(i) { if (i.vuln) vuln.push(i); else comp.push(i); });
+        var c = sevCountsForList(vuln);
         var score = scoreCounts(c);
+        var compTotal = groupTotalForList(comp);
         var sevAttr = [];
         if (c.critical > 0) sevAttr.push("critical");
         if (c.high > 0) sevAttr.push("high");
@@ -1655,6 +1632,7 @@ function buildReportFilterBar(
           renderRiskCell(c.high, "high-val") +
           renderRiskCell(c.medium, "medium-val") +
           renderRiskCell(c.low, "low-val") +
+          '<td class="text-right mono repo-risk-compliance">' + (compTotal || "-") + '</td>' +
           '<td class="text-right mono" style="font-weight:600">' + score + '</td>' +
           '</tr>';
       }).join("");
@@ -1666,8 +1644,12 @@ function buildReportFilterBar(
       var names = Array.prototype.map.call(tbody.querySelectorAll("tr td:first-child"), function(td) { return (td.textContent || "").trim(); }).filter(Boolean);
       if (!names.length) return;
       var rows = names.map(function(containerName) {
-        var c = countsForContainerName(containerName);
+        var candidates = getIssuesForNormRepo(normContainerName(containerName)).filter(function(i) { return i.r; });
+        var vuln = [], comp = [];
+        candidates.forEach(function(i) { if (i.vuln) vuln.push(i); else comp.push(i); });
+        var c = sevCountsForList(vuln);
         var score = scoreCounts(c);
+        var compTotal = groupTotalForList(comp);
         var sevAttr = [];
         if (c.critical > 0) sevAttr.push("critical");
         if (c.high > 0) sevAttr.push("high");
@@ -1680,6 +1662,7 @@ function buildReportFilterBar(
           renderRiskCell(c.high, "high-val") +
           renderRiskCell(c.medium, "medium-val") +
           renderRiskCell(c.low, "low-val") +
+          '<td class="text-right mono repo-risk-compliance">' + (compTotal || "-") + '</td>' +
           '<td class="text-right mono" style="font-weight:600">' + score + '</td>' +
           '</tr>';
       }).join("");
@@ -2705,6 +2688,7 @@ function buildReportDocumentShell(
   .repo-bar-fill.repo-bar-compliance { background: rgba(148,163,184,0.4); border-radius: 0; }
   .repo-bar-num { width: 32px; text-align: right; font-weight: 600; font-size: clamp(10px, 1.1vw + 0.4rem, 14px); }
   .repo-bar-comp { color: ${mutedColor}; font-weight: 400; font-size: 0.85em; margin-left: 4px; }
+  .repo-risk-compliance { color: ${mutedColor}; }
   .viz-mttr-bars { margin-bottom: 12px; }
   .mttr-bar-row { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; font-size: clamp(10px, 1.1vw + 0.4rem, 14px); }
   .mttr-bar-track { width: 120px; height: 12px; background: ${trackBg}; border-radius: 4px; overflow: hidden; }
@@ -3006,6 +2990,7 @@ export function buildSingleWidgetPreviewHtml(
   .repo-bar-fill.repo-bar-compliance { background: rgba(100,116,139,0.35); border-radius: 0; }
   .repo-bar-num { width: 28px; text-align: right; font-weight: 600; }
   .repo-bar-comp { color: #64748b; font-weight: 400; font-size: 0.85em; margin-left: 4px; }
+  .repo-risk-compliance { color: #64748b; }
   .viz-mttr-bars { margin-bottom: 12px; }
   .mttr-bar-row { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; font-size: 10px; }
   .mttr-bar-track { width: 120px; height: 12px; background: #f1f5f9; border-radius: 4px; overflow: hidden; }

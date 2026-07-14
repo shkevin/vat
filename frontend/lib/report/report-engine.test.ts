@@ -666,3 +666,65 @@ describe("vulnerability vs compliance in report context", () => {
     expect(ctxMixed.riskScore).toBe(ctxVuln.riskScore);
   });
 });
+
+describe("exported report embedded JS validity (compliance split)", () => {
+  const baseFilters = {
+    repoFilter: [],
+    branchFilter: null,
+    severityFilter: [],
+    dateFrom: null,
+    dateTo: null,
+    notes: "",
+    countMode: "instances" as const,
+  };
+  const mkVuln = (id: string, sev: string): Finding => ({
+    id,
+    findingType: "SCA",
+    fingerprintId: `fp-${id}`,
+    cveId: `CVE-2026-${id}`,
+    severity: sev,
+    status: "Open",
+    sources: [],
+    source: "trivy",
+    audit: [],
+    component: "openssl 3.0",
+    image: "containers/images/img-a",
+    title: id,
+    firstDetectedAt: "2024-01-01T00:00:00Z",
+  });
+  const mkLicense = (id: string): Finding => ({
+    id,
+    findingType: "License",
+    fingerprintId: `fp-${id}`,
+    cveId: undefined as unknown as string,
+    severity: "High",
+    status: "Open",
+    sources: [],
+    source: "trivy",
+    audit: [],
+    component: "busybox",
+    image: "containers/images/img-a",
+    title: `GPL ${id}`,
+    firstDetectedAt: "2024-01-01T00:00:00Z",
+  });
+
+  it("embedded client script parses and the report exposes the Compliance column/KPI", () => {
+    const findings = [mkVuln("1", "Critical"), mkLicense("L1"), mkLicense("L2")];
+    const data = toVATDashboardData(findings, [], "VAT", { groupFindings: true });
+    const definition = createDefaultReportDefinition("VAT");
+    const ctx = computeReportContext(data, { ...definition.filters, ...baseFilters });
+    const html = buildReportHtmlFromDefinition(ctx, definition, { preview: true });
+
+    // Every embedded <script> must be syntactically valid JS (new Function parses,
+    // does not execute) — guards the string-built client filter logic.
+    const scripts = [...html.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/g)].map(
+      (m) => m[1],
+    );
+    expect(scripts.length).toBeGreaterThan(0);
+    for (const body of scripts) {
+      if (body.trim()) expect(() => new Function(body)).not.toThrow();
+    }
+    // Compliance surfaced (KPI label at minimum).
+    expect(html).toContain("Compliance");
+  });
+});
