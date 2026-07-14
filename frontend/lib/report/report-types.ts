@@ -210,6 +210,9 @@ export interface ReportContext {
   notes: string;
   totalIssues: number;
   openIssues: number;
+  /** Open compliance findings (License/IaC/STIG/Secret) — reported separately
+   * from the vulnerability-driven riskScore. */
+  complianceCount: number;
   counts: SeverityCounts;
   riskScore: number;
   riskLevel: string;

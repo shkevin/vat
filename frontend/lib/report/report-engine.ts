@@ -19,6 +19,9 @@ import {
   computePeriodOverPeriodChange,
   countTotalIssues,
   computeSeverityCounts,
+  issueCategory,
+  splitByCategory,
+  withComplianceSegment,
   isOpen,
   getIssuesForRepos,
   getIssuesForAssets,
@@ -508,7 +511,18 @@ export function computeReportContext(
     openIssues,
     countMode,
   );
-  const riskScore = computeFleetRiskScore(openIssues, countMode);
+  // Split vulnerability from compliance (License/IaC/STIG/Secret) so the risk
+  // score and ranking reflect security posture, not GPL license risk. The
+  // compliance count rides along as a separate KPI + a faded bar segment.
+  const { vulnerability: vulnIssues, compliance: compIssues } =
+    splitByCategory(issues);
+  const complianceOpenCount = openIssues.filter(
+    (i) => issueCategory(i) === "compliance",
+  ).length;
+  const vulnOpenIssues = openIssues.filter(
+    (i) => issueCategory(i) === "vulnerability",
+  );
+  const riskScore = computeFleetRiskScore(vulnOpenIssues, countMode);
   const mttr = computeMTTR(issues, countMode);
   const assetFilter = new Set(filters.repoFilter);
   const reposForRisk =
@@ -519,18 +533,47 @@ export function computeReportContext(
     assetFilter.size > 0
       ? (data.containers ?? []).filter((c) => assetFilter.has(c.name))
       : data.containers ?? [];
-  const repoRisk = computeRepoRiskScores(
-    issues,
-    reposForRisk,
-    data.issueGroups,
-    countMode,
+  const emptyRisk = (repo: string) => ({
+    repo,
+    score: 0,
+    critical: 0,
+    high: 0,
+    medium: 0,
+    low: 0,
+    total: 0,
+  });
+  const repoComplianceByAsset = new Map(
+    computeRepoRiskScores(
+      compIssues,
+      reposForRisk,
+      data.issueGroups,
+      countMode,
+    ).map((r) => [r.repo, r.total]),
+  );
+  const repoRisk = withComplianceSegment(
+    computeRepoRiskScores(vulnIssues, reposForRisk, data.issueGroups, countMode),
+    repoComplianceByAsset,
+    emptyRisk,
   ).slice(0, REPORT_CONTEXT_MAX_REPOS);
-  const containerRisk = computeContainerRiskScores(
-    containersForRisk,
-    issues,
-    data.issueGroups ?? [],
-    countMode,
-    data.repos ?? [],
+  const containerComplianceByAsset = new Map(
+    computeContainerRiskScores(
+      containersForRisk,
+      compIssues,
+      data.issueGroups ?? [],
+      countMode,
+      data.repos ?? [],
+    ).map((c) => [c.repo, c.total]),
+  );
+  const containerRisk = withComplianceSegment(
+    computeContainerRiskScores(
+      containersForRisk,
+      vulnIssues,
+      data.issueGroups ?? [],
+      countMode,
+      data.repos ?? [],
+    ),
+    containerComplianceByAsset,
+    emptyRisk,
   ).slice(0, REPORT_CONTEXT_MAX_REPOS);
   const assetMix = computeAssetMix(
     issues,
@@ -569,6 +612,7 @@ export function computeReportContext(
     notes: filters.notes,
     totalIssues: countTotalIssues(issues, countMode),
     openIssues: totalOpen,
+    complianceCount: complianceOpenCount,
     counts,
     riskScore,
     riskLevel: getReportRiskLevel(riskScore),
@@ -719,6 +763,10 @@ interface ReportDataIssue {
   t?: string;
   /** CVE id (used by Top Vulnerabilities recompute on filter change). */
   cve?: string;
+  /** True when this is a security vulnerability (vs a compliance finding:
+   * License/IaC/STIG/Secret). Lets the client-side risk score exclude
+   * compliance so GPL license risk doesn't inflate it on filter. */
+  vuln?: boolean;
   /** Issue ID for issue-list managed section rendering. */
   id?: number;
 }
@@ -789,6 +837,7 @@ function buildReportDataPayload(
         at,
         t: i.title ?? undefined,
         cve: i.cve_id ?? undefined,
+        vuln: issueCategory(i) === "vulnerability",
         id: i.issue_id ?? undefined,
       };
     });
@@ -1461,7 +1510,11 @@ function buildReportFilterBar(
       var meanOra = totalOra / assetKeys.length;
       return Math.max(0, Math.min(100, Math.round(100 - meanOra)));
     }
-    var riskScore = fleetRisk(openIssues);
+    // Risk score is vulnerability-only so compliance findings (License/IaC/STIG
+    // rated High) don't inflate it on filter. Compliance is reported separately.
+    var vulnOpen = openIssues.filter(function(i) { return i.vuln; });
+    var complianceOpen = openIssues.length - vulnOpen.length;
+    var riskScore = fleetRisk(vulnOpen);
     var riskLevel = riskScore >= 80 ? "Critical" : riskScore >= 60 ? "High" : riskScore >= 30 ? "Medium" : "Low";
     var criticalHigh = counts.critical + counts.high;
     var pc = null;
@@ -1558,6 +1611,7 @@ function buildReportFilterBar(
       var detail1 = grid.querySelector(".kpi-card:nth-child(1) .kpi-detail"); if (detail1) detail1.textContent = riskLevel;
       var detail2 = grid.querySelector(".kpi-card:nth-child(2) .kpi-detail"); if (detail2) detail2.textContent = counts.critical + " critical";
       var detail4 = grid.querySelector(".kpi-card:nth-child(4) .kpi-detail"); if (detail4) detail4.textContent = avgMttr !== undefined ? "days" : "No data";
+      setKpiValue(grid.querySelector(".kpi-card:nth-child(5) .kpi-value"), String(complianceOpen), "");
     });
     // Pre-index open issues by normalized repo name for O(1) lookup in risk tables
     var openIssuesByNormRepo = {};
@@ -2644,11 +2698,13 @@ function buildReportDocumentShell(
   .viz-repo-bars { margin-bottom: 12px; }
   .repo-bar-row { display: flex; align-items: center; gap: 10px; margin-bottom: 5px; font-size: clamp(10px, 1.1vw + 0.4rem, 14px); }
   .repo-bar-label { width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: ${mutedColor}; }
-  .repo-bar-track { width: 120px; height: 10px; background: ${trackBg}; border-radius: 4px; overflow: hidden; }
+  .repo-bar-track { width: 120px; height: 10px; background: ${trackBg}; border-radius: 4px; overflow: hidden; display: flex; }
   .repo-bar-fill { height: 100%; border-radius: 4px; background: #94a3b8; }
   .repo-bar-fill.repo-bar-high { background: #f97316; }
   .repo-bar-fill.repo-bar-critical { background: #ef4444; }
+  .repo-bar-fill.repo-bar-compliance { background: rgba(148,163,184,0.4); border-radius: 0; }
   .repo-bar-num { width: 32px; text-align: right; font-weight: 600; font-size: clamp(10px, 1.1vw + 0.4rem, 14px); }
+  .repo-bar-comp { color: ${mutedColor}; font-weight: 400; font-size: 0.85em; margin-left: 4px; }
   .viz-mttr-bars { margin-bottom: 12px; }
   .mttr-bar-row { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; font-size: clamp(10px, 1.1vw + 0.4rem, 14px); }
   .mttr-bar-track { width: 120px; height: 12px; background: ${trackBg}; border-radius: 4px; overflow: hidden; }
@@ -2943,11 +2999,13 @@ export function buildSingleWidgetPreviewHtml(
   .viz-repo-bars { margin-bottom: 12px; }
   .repo-bar-row { display: flex; align-items: center; gap: 10px; margin-bottom: 5px; font-size: 10px; }
   .repo-bar-label { width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #475569; }
-  .repo-bar-track { width: 120px; height: 10px; background: #f1f5f9; border-radius: 4px; overflow: hidden; }
+  .repo-bar-track { width: 120px; height: 10px; background: #f1f5f9; border-radius: 4px; overflow: hidden; display: flex; }
   .repo-bar-fill { height: 100%; border-radius: 4px; background: #94a3b8; }
   .repo-bar-fill.repo-bar-high { background: #f97316; }
   .repo-bar-fill.repo-bar-critical { background: #ef4444; }
+  .repo-bar-fill.repo-bar-compliance { background: rgba(100,116,139,0.35); border-radius: 0; }
   .repo-bar-num { width: 28px; text-align: right; font-weight: 600; }
+  .repo-bar-comp { color: #64748b; font-weight: 400; font-size: 0.85em; margin-left: 4px; }
   .viz-mttr-bars { margin-bottom: 12px; }
   .mttr-bar-row { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; font-size: 10px; }
   .mttr-bar-track { width: 120px; height: 12px; background: #f1f5f9; border-radius: 4px; overflow: hidden; }

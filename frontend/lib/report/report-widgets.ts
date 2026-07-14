@@ -344,15 +344,48 @@ function svgAgingBars(
     .join("");
 }
 
+/** Split risk bar: solid segment sized by vulnerability count (colored by worst
+ * vuln severity), faded segment sized by compliance count. Bar length reflects
+ * total finding volume; the trailing number is the vulnerability-only risk
+ * score (the ranking metric). Keeps GPL/compliance risk visually distinct. */
+function splitRiskBarInner(
+  vulnCount: number,
+  compCount: number,
+  maxTotal: number,
+  score: number,
+  sevClass: string,
+): string {
+  const total = vulnCount + compCount;
+  const fullW = (total / Math.max(1, maxTotal)) * 120;
+  const vulnW = total > 0 ? (vulnCount / total) * fullW : 0;
+  const compW = fullW - vulnW;
+  const compSeg =
+    compCount > 0
+      ? `<div class="repo-bar-fill repo-bar-compliance" style="width:${compW}px" title="${compCount} compliance"></div>`
+      : "";
+  const compNum =
+    compCount > 0
+      ? `<span class="repo-bar-comp" title="${compCount} compliance findings">+${compCount}c</span>`
+      : "";
+  return `<div class="repo-bar-track"><div class="repo-bar-fill ${sevClass}" style="width:${vulnW}px"></div>${compSeg}</div><span class="repo-bar-num">${score}</span>${compNum}`;
+}
+
+function sevClassFor(critical: number, high: number): string {
+  return critical > 0 ? "repo-bar-critical" : high > 0 ? "repo-bar-high" : "";
+}
+
 function svgRepoRiskBars(
   repos: RepoRiskScore[],
   maxScore = 100,
   maxRepos = 8,
 ): string {
   const top = repos.slice(0, maxRepos);
+  const maxTotal = Math.max(
+    1,
+    ...top.map((r) => r.total + (r.complianceTotal ?? 0)),
+  );
   return top
     .map((repo) => {
-      const w = Math.max(0, (repo.score / maxScore) * 120);
       const sevs: string[] = [];
       if (repo.critical > 0) sevs.push("critical");
       if (repo.high > 0) sevs.push("high");
@@ -362,21 +395,20 @@ function svgRepoRiskBars(
         sevs.length > 0
           ? ` data-filter-severity="${filterAttr(sevs.join(" "))}"`
           : "";
+      const inner = splitRiskBarInner(
+        repo.total,
+        repo.complianceTotal ?? 0,
+        maxTotal,
+        repo.score,
+        sevClassFor(repo.critical, repo.high),
+      );
       return `<div class="repo-bar-row report-filterable" data-filter-repo="${filterAttr(
         repo.repo,
       )}" data-filter-asset-type="${filterAttr(
         "Code",
-      )}"${sevAttr}><span class="repo-bar-label mono" title="${repo.repo}">${
+      )}"${sevAttr}><span class="repo-bar-label mono" title="${repo.repo} — ${repo.total} vuln, ${repo.complianceTotal ?? 0} compliance">${
         repo.repo.length > 24 ? repo.repo.slice(0, 21) + "…" : repo.repo
-      }</span><div class="repo-bar-track"><div class="repo-bar-fill ${
-        repo.critical > 0
-          ? "repo-bar-critical"
-          : repo.high > 0
-            ? "repo-bar-high"
-            : ""
-      }" style="width:${w}px"></div></div><span class="repo-bar-num">${
-        repo.score
-      }</span></div>`;
+      }</span>${inner}</div>`;
     })
     .join("");
 }
@@ -387,9 +419,12 @@ function svgContainerRiskBars(
   maxContainers = 8,
 ): string {
   const top = containers.slice(0, maxContainers);
+  const maxTotal = Math.max(
+    1,
+    ...top.map((c) => c.total + (c.complianceTotal ?? 0)),
+  );
   return top
     .map((c) => {
-      const w = Math.max(0, (c.score / maxScore) * 120);
       const sevs: string[] = [];
       if (c.critical > 0) sevs.push("critical");
       if (c.high > 0) sevs.push("high");
@@ -400,19 +435,22 @@ function svgContainerRiskBars(
           ? ` data-filter-severity="${filterAttr(sevs.join(" "))}"`
           : "";
       const containerAttr = ` data-filter-container="${filterAttr(c.repo)}"`;
+      const inner = splitRiskBarInner(
+        c.total,
+        c.complianceTotal ?? 0,
+        maxTotal,
+        c.score,
+        sevClassFor(c.critical, c.high),
+      );
       return `<div class="repo-bar-row report-filterable" data-filter-repo="${filterAttr(
         c.repo,
       )}" data-filter-asset-type="${filterAttr(
         "Container",
       )}"${containerAttr}${sevAttr}><span class="repo-bar-label mono" title="${
         c.repo
-      }">${
+      } — ${c.total} vuln, ${c.complianceTotal ?? 0} compliance">${
         c.repo.length > 24 ? c.repo.slice(0, 21) + "…" : c.repo
-      }</span><div class="repo-bar-track"><div class="repo-bar-fill ${
-        c.critical > 0 ? "repo-bar-critical" : c.high > 0 ? "repo-bar-high" : ""
-      }" style="width:${w}px"></div></div><span class="repo-bar-num">${
-        c.score
-      }</span></div>`;
+      }</span>${inner}</div>`;
     })
     .join("");
 }
@@ -778,6 +816,15 @@ function renderSummary(
         : "—",
       trendBadgeHtml(pc?.mttr ?? undefined),
       ctx.avgMttr !== undefined ? "days" : "No data",
+    ),
+    // Kept LAST so the exported report's client-side KPI updater (which targets
+    // .kpi-card:nth-child(1..4)) still maps Risk/Open/Crit+High/MTTR correctly.
+    kpiCard(
+      ctx,
+      "Compliance",
+      String(ctx.complianceCount),
+      "",
+      "License / IaC / STIG",
     ),
   ];
 

@@ -19,6 +19,11 @@ import {
   computeFleetRiskScore,
   computePeriodOverPeriodChange,
   computeABCComplianceForIssues,
+  issueCategory,
+  splitByCategory,
+  withComplianceSegment,
+  computeRepoRiskScores,
+  type RepoRiskScore,
 } from "./metrics";
 import { computeABCCompliance } from "./ora";
 import type { VATReportIssue, VATReportIssueGroup } from "./vatReportAdapter";
@@ -673,5 +678,93 @@ describe("isClosedIssue / unified resolved-vs-closed semantics", () => {
     expect(abc.bySeverity.critical.count).toBe(0);
     expect(abc.bySeverity.high.count).toBe(1);
     expect(abc.remediationOverdue).toBe(1);
+  });
+});
+
+describe("vulnerability vs compliance split", () => {
+  const cve = (id: number, sev = "critical"): VATReportIssue => ({
+    issue_id: id,
+    issue_group_id: id,
+    first_detected_at: "2024-01-01T00:00:00Z",
+    last_detected_at: "2024-01-01T00:00:00Z",
+    repository: "img-a",
+    severity: sev,
+    severity_score: sev === "critical" ? 9 : 7,
+    status: "open",
+    title: "vuln",
+    cve_id: `CVE-2026-${id}`,
+    finding_type: "SCA",
+  });
+  const lic = (id: number): VATReportIssue => ({
+    issue_id: id,
+    issue_group_id: id,
+    first_detected_at: "2024-01-01T00:00:00Z",
+    last_detected_at: "2024-01-01T00:00:00Z",
+    repository: "img-a",
+    severity: "high", // GPL rated High
+    severity_score: 7,
+    status: "open",
+    title: "GPL license",
+    finding_type: "License",
+  });
+  const stig = (id: number): VATReportIssue => ({
+    ...cve(id),
+    cve_id: "xccdf_rule_1",
+    title: "stig",
+  });
+
+  it("classifies CVE as vulnerability, License/STIG as compliance", () => {
+    expect(issueCategory(cve(1))).toBe("vulnerability");
+    expect(issueCategory(lic(2))).toBe("compliance");
+    expect(issueCategory(stig(3))).toBe("compliance");
+    expect(issueCategory({ finding_type: "IaC" })).toBe("compliance");
+    expect(issueCategory({ finding_type: "Secret" })).toBe("compliance");
+  });
+
+  it("splitByCategory separates the buckets", () => {
+    const { vulnerability, compliance } = splitByCategory([
+      cve(1),
+      lic(2),
+      stig(3),
+      cve(4),
+    ]);
+    expect(vulnerability.map((i) => i.issue_id)).toEqual([1, 4]);
+    expect(compliance.map((i) => i.issue_id)).toEqual([2, 3]);
+  });
+
+  it("risk score ignores compliance findings (GPL High does not count)", () => {
+    const vulnOnly = [cve(1)];
+    const withLicenses = [cve(1), lic(2), lic(3), lic(4)];
+    const { vulnerability } = splitByCategory(withLicenses);
+    // Same vuln set -> same risk score regardless of how many licenses tag along.
+    expect(computeRiskScore(
+      { critical: 1, high: 0, medium: 0, low: 0, info: 0 },
+    )).toBe(computeRiskScore(
+      { critical: 1, high: 0, medium: 0, low: 0, info: 0 },
+    ));
+    expect(vulnerability).toEqual(vulnOnly);
+  });
+
+  it("withComplianceSegment folds compliance totals onto vuln scores and appends compliance-only assets", () => {
+    const vulnScores = computeRepoRiskScores([cve(1)], [], []);
+    const compByAsset = new Map([["img-a", 3], ["img-b", 5]]);
+    const merged = withComplianceSegment<RepoRiskScore>(
+      vulnScores,
+      compByAsset,
+      (repo) => ({
+        repo,
+        score: 0,
+        critical: 0,
+        high: 0,
+        medium: 0,
+        low: 0,
+        total: 0,
+      }),
+    );
+    const a = merged.find((m) => m.repo === "img-a");
+    const b = merged.find((m) => m.repo === "img-b");
+    expect(a?.complianceTotal).toBe(3); // vuln asset gets its compliance total
+    expect(b?.complianceTotal).toBe(5); // compliance-only asset appended
+    expect(b?.score).toBe(0);
   });
 });

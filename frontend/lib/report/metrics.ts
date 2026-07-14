@@ -55,6 +55,10 @@ export interface RepoRiskScore {
   medium: number;
   low: number;
   total: number;
+  /** Open compliance findings (License/IaC/STIG/Secret) for this asset. The
+   * severity buckets + score above are vulnerability-only; this is the faded
+   * segment in the risk bars. */
+  complianceTotal?: number;
 }
 
 export interface ContainerRiskScore {
@@ -65,6 +69,8 @@ export interface ContainerRiskScore {
   medium: number;
   low: number;
   total: number;
+  /** Open compliance findings for this asset (see RepoRiskScore.complianceTotal). */
+  complianceTotal?: number;
 }
 
 export interface AssetMix {
@@ -138,6 +144,65 @@ export function normalizeSeverity(
     if (score >= 0.1) return "low";
   }
   return "info";
+}
+
+export type IssueCategory = "vulnerability" | "compliance";
+
+/**
+ * Classify an issue as a security vulnerability or a compliance finding.
+ * Compliance = License / IaC / Secret / STIG (hardening). Vulnerability =
+ * CVE/GHSA (incl. findingType SCA carrying a CVE id). STIG findings carry
+ * findingType=SCA with an xccdf/SV- cve id, so the id prefix wins over type.
+ * Used to keep license/compliance risk (e.g. GPL rated High) out of the
+ * vulnerability risk score and ranking.
+ */
+export function issueCategory(issue: {
+  finding_type?: string;
+  cve_id?: string;
+}): IssueCategory {
+  const ft = (issue.finding_type ?? "").toLowerCase();
+  const cve = issue.cve_id ?? "";
+  if (ft === "license" || ft === "iac" || ft === "secret") return "compliance";
+  if (cve.startsWith("xccdf") || cve.startsWith("SV-")) return "compliance";
+  if (cve.startsWith("CVE") || cve.startsWith("GHSA")) return "vulnerability";
+  if (ft === "sca") return "vulnerability";
+  // Unknown/unclassified → treat as vulnerability so nothing is hidden from the
+  // security risk view by default.
+  return "vulnerability";
+}
+
+/** Split issues into vulnerability vs compliance buckets. */
+export function splitByCategory<T extends { finding_type?: string; cve_id?: string }>(
+  issues: T[],
+): { vulnerability: T[]; compliance: T[] } {
+  const vulnerability: T[] = [];
+  const compliance: T[] = [];
+  for (const i of issues) {
+    (issueCategory(i) === "compliance" ? compliance : vulnerability).push(i);
+  }
+  return { vulnerability, compliance };
+}
+
+/**
+ * Fold per-asset open compliance counts into risk scores computed from the
+ * vulnerability-only issue set. Ranking/score stay vulnerability-driven; the
+ * compliance total rides along for the faded bar segment. Assets that have
+ * ONLY compliance findings are appended (score 0) so their segment still shows.
+ */
+export function withComplianceSegment<
+  T extends { repo: string; complianceTotal?: number },
+>(vulnScores: T[], complianceByAsset: Map<string, number>, makeEmpty: (repo: string) => T): T[] {
+  const seen = new Set<string>();
+  const out = vulnScores.map((s) => {
+    seen.add(s.repo);
+    return { ...s, complianceTotal: complianceByAsset.get(s.repo) ?? 0 };
+  });
+  for (const [repo, total] of complianceByAsset) {
+    if (total > 0 && !seen.has(repo)) {
+      out.push({ ...makeEmpty(repo), complianceTotal: total });
+    }
+  }
+  return out;
 }
 
 export function isOpen(issue: VATReportIssue): boolean {

@@ -23,6 +23,9 @@ export interface VATReportIssue {
   title: string;
   cve_id?: string;
   cwe_id?: string;
+  /** VAT finding type (SCA, License, IaC, Secret, …) — drives the
+   * vulnerability-vs-compliance split in risk widgets. */
+  finding_type?: string;
   scanner_type?: string;
   closed_at?: string;
   /** CVE published date (for ABC CVE age tolerance). Optional; first_detected_at used as fallback. */
@@ -169,6 +172,7 @@ export function findingsToVATReportIssues(
       status: (f.status ?? "open").toLowerCase(),
       title: f.title ?? f.cveId ?? "Unknown",
       cve_id: f.cveId,
+      finding_type: f.findingType,
       description: f.description,
       affected_package: f.component,
       scanner_type: displaySourceName(f.source) || "VAT",

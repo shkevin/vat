@@ -601,3 +601,68 @@ describe("trend this-week counts: instances must not be group-deduped", () => {
     expect(m.resolvedThisWeek).toBe(1);
   });
 });
+
+describe("vulnerability vs compliance in report context", () => {
+  const baseFilters = {
+    repoFilter: [],
+    branchFilter: null,
+    severityFilter: [],
+    dateFrom: null,
+    dateTo: null,
+    notes: "",
+    countMode: "instances" as const,
+  };
+  const mkVuln = (id: string, sev: string): Finding => ({
+    id,
+    findingType: "SCA",
+    fingerprintId: `fp-${id}`,
+    cveId: `CVE-2026-${id}`,
+    severity: sev,
+    status: "Open",
+    sources: [],
+    source: "trivy",
+    audit: [],
+    component: "openssl 3.0",
+    image: "img-a",
+    title: `${id}`,
+    firstDetectedAt: "2024-01-01T00:00:00Z",
+  });
+  const mkLicense = (id: string): Finding => ({
+    id,
+    findingType: "License",
+    fingerprintId: `fp-${id}`,
+    cveId: undefined as unknown as string,
+    severity: "High", // GPL rated High
+    status: "Open",
+    sources: [],
+    source: "trivy",
+    audit: [],
+    component: "busybox",
+    image: "img-a",
+    title: `GPL ${id}`,
+    firstDetectedAt: "2024-01-01T00:00:00Z",
+  });
+
+  it("counts compliance separately and keeps risk score vulnerability-only", () => {
+    const vulnOnly = [mkVuln("1", "Critical")];
+    const withLicenses = [
+      mkVuln("1", "Critical"),
+      mkLicense("L1"),
+      mkLicense("L2"),
+      mkLicense("L3"),
+    ];
+    const ctxVuln = computeReportContext(
+      toVATDashboardData(vulnOnly, [], "VAT", { groupFindings: true }),
+      baseFilters,
+    );
+    const ctxMixed = computeReportContext(
+      toVATDashboardData(withLicenses, [], "VAT", { groupFindings: true }),
+      baseFilters,
+    );
+    // Licenses are reported as compliance, not vulnerabilities.
+    expect(ctxMixed.complianceCount).toBe(3);
+    expect(ctxVuln.complianceCount).toBe(0);
+    // The 3 GPL "High" licenses must NOT change the vulnerability risk score.
+    expect(ctxMixed.riskScore).toBe(ctxVuln.riskScore);
+  });
+});
