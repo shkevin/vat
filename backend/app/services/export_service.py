@@ -595,6 +595,43 @@ def _build_executive_summary_html(
         if k in counts:
             counts[k] += 1
 
+    # Break severity out by finding category so license/compliance findings
+    # (e.g. GPL copyleft rated High) don't inflate the security-vulnerability
+    # picture. STIG is separated from CVE vulns even though both carry
+    # findingType=SCA (distinguished by the xccdf/CVE id prefix).
+    def _finding_category(f: dict) -> str:
+        ft = (f.get("findingType") or "").strip()
+        cve = f.get("cveId") or ""
+        if ft == "License":
+            return "License"
+        if ft == "IaC":
+            return "IaC"
+        if ft == "Secret":
+            return "Secret"
+        if cve.startswith("xccdf") or cve.startswith("SV-"):
+            return "STIG / Compliance"
+        if cve.startswith("CVE") or cve.startswith("GHSA") or ft == "SCA":
+            return "Vulnerability"
+        return "Other"
+
+    CATEGORY_ORDER = [
+        "Vulnerability",
+        "STIG / Compliance",
+        "IaC",
+        "Secret",
+        "License",
+        "Other",
+    ]
+    sev_matrix: dict[str, dict[str, int]] = {
+        c: {"critical": 0, "high": 0, "medium": 0, "low": 0, "info": 0}
+        for c in CATEGORY_ORDER
+    }
+    for f in open_findings:
+        cat = _finding_category(f)
+        k = _severity_key(f.get("severity") or f.get("sourceGroupSeverity") or "")
+        if k in sev_matrix[cat]:
+            sev_matrix[cat][k] += 1
+
     # Split assets into repos vs containers
     repos = [a for a in assets if a.get("type") == "repo"]
     containers = [a for a in assets if a.get("type") == "container"]
@@ -609,10 +646,22 @@ def _build_executive_summary_html(
         }.get(sev, "#7b8fa1")
         return f'<td style="color:{color}">{val}</td>'
 
-    sev_rows = "".join(
-        f"<tr><td>{s}</td>{_sev_cell(s, counts.get(s.lower() if s != 'Informational' else 'info', 0))}</tr>"
-        for s in SEV_ORDER
+    def _sev_key_for(s: str) -> str:
+        return "info" if s == "Informational" else s.lower()
+
+    def _matrix_row(label: str, d: dict, *, bold: bool = False) -> str:
+        total = sum(d.values())
+        name = f"<strong>{label}</strong>" if bold else label
+        cells = "".join(_sev_cell(s, d.get(_sev_key_for(s), 0)) for s in SEV_ORDER)
+        return f"<tr><td>{name}</td>{cells}<td><strong>{total}</strong></td></tr>"
+
+    type_rows = "".join(
+        _matrix_row(c, sev_matrix[c])
+        for c in CATEGORY_ORDER
+        if sum(sev_matrix[c].values()) > 0
     )
+    # "All types" totals row == the flat all-severity counts
+    type_rows += _matrix_row("All types", counts, bold=True)
 
     def _asset_row(a: dict) -> str:
         name = a.get("name", "")
@@ -668,10 +717,11 @@ def _build_executive_summary_html(
     <div class="summary-item"><strong>{len(in_range)}</strong> Total (instances)</div>
   </div>
 
-  <h2>Severity Breakdown (Open)</h2>
+  <h2>Severity Breakdown by Finding Type (Open)</h2>
+  <p style="color:#94a3b8">Security posture (Vulnerability / STIG) is broken out from License &amp; IaC compliance so copyleft-license findings (GPL rated High) don't inflate the vulnerability Critical/High count.</p>
   <table>
-    <thead><tr><th>Severity</th><th>Count</th></tr></thead>
-    <tbody>{sev_rows}</tbody>
+    <thead><tr><th>Finding Type</th><th>Critical</th><th>High</th><th>Medium</th><th>Low</th><th>Informational</th><th>Total</th></tr></thead>
+    <tbody>{type_rows}</tbody>
   </table>
 
   <h2>Repositories</h2>
