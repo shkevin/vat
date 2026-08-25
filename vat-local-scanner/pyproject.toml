@@ -7,9 +7,9 @@ name = "vat-scanner"
 version = "0.1.0"
 description = "VAT Local Scanner — standalone CLI that runs security scans locally and pushes only findings to VAT"
 readme = "README.md"
-license = "MIT"
+license = "Apache-2.0"
 requires-python = ">=3.11"
-authors = [{ name = "VAT" }]
+authors = [{ name = "Kevin Cox" }]
 keywords = ["security", "scanner", "vat", "trivy", "grype", "semgrep"]
 classifiers = [
     "Development Status :: 4 - Beta",

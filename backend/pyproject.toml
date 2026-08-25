@@ -3,6 +3,8 @@ name = "vat-backend"
 version = "0.1.0"
 description = "VAT — Vulnerability Assessment Tracker API"
 requires-python = ">=3.11"
+license = "Apache-2.0"
+authors = [{ name = "Kevin Cox" }]
 dependencies = [
     "fastapi>=0.109.0",
     "uvicorn[standard]>=0.27.0",

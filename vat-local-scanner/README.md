@@ -217,4 +217,4 @@ See `ci/` for ready-to-use templates:
 
 ## License
 
-MIT
+Apache-2.0 — see [LICENSE](../LICENSE). Copyright 2026 Kevin Cox.
