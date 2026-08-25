@@ -62,3 +62,9 @@ offline-*/
 asset-ids.json
 asset-ids-full.json
 kamiwaza-bundle-asset-rendered.png
+
+# secrets — never commit
+.devcontainer/.env.devcontainer
+*.env.local
+age.key
+*.agekey
