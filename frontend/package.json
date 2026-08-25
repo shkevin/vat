@@ -10,7 +10,8 @@
     "start": "next start",
     "lint": "eslint . --ext .js,.jsx,.ts,.tsx",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "lint:ci": "eslint . --ext .js,.jsx,.ts,.tsx --max-warnings 48"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.91.3",

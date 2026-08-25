@@ -17,11 +17,11 @@ jobs:
     name: backend (pytest)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.0.1
         with:
           enable-cache: true
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
       - name: Install
@@ -35,11 +35,11 @@ jobs:
     name: scanner (pytest)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.0.1
         with:
           enable-cache: true
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
       - name: Test
@@ -53,8 +53,8 @@ jobs:
     name: frontend (lint, test, build)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: "20"
           cache: npm
@@ -64,7 +64,7 @@ jobs:
         run: npm ci
       - name: Lint
         working-directory: frontend
-        run: npm run lint
+        run: npm run lint:ci
       - name: Test
         working-directory: frontend
         run: npm run test
@@ -76,8 +76,8 @@ jobs:
     name: operator (go)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
           go-version-file: operator/go.mod
           cache-dependency-path: operator/go.sum
@@ -92,8 +92,8 @@ jobs:
     name: k8s manifests (kustomize)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: azure/setup-kubectl@v4
+      - uses: actions/checkout@v7
+      - uses: azure/setup-kubectl@v5
       - name: Render
         run: |
           for d in deploy/k8s/base \

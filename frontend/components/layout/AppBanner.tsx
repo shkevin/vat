@@ -119,6 +119,11 @@ export function AppBanner({
           </span>
         )}
         {isLogoImage(config.logo) ? (
+          // next/image is not usable here: config.logo is operator-supplied at
+          // runtime (arbitrary URL or data URI), so it cannot be covered by
+          // next.config remotePatterns, and the intrinsic `width: auto` sizing
+          // below would require `fill` plus a positioned parent.
+          // eslint-disable-next-line @next/next/no-img-element
           <img
             className="app-banner-logo"
             src={config.logo}
