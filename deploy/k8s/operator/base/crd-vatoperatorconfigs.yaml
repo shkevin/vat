@@ -28,7 +28,7 @@ spec:
                   type: string
                 scannerImage:
                   type: string
-                  default: harbor.automatedhass.com/vat/scanner:latest
+                  default: ghcr.io/shkevin/vat/scanner:latest
                 credentialsSecretName:
                   type: string
                   default: vat-operator-credentials

@@ -9,7 +9,7 @@ import (
 	"log"
 	"time"
 
-	"gitlab.automatedhass.com/personal/vat/operator/internal/watch"
+	"github.com/shkevin/vat/operator/internal/watch"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"

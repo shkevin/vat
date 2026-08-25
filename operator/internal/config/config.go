@@ -6,11 +6,11 @@ import (
 	"strconv"
 	"strings"
 
-	"gitlab.automatedhass.com/personal/vat/operator/internal/profiles"
+	"github.com/shkevin/vat/operator/internal/profiles"
 )
 
 const (
-	defaultScannerImage     = "harbor.automatedhass.com/vat/scanner:latest"
+	defaultScannerImage     = "ghcr.io/shkevin/vat/scanner:latest"
 	defaultOperatorNamepace = "vat-operator"
 	defaultCredentialsName  = "vat-operator-credentials"
 	defaultAdminTokenKey    = "adminToken"

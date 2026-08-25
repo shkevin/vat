@@ -1,4 +1,4 @@
-module gitlab.automatedhass.com/personal/vat/operator
+module github.com/shkevin/vat/operator
 
 go 1.20
 

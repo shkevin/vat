@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"gitlab.automatedhass.com/personal/vat/operator/internal/watch"
+	"github.com/shkevin/vat/operator/internal/watch"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"

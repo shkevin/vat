@@ -1,16 +1,8 @@
 # VAT Kubernetes manifests
 
-GitOps-managed by Argo CD running in the Kamiwaza cluster. The Argo `Application`
-(in `kamiwaza-argocd`) tracks this repo's `main` and picks one of the overlays
-below per environment:
-
-| Environment | Overlay path                 | Image tag | Front door      | MetalLB fallback | DNS                                 |
-|-------------|------------------------------|-----------|-----------------|------------------|-------------------------------------|
-| dev         | `deploy/k8s/overlays/dev`    | `latest`  | `10.0.40.168`   | `10.0.40.173`    | `vat.kamidev.automatedhass.com`     |
-| prod        | `deploy/k8s/overlays/prod`   | `latest`  | `10.0.40.174`   | `10.0.40.174`    | `vat.kamiprod.automatedhass.com`    |
-
-> Both overlays currently track `:latest` (built from `main`). Switch dev to
-> `:develop` (or a `sha-<short>`) once a `develop` branch is in active use.
+Kustomize manifests for deploying VAT. These are the generic, environment-neutral
+bases; per-site overlays (real VIPs, DNS, encrypted runtime secrets) are expected
+to live in a separate private repo and are not published here.
 
 ## Layout
 
@@ -19,96 +11,73 @@ deploy/k8s/
 ├── base/               Namespace, Postgres StatefulSet, Valkey StatefulSet,
 │                       backend Deployment (+ Alembic initContainer),
 │                       frontend Deployment, Celery workers & beat, ConfigMap.
-├── overlays/
-│   ├── dev/            Replica patches, dev image tag, dev LoadBalancer VIP,
-│   │                   KSOPS-encrypted vat-runtime Secret.
-│   └── prod/           Prod image tag, prod LoadBalancer VIP, KSOPS-encrypted
-│                       vat-runtime Secret.
-├── templates/          Plaintext templates (copy, fill, then sops -e).
-└── .sops.yaml          Age recipient shared with the kamiwaza-argocd cluster.
+├── operator/           VAT operator: CRDs, RBAC, scanner worker, node-scanning
+│                       component, and k0s/k3s/kind runtime-profile overlays.
+└── templates/          Plaintext Secret templates (copy, fill, then `sops -e`).
+```
+
+Deploy the core app straight from base:
+
+```bash
+kubectl apply -k deploy/k8s/base
+```
+
+## Building a site overlay
+
+Create an overlay in your own private repo that references this base and supplies
+the environment-specific parts:
+
+```yaml
+# overlays/<env>/kustomization.yaml
+resources:
+  - <path-or-remote-ref-to>/deploy/k8s/base
+images:
+  - name: vat-backend
+    newName: <your-registry>/vat/backend
+    newTag: latest
+  - name: vat-frontend
+    newName: <your-registry>/vat/frontend
+    newTag: latest
+patches:
+  - path: patch-frontend-lb.yaml   # your LoadBalancer VIP / Service type
 ```
 
 ## Networking
 
-Traefik in this cluster is scoped to the `kamiwaza` namespace, so we do NOT
-route VAT through a Traefik `IngressRoute` (that would leak VAT resources into
-the platform namespace).
+The frontend Service is a plain `LoadBalancer` on port 3000; how it is exposed is
+site-specific. Two patterns that work:
 
-For dev, the stable public path is the external Traefik VM at `10.0.40.168`,
-which load-balances across the pinned `vat-frontend` NodePort `31587` on all
-k3s node IPs (`10.0.40.60`, `10.0.40.61`, `10.0.40.62`). Keep
-`vat.kamidev.automatedhass.com` pointed at `10.0.40.168`. The MetalLB VIP
-`10.0.40.173:3000` remains available only as a direct LAN fallback.
+- **LoadBalancer VIP** (MetalLB or a cloud LB) — simplest. Note that MetalLB L2
+  ownership can move between speakers after node or workload restarts, and stale
+  ARP caches can briefly blackhole traffic even while the Service reports healthy.
+- **External proxy over pinned NodePorts** — front the app from an external
+  load balancer across all node IPs with a health check. Immune to the stale-ARP
+  failure mode above, at the cost of pinning a `nodePort`.
 
-The dev Service still declares a static MetalLB VIP for fallback access, but
-the user-facing DNS path must not depend on the VIP. MetalLB L2 ownership can
-move between speakers after node or workload restarts, and stale ARP caches can
-temporarily blackhole traffic even though Kubernetes shows the Service as
-healthy. The NodePort front door avoids that failure mode because it targets
-real node interfaces with health checks.
-
-Prod currently still uses its MetalLB VIP directly. If prod shows the same
-post-restart outage pattern, mirror the dev topology: front the app through an
-external load balancer over pinned NodePorts on all prod nodes, and keep the
-MetalLB VIP as fallback only.
-
-For new TLS exposure, prefer the external load balancer over pinned NodePorts
-(same pattern as dev) or add cert-manager plus a dedicated Ingress controller
-inside `vat` later.
+Prefer the second pattern if you have seen intermittent post-restart outages. For
+TLS, terminate at the external load balancer or add cert-manager plus a dedicated
+Ingress controller inside the `vat` namespace.
 
 ## Secrets
 
-`vat-runtime` is generated by KSOPS at render time from the overlay's
-`vat-runtime.enc.yaml`. To rotate:
+`vat-runtime` holds the database URL, broker URL, and app secret key. Generate it
+per environment with SOPS/KSOPS from the template:
 
 ```bash
 cp deploy/k8s/templates/vat-runtime.template.yaml vat-runtime.plain.yaml
 $EDITOR vat-runtime.plain.yaml
-export SOPS_AGE_KEY_FILE=/path/to/age.key     # same key as kamiwaza-argocd
-sops -e vat-runtime.plain.yaml > deploy/k8s/overlays/dev/vat-runtime.enc.yaml
-sops -e vat-runtime.plain.yaml > deploy/k8s/overlays/prod/vat-runtime.enc.yaml
+export SOPS_AGE_KEY_FILE=/path/to/your/age.key
+sops -e vat-runtime.plain.yaml > overlays/<env>/vat-runtime.enc.yaml
 rm vat-runtime.plain.yaml
 ```
 
-Commit only the `*.enc.yaml` files. `*.plain.yaml` and `age.key` are
-`.gitignore`d.
+Commit only `*.enc.yaml`. `*.plain.yaml` and `age.key` are `.gitignore`d.
 
 ## Image pull credentials
 
-Images live in `harbor.automatedhass.com/vat/{backend,frontend}` (Harbor project `vat`).
-The `harbor-creds` Secret is synced into the `vat` namespace by the Argo CD
-maintenance hooks (`kamiwaza-argocd` → `root/base/integrations/argocd-maintenance/hooks.yaml`).
-Each workload's `imagePullSecrets: [harbor-creds]` relies on that sync.
-
-## Dev egress overlay (portable networking shim)
-
-`deploy/k8s/overlays/dev` includes an egress shim so environment-specific
-outbound networking can be configured without hard-coding infra details into
-base manifests.
-
-- `egress-config.yaml` sets a shared `NO_PROXY` list for in-cluster traffic.
-- `patch-egress-env.yaml` injects `HTTP(S)_PROXY` and lowercase equivalents
-  into backend/celery deployments from optional Secret `vat-egress-proxy`,
-  and sets pod `dnsConfig.options.ndots=1` to avoid wildcard search-domain
-  rewrites of public hostnames.
-- `egress-proxy.yaml` + `egress-proxy-config.yaml` deploy an in-cluster
-  forward proxy Service (`vat-egress-proxy:3128`) for the simplest
-  "works everywhere" setup.
-- `egress-proxy-secret.yaml` points `HTTP(S)_PROXY` at that in-cluster proxy.
-  It uses a trailing dot in the FQDN (`.cluster.local.`) to avoid broken
-  enterprise search-domain rewrites.
-
-If you have an external corporate proxy, override the Secret values:
-
-```bash
-kubectl -n vat create secret generic vat-egress-proxy \
-  --from-literal=HTTP_PROXY=http://proxy.example.local:3128 \
-  --from-literal=HTTPS_PROXY=http://proxy.example.local:3128 \
-  --dry-run=client -o yaml | kubectl apply -f -
-```
-
-If no proxy is required, remove `egress-proxy-secret.yaml` and
-`egress-proxy.yaml` from the overlay resources list (or set empty proxy values).
+Published images are `ghcr.io/shkevin/vat/{backend,frontend}`. For a private
+registry, create a pull Secret in the `vat` namespace and reference it — each
+workload already declares `imagePullSecrets`.
 
 ## Image build pipeline
 
@@ -147,13 +116,17 @@ to `local` for `t-default`.
 ## Local validation
 
 ```bash
-export SOPS_AGE_KEY_FILE=/path/to/age.key
-kustomize build --enable-alpha-plugins --enable-exec deploy/k8s/overlays/dev  >/dev/null
-kustomize build --enable-alpha-plugins --enable-exec deploy/k8s/overlays/prod >/dev/null
+kubectl apply -k deploy/k8s/base --dry-run=client >/dev/null
+kubectl apply -k deploy/k8s/operator/base --dry-run=client >/dev/null
 ```
 
-Both flags are required — `--enable-exec` alone leaves the KSOPS generator
-disabled in nested builds.
+For overlays that use KSOPS generators, both flags are required — `--enable-exec`
+alone leaves the generator disabled in nested builds:
+
+```bash
+export SOPS_AGE_KEY_FILE=/path/to/your/age.key
+kustomize build --enable-alpha-plugins --enable-exec overlays/<env> >/dev/null
+```
 
 ## VAT operator
 

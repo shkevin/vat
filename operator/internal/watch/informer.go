@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"gitlab.automatedhass.com/personal/vat/operator/internal/metrics"
+	"github.com/shkevin/vat/operator/internal/metrics"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"

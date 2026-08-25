@@ -1,4 +1,4 @@
-IMAGE ?= harbor.automatedhass.com/vat/operator:latest
+IMAGE ?= ghcr.io/shkevin/vat/operator:latest
 
 .PHONY: test
 test:

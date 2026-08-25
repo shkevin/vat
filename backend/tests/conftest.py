@@ -142,7 +142,7 @@ def _linear_graphql_response(request):
         if "team(id" in query:
             return respx.MockResponse(
                 200,
-                json={"data": {"team": {"organization": {"urlKey": "automatedhass"}}}},
+                json={"data": {"team": {"organization": {"urlKey": "acme-org"}}}},
             )
         if "teams" in query and "filter" in query:
             return respx.MockResponse(
@@ -150,7 +150,7 @@ def _linear_graphql_response(request):
                 json={
                     "data": {
                         "teams": {
-                            "nodes": [{"organization": {"urlKey": "automatedhass"}}]
+                            "nodes": [{"organization": {"urlKey": "acme-org"}}]
                         }
                     }
                 },
@@ -161,7 +161,7 @@ def _linear_graphql_response(request):
             json={
                 "data": {
                     "teams": {
-                        "nodes": [{"id": "mock-team-uuid", "key": "automatedhass"}]
+                        "nodes": [{"id": "mock-team-uuid", "key": "acme-org"}]
                     }
                 }
             },

@@ -18,7 +18,7 @@ func TestLoadFromEnvUsesDefaultsAndRuntimeProfile(t *testing.T) {
 	if cfg.VatURL != "http://vat-backend.vat.svc.cluster.local:8000" {
 		t.Fatalf("VatURL = %q", cfg.VatURL)
 	}
-	if cfg.ScannerImage != "harbor.automatedhass.com/vat/scanner:latest" {
+	if cfg.ScannerImage != "ghcr.io/shkevin/vat/scanner:latest" {
 		t.Fatalf("ScannerImage = %q", cfg.ScannerImage)
 	}
 	if cfg.RuntimeProfile.Name != "k0s" {

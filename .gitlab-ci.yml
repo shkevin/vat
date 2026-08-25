@@ -6,10 +6,6 @@
 #   HARBOR_TOKEN  masked, protected — PAT/robot token with push rights on project "vat"
 #
 # Optional:
-#   SOPS_AGE_KEY  masked, protected, file — age private key matching .sops.yaml
-#                 recipient. If set, the overlay validate job will render with
-#                 KSOPS; if unset, overlay validate is skipped and only the
-#                 KSOPS-free base is validated.
 #   HARBOR_DOCKERHUB_PROXY_PROJECT — Harbor proxy-cache project for Docker Hub
 #                 base images. Defaults to "dockerhub"; set empty to disable.
 #   KANIKO_SKIP_DEFAULT_REGISTRY_FALLBACK — "true" fails fast if the proxy
@@ -20,15 +16,13 @@ stages:
   - build
 
 variables:
-  HARBOR_HOST: harbor.automatedhass.com
+  # Set HARBOR_HOST as a project CI/CD variable (Settings > CI/CD > Variables).
+  HARBOR_HOST: ${HARBOR_HOST}
   HARBOR_PROJECT: vat
   HARBOR_DOCKERHUB_PROXY_PROJECT: dockerhub
   KANIKO_SKIP_DEFAULT_REGISTRY_FALLBACK: "true"
   # Folder inside the repo that carries the manifests.
   K8S_ROOT: deploy/k8s
-  # Same flags the kamiwaza-argocd Argo repo-server uses; both are required for
-  # KSOPS generators in nested builds to resolve.
-  KUSTOMIZE_FLAGS: "--enable-alpha-plugins --enable-exec"
 
 # ---------- validate ----------
 
@@ -74,36 +68,6 @@ validate:operator:helm:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
     - if: $CI_COMMIT_BRANCH
     - if: $CI_COMMIT_TAG
-
-# Full overlay render (incl. KSOPS). Only runs when SOPS_AGE_KEY is set so the
-# default pipeline still passes for MRs from forks without the key.
-validate:overlays:
-  stage: validate
-  image: alpine:3.20
-  before_script:
-    # kustomize, sops, age, ksops into /usr/local/bin
-    - apk add --no-cache curl tar bash ca-certificates
-    - KUSTOMIZE_VERSION=v5.4.3
-    - curl -sSL "https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2F${KUSTOMIZE_VERSION}/kustomize_${KUSTOMIZE_VERSION}_linux_amd64.tar.gz"
-      | tar -xz -C /usr/local/bin
-    - SOPS_VERSION=v3.9.1
-    - curl -sSL -o /usr/local/bin/sops
-      "https://github.com/getsops/sops/releases/download/${SOPS_VERSION}/sops-${SOPS_VERSION}.linux.amd64"
-    - chmod +x /usr/local/bin/sops
-    - AGE_VERSION=v1.2.0
-    - curl -sSL "https://github.com/FiloSottile/age/releases/download/${AGE_VERSION}/age-${AGE_VERSION}-linux-amd64.tar.gz"
-      | tar -xz --strip-components=1 -C /usr/local/bin age/age age/age-keygen
-    - KSOPS_VERSION=v4.3.2
-    - mkdir -p "${HOME}/.config/kustomize/plugin/viaduct.ai/v1/ksops"
-    - curl -sSL "https://github.com/viaduct-ai/kustomize-sops/releases/download/${KSOPS_VERSION}/ksops_${KSOPS_VERSION#v}_Linux_x86_64.tar.gz"
-      | tar -xz -C "${HOME}/.config/kustomize/plugin/viaduct.ai/v1/ksops"
-    - install -m 0755 "${HOME}/.config/kustomize/plugin/viaduct.ai/v1/ksops/ksops" /usr/local/bin/ksops
-    - export SOPS_AGE_KEY_FILE="${SOPS_AGE_KEY}"
-  script:
-    - kustomize build ${KUSTOMIZE_FLAGS} ${K8S_ROOT}/overlays/dev  >/dev/null
-    - kustomize build ${KUSTOMIZE_FLAGS} ${K8S_ROOT}/overlays/prod >/dev/null
-  rules:
-    - if: '$SOPS_AGE_KEY && ($CI_PIPELINE_SOURCE == "merge_request_event" || $CI_COMMIT_BRANCH || $CI_COMMIT_TAG)'
 
 # ---------- build ----------
 

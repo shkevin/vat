@@ -25,7 +25,7 @@ spec:
         - name: harbor-creds
       containers:
         - name: operator
-          image: harbor.automatedhass.com/vat/operator:latest
+          image: ghcr.io/shkevin/vat/operator:latest
           imagePullPolicy: Always
           ports:
             - name: metrics
@@ -38,7 +38,7 @@ spec:
                 fieldRef:
                   fieldPath: metadata.namespace
             - name: VAT_OPERATOR_SCANNER_IMAGE
-              value: harbor.automatedhass.com/vat/scanner:latest
+              value: ghcr.io/shkevin/vat/scanner:latest
             - name: VAT_OPERATOR_CREDENTIAL_SECRET
               value: vat-operator-credentials
             - name: VAT_OPERATOR_RUNTIME_PROFILE

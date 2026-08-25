@@ -3,7 +3,7 @@ package reconcile
 import (
 	"testing"
 
-	"gitlab.automatedhass.com/personal/vat/operator/internal/inventory"
+	"github.com/shkevin/vat/operator/internal/inventory"
 )
 
 func TestNamespaceExcluderKeepsClusterScoped(t *testing.T) {

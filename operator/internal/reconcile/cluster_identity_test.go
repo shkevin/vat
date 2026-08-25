@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"gitlab.automatedhass.com/personal/vat/operator/internal/config"
-	"gitlab.automatedhass.com/personal/vat/operator/internal/profiles"
+	"github.com/shkevin/vat/operator/internal/config"
+	"github.com/shkevin/vat/operator/internal/profiles"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"

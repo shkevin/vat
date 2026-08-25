@@ -68,3 +68,5 @@ kamiwaza-bundle-asset-rendered.png
 *.env.local
 age.key
 *.agekey
+scripts/download-kamiwaza-latest-keygen.sh
+backend/coverage-correlation.json

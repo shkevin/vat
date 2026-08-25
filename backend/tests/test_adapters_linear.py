@@ -505,7 +505,7 @@ async def test_linear_update_issue(linear_respx):
 
 async def test_linear_reopen_issue(linear_respx):
     """Reopen closed issue succeeds with mocked team states and issueUpdate."""
-    adapter = LinearAdapter(api_key="test-key", team_id="automatedhass")
+    adapter = LinearAdapter(api_key="test-key", team_id="acme-org")
     result = await adapter.reopen_issue("VAT-1")
     assert result is True
     # respx: issues filter (identifier), team states, issueUpdate
@@ -593,9 +593,9 @@ async def test_linear_get_organization_url_key_by_slug(linear_respx):
     """get_organization_url_key returns urlKey when team_id is slug (e.g. Automatedhass)."""
     from app.adapters.linear import get_organization_url_key
 
-    adapter = LinearAdapter(api_key="test-key", team_id="automatedhass")
+    adapter = LinearAdapter(api_key="test-key", team_id="acme-org")
     result = await get_organization_url_key(adapter)
-    assert result == "automatedhass"
+    assert result == "acme-org"
 
 
 async def test_linear_get_organization_url_key_by_uuid(linear_respx):
@@ -604,7 +604,7 @@ async def test_linear_get_organization_url_key_by_uuid(linear_respx):
 
     adapter = LinearAdapter(api_key="test-key", team_id="mock-team-uuid")
     result = await get_organization_url_key(adapter)
-    assert result == "automatedhass"
+    assert result == "acme-org"
 
 
 # ---------------------------------------------------------------------------

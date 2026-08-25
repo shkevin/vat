@@ -7,7 +7,7 @@ vat:
 
 operator:
   image:
-    repository: harbor.automatedhass.com/vat/operator
+    repository: ghcr.io/shkevin/vat/operator
     tag: latest
     pullPolicy: Always
   runtimeProfile: auto
@@ -50,7 +50,7 @@ scanner:
     httpsProxy: http://vat-egress-proxy.vat.svc.cluster.local.:3128
     noProxy: .svc,.svc.cluster.local,.cluster.local,localhost,127.0.0.1,10.0.0.0/8,10.42.0.0/16,10.43.0.0/16,vat-backend.vat.svc.cluster.local
   image:
-    repository: harbor.automatedhass.com/vat/scanner
+    repository: ghcr.io/shkevin/vat/scanner
     tag: latest
     pullPolicy: Always
   serviceAccountName: vat-operator-scanner

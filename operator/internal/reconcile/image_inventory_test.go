@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"testing"
 
-	"gitlab.automatedhass.com/personal/vat/operator/internal/config"
-	"gitlab.automatedhass.com/personal/vat/operator/internal/inventory"
+	"github.com/shkevin/vat/operator/internal/config"
+	"github.com/shkevin/vat/operator/internal/inventory"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -369,7 +369,7 @@ func findInventoryItem(doc ImageInventory, image string) *ImageInventoryItem {
 func testConfig() config.Config {
 	return config.Config{
 		VatURL:                 "http://vat-backend.vat.svc.cluster.local:8000",
-		ScannerImage:           "harbor.automatedhass.com/vat/scanner:latest",
+		ScannerImage:           "ghcr.io/shkevin/vat/scanner:latest",
 		Namespace:              "vat-operator",
 		CredentialsSecretName:  "vat-operator-credentials",
 		AdminTokenKey:          "adminToken",

@@ -9,11 +9,11 @@ import (
 	"syscall"
 	"time"
 
-	"gitlab.automatedhass.com/personal/vat/operator/internal/config"
-	"gitlab.automatedhass.com/personal/vat/operator/internal/metrics"
-	"gitlab.automatedhass.com/personal/vat/operator/internal/reconcile"
-	"gitlab.automatedhass.com/personal/vat/operator/internal/scanrequest"
-	"gitlab.automatedhass.com/personal/vat/operator/internal/watch"
+	"github.com/shkevin/vat/operator/internal/config"
+	"github.com/shkevin/vat/operator/internal/metrics"
+	"github.com/shkevin/vat/operator/internal/reconcile"
+	"github.com/shkevin/vat/operator/internal/scanrequest"
+	"github.com/shkevin/vat/operator/internal/watch"
 
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"

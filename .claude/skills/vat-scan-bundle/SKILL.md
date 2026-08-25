@@ -27,10 +27,10 @@ The scan runs in the foreground and is **multi-hour** for full image scope — l
 1. **Picks a reachable VAT endpoint — probed from INSIDE the scanner container.**
    Order: explicit `--vat-url`/`$VAT_URL` → **LB VIP** → NodePort fallback.
    *Why probe from the container, and VIP first:* the scan runs in a container. On
-   WSL2/Docker-Desktop the **host** can reach the NodePort node IPs `10.0.40.60/61/62:<nodePort>`
+   WSL2/Docker-Desktop the **host** can reach the NodePort node IPs `<node-ip>/61/62:<nodePort>`
    but the **container cannot** (Docker's network is the Docker VM, not the WSL2 distro) — even
    `--network host` fails. A host-side probe would pick a NodePort the scan can't reach, dying at
-   `Ensure source failed: [Errno 113] No route to host`. The LB VIP `10.0.40.173:3000` IS
+   `Ensure source failed: [Errno 113] No route to host`. The LB VIP `<lb-vip>:3000` IS
    container-reachable, so `try_url` runs the probe in the scanner image and prefers the VIP.
    See `[[scanner-container-reaches-vip-not-nodeport]]`.
 2. **Extracts the bundle and nested archives.** Top tarball → extensions `.tar.gz`,
