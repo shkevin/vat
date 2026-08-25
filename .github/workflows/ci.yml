@@ -21,6 +21,7 @@ jobs:
       - uses: astral-sh/setup-uv@v10.0.1
         with:
           enable-cache: true
+          cache-suffix: backend
       - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
@@ -39,6 +40,7 @@ jobs:
       - uses: astral-sh/setup-uv@v10.0.1
         with:
           enable-cache: true
+          cache-suffix: scanner
       - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
