@@ -714,7 +714,7 @@ def test_cmd_scan_inventory_prefers_admin_managed_parser_key(monkeypatch, tmp_pa
 
     def fake_ensure_source(*args, **kwargs):
         ensure_calls.append(kwargs)
-        return args[2], ("fresh-trivy-key" if kwargs.get("regenerate_key") else None)
+        return args[2], "fresh-trivy-key"
 
     monkeypatch.setattr(cli, "ensure_source", fake_ensure_source)
     monkeypatch.setattr(cli, "get_cached_key", lambda *args, **kwargs: None)
@@ -747,7 +747,11 @@ def test_cmd_scan_inventory_prefers_admin_managed_parser_key(monkeypatch, tmp_pa
 
     assert cli.cmd_scan_inventory(args) == 0
     assert used_keys == ["fresh-trivy-key"]
-    assert [call.get("regenerate_key") for call in ensure_calls] == [False, True]
+    # Never regenerate_key=True: _ensure_parser_ingest_key deliberately does
+# NOT auto-regenerate on a cache miss, because rotating here invalidates the
+# key every other scanner already holds. A real reset needs --reset-keys.
+    assert ensure_calls
+    assert all(call.get("regenerate_key") is False for call in ensure_calls)
 
 
 def test_cmd_scan_inventory_summarizes_scanner_failures_without_error_spam(
@@ -843,7 +847,7 @@ def test_cmd_scan_k8s_inventory_prefers_admin_managed_parser_key(monkeypatch, tm
 
     def fake_ensure_source(*args, **kwargs):
         ensure_calls.append(kwargs)
-        return args[2], ("fresh-trivy-key" if kwargs.get("regenerate_key") else None)
+        return args[2], "fresh-trivy-key"
 
     monkeypatch.setattr(cli, "ensure_source", fake_ensure_source)
     monkeypatch.setattr(cli, "get_cached_key", lambda *args, **kwargs: None)
@@ -874,7 +878,11 @@ def test_cmd_scan_k8s_inventory_prefers_admin_managed_parser_key(monkeypatch, tm
 
     assert cli.cmd_scan_k8s_inventory(args) == 0
     assert used_keys == ["fresh-trivy-key"]
-    assert [call.get("regenerate_key") for call in ensure_calls] == [False, True]
+    # Never regenerate_key=True: _ensure_parser_ingest_key deliberately does
+# NOT auto-regenerate on a cache miss, because rotating here invalidates the
+# key every other scanner already holds. A real reset needs --reset-keys.
+    assert ensure_calls
+    assert all(call.get("regenerate_key") is False for call in ensure_calls)
 
 
 def test_cmd_scan_inventory_skips_unchanged_items_with_state(monkeypatch, tmp_path: Path) -> None:

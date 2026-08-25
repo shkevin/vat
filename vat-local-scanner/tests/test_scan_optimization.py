@@ -59,6 +59,11 @@ def test_collect_container_sources_reads_tar_listing_once(monkeypatch, tmp_path:
         return _Result(1, "")
 
     monkeypatch.setattr("vat_scanner.scanners.detection.subprocess.run", _fake_run)
+    # Digest computation lives in container_digest and shells out separately;
+    # use the seam the module exposes for tests rather than a real tar call.
+    monkeypatch.setattr(
+        "vat_scanner.container_digest.subprocess_run_tar_config", lambda _p: None
+    )
 
     sources, _extract = collect_container_sources(tmp_path)
     tar_listing_calls = [c for c in calls if c[:2] == ["tar", "-tf"]]

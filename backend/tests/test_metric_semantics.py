@@ -215,26 +215,31 @@ async def test_asset_limit_does_not_cap_findings_used_for_rollups(monkeypatch) -
         def scalars(self):
             return _ScalarResult(self._rows)
 
-    asset_id = "k8s/k3s-remote/argocd/deployment/argocd-dex-server/dex-server"
-    db = SimpleNamespace(
-        execute=AsyncMock(
-            side_effect=[
-                _ExecuteResult(
-                    [
-                        SimpleNamespace(
-                            id=asset_id,
-                            name=asset_id,
-                            type="container",
-                            branch=None,
-                            tag=None,
-                        )
-                    ]
-                ),
-                _ExecuteResult([]),
-                _ExecuteResult([]),
-            ]
+    # A plain repo-shaped id on purpose: "k8s/" ids are excluded by
+    # should_expose_asset_in_main_list(), and container-shaped ids get
+    # normalised (registry prefix added, tag stripped) so the finding would
+    # group under a different key than the Asset row.
+    asset_id = "acme-api"
+
+    # The service issues a variable number of follow-up queries. Yield the asset
+    # row for the first execute() and empty results for every call after it, so
+    # adding an unrelated query doesn't break this test.
+    _pending = [
+        SimpleNamespace(
+            id=asset_id,
+            name=asset_id,
+            type="container",
+            branch=None,
+            tag=None,
         )
-    )
+    ]
+
+    async def _execute(*_args, **_kwargs):
+        rows = list(_pending)
+        _pending.clear()
+        return _ExecuteResult(rows)
+
+    db = SimpleNamespace(execute=_execute)
     captured_limit = None
 
     async def fake_list_findings(_db, **kwargs):

@@ -332,4 +332,8 @@ async def test_apply_correlation_tenant_scoped_execute_called_once():
     call_stmt = db.execute.await_args_list[0].args[0]
     compiled = str(call_stmt.compile(dialect=postgresql.dialect())).lower()
     assert "findings.tenant_id" in compiled
-    assert "tenant_id_1" in compiled or "%(tenant_id" in compiled
+    # The tenant must be *bound*, never inlined. Don't assert on the generated
+    # bind-parameter name — it changes with how the clause is built (a plain
+    # compare yields tenant_id_1, a COALESCE wrapper yields coalesce_2).
+    params = call_stmt.compile(dialect=postgresql.dialect()).params
+    assert subject.tenant_id in params.values()

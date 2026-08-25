@@ -11,36 +11,65 @@ See [docs/VAT-PRD.md](./docs/VAT-PRD.md) for full product requirements.
 
 ## Quick Start
 
-### Prerequisites
-
-- Python 3.11+
-- Node.js 18+
-- PostgreSQL (or Docker)
-
-### Backend
+### Everything at once (Docker)
 
 ```bash
+docker compose up -d
+```
+
+Brings up PostgreSQL, Valkey, the backend, the frontend, and the Celery worker
+and beat. The backend runs migrations on start, so the generated admin password
+is in its logs:
+
+```bash
+docker compose logs backend | grep -A3 'bootstrap admin'
+```
+
+Then open http://localhost:3000 and see **First login** below.
+
+### Running from source
+
+Prerequisites: Python 3.11+, Node.js 18+, and PostgreSQL (or `docker compose up -d postgres`).
+
+```bash
+# backend
 cd backend
 uv sync
 cp .env.example .env      # edit as needed
+uv run alembic upgrade head
 uv run uvicorn app.main:app --reload --port 8000
 ```
 
-### Frontend
-
 ```bash
+# frontend
 cd frontend
 npm install
 npm run dev
 ```
 
-Open http://localhost:3000
+Open http://localhost:3000.
 
-### Database (Docker)
+### First login
+
+The first migration run creates an `admin` account and prints a **randomly
+generated** password once:
+
+```
+================================================================
+  VAT bootstrap admin created
+    username: admin   (or admin@vat.local)
+    password: <generated>
+================================================================
+```
+
+Save it — it is not stored anywhere else and is not shown again. To choose the
+password yourself, set `VAT_ADMIN_BOOTSTRAP_PASSWORD` before running migrations:
 
 ```bash
-docker compose up -d postgres
+VAT_ADMIN_BOOTSTRAP_PASSWORD='...' uv run alembic upgrade head
 ```
+
+Re-running migrations never resets a password you have since changed.
 
 ### Correlation Reversibility Gate
 

@@ -158,24 +158,18 @@ def test_finding_belongs_to_asset_delete_matches_component_base():
 @pytest.mark.asyncio
 async def test_delete_asset_owned_data_deletes_dependencies_but_not_loadouts():
     db = type("DB", (), {})()
-    db.execute = AsyncMock(
-        side_effect=[
-            _ExecuteRows([_FakeFinding("finding-1", component="asset-delete-test")]),
-            _Rowcount(2),  # audit_events
-            _Rowcount(1),  # correlation_edges
-            _Rowcount(1),  # finding_identifiers
-            _Rowcount(1),  # finding_observations
-            _Rowcount(1),  # asset_merge_events
-            _Rowcount(1),  # findings
-            _Rowcount(1),  # asset_merge_reviews
-            _Rowcount(1),  # asset_aliases
-            _Rowcount(1),  # asset_observed_tags
-            _Rowcount(1),  # asset_digest_conflicts
-            _Rowcount(1),  # openscap_scan_results
-            _Rowcount(1),  # sbom_packages
-            _Rowcount(1),  # assets
-        ]
-    )
+    # First execute() selects the asset's findings; every later one is a DELETE
+    # whose rowcount we report as 1. Deliberately not a fixed list keyed to the
+    # exact table order — this test is about *which* tables are touched (see the
+    # asset_loadouts assertion below), not how many there are.
+    _first = [_ExecuteRows([_FakeFinding("finding-1", component="asset-delete-test")])]
+
+    async def _execute(*_args, **_kwargs):
+        if _first:
+            return _first.pop()
+        return _Rowcount(1)
+
+    db.execute = AsyncMock(side_effect=_execute)
     ctx = UserContext(
         user_id="admin",
         email="admin@vat.local",

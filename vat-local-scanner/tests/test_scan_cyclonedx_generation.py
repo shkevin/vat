@@ -47,7 +47,7 @@ def test_run_scan_adds_cyclonedx_from_container_sources(monkeypatch, tmp_path: P
     docs = reports["cyclonedx"]
     assert isinstance(docs, list)
     assert len(docs) == 1
-    doc, label, image_ref = docs[0]
+    doc, label, image_ref, image_digest = docs[0]
     assert label == "img-a"
     assert image_ref == "ghcr.io/example/app:v1.2.3"
     assert len(doc.get("components") or []) == 1
@@ -114,7 +114,7 @@ def test_run_scan_cleans_wrap_dirs_after_cyclonedx(monkeypatch, tmp_path: Path) 
     assert "cyclonedx" in reports
     docs = reports["cyclonedx"]
     assert isinstance(docs, list)
-    doc, label, image_ref = docs[0]
+    doc, label, image_ref, image_digest = docs[0]
     assert label == "img-a"
     assert image_ref == "ghcr.io/example/app:v1.2.3"
     props = doc["components"][0].get("properties") or []

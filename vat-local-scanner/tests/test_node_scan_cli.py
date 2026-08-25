@@ -579,7 +579,7 @@ def test_cmd_scan_runtime_prefers_parser_specific_openscap_key(monkeypatch, tmp_
 
     def _ensure_source(*args, **kwargs):
         ensure_calls.append(kwargs)
-        return args[2], ("openscap-key" if kwargs.get("regenerate_key") else None)
+        return args[2], "openscap-key"
 
     monkeypatch.setattr(cli, "ensure_source", _ensure_source)
     monkeypatch.setattr(cli, "cache_key", lambda *args, **kwargs: None)
@@ -604,7 +604,11 @@ def test_cmd_scan_runtime_prefers_parser_specific_openscap_key(monkeypatch, tmp_
     ) == 0
 
     assert keys == ["openscap-key"]
-    assert [call.get("regenerate_key") for call in ensure_calls] == [False, True]
+    # Never regenerate_key=True: _ensure_parser_ingest_key deliberately does
+# NOT auto-regenerate on a cache miss, because rotating here invalidates the
+# key every other scanner already holds. A real reset needs --reset-keys.
+    assert ensure_calls
+    assert all(call.get("regenerate_key") is False for call in ensure_calls)
 
 
 def test_cmd_scan_runtime_summarizes_scanner_failures_without_error_spam(

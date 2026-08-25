@@ -1,0 +1,107 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: backend (pytest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install
+        working-directory: backend
+        run: uv sync
+      - name: Test
+        working-directory: backend
+        run: uv run pytest
+
+  scanner:
+    name: scanner (pytest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Test
+        working-directory: vat-local-scanner
+        run: |
+          uv venv
+          uv pip install -e ".[dev]" || uv pip install -e .
+          uv run pytest -q --no-header
+
+  frontend:
+    name: frontend (lint, test, build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install
+        working-directory: frontend
+        run: npm ci
+      - name: Lint
+        working-directory: frontend
+        run: npm run lint
+      - name: Test
+        working-directory: frontend
+        run: npm run test
+      - name: Build
+        working-directory: frontend
+        run: npm run build
+
+  operator:
+    name: operator (go)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: operator/go.mod
+          cache-dependency-path: operator/go.sum
+      - name: Vet
+        working-directory: operator
+        run: go vet ./...
+      - name: Test
+        working-directory: operator
+        run: go test ./...
+
+  manifests:
+    name: k8s manifests (kustomize)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-kubectl@v4
+      - name: Render
+        run: |
+          for d in deploy/k8s/base \
+                   deploy/k8s/operator/base \
+                   deploy/k8s/operator/overlays/k0s \
+                   deploy/k8s/operator/overlays/k3s \
+                   deploy/k8s/operator/overlays/kind; do
+            echo "::group::$d"
+            kubectl kustomize "$d" > /dev/null
+            echo "::endgroup::"
+          done
