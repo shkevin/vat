@@ -2,7 +2,7 @@
 
 Authoritative source of record for vulnerability and security findings. Bridges Aikido scanner and Linear task tracker with structured triage, risk acceptance, and remediation tracking.
 
-See [VAT-PRD.md](./VAT-PRD.md) for full product requirements.
+See [docs/VAT-PRD.md](./docs/VAT-PRD.md) for full product requirements.
 
 ## Architecture
 

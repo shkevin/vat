@@ -70,3 +70,19 @@ age.key
 *.agekey
 scripts/download-kamiwaza-latest-keygen.sh
 backend/coverage-correlation.json
+
+# internal tooling / analysis — kept locally, not published
+.gitlab-ci.yml
+.claude/skills/vat-scan-bundle/
+backend/scripts/verify_kamiwaza_develop.py
+backend/scripts/simulate_excel_to_vat.py
+backend/scripts/diagnose_medium_gap.py
+backend/scripts/diagnose_vat_excel_gap.py
+backend/scripts/analyze_grouping_excel_vat.py
+backend/scripts/grouping_analysis_per_asset.py
+backend/scripts/validate_excel_vat.py
+docs/grouping-analysis-report.md
+docs/report-severity-filtering-analysis.md
+docs/folder-scan-analysis.md
+docs/finding-location-diagnosis.md
+docs/container-scan-nested-helm-research.md

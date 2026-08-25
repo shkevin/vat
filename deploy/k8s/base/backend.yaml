@@ -74,8 +74,10 @@ spec:
           env:
             - name: VAT_ENV
               value: production
+            # Registry prefixes stripped when deriving container asset paths.
+            # Append your own private registries in a site overlay.
             - name: VAT_CONTAINER_ASSET_PATH_ALIASES
-              value: "docker.io/=>;ghcr.io/kamiwaza-internal/=>;registry-1.docker.io/=>"
+              value: "docker.io/=>;registry-1.docker.io/=>"
             - name: VAT_RUN_MIGRATIONS
               value: "false"
             - name: VAT_UVICORN_WORKERS

@@ -81,29 +81,14 @@ workload already declares `imagePullSecrets`.
 
 ## Image build pipeline
 
-`.gitlab-ci.yml` at the repo root builds backend + frontend with Kaniko and
-pushes to Harbor. Tagging rules:
+Container images are built from `backend/Dockerfile`, `frontend/Dockerfile`,
+`vat-local-scanner/Dockerfile`, and `operator/Dockerfile`. There is no CI
+workflow in this repo — wire up whatever your registry needs and publish as
+`<your-registry>/vat/{backend,frontend,scanner,operator}`.
 
-| Trigger               | Tags pushed                                   |
-|-----------------------|-----------------------------------------------|
-| branch `main`         | `latest`, `sha-<short>`                       |
-| branch `develop`      | `develop`, `sha-<short>`                      |
-| git tag `v*`          | `<tag>`, `sha-<short>`                        |
-| merge request         | dry-run build (`--no-push`), no tags pushed   |
-
-Required CI/CD variables:
-
-- `HARBOR_USER` (masked, protected) — Harbor robot or user
-- `HARBOR_TOKEN` (masked, protected) — Harbor token with push on project `vat`
-
-Optional:
-
-- `SOPS_AGE_KEY` (masked, protected, file) — enables the
-  `validate:overlays` job to render the KSOPS-enabled overlays in CI.
-
-The frontend Kaniko job passes `--build-arg API_UPSTREAM_URL=http://vat-backend:8000`
-so Next.js rewrites `/api/*` to the in-cluster Service `vat-backend` (not
-`backend`, which is only valid in docker-compose).
+Build the frontend with `--build-arg API_UPSTREAM_URL=http://vat-backend:8000`
+so Next.js rewrites `/api/*` to the in-cluster Service `vat-backend` (rather
+than `backend`, which is only valid under docker-compose).
 
 ## First login (local auth)
 

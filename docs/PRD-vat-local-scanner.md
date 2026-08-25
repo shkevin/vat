@@ -288,5 +288,4 @@ disable_artifact_scanning: false
 - [Aikido Local Scanner](https://aikido.dev/features/local-scanner) — design inspiration
 - [Aikido CLI Options](https://help.aikido.dev/doc/local-scanner-cli-options/) — CLI patterns
 - [VAT PRD](VAT-PRD.md) — parent product
-- [VAT Folder Scan Analysis](folder-scan-analysis.md) — current script design
 - [VAT Manual Sources](manual-sources.md) — ingest and source config
