@@ -43,6 +43,14 @@ const nextConfig = {
   transpilePackages: ["@xyflow/react"],
   experimental: {
     optimizePackageImports: ["lucide-react"],
+    // ponytail: Next caps proxied request bodies at 10MB by default. `vat-backend`
+    // is ClusterIP, so every external scanner push traverses the /api rewrite below
+    // — and a single image's OpenSCAP XCCDF XML blows past 10MB. Next truncated the
+    // body and reset the upstream socket, which surfaced as ClientDisconnect ->
+    // HTTP 500 -> the scanner aborting a 42-minute STIG run with nothing ingested.
+    // 128mb is headroom over the largest observed report; the frontend pod has a
+    // 1Gi limit and scanner pushes are sequential, so buffering one body is safe.
+    middlewareClientMaxBodySize: "128mb",
   },
   async headers() {
     return [
