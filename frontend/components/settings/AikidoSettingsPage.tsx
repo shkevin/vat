@@ -9,7 +9,7 @@ import {
   putAikidoCredentials,
   syncAikido,
 } from "@/lib/api";
-import { resolveTeamEntries } from "@/lib/assetUtils";
+import { resolveTeamEntries, summarizeTeamImport } from "@/lib/assetUtils";
 import { useAuth } from "@/contexts/AuthContext";
 import { useVATData } from "@/contexts/VATDataContext";
 import {
@@ -248,11 +248,18 @@ export function AikidoSettingsPage({
       const teams = await fetchAikidoTeams(auth, sourceId);
       const byName = new Map(loadouts.map((l) => [l.name.toLowerCase(), l.id]));
       let imported = 0;
-      let skipped = 0;
+      // A team owning nothing in Aikido and a team whose resources VAT never
+      // ingested both produce no loadout, but only the second is a problem.
+      let ownNothing = 0;
+      let unmatched = 0;
       for (const team of teams) {
+        if (team.members.length === 0) {
+          ownNothing++;
+          continue;
+        }
         const entries = resolveTeamEntries(team.members, allAssets);
         if (entries.length === 0) {
-          skipped++;
+          unmatched++;
           continue;
         }
         await saveLoadout(
@@ -263,9 +270,7 @@ export function AikidoSettingsPage({
         imported++;
       }
       setTeamImportResult(
-        imported === 0
-          ? "No Aikido team matched a known asset."
-          : `Imported ${imported} team${imported === 1 ? "" : "s"} as loadouts${skipped > 0 ? ` · ${skipped} skipped with no matching assets` : ""}. Find them in the sidebar under Loadouts.`,
+        summarizeTeamImport({ imported, ownNothing, unmatched }),
       );
     } catch (e) {
       setTeamImportResult(

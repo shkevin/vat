@@ -147,6 +147,46 @@ export function encodeAssetIdPath(assetId: string): string {
     .join("/");
 }
 
+/**
+ * Human summary of a team import.
+ *
+ * Distinguishes the two reasons a team produces no loadout, because they mean
+ * very different things: a team that owns no repos or containers in Aikido
+ * (Marketing, Security, org-admins) is entirely normal, while a team whose
+ * resources VAT has never ingested is a real gap worth looking at. Reporting
+ * both as "skipped with no matching assets" reads as a failure when it is not.
+ */
+export function summarizeTeamImport(counts: {
+  imported: number;
+  ownNothing: number;
+  unmatched: number;
+}): string {
+  const { imported, ownNothing, unmatched } = counts;
+  const parts: string[] = [];
+  if (imported > 0) {
+    parts.push(
+      imported === 1
+        ? "Imported 1 team as a loadout."
+        : `Imported ${imported} teams as loadouts.`,
+    );
+  }
+  if (unmatched > 0) {
+    parts.push(
+      `${unmatched === 1 ? "1 team owns" : `${unmatched} teams own`} repos or containers VAT has not ingested.`,
+    );
+  }
+  if (ownNothing > 0) {
+    const suffix = unmatched > 0 ? "" : " (normal for people-only teams)";
+    parts.push(
+      `${ownNothing === 1 ? "1 owns" : `${ownNothing} own`} nothing in Aikido${suffix}.`,
+    );
+  }
+  if (imported > 0) parts.push("Find them in the sidebar under Loadouts.");
+  else if (parts.length === 0) parts.push("No Aikido teams found.");
+  else parts.unshift("No loadouts created.");
+  return parts.join(" ");
+}
+
 /** Compare a branch and a tag ignoring separator style: release/1.2.1 == release-1.2.1. */
 function sameRefName(a: string, b: string): boolean {
   const norm = (v: string) => v.trim().toLowerCase().replace(/[/_]/g, "-");

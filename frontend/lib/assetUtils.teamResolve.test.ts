@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   primaryTagForRow,
   resolveTeamEntries,
+  summarizeTeamImport,
   teamTagForAsset,
 } from "./assetUtils";
 
@@ -155,5 +156,42 @@ describe("primaryTagForRow", () => {
 
   it("prefers a version tag over latest when unpinned", () => {
     expect(primaryTagForRow(["latest", "1.4.0", "1.10.0"]).primary).toBe("1.10.0");
+  });
+});
+
+describe("summarizeTeamImport", () => {
+  it("does not call people-only teams a failure", () => {
+    // The live workspace: 19 teams, 7 own resources, 12 (Marketing, Security,
+    // org-admins...) own nothing. Nothing went wrong here.
+    const msg = summarizeTeamImport({ imported: 7, ownNothing: 12, unmatched: 0 });
+    expect(msg).toContain("Imported 7 teams as loadouts.");
+    expect(msg).toContain("12 own nothing in Aikido");
+    expect(msg).not.toMatch(/skipped|no matching assets/i);
+  });
+
+  it("calls out teams whose resources VAT has not ingested", () => {
+    const msg = summarizeTeamImport({ imported: 5, ownNothing: 0, unmatched: 2 });
+    expect(msg).toContain("2 teams own repos or containers VAT has not ingested.");
+  });
+
+  it("reports both reasons separately", () => {
+    const msg = summarizeTeamImport({ imported: 5, ownNothing: 12, unmatched: 2 });
+    expect(msg).toContain("2 teams own repos or containers VAT has not ingested.");
+    expect(msg).toContain("12 own nothing in Aikido.");
+  });
+
+  it("says so plainly when nothing was created", () => {
+    expect(summarizeTeamImport({ imported: 0, ownNothing: 3, unmatched: 0 })).toContain(
+      "No loadouts created.",
+    );
+    expect(summarizeTeamImport({ imported: 0, ownNothing: 0, unmatched: 0 })).toBe(
+      "No Aikido teams found.",
+    );
+  });
+
+  it("gets the singular right", () => {
+    const msg = summarizeTeamImport({ imported: 1, ownNothing: 1, unmatched: 1 });
+    expect(msg).toContain("Imported 1 team as a loadout.");
+    expect(msg).toContain("1 team owns repos");
   });
 });
