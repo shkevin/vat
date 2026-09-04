@@ -287,3 +287,61 @@ describe("which asset row an entry points at", () => {
     ).toEqual([{ assetId: "ns/images/solo", branch: undefined, tag: undefined }]);
   });
 });
+
+describe("Aikido's own container tag is authoritative", () => {
+  // /containers returns one row per tag; the team's responsibility points at
+  // one of them, so that row's tag is what the Aikido team page displays
+  // (containers/images/etcd:v3.6.14, not :develop).
+  const ASSETS_WITH_TAGS = [
+    {
+      id: "containers/images/etcd",
+      observedTags: [{ tag: "develop" }, { tag: "v3.6.14" }],
+    },
+  ];
+
+  it("uses the tag Aikido gave, not one inferred from the branch", () => {
+    const [e] = resolveTeamEntries(
+      [
+        { name: "repo", branch: "develop" },
+        { name: "containers/images/etcd", tag: "v3.6.14" },
+      ].slice(1),
+      ASSETS_WITH_TAGS,
+    );
+    expect(e.tag).toBe("v3.6.14");
+  });
+
+  it("beats a branch match on the same asset", () => {
+    // "develop" is both a team branch and an observed tag; Aikido still says v3.6.14.
+    const entries = resolveTeamEntries(
+      [
+        { name: "repo-x", branch: "develop" },
+        { name: "containers/images/etcd", tag: "v3.6.14" },
+      ],
+      [...ASSETS_WITH_TAGS, { id: "repo-x" }],
+    );
+    expect(entries.find((e) => e.assetId === "containers/images/etcd")?.tag).toBe(
+      "v3.6.14",
+    );
+  });
+
+  it("falls back to inference only when Aikido gives no tag", () => {
+    const [e] = resolveTeamEntries(
+      [{ name: "containers/images/etcd" }],
+      ASSETS_WITH_TAGS,
+    );
+    expect(e.tag).toBe("v3.6.14"); // pickLatestVersionTag over observed tags
+  });
+});
+
+describe("v-prefixed image tags parse as versions", () => {
+  it("ranks a v-prefixed version above a branch-like tag", () => {
+    // Image tags are overwhelmingly v-prefixed; without this "develop" won.
+    expect(primaryTagForRow(["develop", "v3.6.14"]).primary).toBe("v3.6.14");
+    expect(primaryTagForRow(["latest", "v3.17.0-kz.6"]).primary).toBe("v3.17.0-kz.6");
+  });
+
+  it("still orders versions correctly", () => {
+    expect(primaryTagForRow(["v1.4.0", "v1.10.0"]).primary).toBe("v1.10.0");
+    expect(primaryTagForRow(["1.4.0", "v1.10.0"]).primary).toBe("v1.10.0");
+  });
+});

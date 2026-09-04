@@ -2253,23 +2253,28 @@ _TEAM_RESPONSIBILITY_SOURCES = {
 
 
 def _team_member_context(source: str, member: dict[str, Any]) -> dict[str, Any]:
-    """Branch context for a team member, in VAT's FavoriteEntry vocabulary.
+    """Branch/tag context for a team member, straight from Aikido.
 
-    Only code repos get context here, and only their branch ("develop",
-    "release/1.2.1") — that is a real, stable property of the responsibility.
+    /containers returns one row per tag — the same name appears repeatedly, e.g.
+    containers/images/etcd at 'develop' and again at 'v3.6.14' — and a team's
+    responsibility points at one specific row. So the tag on that row is the tag
+    Aikido shows for that team, and is authoritative: the team page reads
+    "containers/images/etcd:v3.6.14", not the image's newest or default tag.
 
-    Containers deliberately get nothing. Aikido's container ``tag`` is transient
-    (it read "pr-209" for an image whose observed tags were release-1.2.1,
-    latest and develop) and the dashboard cache stores a reduced container
-    projection with no tag fields at all, so reading it made the same request
-    answer differently depending on cache freshness. The caller picks a
-    container's tag from the tags VAT has actually observed, matched against
-    the team's branch — see resolveTeamEntries.
+    An earlier version dropped this, having read a value of "pr-209" as
+    transient. It was not: it was the tag on the row that team's responsibility
+    pointed at.
     """
-    if source != "code_repos":
-        return {}
-    branch = member.get("branch")
-    return {"branch": branch.strip()} if isinstance(branch, str) and branch.strip() else {}
+    if source == "code_repos":
+        branch = member.get("branch")
+        return (
+            {"branch": branch.strip()}
+            if isinstance(branch, str) and branch.strip()
+            else {}
+        )
+    # tag is empty on rows Aikido has only scanned; last_scanned_tag holds it there.
+    tag = member.get("tag") or member.get("last_scanned_tag")
+    return {"tag": tag.strip()} if isinstance(tag, str) and tag.strip() else {}
 
 
 def aikido_teams_to_asset_names(

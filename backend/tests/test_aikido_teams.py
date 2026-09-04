@@ -40,9 +40,10 @@ def test_maps_responsibilities_to_members_with_context():
     assert dev["name"] == "Dev"
     assert dev["members"] == [
         {"name": "containers", "branch": "develop"},
-        # Containers carry no tag: Aikido's is transient and the cache drops it.
-        # The frontend derives one from the team's branch + observed tags.
-        {"name": "kamiwaza/images/init-keycloak-users-fips"},
+        # /containers has one row per tag and the responsibility points at one of
+        # them, so that row's tag is what Aikido shows for this team. tag is
+        # empty on scanned-only rows, where last_scanned_tag carries it.
+        {"name": "kamiwaza/images/init-keycloak-users-fips", "tag": "latest"},
     ]
     assert dev["unresolved"] == 1
 
@@ -301,7 +302,8 @@ async def test_branchless_cache_is_not_trusted_for_repos(monkeypatch):
 
     result = await route.aikido_teams(db=None, _ctx=None, source_id="s-1")
     assert "repos" in calls, "branchless cache must trigger a live repo fetch"
-    assert "containers" not in calls, "containers only need name, which the cache has"
+    # The cache drops tag alongside branch, so containers are refetched too.
+    assert "containers" in calls, "tagless cache must trigger a live container fetch"
     assert result["teams"][0]["members"] == [
         {"name": "containers", "branch": "develop"}
     ], "branch must survive"

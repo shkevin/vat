@@ -282,9 +282,12 @@ export function resolveTeamEntries(
     const hit = byCanonical.get(canonical);
     const assetId = hit?.id ?? exact.get(name);
     if (!assetId) continue;
-    const tag = m.branch
-      ? m.tag
-      : teamTagForAsset(branches, [...(hit?.tags ?? [])]);
+    // Aikido's own tag wins: /containers has one row per tag and the team's
+    // responsibility points at a specific one, so that is the tag Aikido shows
+    // for this team. Only fall back to inference when it gives us nothing.
+    const tag =
+      m.tag?.trim() ||
+      (m.branch ? undefined : teamTagForAsset(branches, [...(hit?.tags ?? [])]));
     const key = `${assetId}|${m.branch ?? ""}|${tag ?? ""}`;
     if (seen.has(key)) continue;
     seen.add(key);
@@ -676,7 +679,10 @@ export function pickLatestVersionTag(tags: string[]): {
 }
 
 function parseSemverParts(tag: string): number[] {
-  const match = tag.match(/^(\d+)\.(\d+)(?:\.(\d+))?/);
+  // Accept a leading "v": image tags are overwhelmingly v-prefixed
+  // (v3.6.14, v3.17.0-kz.6), and without this they did not parse as versions
+  // at all, so "develop" could outrank "v3.6.14" when picking a primary tag.
+  const match = tag.match(/^v?(\d+)\.(\d+)(?:\.(\d+))?/i);
   if (!match) return [-1];
   return [
     parseInt(match[1], 10),

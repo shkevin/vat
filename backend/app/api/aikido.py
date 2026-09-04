@@ -526,7 +526,7 @@ async def aikido_teams(
     # cache cannot account for.
     cached = await get_aikido_dashboard_cached(db, source_id) or {}
 
-    def _cache_has(rows: list, field: str) -> bool:
+    def _cache_has(rows: list, *fields: str) -> bool:
         """Cached rows are a reduced projection — {id, name, provider, *_count}.
 
         Resolving a member only needs `name`, so a cache miss on `branch` still
@@ -534,7 +534,9 @@ async def aikido_teams(
         derived container tag and per-branch entries collapse. Checking that the
         members resolve is not enough; the fields we read have to be there too.
         """
-        return bool(rows) and any(r.get(field) for r in rows if isinstance(r, dict))
+        return bool(rows) and any(
+            any(r.get(f) for f in fields) for r in rows if isinstance(r, dict)
+        )
 
     code_repos = cached.get("repos") or []
     containers = cached.get("containers") or []
@@ -543,8 +545,9 @@ async def aikido_teams(
         # Repos are read for their branch, which the cache does not keep.
         if not _cache_has(code_repos, "branch"):
             code_repos = await fetch_aikido_code_repositories(creds)
-        # Containers are only read for their name, which the cache does keep.
-        if not _cache_has(containers, "name"):
+        # Containers are read for their tag now, which the cache drops along
+        # with branch — so this refetches until the sync keeps those fields.
+        if not _cache_has(containers, "tag", "last_scanned_tag"):
             containers = await fetch_aikido_containers(creds)
         resolved = aikido_teams_to_asset_names(teams, code_repos, containers)
         # A cache written before a fetcher was fixed (or simply stale) can be
