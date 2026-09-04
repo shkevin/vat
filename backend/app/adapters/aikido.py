@@ -2217,18 +2217,23 @@ _TEAM_RESPONSIBILITY_SOURCES = {
 
 
 def _team_member_context(source: str, member: dict[str, Any]) -> dict[str, Any]:
-    """Branch/tag context for a team member, in VAT's FavoriteEntry vocabulary.
+    """Branch context for a team member, in VAT's FavoriteEntry vocabulary.
 
-    A code repo is pinned by branch ("develop", "release/1.2.1"); a container by
-    image tag. Aikido leaves ``tag`` empty on containers it has only scanned, so
-    fall back to ``last_scanned_tag`` — that is the value the ingest recorded on
-    the asset row (e.g. "latest").
+    Only code repos get context here, and only their branch ("develop",
+    "release/1.2.1") — that is a real, stable property of the responsibility.
+
+    Containers deliberately get nothing. Aikido's container ``tag`` is transient
+    (it read "pr-209" for an image whose observed tags were release-1.2.1,
+    latest and develop) and the dashboard cache stores a reduced container
+    projection with no tag fields at all, so reading it made the same request
+    answer differently depending on cache freshness. The caller picks a
+    container's tag from the tags VAT has actually observed, matched against
+    the team's branch — see resolveTeamEntries.
     """
-    if source == "code_repos":
-        branch = member.get("branch")
-        return {"branch": branch.strip()} if isinstance(branch, str) and branch.strip() else {}
-    tag = member.get("tag") or member.get("last_scanned_tag")
-    return {"tag": tag.strip()} if isinstance(tag, str) and tag.strip() else {}
+    if source != "code_repos":
+        return {}
+    branch = member.get("branch")
+    return {"branch": branch.strip()} if isinstance(branch, str) and branch.strip() else {}
 
 
 def aikido_teams_to_asset_names(

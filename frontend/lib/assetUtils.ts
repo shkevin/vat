@@ -147,38 +147,79 @@ export function encodeAssetIdPath(assetId: string): string {
     .join("/");
 }
 
+/** Compare a branch and a tag ignoring separator style: release/1.2.1 == release-1.2.1. */
+function sameRefName(a: string, b: string): boolean {
+  const norm = (v: string) => v.trim().toLowerCase().replace(/[/_]/g, "-");
+  return norm(a) === norm(b) && norm(a) !== "";
+}
+
+/**
+ * The tag a team's containers should be pinned to.
+ *
+ * A container carries several tags at once (release-1.2.1, latest, develop), so
+ * there is no single "current" one to read off it — and Aikido's own container
+ * tag field is transient. The team's repos do carry a real branch, and the tags
+ * mirror the branches, so use that: pick the observed tag matching one of the
+ * team's branches. Only ever returns a tag VAT has actually seen on that asset,
+ * and undefined when nothing matches.
+ */
+export function teamTagForAsset(
+  branches: string[],
+  observedTags: string[],
+): string | undefined {
+  for (const branch of branches) {
+    const hit = observedTags.find((t) => sameRefName(branch, t));
+    if (hit) return hit;
+  }
+  return undefined;
+}
+
 /**
  * Map external members (e.g. Aikido team responsibilities) onto ids of assets VAT
  * actually knows about, keeping each member's branch/tag context. Aikido reports
  * containers without the registry prefix VAT's derived ids carry, so match on the
  * canonical group key too. Members with no matching asset are dropped — a team can
  * own repos that were never ingested.
+ *
+ * Repos keep their branch. Containers get the observed tag matching one of the
+ * team's branches, so a "1.2.1" team pins release-1.2.1 rather than whatever tag
+ * happened to be scanned last.
  */
 export function resolveTeamEntries(
   members: { name: string; branch?: string; tag?: string }[],
-  assets: { id: string }[],
+  assets: { id: string; observedTags?: Array<{ tag: string }> }[],
 ): { assetId: string; branch?: string; tag?: string }[] {
-  const byKey = new Map<string, string>();
+  const byKey = new Map<string, { id: string; observedTags?: Array<{ tag: string }> }>();
   for (const a of assets) {
     const id = (a.id ?? "").trim();
     if (!id) continue;
     // First writer wins so an exact id is never shadowed by another asset's
     // canonical form.
-    if (!byKey.has(id)) byKey.set(id, id);
+    if (!byKey.has(id)) byKey.set(id, a);
     const key = containerImageGroupKey(id);
-    if (!byKey.has(key)) byKey.set(key, id);
+    if (!byKey.has(key)) byKey.set(key, a);
   }
+  const branches = members
+    .map((m) => m.branch)
+    .filter((b): b is string => Boolean(b && b.trim()));
+
   const out: { assetId: string; branch?: string; tag?: string }[] = [];
   const seen = new Set<string>();
   for (const m of members) {
     const name = (m?.name ?? "").trim();
     if (!name) continue;
-    const hit = byKey.get(name) ?? byKey.get(containerImageGroupKey(name));
-    if (!hit) continue;
-    const key = `${hit}|${m.branch ?? ""}|${m.tag ?? ""}`;
+    const asset = byKey.get(name) ?? byKey.get(containerImageGroupKey(name));
+    if (!asset) continue;
+    const tag = m.branch
+      ? m.tag
+      : teamTagForAsset(
+          branches,
+          (asset.observedTags ?? []).map((o) => o.tag).filter(Boolean),
+        );
+    const key = `${asset.id}|${m.branch ?? ""}|${tag ?? ""}`;
     if (seen.has(key)) continue;
     seen.add(key);
-    out.push({ assetId: hit, branch: m.branch, tag: m.tag });
+    out.push({ assetId: asset.id, branch: m.branch, tag });
   }
   return out;
 }

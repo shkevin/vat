@@ -40,8 +40,9 @@ def test_maps_responsibilities_to_members_with_context():
     assert dev["name"] == "Dev"
     assert dev["members"] == [
         {"name": "containers", "branch": "develop"},
-        # tag is empty upstream, so last_scanned_tag stands in.
-        {"name": "kamiwaza/images/init-keycloak-users-fips", "tag": "latest"},
+        # Containers carry no tag: Aikido's is transient and the cache drops it.
+        # The frontend derives one from the team's branch + observed tags.
+        {"name": "kamiwaza/images/init-keycloak-users-fips"},
     ]
     assert dev["unresolved"] == 1
 

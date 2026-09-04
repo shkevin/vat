@@ -1,72 +1,96 @@
 import { describe, it, expect } from "vitest";
-import { resolveTeamEntries } from "./assetUtils";
+import { resolveTeamEntries, teamTagForAsset } from "./assetUtils";
 
-// Members as Aikido reports them (containers without the registry prefix, repos
-// pinned to a branch); ids as VAT derives them from findings.
+// Ids as VAT derives them; observedTags as VAT actually recorded them.
 const ASSETS = [
-  { id: "docker.io/kamiwaza-extensions-tomo/images/tomo-postgres" },
-  { id: "docker.io/kamiwaza-extensions-tomo/images/tomo-web" },
-  { id: "containers" },
+  {
+    id: "docker.io/kamiwaza-extensions-tomo/images/kaizen-api",
+    observedTags: [
+      { tag: "release-1.2.1" },
+      { tag: "latest" },
+      { tag: "develop" },
+    ],
+  },
+  { id: "docker.io/kamiwaza-extensions-tomo/images/no-tags" },
+  { id: "kamiwaza" },
 ];
 
+describe("teamTagForAsset", () => {
+  it("matches a branch to its tag across separator styles", () => {
+    // release/1.2.1 (branch) and release-1.2.1 (tag) are the same ref.
+    expect(teamTagForAsset(["release/1.2.1"], ["latest", "release-1.2.1"])).toBe(
+      "release-1.2.1",
+    );
+    expect(teamTagForAsset(["develop"], ["develop", "latest"])).toBe("develop");
+  });
+
+  it("returns nothing rather than guessing when no tag matches", () => {
+    expect(teamTagForAsset(["release/9.9.9"], ["latest", "develop"])).toBeUndefined();
+    expect(teamTagForAsset([], ["latest"])).toBeUndefined();
+    expect(teamTagForAsset(["develop"], [])).toBeUndefined();
+  });
+
+  it("never invents a tag the asset does not have", () => {
+    // "latest" is present but the team is a release line — no false positive.
+    expect(teamTagForAsset(["release/1.2.1"], ["latest"])).toBeUndefined();
+  });
+});
+
 describe("resolveTeamEntries", () => {
-  it("matches Aikido container names to registry-prefixed VAT asset ids, keeping the tag", () => {
-    expect(
-      resolveTeamEntries(
-        [{ name: "kamiwaza-extensions-tomo/images/tomo-postgres", tag: "latest" }],
-        ASSETS,
-      ),
-    ).toEqual([
+  const members = [
+    { name: "kamiwaza", branch: "release/1.2.1" },
+    { name: "kamiwaza-extensions-tomo/images/kaizen-api" },
+  ];
+
+  it("pins a container to the tag matching the team's branch", () => {
+    expect(resolveTeamEntries(members, ASSETS)).toEqual([
+      { assetId: "kamiwaza", branch: "release/1.2.1", tag: undefined },
       {
-        assetId: "docker.io/kamiwaza-extensions-tomo/images/tomo-postgres",
+        assetId: "docker.io/kamiwaza-extensions-tomo/images/kaizen-api",
         branch: undefined,
-        tag: "latest",
+        tag: "release-1.2.1",
       },
     ]);
   });
 
-  it("keeps a code repo's branch", () => {
-    expect(resolveTeamEntries([{ name: "containers", branch: "develop" }], ASSETS)).toEqual([
-      { assetId: "containers", branch: "develop", tag: undefined },
-    ]);
+  it("picks develop for a develop team, from the same asset", () => {
+    const [, container] = resolveTeamEntries(
+      [
+        { name: "kamiwaza", branch: "develop" },
+        { name: "kamiwaza-extensions-tomo/images/kaizen-api" },
+      ],
+      ASSETS,
+    );
+    expect(container.tag).toBe("develop");
   });
 
-  it("keeps the same repo on two branches as two entries", () => {
+  it("leaves the tag unset when the asset has no observed tags", () => {
+    const [, container] = resolveTeamEntries(
+      [
+        { name: "kamiwaza", branch: "develop" },
+        { name: "kamiwaza-extensions-tomo/images/no-tags" },
+      ],
+      ASSETS,
+    );
+    expect(container.tag).toBeUndefined();
+  });
+
+  it("still keeps a repo on two branches as two entries", () => {
     expect(
       resolveTeamEntries(
         [
-          { name: "containers", branch: "develop" },
-          { name: "containers", branch: "release/1.2.1" },
+          { name: "kamiwaza", branch: "develop" },
+          { name: "kamiwaza", branch: "release/1.2.1" },
         ],
         ASSETS,
       ),
     ).toEqual([
-      { assetId: "containers", branch: "develop", tag: undefined },
-      { assetId: "containers", branch: "release/1.2.1", tag: undefined },
+      { assetId: "kamiwaza", branch: "develop", tag: undefined },
+      { assetId: "kamiwaza", branch: "release/1.2.1", tag: undefined },
     ]);
   });
 
-  it("drops names VAT has never ingested, and de-dupes identical context", () => {
-    expect(
-      resolveTeamEntries(
-        [
-          { name: "kamiwaza-extensions-tomo/images/tomo-web", tag: "latest" },
-          { name: "docker.io/kamiwaza-extensions-tomo/images/tomo-web", tag: "latest" },
-          { name: "never/ingested/repo", tag: "v1" },
-          { name: "  " },
-        ],
-        ASSETS,
-      ),
-    ).toEqual([
-      {
-        assetId: "docker.io/kamiwaza-extensions-tomo/images/tomo-web",
-        branch: undefined,
-        tag: "latest",
-      },
-    ]);
-  });
-
-  it("returns nothing when there are no assets", () => {
-    expect(resolveTeamEntries([{ name: "anything" }], [])).toEqual([]);
+  it("drops names VAT has never ingested", () => {
+    expect(resolveTeamEntries([{ name: "never/ingested" }], ASSETS)).toEqual([]);
   });
 });
