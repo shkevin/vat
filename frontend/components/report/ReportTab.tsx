@@ -90,6 +90,9 @@ export function ReportTab({ findings, allAssets }: ReportTabProps) {
         <ReportBuilderView
           data={data}
           allAssets={allAssets}
+          // The same already-filtered findings the report renders, so an
+          // exported bundle covers exactly what is on screen.
+          exportFindings={findings}
           defaultCountMode={groupFindings ? "groups" : "instances"}
         />
       </div>

@@ -51,13 +51,16 @@ import {
 import { computeRepoRiskScores } from "@/lib/report/metrics";
 import type { VATDashboardData } from "@/lib/report/vatReportAdapter";
 import { getAssetTypeFromAsset } from "@/lib/assetUtils";
-import type { Asset } from "@/types";
+import { buildAndDownloadExportBundle } from "@/lib/exportBundle";
+import { useAuth } from "@/contexts/AuthContext";
+import type { Asset, Finding } from "@/types";
 import {
   ChevronDown,
   ChevronUp,
   FileSpreadsheet,
   Globe,
   Mail,
+  Package,
   Printer,
   Plus,
   Trash2,
@@ -1046,6 +1049,9 @@ function Modal({
 interface ReportBuilderViewProps {
   data: VATDashboardData;
   allAssets: Asset[];
+  /** Findings behind `data`, already narrowed by the sidebar (and so by any
+   *  applied team loadout). Used for the full export bundle. */
+  exportFindings?: Finding[];
   /** Default count mode when creating new reports. "instances" = each finding counts (matches Findings tab). */
   defaultCountMode?: "groups" | "instances";
   /** When true, report is filtered to current favorites. Toggle is shown when favoriteCount > 0. */
@@ -1057,6 +1063,7 @@ interface ReportBuilderViewProps {
 export function ReportBuilderView({
   data,
   allAssets,
+  exportFindings,
   defaultCountMode = "groups",
   useFavoritesOnly = false,
   onUseFavoritesOnlyToggle,
@@ -1667,6 +1674,26 @@ export function ReportBuilderView({
     });
   }, [data, definition, effectiveFilters]);
 
+  const { token } = useAuth();
+  const [bundleState, setBundleState] = useState<"idle" | "building" | "error">(
+    "idle",
+  );
+  const handleExportBundle = useCallback(async () => {
+    setBundleState("building");
+    try {
+      // Pass the on-screen scope so the bundle matches what is selected; with
+      // no scope the builder refetches the whole workspace and the applied
+      // team loadout is silently ignored.
+      await buildAndDownloadExportBundle(
+        { token: token ?? undefined },
+        exportFindings ? { findings: exportFindings, assets: allAssets } : undefined,
+      );
+      setBundleState("idle");
+    } catch {
+      setBundleState("error");
+    }
+  }, [exportFindings, allAssets, token]);
+
   const handleExportCsv = useCallback(() => {
     exportCsvFromDefinition(data, { ...definition, filters: effectiveFilters });
   }, [data, definition, effectiveFilters]);
@@ -1736,6 +1763,19 @@ export function ReportBuilderView({
             className="btn btn-primary"
           >
             <FileSpreadsheet size={16} /> Export CSV
+          </button>
+          <button
+            onClick={handleExportBundle}
+            disabled={bundleState === "building"}
+            title="ZIP: assets + findings JSON, CycloneDX SBOM, and the executive summary — scoped to the current filters"
+            className="btn btn-primary"
+          >
+            <Package size={16} />
+            {bundleState === "building"
+              ? "Building bundle…"
+              : bundleState === "error"
+                ? "Bundle failed — retry"
+                : "Export bundle"}
           </button>
         </div>
         <div className="toolbar-divider" />
