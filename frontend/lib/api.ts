@@ -9,6 +9,7 @@ import type {
   FeedSummaryResponse,
 } from "@/types/feeds";
 import type { FindingRiskScoring } from "@/types";
+import { encodeAssetIdPath } from "@/lib/assetUtils";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "/api";
 
@@ -1711,7 +1712,7 @@ export async function bulkDeleteAssets(
 
 export async function deleteAsset(assetId: string, auth?: Auth): Promise<void> {
   const res = await vatFetch(
-    `${API_BASE}/assets/${encodeURIComponent(assetId)}`,
+    `${API_BASE}/assets/${encodeAssetIdPath(assetId)}`,
     { method: "DELETE", headers: apiHeaders(auth?.token, auth?.userEmail) },
     auth,
   );
@@ -1740,7 +1741,7 @@ export async function groupAssetInto(
   findings_updated: number;
 }> {
   const res = await vatFetch(
-    `${API_BASE}/assets/${encodeURIComponent(sourceAssetId)}/group`,
+    `${API_BASE}/assets/${encodeAssetIdPath(sourceAssetId)}/group`,
     {
       method: "POST",
       headers: apiHeaders(auth?.token, auth?.userEmail),
@@ -1779,7 +1780,7 @@ export async function fetchAssetAliases(
   }>;
 }> {
   const res = await vatFetch(
-    `${API_BASE}/assets/${encodeURIComponent(canonicalAssetId)}/aliases`,
+    `${API_BASE}/assets/${encodeAssetIdPath(canonicalAssetId)}/aliases`,
     { headers: authHeaders(auth?.token, auth?.userEmail) },
     auth,
   );
@@ -1809,7 +1810,7 @@ export async function unmergeAssetFrom(
   restored_findings: number;
 }> {
   const res = await vatFetch(
-    `${API_BASE}/assets/${encodeURIComponent(canonicalAssetId)}/unmerge`,
+    `${API_BASE}/assets/${encodeAssetIdPath(canonicalAssetId)}/unmerge`,
     {
       method: "POST",
       headers: apiHeaders(auth?.token, auth?.userEmail),
@@ -1857,7 +1858,7 @@ export async function fetchAssetMergeSuggestions(
   suggestions: AssetMergeSuggestion[];
 }> {
   const res = await vatFetch(
-    `${API_BASE}/assets/${encodeURIComponent(
+    `${API_BASE}/assets/${encodeAssetIdPath(
       sourceAssetId,
     )}/merge-suggestions?limit=${encodeURIComponent(
       String(limit),
@@ -1917,7 +1918,7 @@ export async function fetchAssetMergeReviews(
   reviews: AssetMergeReviewRecord[];
 }> {
   const res = await vatFetch(
-    `${API_BASE}/assets/${encodeURIComponent(sourceAssetId)}/merge-reviews`,
+    `${API_BASE}/assets/${encodeAssetIdPath(sourceAssetId)}/merge-reviews`,
     { headers: authHeaders(auth?.token, auth?.userEmail) },
     auth,
   );
@@ -1950,7 +1951,7 @@ export async function upsertAssetMergeReview(
   auth?: Auth,
 ): Promise<AssetMergeReviewRecord> {
   const res = await vatFetch(
-    `${API_BASE}/assets/${encodeURIComponent(
+    `${API_BASE}/assets/${encodeAssetIdPath(
       sourceAssetId,
     )}/merge-reviews/${encodeURIComponent(targetAssetId)}`,
     {
@@ -1981,7 +1982,7 @@ export async function deleteAssetMergeReview(
   auth?: Auth,
 ): Promise<{ deleted: boolean }> {
   const res = await vatFetch(
-    `${API_BASE}/assets/${encodeURIComponent(
+    `${API_BASE}/assets/${encodeAssetIdPath(
       sourceAssetId,
     )}/merge-reviews/${encodeURIComponent(targetAssetId)}`,
     { method: "DELETE", headers: authHeaders(auth?.token, auth?.userEmail) },
@@ -2011,7 +2012,7 @@ export async function fetchAssetDigestConflicts(
   conflicts: AssetDigestConflictRecord[];
 }> {
   const res = await vatFetch(
-    `${API_BASE}/assets/${encodeURIComponent(assetId)}/digest-conflicts`,
+    `${API_BASE}/assets/${encodeAssetIdPath(assetId)}/digest-conflicts`,
     { headers: authHeaders(auth?.token, auth?.userEmail) },
     auth,
   );
@@ -2037,7 +2038,7 @@ export async function acknowledgeAssetDigestConflict(
   auth?: Auth,
 ): Promise<AssetDigestConflictRecord> {
   const res = await vatFetch(
-    `${API_BASE}/assets/${encodeURIComponent(
+    `${API_BASE}/assets/${encodeAssetIdPath(
       assetId,
     )}/digest-conflicts/${encodeURIComponent(tag)}/ack`,
     {

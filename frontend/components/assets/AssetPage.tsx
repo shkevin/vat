@@ -18,6 +18,7 @@ import {
   defaultContainerVariantKey,
   formatContainerVariantOptionLabel,
   getFindingImageDigest,
+  encodeAssetIdPath,
 } from "@/lib/assetUtils";
 import { getGroupedFindings } from "@/lib/findingGroupUtils";
 import { FINDING_TYPES, SEV_ORDER, SEV } from "@/lib/constants";
@@ -161,8 +162,14 @@ export function AssetPage({ config }: AssetPageProps) {
   const params = useParams();
   const searchParams = useSearchParams();
   const router = useRouter();
-  const assetId =
-    typeof params.id === "string" ? decodeURIComponent(params.id) : null;
+  // Catch-all route: `docker.io/ns/images/api` arrives as real path segments.
+  // A legacy %2F-encoded link still lands here as one segment already decoded
+  // by the router, so joining handles both shapes.
+  const assetId = Array.isArray(params.slug)
+    ? params.slug.map((s) => decodeURIComponent(s)).join("/")
+    : typeof params.slug === "string"
+      ? decodeURIComponent(params.slug)
+      : null;
   const data = useVATData();
   const { preferences, setPreferences } = useUserPreferences();
   const { user, token } = useAuth();
@@ -539,7 +546,7 @@ export function AssetPage({ config }: AssetPageProps) {
           userEmail: user?.email,
         });
         await refetch({ silent: true });
-        router.push(`/assets/${encodeURIComponent(targetAssetId)}`);
+        router.push(`/assets/${encodeAssetIdPath(targetAssetId)}`);
       } catch (err) {
         setMergeSuggestionsError(
           err instanceof Error ? err.message : "Failed to approve merge",
@@ -1192,7 +1199,7 @@ export function AssetPage({ config }: AssetPageProps) {
       });
       setSelected(null);
       await refetch({ silent: true });
-      router.push(`/assets/${encodeURIComponent(result.target_asset_id)}`);
+      router.push(`/assets/${encodeAssetIdPath(result.target_asset_id)}`);
     } catch (err) {
       setAdminActionError(
         err instanceof Error

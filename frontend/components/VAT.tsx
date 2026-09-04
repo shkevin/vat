@@ -12,6 +12,7 @@ import { DetailPanel } from "@/components/detail/DetailPanel";
 import { ActivityFeedPanel } from "@/components/activity/ActivityFeedPanel";
 import { useActivityFeed } from "@/components/activity/useActivityFeed";
 import { VulnerabilityFeedsTab } from "@/components/feeds/VulnerabilityFeedsTab";
+import { encodeAssetIdPath } from "@/lib/assetUtils";
 
 // Lazy-load heavy tabs: SettingsTab pulls in @xyflow/react (~200KB+), ReportTab pulls in report engine + regression + many icons
 const ReportTab = dynamic(
@@ -575,7 +576,7 @@ export default function VAT({ config }: VATProps) {
                         </div>
                       </div>
                       <a
-                        href={`/assets/${encodeURIComponent(
+                        href={`/assets/${encodeAssetIdPath(
                           item.assetId,
                         )}?tab=review`}
                         style={{

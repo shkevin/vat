@@ -19,6 +19,7 @@ import {
   containerTagListForAsset,
   getAssetTypeFromAsset,
   pickLatestVersionTag,
+  encodeAssetIdPath,
 } from "@/lib/assetUtils";
 import { isOpenRisk } from "@/lib/metricSemantics";
 import { effectiveGroupKey } from "@/lib/findingGroupUtils";
@@ -30,7 +31,7 @@ function buildAssetUrl(
   assetId: string,
   getFavoriteContext: (id: string) => { branch?: string; tag?: string } | null,
 ): string {
-  const base = `/assets/${encodeURIComponent(assetId)}`;
+  const base = `/assets/${encodeAssetIdPath(assetId)}`;
   const ctx = getFavoriteContext(assetId);
   if (!ctx?.branch && !ctx?.tag) return base;
   const params = new URLSearchParams();

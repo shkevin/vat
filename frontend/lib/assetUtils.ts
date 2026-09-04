@@ -131,6 +131,23 @@ export function sameAssetIdentity(a: string, b: string): boolean {
 }
 
 /**
+ * Encode an asset id for use in a URL path, leaving its slashes literal.
+ *
+ * Asset ids are container refs like `docker.io/ns/images/api`, so
+ * encodeURIComponent turns every slash into %2F. Encoded slashes are rejected
+ * or rewritten by most reverse proxies and WAFs (the one in front of this
+ * deployment answers 400), and they are not needed: the page route is a
+ * catch-all and the backend matches on `{asset_id:path}`, so both sides accept
+ * real slashes. Everything else — spaces, colons — still gets encoded.
+ */
+export function encodeAssetIdPath(assetId: string): string {
+  return (assetId ?? "")
+    .split("/")
+    .map((seg) => encodeURIComponent(seg))
+    .join("/");
+}
+
+/**
  * Map external members (e.g. Aikido team responsibilities) onto ids of assets VAT
  * actually knows about, keeping each member's branch/tag context. Aikido reports
  * containers without the registry prefix VAT's derived ids carry, so match on the

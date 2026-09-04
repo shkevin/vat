@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import type { ActivityEvent } from "@/types/activity";
+import { encodeAssetIdPath } from "@/lib/assetUtils";
 
 interface ActivityFeedItemProps {
   event: ActivityEvent;
@@ -97,7 +98,7 @@ export function ActivityFeedItem({ event, onNavigateToFinding }: ActivityFeedIte
         {event.assetId ? (
           <a
             className="activity-feed-link-btn"
-            href={`/assets/${encodeURIComponent(event.assetId)}?tab=findings`}
+            href={`/assets/${encodeAssetIdPath(event.assetId)}?tab=findings`}
             onClick={(clickEvent) => clickEvent.stopPropagation()}
           >
             Open asset
