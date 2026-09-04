@@ -267,8 +267,12 @@ export function AikidoSettingsPage({
           ? "No Aikido team matched a known asset."
           : `Imported ${imported} team${imported === 1 ? "" : "s"} as loadouts${skipped > 0 ? ` · ${skipped} skipped with no matching assets` : ""}. Find them in the sidebar under Loadouts.`,
       );
-    } catch {
-      setTeamImportResult("Aikido team import failed.");
+    } catch (e) {
+      setTeamImportResult(
+        e instanceof Error && e.message
+          ? `Aikido team import failed: ${e.message}`
+          : "Aikido team import failed.",
+      );
     } finally {
       setImportingTeams(false);
     }

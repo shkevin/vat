@@ -84,3 +84,109 @@ def test_empty_and_malformed_input_is_tolerated():
         [],
     )
     assert unknown[0]["members"] == [] and unknown[0]["unresolved"] == 1
+
+
+
+async def _run_route(monkeypatch, cached, teams=None):
+    """Drive the /aikido/teams route with everything upstream faked."""
+    from app.api import aikido as route
+
+    calls: list[str] = []
+
+    async def _teams(_c):
+        calls.append("teams")
+        return teams if teams is not None else TEAMS[:2]
+
+    async def _repos(_c):
+        calls.append("repos")
+        return CODE_REPOS
+
+    async def _containers(_c):
+        calls.append("containers")
+        return CONTAINERS
+
+    async def _creds(_db, _sid):
+        return {"client_id": "x", "client_secret": "y", "region": "eu"}
+
+    async def _cached(_db, _sid):
+        return cached
+
+    async def _first(_db):
+        return "s-1"
+
+    monkeypatch.setattr(route, "fetch_aikido_teams", _teams)
+    monkeypatch.setattr(route, "fetch_aikido_code_repositories", _repos)
+    monkeypatch.setattr(route, "fetch_aikido_containers", _containers)
+    monkeypatch.setattr(route, "get_aikido_credentials", _creds)
+    monkeypatch.setattr(route, "get_aikido_dashboard_cached", _cached)
+    monkeypatch.setattr(route, "first_aikido_source_id", _first)
+
+    result = await route.aikido_teams(db=None, _ctx=None, source_id=None)
+    return result, calls
+
+
+async def test_complete_cache_means_one_upstream_call(monkeypatch):
+    """The sync already cached repos/containers — don't re-fetch them per click.
+
+    Re-fetching cost ~6 upstream calls and was enough on its own to trip
+    Aikido's rate limit.
+    """
+    # A team whose every responsibility the cache can resolve.
+    teams = [
+        {
+            "id": 1,
+            "name": "Dev",
+            "responsibilities": [{"id": 1260358, "type": "code_repository"}],
+        }
+    ]
+    result, calls = await _run_route(
+        monkeypatch,
+        {"repos": CODE_REPOS, "containers": CONTAINERS},
+        teams=teams,
+    )
+    assert calls == ["teams"], f"expected cache reuse, got {calls}"
+    assert result["teams"][0]["members"] == [
+        {"name": "containers", "branch": "develop"}
+    ]
+
+
+async def test_empty_cache_falls_back_upstream(monkeypatch):
+    teams = [
+        {
+            "id": 1,
+            "name": "Dev",
+            "responsibilities": [{"id": 1260358, "type": "code_repository"}],
+        }
+    ]
+    result, calls = await _run_route(monkeypatch, {}, teams=teams)
+    assert calls == ["teams", "repos", "containers"]
+    assert result["teams"][0]["unresolved"] == 0
+
+
+async def test_rate_limit_is_reported_as_429_not_a_generic_failure(monkeypatch):
+    """A 502 "upstream error" gives the user nothing to act on."""
+    import httpx
+    import pytest
+    from fastapi import HTTPException
+    from app.api import aikido as route
+
+    async def _teams(_c):
+        request = httpx.Request("GET", "https://app.aikido.dev/api/public/v1/teams")
+        raise httpx.HTTPStatusError(
+            "429", request=request, response=httpx.Response(429, request=request)
+        )
+
+    async def _creds(_db, _sid):
+        return {"client_id": "x", "client_secret": "y", "region": "eu"}
+
+    async def _cached(_db, _sid):
+        return {}
+
+    monkeypatch.setattr(route, "fetch_aikido_teams", _teams)
+    monkeypatch.setattr(route, "get_aikido_credentials", _creds)
+    monkeypatch.setattr(route, "get_aikido_dashboard_cached", _cached)
+
+    with pytest.raises(HTTPException) as exc:
+        await route.aikido_teams(db=None, _ctx=None, source_id="s-1")
+    assert exc.value.status_code == 429
+    assert "rate limit" in exc.value.detail.lower()

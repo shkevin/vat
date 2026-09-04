@@ -1,6 +1,8 @@
 """Aikido bootstrap API — one-time GET /issues/export to seed existing findings. PRD §8.4.1."""
 
 import logging
+
+import httpx
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Body, Depends, HTTPException
@@ -517,14 +519,41 @@ async def aikido_teams(
             status_code=503,
             detail="Aikido not configured. Set client_id, client_secret, and region in Settings.",
         )
+    # The dashboard sync already fetches and caches /repositories/code and
+    # /containers with these same fetchers, so re-fetching them here duplicated
+    # ~6 upstream calls per click and was enough on its own to trip Aikido's
+    # rate limit. Resolve against the cache first; only go upstream for what the
+    # cache cannot account for.
+    cached = await get_aikido_dashboard_cached(db, source_id) or {}
+    code_repos = cached.get("repos") or []
+    containers = cached.get("containers") or []
     try:
         teams = await fetch_aikido_teams(creds)
-        code_repos = await fetch_aikido_code_repositories(creds)
-        containers = await fetch_aikido_containers(creds)
+        resolved = aikido_teams_to_asset_names(teams, code_repos, containers)
+        # A cache written before a fetcher was fixed (or simply stale) can be
+        # missing members. Refetch once and redo it rather than silently
+        # returning a team with holes in it.
+        if any(t["unresolved"] for t in resolved):
+            # Tradeoff: a responsibility pointing at a genuinely deleted repo
+            # never resolves, so that one team keeps this fallback warm. Still
+            # no worse than the previous always-fetch behaviour, and it costs
+            # nothing once the cache is fresh and complete.
+            code_repos = await fetch_aikido_code_repositories(creds)
+            containers = await fetch_aikido_containers(creds)
+            resolved = aikido_teams_to_asset_names(teams, code_repos, containers)
+    except httpx.HTTPStatusError as e:
+        if e.response is not None and e.response.status_code == 429:
+            logger.warning("aikido rate limited on %s", e.request.url)
+            raise HTTPException(
+                status_code=429,
+                detail="Aikido rate limit reached. Wait a minute and try again.",
+            ) from e
+        logger.exception("aikido upstream call failed")
+        raise HTTPException(status_code=502, detail="aikido upstream error") from e
     except Exception as e:
         logger.exception("aikido upstream call failed")
         raise HTTPException(status_code=502, detail="aikido upstream error") from e
-    return {"teams": aikido_teams_to_asset_names(teams, code_repos, containers)}
+    return {"teams": resolved}
 
 
 @router.get("/dashboard-data")

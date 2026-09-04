@@ -817,7 +817,13 @@ export async function fetchAikidoTeams(
     auth,
   );
   if (!res.ok) {
-    throw new Error(`API error: ${res.status} ${res.statusText}`);
+    // Surface the server's reason (e.g. the 429 rate-limit message) — a bare
+    // status code leaves the user with nothing to act on.
+    const detail = await res
+      .json()
+      .then((b) => (b as { detail?: string }).detail)
+      .catch(() => undefined);
+    throw new Error(detail || `API error: ${res.status} ${res.statusText}`);
   }
   const body = (await res.json()) as { teams: AikidoTeam[] };
   return body.teams ?? [];
