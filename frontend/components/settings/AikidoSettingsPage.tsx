@@ -9,7 +9,7 @@ import {
   putAikidoCredentials,
   syncAikido,
 } from "@/lib/api";
-import { resolveAssetIdsByName } from "@/lib/assetUtils";
+import { resolveTeamEntries } from "@/lib/assetUtils";
 import { useAuth } from "@/contexts/AuthContext";
 import { useVATData } from "@/contexts/VATDataContext";
 import {
@@ -250,15 +250,15 @@ export function AikidoSettingsPage({
       let imported = 0;
       let skipped = 0;
       for (const team of teams) {
-        const assetIds = resolveAssetIdsByName(team.assetNames, allAssets);
-        if (assetIds.length === 0) {
+        const entries = resolveTeamEntries(team.members, allAssets);
+        if (entries.length === 0) {
           skipped++;
           continue;
         }
         await saveLoadout(
           byName.get(team.name.toLowerCase()) ?? null,
           team.name,
-          assetIds.map((assetId) => ({ assetId })),
+          entries,
         );
         imported++;
       }

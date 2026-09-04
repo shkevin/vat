@@ -2216,15 +2216,30 @@ _TEAM_RESPONSIBILITY_SOURCES = {
 }
 
 
+def _team_member_context(source: str, member: dict[str, Any]) -> dict[str, Any]:
+    """Branch/tag context for a team member, in VAT's FavoriteEntry vocabulary.
+
+    A code repo is pinned by branch ("develop", "release/1.2.1"); a container by
+    image tag. Aikido leaves ``tag`` empty on containers it has only scanned, so
+    fall back to ``last_scanned_tag`` — that is the value the ingest recorded on
+    the asset row (e.g. "latest").
+    """
+    if source == "code_repos":
+        branch = member.get("branch")
+        return {"branch": branch.strip()} if isinstance(branch, str) and branch.strip() else {}
+    tag = member.get("tag") or member.get("last_scanned_tag")
+    return {"tag": tag.strip()} if isinstance(tag, str) and tag.strip() else {}
+
+
 def aikido_teams_to_asset_names(
     teams: list[dict[str, Any]],
     code_repos: list[dict[str, Any]],
     containers: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    """Resolve each team's responsibilities to the Aikido names of its members.
+    """Resolve each team's responsibilities to its members, with branch/tag context.
 
-    Names are returned as Aikido reports them. VAT asset ids are derived on the
-    frontend and carry a registry prefix Aikido omits (``docker.io/ns/images/x``
+    Member names are returned as Aikido reports them. VAT asset ids are derived on
+    the frontend and carry a registry prefix Aikido omits (``docker.io/ns/images/x``
     vs ``ns/images/x``), so normalization is left to the caller that owns asset
     identity. ``unresolved`` counts responsibilities whose id was not in the
     repo/container lists — usually an inactive or since-deleted resource.
@@ -2237,7 +2252,8 @@ def aikido_teams_to_asset_names(
     for team in teams or []:
         if not isinstance(team, dict):
             continue
-        names: list[str] = []
+        members: list[dict[str, Any]] = []
+        seen: set[tuple] = set()
         unresolved = 0
         for resp in team.get("responsibilities") or []:
             if not isinstance(resp, dict):
@@ -2245,16 +2261,23 @@ def aikido_teams_to_asset_names(
             source = _TEAM_RESPONSIBILITY_SOURCES.get(resp.get("type"))
             member = by_source[source].get(resp.get("id")) if source else None
             name = (member or {}).get("name")
-            if isinstance(name, str) and name.strip():
-                names.append(name.strip())
-            else:
+            if not (isinstance(name, str) and name.strip()):
                 unresolved += 1
+                continue
+            entry = {"name": name.strip(), **_team_member_context(source, member)}
+            # A repo appears once per branch, so dedupe on the whole context —
+            # keeping "containers@develop" and "containers@release/1.2.1" apart.
+            key = (entry["name"], entry.get("branch"), entry.get("tag"))
+            if key in seen:
+                continue
+            seen.add(key)
+            members.append(entry)
         out.append(
             {
                 "id": str(team.get("id")),
                 "name": (team.get("name") or f"team-{team.get('id')}").strip(),
                 "active": bool(team.get("active", True)),
-                "assetNames": list(dict.fromkeys(names)),
+                "members": members,
                 "unresolved": unresolved,
             }
         )

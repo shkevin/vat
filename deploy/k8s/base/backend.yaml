@@ -92,18 +92,28 @@ spec:
               value: "true"
             - name: VAT_VULN_FEED_MATERIALIZE_PACKAGE_BATCH_SIZE
               value: "25"
+          # /health shares the single uvicorn worker's event loop, and a
+          # dashboard load (GET /api/vat-data?full=true) blocks it for ~17s
+          # while it serializes. At the 1s default timeout the probes read that
+          # busy window as "down": readiness drops the pod out of the Service
+          # and liveness restarts a container that is merely working. Give them
+          # room to ride out one slow request.
           livenessProbe:
             httpGet:
               path: /health
               port: http
             initialDelaySeconds: 30
             periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 6
           readinessProbe:
             httpGet:
               path: /health
               port: http
             initialDelaySeconds: 10
             periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
           resources:
             requests:
               cpu: 100m

@@ -797,8 +797,8 @@ export interface AikidoTeam {
   id: string;
   name: string;
   active: boolean;
-  /** Aikido-side repo/container names — map to VAT asset ids with resolveAssetIdsByName. */
-  assetNames: string[];
+  /** Aikido-side repos/containers with their branch/tag — map to VAT asset ids with resolveTeamEntries. */
+  members: Array<{ name: string; branch?: string; tag?: string }>;
   /** Responsibilities whose repo/container no longer exists upstream. */
   unresolved: number;
 }

@@ -131,15 +131,16 @@ export function sameAssetIdentity(a: string, b: string): boolean {
 }
 
 /**
- * Map external asset names (e.g. Aikido team members) onto ids of assets VAT
- * actually knows about. Aikido reports containers without the registry prefix
- * VAT's derived ids carry, so match on the canonical group key too. Names with
- * no matching asset are dropped — a team can own repos that were never ingested.
+ * Map external members (e.g. Aikido team responsibilities) onto ids of assets VAT
+ * actually knows about, keeping each member's branch/tag context. Aikido reports
+ * containers without the registry prefix VAT's derived ids carry, so match on the
+ * canonical group key too. Members with no matching asset are dropped — a team can
+ * own repos that were never ingested.
  */
-export function resolveAssetIdsByName(
-  names: string[],
+export function resolveTeamEntries(
+  members: { name: string; branch?: string; tag?: string }[],
   assets: { id: string }[],
-): string[] {
+): { assetId: string; branch?: string; tag?: string }[] {
   const byKey = new Map<string, string>();
   for (const a of assets) {
     const id = (a.id ?? "").trim();
@@ -150,16 +151,17 @@ export function resolveAssetIdsByName(
     const key = containerImageGroupKey(id);
     if (!byKey.has(key)) byKey.set(key, id);
   }
-  const out: string[] = [];
+  const out: { assetId: string; branch?: string; tag?: string }[] = [];
   const seen = new Set<string>();
-  for (const raw of names) {
-    const name = (raw ?? "").trim();
+  for (const m of members) {
+    const name = (m?.name ?? "").trim();
     if (!name) continue;
     const hit = byKey.get(name) ?? byKey.get(containerImageGroupKey(name));
-    if (hit && !seen.has(hit)) {
-      seen.add(hit);
-      out.push(hit);
-    }
+    if (!hit) continue;
+    const key = `${hit}|${m.branch ?? ""}|${m.tag ?? ""}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ assetId: hit, branch: m.branch, tag: m.tag });
   }
   return out;
 }
