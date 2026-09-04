@@ -5,9 +5,11 @@ import { mono, sans } from "@/lib/styles";
 import {
   fetchAikidoStatus,
   fetchAikidoSyncStatus,
+  fetchAikidoTeams,
   putAikidoCredentials,
   syncAikido,
 } from "@/lib/api";
+import { resolveAssetIdsByName } from "@/lib/assetUtils";
 import { useAuth } from "@/contexts/AuthContext";
 import { useVATData } from "@/contexts/VATDataContext";
 import {
@@ -43,7 +45,7 @@ export function AikidoSettingsPage({
   onTrackerChange,
 }: AikidoSettingsPageProps) {
   const { token } = useAuth();
-  const { refetch } = useVATData();
+  const { refetch, allAssets, loadouts, saveLoadout } = useVATData();
   const auth = { token };
   const [status, setStatus] = useState<AikidoStatus | null>(null);
   const [loading, setLoading] = useState(true);
@@ -58,6 +60,8 @@ export function AikidoSettingsPage({
   const [saveError, setSaveError] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [syncResult, setSyncResult] = useState<string | null>(null);
+  const [importingTeams, setImportingTeams] = useState(false);
+  const [teamImportResult, setTeamImportResult] = useState<string | null>(null);
   const [syncError, setSyncError] = useState<string | null>(null);
   const [syncStep, setSyncStep] = useState<{
     step: number;
@@ -232,6 +236,43 @@ export function AikidoSettingsPage({
       setSaving(false);
     }
   }, [sourceId, clientId, clientSecret, region, webhookSecret, load, token]);
+
+  // Save each Aikido team as a loadout of the VAT assets it owns. Teams whose
+  // repos/containers were never ingested resolve to nothing and are skipped
+  // rather than saved empty. Existing loadouts with the same name are
+  // overwritten so a re-import tracks team membership changes.
+  const handleImportTeams = useCallback(async () => {
+    setImportingTeams(true);
+    setTeamImportResult(null);
+    try {
+      const teams = await fetchAikidoTeams(auth, sourceId);
+      const byName = new Map(loadouts.map((l) => [l.name.toLowerCase(), l.id]));
+      let imported = 0;
+      let skipped = 0;
+      for (const team of teams) {
+        const assetIds = resolveAssetIdsByName(team.assetNames, allAssets);
+        if (assetIds.length === 0) {
+          skipped++;
+          continue;
+        }
+        await saveLoadout(
+          byName.get(team.name.toLowerCase()) ?? null,
+          team.name,
+          assetIds.map((assetId) => ({ assetId })),
+        );
+        imported++;
+      }
+      setTeamImportResult(
+        imported === 0
+          ? "No Aikido team matched a known asset."
+          : `Imported ${imported} team${imported === 1 ? "" : "s"} as loadouts${skipped > 0 ? ` · ${skipped} skipped with no matching assets` : ""}. Find them in the sidebar under Loadouts.`,
+      );
+    } catch {
+      setTeamImportResult("Aikido team import failed.");
+    } finally {
+      setImportingTeams(false);
+    }
+  }, [allAssets, loadouts, saveLoadout, sourceId, token]);
 
   const handleSync = useCallback(async () => {
     setSyncing(true);
@@ -692,6 +733,30 @@ export function AikidoSettingsPage({
                   >
                     {syncing ? "Syncing…" : "Sync"}
                   </button>
+                  <button
+                    onClick={handleImportTeams}
+                    disabled={importingTeams || sourceId == null}
+                    title="Create one loadout per Aikido team, from the repos and containers that team owns"
+                    style={{
+                      ...mono,
+                      padding: "8px 16px",
+                      background: "none",
+                      border: "1px solid var(--app-border)",
+                      borderRadius: 6,
+                      color: "var(--app-fg)",
+                      cursor:
+                        importingTeams || sourceId == null
+                          ? "not-allowed"
+                          : "pointer",
+                      fontSize: 11,
+                      fontWeight: 600,
+                      opacity: importingTeams || sourceId == null ? 0.6 : 1,
+                    }}
+                  >
+                    {importingTeams
+                      ? "Importing teams…"
+                      : "Import teams as loadouts"}
+                  </button>
                   {lastSyncedAt && (
                     <span
                       style={{
@@ -773,6 +838,20 @@ export function AikidoSettingsPage({
                     }}
                   >
                     {syncError}
+                  </span>
+                )}
+                {!importingTeams && teamImportResult && (
+                  <span
+                    role="status"
+                    style={{
+                      ...sans,
+                      fontSize: 11,
+                      color: teamImportResult.endsWith("failed.")
+                        ? "var(--app-danger)"
+                        : "var(--app-muted)",
+                    }}
+                  >
+                    {teamImportResult}
                   </span>
                 )}
               </div>
