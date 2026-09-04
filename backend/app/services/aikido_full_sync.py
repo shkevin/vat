@@ -23,7 +23,11 @@ from app.core.tenancy import DEFAULT_TENANT_ID
 from app.models.asset import Asset
 from app.models.finding import Finding
 from app.services.asset_resolver import infer_asset_kind
-from app.services.audit_events import emit_audit_event
+from app.services.audit_events import (
+    bulk_audit_chain,
+    emit_audit_event,
+    flush_bulk_audit_events,
+)
 from app.services.container_asset_observations import ensure_container_tags_observed
 from app.services.dedup import make_fingerprint
 from app.services.ingest import _parse_iso_datetime, ingest_finding
@@ -304,7 +308,10 @@ async def run_full_sync(
     created = 0
     merged = 0
     ingest_total = len(raw_issues)
-    async with async_session() as session:
+    # bulk_audit_chain keeps each trace's latest record_hash in memory and lets
+    # the audit inserts batch. Profiling put audit_events at 6.5 of the 21
+    # queries per finding and 31% of SQL time, almost all of it avoidable here.
+    async with async_session() as session, bulk_audit_chain():
         # Cross-source dedup: ingest merges by fingerprint; no delete (preserves Trivy/manual findings)
         for processed, raw in enumerate(raw_issues, start=1):
             # SAVEPOINT per finding, commit every INGEST_COMMIT_EVERY. ingest_finding
@@ -378,6 +385,7 @@ async def run_full_sync(
                     str(e).split("\n")[0][:200],
                 )
             if processed % INGEST_COMMIT_EVERY == 0:
+                await flush_bulk_audit_events(session)
                 await session.commit()
             if _should_emit_aikido_ingest_progress(processed, ingest_total):
                 await _progress(
@@ -386,6 +394,7 @@ async def run_full_sync(
                     total_steps,
                     f"Bootstrap: Ingest ({processed}/{ingest_total})",
                 )
+        await flush_bulk_audit_events(session)
         # Backfill image=component for findings missing image
         await session.execute(
             update(Finding)
