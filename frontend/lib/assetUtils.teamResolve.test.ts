@@ -31,15 +31,34 @@ describe("teamTagForAsset", () => {
     expect(teamTagForAsset(["develop"], ["develop", "latest"])).toBe("develop");
   });
 
-  it("returns nothing rather than guessing when no tag matches", () => {
-    expect(teamTagForAsset(["release/9.9.9"], ["latest", "develop"])).toBeUndefined();
-    expect(teamTagForAsset([], ["latest"])).toBeUndefined();
+  it("falls back to the image's own version when no branch matches", () => {
+    // Vendored upstream images (neo4j, vespa, seaweedfs) version on their own
+    // schedule and never carry the team's release tag; their version is the
+    // meaningful one. 29 of team 1.2.1's 65 containers are in this shape.
+    expect(teamTagForAsset(["release/1.2.1"], ["v5.26.30-kz.2"])).toBe("v5.26.30-kz.2");
+    // A real version beats "latest" when both are present.
+    expect(teamTagForAsset(["release/1.2.1"], ["latest", "v3.17.0-kz.6"])).toBe("v3.17.0-kz.6");
+    // "latest" alone is still the truth about that image.
+    expect(teamTagForAsset(["release/1.2.1"], ["latest"])).toBe("latest");
+  });
+
+  it("prefers a branch match over the fallback", () => {
+    expect(
+      teamTagForAsset(["release/1.2.1"], ["latest", "v9.9.9", "release-1.2.1"]),
+    ).toBe("release-1.2.1");
+  });
+
+  it("returns nothing when the asset has no observed tags", () => {
     expect(teamTagForAsset(["develop"], [])).toBeUndefined();
+    expect(teamTagForAsset([], [])).toBeUndefined();
   });
 
   it("never invents a tag the asset does not have", () => {
-    // "latest" is present but the team is a release line — no false positive.
-    expect(teamTagForAsset(["release/1.2.1"], ["latest"])).toBeUndefined();
+    const observed = ["latest", "v1.2.3"];
+    for (const branches of [[], ["release/1.2.1"], ["nope"]]) {
+      const t = teamTagForAsset(branches, observed);
+      if (t !== undefined) expect(observed).toContain(t);
+    }
   });
 });
 

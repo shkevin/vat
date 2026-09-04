@@ -219,7 +219,12 @@ export function teamTagForAsset(
     const hit = observedTags.find((t) => sameRefName(branch, t));
     if (hit) return hit;
   }
-  return undefined;
+  // No branch matches. A team owns plenty of vendored upstream images — neo4j,
+  // vespa, seaweedfs — which version on their own schedule and will never carry
+  // a release-1.2.1 tag. For those the image's own version is the meaningful
+  // tag, so fall back to it rather than showing nothing. pickLatestVersionTag
+  // prefers a real version over "latest" when both are present.
+  return pickLatestVersionTag(observedTags).primary || undefined;
 }
 
 /**
