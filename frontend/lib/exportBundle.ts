@@ -162,22 +162,39 @@ function toFinding(raw: Record<string, unknown>): Finding {
   } as Finding;
 }
 
-/** Build and download the full export bundle using the report engine's Executive Summary template. */
-export async function buildAndDownloadExportBundle(auth?: Auth): Promise<void> {
+/**
+ * Build and download the full export bundle using the report engine's Executive
+ * Summary template.
+ *
+ * Pass `scope` to export what the dashboard is currently showing — the caller
+ * holds findings already filtered by the sidebar, which is what an applied team
+ * loadout narrows. Without it this refetches every finding in the workspace, so
+ * the bundle silently ignores the selected team and ships all of them.
+ */
+export async function buildAndDownloadExportBundle(
+  auth?: Auth,
+  scope?: { findings: Finding[]; assets: Asset[] },
+): Promise<void> {
   const [vatRes, sbomRes] = await Promise.all([
-    fetchVATData({ limit: 0, full: true, include_zero_assets: true }, auth),
+    scope
+      ? Promise.resolve(null)
+      : fetchVATData({ limit: 0, full: true, include_zero_assets: true }, auth),
     fetchSbomPackages({ limit: 10000 }, auth),
   ]);
 
-  const findings = vatRes.findings.map((r) =>
-    toFinding(r as unknown as Record<string, unknown>),
-  );
-  const assets: Asset[] = (vatRes.assets ?? []).map((a) => ({
-    ...a,
-    findings: (a.findings ?? []).map((r) =>
-      toFinding(r as unknown as Record<string, unknown>),
-    ),
-  })) as Asset[];
+  const findings = scope
+    ? scope.findings
+    : (vatRes?.findings ?? []).map((r) =>
+        toFinding(r as unknown as Record<string, unknown>),
+      );
+  const assets: Asset[] = scope
+    ? scope.assets
+    : ((vatRes?.assets ?? []).map((a) => ({
+        ...a,
+        findings: (a.findings ?? []).map((r) =>
+          toFinding(r as unknown as Record<string, unknown>),
+        ),
+      })) as Asset[]);
 
   const packages: SBOMPackageForExport[] = Array.isArray(sbomRes)
     ? sbomRes.map((p) => ({
@@ -217,7 +234,7 @@ export async function buildAndDownloadExportBundle(auth?: Auth): Promise<void> {
   folder.file(
     "assets-findings.json",
     JSON.stringify(
-      { findings: vatRes.findings, assets: vatRes.assets },
+      { findings, assets },
       null,
       2,
     ),

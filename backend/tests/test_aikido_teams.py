@@ -254,3 +254,54 @@ async def test_unresolved_members_are_counted_in_the_response(monkeypatch):
     result = await route.aikido_teams(db=None, _ctx=None, source_id="s-1")
     assert result["unresolvedTotal"] == sum(t["unresolved"] for t in result["teams"])
     assert result["unresolvedTotal"] > 0
+
+
+async def test_branchless_cache_is_not_trusted_for_repos(monkeypatch):
+    """A cache hit that resolves members can still be missing the fields we read.
+
+    The dashboard cache stores {id, name, provider, *_count}. Members resolved
+    fine from it, so the unresolved-count fallback never fired — but every repo
+    came back branchless, which silently killed container tags and collapsed
+    per-branch entries.
+    """
+    from app.api import aikido as route
+
+    calls: list[str] = []
+
+    async def _teams(_c):
+        return [{
+            "id": 1, "name": "Rel",
+            "responsibilities": [{"id": 1260358, "type": "code_repository"}],
+        }]
+
+    async def _repos(_c):
+        calls.append("repos")
+        return CODE_REPOS  # the real thing, with branch
+
+    async def _containers(_c):
+        calls.append("containers")
+        return CONTAINERS
+
+    async def _creds(_db, _sid):
+        return {"client_id": "x", "client_secret": "y", "region": "eu"}
+
+    async def _cached(_db, _sid):
+        # Exactly what the sync writes: names resolve, branch absent.
+        return {
+            "repos": [{"id": 1260358, "name": "containers", "provider": "github"}],
+            "containers": [{"id": 602589, "name": "kamiwaza/images/x", "provider": "github"}],
+        }
+
+    for name, fn in (("fetch_aikido_teams", _teams),
+                     ("fetch_aikido_code_repositories", _repos),
+                     ("fetch_aikido_containers", _containers),
+                     ("get_aikido_credentials", _creds),
+                     ("get_aikido_dashboard_cached", _cached)):
+        monkeypatch.setattr(route, name, fn)
+
+    result = await route.aikido_teams(db=None, _ctx=None, source_id="s-1")
+    assert "repos" in calls, "branchless cache must trigger a live repo fetch"
+    assert "containers" not in calls, "containers only need name, which the cache has"
+    assert result["teams"][0]["members"] == [
+        {"name": "containers", "branch": "develop"}
+    ], "branch must survive"
