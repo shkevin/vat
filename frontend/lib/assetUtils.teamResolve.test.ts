@@ -1,4 +1,6 @@
 import { describe, it, expect } from "vitest";
+import { afterAll, beforeAll } from "vitest";
+import { setContainerAssetPathAliases } from "./containerRefNormalization";
 import {
   primaryTagForRow,
   resolveTeamEntries,
@@ -218,5 +220,51 @@ describe("summarizeTeamImport: unresolved members", () => {
     expect(
       summarizeTeamImport({ imported: 1, ownNothing: 0, unmatched: 0, unresolved: 1 }),
     ).toContain("1 team member could not be read");
+  });
+});
+
+describe("which asset row an entry points at", () => {
+  // The app primes these from GET /api/config/container-aliases at startup, and
+  // they are what strips docker.io/ so the canonical key is the id the UI lists.
+  // Without priming, containerImageGroupKey *adds* the prefix instead.
+  beforeAll(() => setContainerAssetPathAliases("docker.io/=>"));
+  afterAll(() => setContainerAssetPathAliases(""));
+
+  // Both rows exist for the same image. The UI lists the alias-stripped one;
+  // the registry-prefixed one carries the observed tags. Pointing entries at
+  // the prefixed row to reach its tags made them invisible in the workspace —
+  // a 82-member team showed 17 assets.
+  const BOTH = [
+    { id: "repo-a" },
+    { id: "ns/images/api" },
+    { id: "docker.io/ns/images/api", observedTags: [{ tag: "release-1.2.1" }] },
+  ];
+  const members = [
+    { name: "repo-a", branch: "release/1.2.1" },
+    { name: "ns/images/api" },
+  ];
+
+  it("stores the id the UI lists, not the one holding the tags", () => {
+    const [, container] = resolveTeamEntries(members, BOTH);
+    expect(container.assetId).toBe("ns/images/api");
+  });
+
+  it("still finds the tag, which lives on the other row", () => {
+    const [, container] = resolveTeamEntries(members, BOTH);
+    expect(container.tag).toBe("release-1.2.1");
+  });
+
+  it("is order-independent", () => {
+    for (const assets of [BOTH, [...BOTH].reverse()]) {
+      const [, container] = resolveTeamEntries(members, assets);
+      expect(container.assetId).toBe("ns/images/api");
+      expect(container.tag).toBe("release-1.2.1");
+    }
+  });
+
+  it("uses the only row available when there is no duplicate", () => {
+    expect(
+      resolveTeamEntries([{ name: "ns/images/solo" }], [{ id: "ns/images/solo" }]),
+    ).toEqual([{ assetId: "ns/images/solo", branch: undefined, tag: undefined }]);
   });
 });

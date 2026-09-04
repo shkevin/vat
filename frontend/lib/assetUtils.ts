@@ -237,24 +237,33 @@ export function resolveTeamEntries(
   members: { name: string; branch?: string; tag?: string }[],
   assets: { id: string; observedTags?: Array<{ tag: string }> }[],
 ): { assetId: string; branch?: string; tag?: string }[] {
-  type Candidate = { id: string; observedTags?: Array<{ tag: string }> };
-  const byKey = new Map<string, Candidate>();
-  // The same image can exist as two asset rows — the Aikido-style
-  // `ns/images/api` and the registry-prefixed `docker.io/ns/images/api` — and
-  // only the prefixed one carries the findings and observed tags. Both claim
-  // the same canonical key, so prefer the row that actually has data instead of
-  // whichever happened to come first.
-  const score = (a: Candidate) => (a.observedTags?.length ? 1 : 0);
-  const claim = (key: string, a: Candidate) => {
-    const current = byKey.get(key);
-    if (!current || score(a) > score(current)) byKey.set(key, a);
-  };
+  // The same image can appear as two asset rows — the alias-stripped
+  // `ns/images/api` the UI actually lists, and the registry-prefixed
+  // `docker.io/ns/images/api` that carries the observed tags. Resolve the id
+  // from the form the UI renders, but collect tags from every variant: pointing
+  // an entry at the prefixed row to reach its tags made the asset invisible in
+  // the workspace, because the list is keyed the other way.
+  const byCanonical = new Map<
+    string,
+    { id: string; tags: Set<string> }
+  >();
+  const exact = new Map<string, string>();
   for (const a of assets) {
     const id = (a.id ?? "").trim();
     if (!id) continue;
-    claim(id, a);
-    claim(containerImageGroupKey(id), a);
+    if (!exact.has(id)) exact.set(id, id);
+    const canonical = containerImageGroupKey(id);
+    const entry = byCanonical.get(canonical) ?? { id, tags: new Set<string>() };
+    // Prefer the already-normalized row — that is the one deriveAssets and the
+    // backend rollup both produce, so it is the one present in the asset list.
+    if (id === canonical) entry.id = id;
+    for (const o of a.observedTags ?? []) {
+      const t = o.tag?.trim();
+      if (t) entry.tags.add(t);
+    }
+    byCanonical.set(canonical, entry);
   }
+
   const branches = members
     .map((m) => m.branch)
     .filter((b): b is string => Boolean(b && b.trim()));
@@ -264,25 +273,17 @@ export function resolveTeamEntries(
   for (const m of members) {
     const name = (m?.name ?? "").trim();
     if (!name) continue;
-    // Take the canonical hit over the exact one when it carries more data:
-    // an Aikido name matches the bare `ns/images/api` row exactly, but it is
-    // the canonical `docker.io/ns/images/api` row that holds the findings and
-    // observed tags.
-    const exact = byKey.get(name);
-    const canonical = byKey.get(containerImageGroupKey(name));
-    const asset =
-      canonical && (!exact || score(canonical) > score(exact)) ? canonical : exact;
-    if (!asset) continue;
+    const canonical = containerImageGroupKey(name);
+    const hit = byCanonical.get(canonical);
+    const assetId = hit?.id ?? exact.get(name);
+    if (!assetId) continue;
     const tag = m.branch
       ? m.tag
-      : teamTagForAsset(
-          branches,
-          (asset.observedTags ?? []).map((o) => o.tag).filter(Boolean),
-        );
-    const key = `${asset.id}|${m.branch ?? ""}|${tag ?? ""}`;
+      : teamTagForAsset(branches, [...(hit?.tags ?? [])]);
+    const key = `${assetId}|${m.branch ?? ""}|${tag ?? ""}`;
     if (seen.has(key)) continue;
     seen.add(key);
-    out.push({ assetId: asset.id, branch: m.branch, tag });
+    out.push({ assetId, branch: m.branch, tag });
   }
   return out;
 }

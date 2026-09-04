@@ -6,11 +6,11 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
  * ignored and the ZIP shipped all of them.
  */
 const fetchVATData = vi.fn();
-const fetchSbomPackages = vi.fn(async () => []);
+const fetchSbomPackages = vi.fn(async (_arg?: unknown) => []);
 
 vi.mock("@/lib/api", () => ({
-  fetchVATData: (...a: unknown[]) => fetchVATData(...a),
-  fetchSbomPackages: (...a: unknown[]) => fetchSbomPackages(...a),
+  fetchVATData: (arg?: unknown) => fetchVATData(arg),
+  fetchSbomPackages: (arg?: unknown) => fetchSbomPackages(arg),
 }));
 
 // The bundle writes a ZIP and triggers a download; neither is under test here.
@@ -34,8 +34,8 @@ beforeEach(() => {
   fetchVATData.mockReset();
   fetchVATData.mockResolvedValue({ findings: [], assets: [] });
   // Node env: give the download path something to bind to.
-  (globalThis as Record<string, unknown>).URL ??= {};
-  const u = (globalThis as { URL: Record<string, unknown> }).URL;
+  // Node env: give the download path something to bind to.
+  const u = globalThis.URL as unknown as Record<string, unknown>;
   u.createObjectURL ??= () => "blob:x";
   u.revokeObjectURL ??= () => {};
 });
