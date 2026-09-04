@@ -284,10 +284,24 @@ async def get_vat_data(
             ),
         )
 
+    # Headers must go out before the first byte, so the body-encode time can't
+    # be in here — but collect and assets are the dominant costs and are known.
+    # Keep the header: the app logger is not wired to stdout in the container,
+    # so X-VAT-Timing is the only way this is actually observable.
+    pre_stream_timing = {
+        "collect_rows_ms": round((t_rows - t_start) * 1000, 1),
+        "build_assets_ms": round((t_assets - t_rows) * 1000, 1),
+        "findings_count": len(rows),
+        "assets_count": len(assets),
+        "full": full,
+        "streamed": True,
+    }
+
     return StreamingResponse(
         _body(),
         media_type="application/json",
         headers={
+            "X-VAT-Timing": json.dumps(pre_stream_timing),
             "ETag": etag,
             "Cache-Control": "private, must-revalidate",
         },
