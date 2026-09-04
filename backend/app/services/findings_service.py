@@ -1,7 +1,7 @@
 """Findings service — list, create, filter."""
 
 import uuid
-from typing import Any, Optional
+from typing import Any, AsyncIterator, Optional
 
 from sqlalchemy import delete, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -72,18 +72,17 @@ def _normalize_group_severity(sev: str) -> str:
     return "Informational"
 
 
-async def enrich_findings_with_source_group_severity(
-    db: AsyncSession, rows: list[dict[str, Any]]
-) -> list[dict[str, Any]]:
-    """
-    Enrich finding dicts with sourceGroupSeverity when the source provides group-level severity.
-    Used for grouped display so VAT shows the source's canonical group severity instead of max.
+async def load_source_group_severity_map(db: AsyncSession) -> dict[str, str]:
+    """Load the source-group -> severity map once.
+
+    Split out of ``enrich_findings_with_source_group_severity`` so a batched
+    caller pays the dashboard-cache read once instead of per batch.
     """
     from app.services.aikido_dashboard_sync import get_aikido_dashboard_cached
 
     data = await get_aikido_dashboard_cached(db)
     if not data or not isinstance(data.get("issueGroups"), list):
-        return rows
+        return {}
 
     group_map: dict[str, str] = {}
     for g in data["issueGroups"]:
@@ -100,7 +99,15 @@ async def enrich_findings_with_source_group_severity(
             continue
         for src in _SOURCES_WITH_GROUP_METADATA:
             group_map[f"{src}:{gid_str}"] = _normalize_group_severity(str(sev))
+    return group_map
 
+
+def apply_source_group_severity(
+    rows: list[dict[str, Any]], group_map: dict[str, str]
+) -> list[dict[str, Any]]:
+    """Apply a loaded group-severity map to finding dicts. Pure; no I/O."""
+    if not group_map:
+        return rows
     for d in rows:
         src = (d.get("source") or "").strip()
         sid_raw = d.get("sourceIssueGroupId")
@@ -115,8 +122,17 @@ async def enrich_findings_with_source_group_severity(
     return rows
 
 
-async def list_findings(
-    db: AsyncSession,
+async def enrich_findings_with_source_group_severity(
+    db: AsyncSession, rows: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """
+    Enrich finding dicts with sourceGroupSeverity when the source provides group-level severity.
+    Used for grouped display so VAT shows the source's canonical group severity instead of max.
+    """
+    return apply_source_group_severity(rows, await load_source_group_severity_map(db))
+
+
+def _build_findings_query(
     *,
     ctx: Optional[UserContext] = None,
     archived: Optional[bool] = None,
@@ -130,16 +146,7 @@ async def list_findings(
     limit: int = 0,  # 0 = no limit (callers enforce UI caps)
     offset: int = 0,
     slim: bool = False,
-) -> list[Finding]:
-    """List findings with optional filters.
-
-    ``slim=True`` defers SQLAlchemy hydration of the heavy free-form/JSONB
-    columns (description, justification, compensating_controls, reviewer_note,
-    snippet_masked, archived_reason, regression_of, audit). On a 20k-row
-    result this measurably cuts both the network roundtrip and Python-side
-    deserialization. The detail-panel single-row path keeps the full eager
-    load.
-    """
+):
     settings = get_settings()
     effective_limit = (
         min(limit, settings.finding_max_limit) if limit > 0 else 0
@@ -226,11 +233,103 @@ async def list_findings(
             clauses.append(Finding.owner.ilike(term))
         if clauses:
             q = q.where(or_(*clauses))
-    q = q.order_by(Finding.created_at.desc())
+    # id breaks ties: created_at alone is not a total order (many rows share a
+    # value, and a lot are NULL), so the DB was free to return tied rows in any
+    # order. That makes limit/offset paging unstable — page 2 could repeat or
+    # skip a row — and it made buffered and streamed reads of the same query
+    # disagree on ordering.
+    q = q.order_by(Finding.created_at.desc(), Finding.id.desc())
     if offset > 0:
         q = q.offset(offset)
     if effective_limit > 0:
         q = q.limit(effective_limit)
+    return q
+
+
+async def stream_findings(
+    db: AsyncSession,
+    *,
+    ctx: Optional[UserContext] = None,
+    archived: Optional[bool] = None,
+    status: Optional[str] = None,
+    severity: Optional[str] = None,
+    source: Optional[str] = None,
+    finding_type: Optional[str] = None,
+    asset: Optional[str] = None,
+    search: Optional[str] = None,
+    search_fields: Optional[str] = None,
+    limit: int = 0,
+    offset: int = 0,
+    slim: bool = False,
+    batch_size: int = 2000,
+) -> AsyncIterator[list[Finding]]:
+    """Yield findings in batches over a server-side cursor.
+
+    Same filters and ordering as ``list_findings``, but the caller never holds
+    the whole ORM result at once and — because each batch is a separate await —
+    the event loop gets a turn between batches. That matters on the dashboard
+    query: materializing ~130k rows in one ``db.execute`` blocks the single
+    uvicorn worker for seconds, long enough for the /health probe to time out
+    and the kubelet to pull the pod out of the Service.
+    """
+    q = _build_findings_query(
+        ctx=ctx,
+        archived=archived,
+        status=status,
+        severity=severity,
+        source=source,
+        finding_type=finding_type,
+        asset=asset,
+        search=search,
+        search_fields=search_fields,
+        limit=limit,
+        offset=offset,
+        slim=slim,
+    )
+    result = await db.stream(q)
+    async for partition in result.scalars().partitions(batch_size):
+        yield list(partition)
+
+
+async def list_findings(
+    db: AsyncSession,
+    *,
+    ctx: Optional[UserContext] = None,
+    archived: Optional[bool] = None,
+    status: Optional[str] = None,
+    severity: Optional[str] = None,
+    source: Optional[str] = None,
+    finding_type: Optional[str] = None,
+    asset: Optional[str] = None,
+    search: Optional[str] = None,
+    search_fields: Optional[str] = None,
+    limit: int = 0,  # 0 = no limit (callers enforce UI caps)
+    offset: int = 0,
+    slim: bool = False,
+) -> list[Finding]:
+    """List findings with optional filters.
+
+    ``slim=True`` defers SQLAlchemy hydration of the heavy free-form/JSONB
+    columns (description, justification, compensating_controls, reviewer_note,
+    snippet_masked, archived_reason, regression_of, audit). On a 20k-row
+    result this measurably cuts both the network roundtrip and Python-side
+    deserialization. The detail-panel single-row path keeps the full eager
+    load.
+    """
+    q = _build_findings_query(
+        ctx=ctx,
+        archived=archived,
+        status=status,
+        severity=severity,
+        source=source,
+        finding_type=finding_type,
+        asset=asset,
+        search=search,
+        search_fields=search_fields,
+        limit=limit,
+        offset=offset,
+        slim=slim,
+    )
     result = await db.execute(q)
     return list(result.scalars().all())
 

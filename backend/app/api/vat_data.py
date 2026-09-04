@@ -1,12 +1,14 @@
 """VAT data API — findings + assets in one response."""
 
+import asyncio
 import hashlib
 import json
 import logging
 import time
-from typing import Optional
+from typing import AsyncIterator, Optional
 
 from fastapi import APIRouter, Depends, Request, Response
+from fastapi.responses import StreamingResponse
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -18,13 +20,50 @@ from app.models.finding import Finding
 from app.schemas.auth import UserContext
 from app.services.assets_service import get_assets_with_findings
 from app.services.findings_service import (
-    enrich_findings_with_source_group_severity,
-    list_findings,
+    apply_source_group_severity,
+    load_source_group_severity_map,
+    stream_findings,
 )
 from app.services.grouping import finding_to_api_dict_with_group_key
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+# Rows per DB fetch and per JSON chunk. Big enough that per-batch overhead is
+# noise, small enough that one batch's encode does not starve the event loop.
+_BATCH_SIZE = 2000
+_SEP = (",", ":")
+
+
+async def stream_vat_data_body(
+    rows: list[dict],
+    assets: list[dict],
+    meta: dict,
+    batch_size: int = _BATCH_SIZE,
+) -> AsyncIterator[bytes]:
+    """Emit the vat-data JSON object in chunks.
+
+    Findings go out ``batch_size`` at a time instead of through one json.dumps
+    over the whole payload — that built a ~200 MB string and held the event loop
+    for the entire encode. Each batch is encoded as an array and stripped of its
+    brackets so the pieces concatenate into one valid array.
+
+    Compact separators throughout: the batch joins are written by hand, so
+    letting json.dumps use its default ", "/": " would make the spacing
+    inconsistent across batch boundaries — and on a payload this size the
+    padding is not free either.
+    """
+    yield b'{"findings":['
+    for i in range(0, len(rows), batch_size):
+        chunk = json.dumps(rows[i : i + batch_size], default=str, separators=_SEP)[1:-1]
+        yield (b"," if i else b"") + chunk.encode()
+        await asyncio.sleep(0)
+    yield b'],"assets":'
+    yield json.dumps(assets, default=str, separators=_SEP).encode()
+    yield b',"meta":'
+    yield json.dumps(meta, default=str, separators=_SEP).encode()
+    yield b"}"
+
 
 
 async def _vat_data_etag(
@@ -168,7 +207,13 @@ async def get_vat_data(
     offset = 0 if effective_limit == 0 else (page - 1) * effective_limit
 
     t_start = time.perf_counter()
-    findings = await list_findings(
+
+    # Collect in batches over a server-side cursor rather than materializing
+    # ~130k ORM rows in one db.execute. Each batch is a separate await, so the
+    # event loop gets a turn and /health keeps answering while this runs.
+    group_map = await load_source_group_severity_map(db)
+    rows: list[dict] = []
+    async for batch in stream_findings(
         db,
         ctx=ctx,
         archived=archived,
@@ -182,12 +227,17 @@ async def get_vat_data(
         limit=effective_limit,
         offset=offset,
         slim=slim,
-    )
-    t_list = time.perf_counter()
-    rows = [finding_to_api_dict_with_group_key(f, slim=slim) for f in findings]
-    t_serialize_findings = time.perf_counter()
-    rows = await enrich_findings_with_source_group_severity(db, rows)
-    t_enrich = time.perf_counter()
+        batch_size=_BATCH_SIZE,
+    ):
+        # Build then extend, rather than slicing rows[-len(batch):] — an empty
+        # batch makes that slice the whole list.
+        batch_rows = [finding_to_api_dict_with_group_key(f, slim=slim) for f in batch]
+        apply_source_group_severity(batch_rows, group_map)
+        rows.extend(batch_rows)
+        # The DB await above already yields, but a fully-cached partition can
+        # come back without suspending. Make the turn unconditional.
+        await asyncio.sleep(0)
+    t_rows = time.perf_counter()
 
     assets = []
     if include_assets:
@@ -201,40 +251,43 @@ async def get_vat_data(
         )
     t_assets = time.perf_counter()
 
-    payload = {
-        "findings": rows,
-        "assets": assets,
-        "meta": {
-            "page": page,
-            "pageSize": effective_limit if effective_limit > 0 else len(rows),
-            "hasMore": effective_limit > 0 and len(rows) == effective_limit,
-            "includeAssets": include_assets,
-            "includeZeroAssets": include_zero_assets,
-            "includeAssetFindings": include_asset_findings,
-        },
+    meta = {
+        "page": page,
+        "pageSize": effective_limit if effective_limit > 0 else len(rows),
+        "hasMore": effective_limit > 0 and len(rows) == effective_limit,
+        "includeAssets": include_assets,
+        "includeZeroAssets": include_zero_assets,
+        "includeAssetFindings": include_asset_findings,
     }
-    body = json.dumps(payload, default=str)
-    t_json = time.perf_counter()
 
-    timing = {
-        "list_findings_ms": round((t_list - t_start) * 1000, 1),
-        "serialize_findings_ms": round((t_serialize_findings - t_list) * 1000, 1),
-        "enrich_findings_ms": round((t_enrich - t_serialize_findings) * 1000, 1),
-        "build_assets_ms": round((t_assets - t_enrich) * 1000, 1),
-        "json_encode_ms": round((t_json - t_assets) * 1000, 1),
-        "total_ms": round((t_json - t_start) * 1000, 1),
-        "findings_count": len(rows),
-        "assets_count": len(assets),
-        "payload_kb": round(len(body) / 1024, 1),
-        "full": full,
-    }
-    logger.info("vat_data timing: %s", json.dumps(timing))
+    # Everything that can fail has already run, so a mid-stream error can no
+    # longer truncate a body we have committed a 200 to. From here on it is
+    # only json.dumps over data we hold.
+    async def _body() -> AsyncIterator[bytes]:
+        t_stream_start = time.perf_counter()
+        async for chunk in stream_vat_data_body(rows, assets, meta, _BATCH_SIZE):
+            yield chunk
+        t_done = time.perf_counter()
+        logger.info(
+            "vat_data timing: %s",
+            json.dumps(
+                {
+                    "collect_rows_ms": round((t_rows - t_start) * 1000, 1),
+                    "build_assets_ms": round((t_assets - t_rows) * 1000, 1),
+                    "stream_body_ms": round((t_done - t_stream_start) * 1000, 1),
+                    "total_ms": round((t_done - t_start) * 1000, 1),
+                    "findings_count": len(rows),
+                    "assets_count": len(assets),
+                    "full": full,
+                    "streamed": True,
+                }
+            ),
+        )
 
-    return Response(
-        content=body,
+    return StreamingResponse(
+        _body(),
         media_type="application/json",
         headers={
-            "X-VAT-Timing": json.dumps(timing),
             "ETag": etag,
             "Cache-Control": "private, must-revalidate",
         },

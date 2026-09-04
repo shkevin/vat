@@ -1,5 +1,6 @@
 """Assets service — combine Asset records with findings-derived assets."""
 
+import asyncio
 from typing import TYPE_CHECKING, Any, Optional
 
 from sqlalchemy import select
@@ -31,6 +32,12 @@ SEV_ORDER = ("Critical", "High", "Medium", "Low", "Informational")
 # ORA weights (matches frontend ora.ts)
 ORA_WEIGHTS = {"critical": 10, "high": 4, "medium": 0.5, "low": 0.25}
 ORA_CAPS = {"low": 10, "medium": 30}
+
+
+# How often the rollup loops hand control back to the event loop. Findings are
+# counted in the tens of thousands; assets in the low thousands.
+_YIELD_EVERY = 5000
+_YIELD_ASSETS_EVERY = 200
 
 
 def _container_image_group_key(image: str, _tag: Optional[str]) -> str:
@@ -338,7 +345,12 @@ async def get_assets_with_findings(
         )
 
     grouped_findings: dict[str, list[dict]] = {}
-    for d in findings_dicts:
+    # Yield periodically: on the dashboard query this walks ~130k dicts with no
+    # awaits of its own, which is long enough to starve the single uvicorn
+    # worker's event loop and time out the /health probe.
+    for i, d in enumerate(findings_dicts):
+        if i and i % _YIELD_EVERY == 0:
+            await asyncio.sleep(0)
         key = _asset_key_from_dict(d)
         if not should_expose_asset_in_main_list(key):
             continue
@@ -368,17 +380,20 @@ async def get_assets_with_findings(
                 by_key[aid] = grouped_findings.get(aid, [])
 
     # Build asset payloads (include type and branch from Asset record when available)
-    payloads = [
-        _build_asset_payload(
-            k,
-            flist,
-            asset_type=getattr(asset_records.get(k), "type", None),
-            asset_branch=getattr(asset_records.get(k), "branch", None),
-            asset_tag=getattr(asset_records.get(k), "tag", None),
-            include_findings=include_findings,
+    payloads = []
+    for i, (k, flist) in enumerate(by_key.items()):
+        if i and i % _YIELD_ASSETS_EVERY == 0:
+            await asyncio.sleep(0)
+        payloads.append(
+            _build_asset_payload(
+                k,
+                flist,
+                asset_type=getattr(asset_records.get(k), "type", None),
+                asset_branch=getattr(asset_records.get(k), "branch", None),
+                asset_tag=getattr(asset_records.get(k), "tag", None),
+                include_findings=include_findings,
+            )
         )
-        for k, flist in by_key.items()
-    ]
     if limit > 0 and not include_finding_derived_assets:
         payloads = payloads[:limit]
     asset_ids = [p["id"] for p in payloads]
