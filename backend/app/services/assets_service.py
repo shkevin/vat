@@ -1,6 +1,7 @@
 """Assets service — combine Asset records with findings-derived assets."""
 
 import asyncio
+import math
 from typing import TYPE_CHECKING, Any, Optional
 
 from sqlalchemy import select
@@ -150,6 +151,17 @@ def _severity_to_key(sev: str) -> str:
     return "info"
 
 
+def _round_half_up(value: float) -> int:
+    """Round like JavaScript's Math.round, not Python's round().
+
+    Python rounds halves to even (80.5 -> 80, 81.5 -> 82); JS rounds halves up
+    (80.5 -> 81). These scores are mirrored by the frontend, and a parity run
+    over 1,408 live assets found 60 of them off by exactly 1 for this reason —
+    the only difference between the two rollup implementations.
+    """
+    return math.floor(value + 0.5)
+
+
 def _compute_ora_score(counts: dict[str, int]) -> int:
     """ORA 0-100, higher = safer. Matches frontend computeORAScore."""
     penalty = 0
@@ -159,7 +171,7 @@ def _compute_ora_score(counts: dict[str, int]) -> int:
     penalty += min(med, ORA_CAPS["medium"])
     low = counts.get("low", 0) * ORA_WEIGHTS["low"]
     penalty += min(low, ORA_CAPS["low"])
-    return max(0, min(100, round(100 - penalty)))
+    return max(0, min(100, _round_half_up(100 - penalty)))
 
 
 def _finding_to_api_dict(f: Finding) -> dict:
@@ -229,8 +241,12 @@ def _build_asset_payload(
         if idx >= 0 and (worst_idx < 0 or idx < worst_idx):
             worst_idx = idx
 
+    # Same JS-rounding rule as the ORA score: this one showed no mismatches on
+    # the current data only because no ratio landed exactly on a half.
     verified_pct = (
-        round((verified_count / len(findings)) * 1000) / 10 if findings else 100
+        _round_half_up((verified_count / len(findings)) * 1000) / 10
+        if findings
+        else 100
     )
     open_findings = [
         d
