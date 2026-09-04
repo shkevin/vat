@@ -13,7 +13,7 @@ from sqlalchemy.pool import NullPool
 pytest.importorskip("asyncpg")
 
 from app.core.config import get_settings
-from app.core.database import engine as app_engine, get_db
+from app.core.database import get_db, get_engine
 from app.main import app
 
 settings = get_settings()
@@ -40,7 +40,9 @@ async def _dispose_engines():
     """Dispose both test and app engines before event loop closes."""
     yield
     await test_engine.dispose()
-    await app_engine.dispose()
+    # get_engine() rather than a module-level handle: the engine is now
+    # created per event loop, so this must dispose the one this loop built.
+    await get_engine().dispose()
 
 
 @pytest.fixture

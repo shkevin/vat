@@ -99,3 +99,46 @@ def test_redis_client_is_rebuilt_for_a_new_loop(monkeypatch):
     assert c1 is not None and c2 is not None
     assert loop1 is not loop2, "cache key did not follow the loop"
     assert c1 is not c2, "client from a closed loop was reused"
+
+
+def test_db_engine_is_rebuilt_for_a_new_loop():
+    """The one that actually broke the sync.
+
+    run_full_sync uses the global async_session, so a module-level engine gave
+    the second celery task asyncpg connections from the first task's closed loop.
+    """
+    from app.core import database as db_mod
+
+    seen = []
+
+    async def task():
+        seen.append(db_mod.get_engine())
+
+    asyncio.run(task())
+    asyncio.run(task())
+
+    assert seen[0] is not seen[1], (
+        "same engine across loops — its pooled connections belong to a dead loop"
+    )
+
+
+def test_db_engine_is_reused_within_one_loop():
+    from app.core import database as db_mod
+
+    async def task():
+        return db_mod.get_engine(), db_mod.get_engine()
+
+    a, b = asyncio.run(task())
+    assert a is b, "rebuilding per call would discard the connection pool"
+
+
+def test_async_session_stays_callable_for_existing_call_sites():
+    """26 call sites do `async with async_session() as s`."""
+    from app.core import database as db_mod
+
+    async def task():
+        s = db_mod.async_session()
+        assert hasattr(s, "__aenter__") and hasattr(s, "execute")
+        await s.close()
+
+    asyncio.run(task())
