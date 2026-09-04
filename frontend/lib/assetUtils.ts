@@ -585,6 +585,27 @@ export function containerTagListForAsset(asset: Asset): string[] {
  * Uses semver ordering; non-semver tags sort last. Used to show a single tag
  * badge + "+N" instead of multiple chips.
  */
+/**
+ * The tag a row should lead with, given the tags observed on the asset and any
+ * tag the applied loadout pins it to.
+ *
+ * A container carries several tags at once, so the generic pick is ambiguous:
+ * for ["develop", "latest", "release-1.2.1"] it returns "develop" whichever
+ * team you are looking at. When a loadout pins a tag — an Aikido team loadout
+ * pins the one matching the team's branch — lead with that instead, so a
+ * release-1.2.1 team reads as release-1.2.1.
+ */
+export function primaryTagForRow(
+  tags: string[],
+  pinnedTag?: string | null,
+): { primary: string; restCount: number } {
+  const pinned = pinnedTag?.trim();
+  if (pinned) {
+    return { primary: pinned, restCount: tags.filter((t) => t !== pinned).length };
+  }
+  return pickLatestVersionTag(tags);
+}
+
 export function pickLatestVersionTag(tags: string[]): {
   primary: string;
   restCount: number;

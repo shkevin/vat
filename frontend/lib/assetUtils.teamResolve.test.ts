@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { resolveTeamEntries, teamTagForAsset } from "./assetUtils";
+import {
+  primaryTagForRow,
+  resolveTeamEntries,
+  teamTagForAsset,
+} from "./assetUtils";
 
 // Ids as VAT derives them; observedTags as VAT actually recorded them.
 const ASSETS = [
@@ -125,5 +129,31 @@ describe("duplicate asset rows for the same image", () => {
     expect(
       resolveTeamEntries([{ name: "ns/images/api" }], [{ id: "ns/images/api" }]),
     ).toEqual([{ assetId: "ns/images/api", branch: undefined, tag: undefined }]);
+  });
+});
+
+describe("primaryTagForRow", () => {
+  const OBSERVED = ["develop", "latest", "release-1.2.1"];
+
+  it("leads with the tag the loadout pins", () => {
+    expect(primaryTagForRow(OBSERVED, "release-1.2.1")).toEqual({
+      primary: "release-1.2.1",
+      restCount: 2,
+    });
+    expect(primaryTagForRow(OBSERVED, "develop")).toEqual({
+      primary: "develop",
+      restCount: 2,
+    });
+  });
+
+  it("falls back to the generic pick when nothing is pinned", () => {
+    // Ambiguous on its own — the same answer regardless of which team you view.
+    expect(primaryTagForRow(OBSERVED).primary).toBe("develop");
+    expect(primaryTagForRow(OBSERVED, "  ").primary).toBe("develop");
+    expect(primaryTagForRow(OBSERVED, null).primary).toBe("develop");
+  });
+
+  it("prefers a version tag over latest when unpinned", () => {
+    expect(primaryTagForRow(["latest", "1.4.0", "1.10.0"]).primary).toBe("1.10.0");
   });
 });

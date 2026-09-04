@@ -17,8 +17,8 @@ import {
 import {
   assetTagSortKey,
   containerTagListForAsset,
+  primaryTagForRow,
   getAssetTypeFromAsset,
-  pickLatestVersionTag,
   encodeAssetIdPath,
 } from "@/lib/assetUtils";
 import { isOpenRisk } from "@/lib/metricSemantics";
@@ -175,7 +175,13 @@ const ASSETS_TABLE_GRID_COLS =
   "28px 28px minmax(280px, 3fr) 90px minmax(220px, 2fr) 90px 90px 90px minmax(150px, 1.4fr) 1fr";
 
 function AssetTagsCell({ asset }: { asset: Asset }) {
+  const { getFavoriteContextForAsset } = useVATData();
   const isContainer = getAssetTypeFromAsset(asset) === "container";
+  // When a loadout pins this asset to a tag — an Aikido team loadout pins the
+  // tag matching the team's branch — that is the tag the row should lead with.
+  // Otherwise the column shows a generic pick that ignores which team you are
+  // looking at, so a release-1.2.1 team reads as "develop".
+  const pinnedTag = getFavoriteContextForAsset(asset.id)?.tag?.trim() || null;
   const baseSpanStyle = {
     ...mono,
     fontSize: 11,
@@ -191,10 +197,10 @@ function AssetTagsCell({ asset }: { asset: Asset }) {
 
   const tags = containerTagListForAsset(asset);
   if (tags.length === 0) {
-    return <span style={baseSpanStyle}>{asset.tag ?? "—"}</span>;
+    return <span style={baseSpanStyle}>{pinnedTag ?? asset.tag ?? "—"}</span>;
   }
 
-  const { primary, restCount } = pickLatestVersionTag(tags);
+  const { primary, restCount } = primaryTagForRow(tags, pinnedTag);
   return (
     <div
       role="group"
