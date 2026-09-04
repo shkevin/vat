@@ -233,11 +233,19 @@ async def ingest_finding(
     raw_evidence_ref: str | None = None,
     force_tag_override: bool = False,
     cluster_id: str | None = None,
+    commit: bool = True,
 ) -> tuple[Finding, bool]:
     """
     Ingest a finding from canonical payload. Deduplicates by fingerprint.
     Returns (finding, created) where created=True if new, False if merged.
     When created and auto_sync_to_tracker=True, enqueues tracker create_issue (source-agnostic).
+
+    ``commit=False`` flushes instead of committing, leaving the transaction to
+    the caller. A bulk loop wants this: committing per finding costs an fsync
+    plus a refresh round-trip each, which is what made a 121k-finding bootstrap
+    take the better part of an hour. Batch callers should wrap each finding in a
+    savepoint so one bad payload still cannot poison the batch, and commit every
+    few hundred.
     """
     # Cross-tenant callers (e.g. the legacy admin scanner key with no tenant
     # binding) pass tenant_id=None, which would store findings with a NULL
@@ -560,8 +568,11 @@ async def ingest_finding(
                 db, existing, trace_id=trace_id, parser_id=parser_id
             )
             await db.flush()
-        await db.commit()
-        await db.refresh(existing)
+        if commit:
+            await db.commit()
+            await db.refresh(existing)
+        else:
+            await db.flush()
         return existing, False
 
     # Create new finding. ID space widened from fp[:8] (32-bit, ~65k birthday
@@ -700,7 +711,11 @@ async def ingest_finding(
 
     # Single commit at the end — observations, identifier facts, correlation
     # edges, audit events, and the SyncEvent enqueue are now all-or-nothing.
-    await db.commit()
-    await db.refresh(finding)
+    # With commit=False the caller owns that boundary instead.
+    if commit:
+        await db.commit()
+        await db.refresh(finding)
+    else:
+        await db.flush()
 
     return finding, True

@@ -31,6 +31,11 @@ from app.services.aikido_dashboard_sync import sync_aikido_dashboard
 
 logger = logging.getLogger(__name__)
 
+# Findings per transaction during bootstrap. Large enough that the fsync cost is
+# amortised away, small enough that a batch rollback loses little and the session
+# identity map stays bounded.
+INGEST_COMMIT_EVERY = 500
+
 
 def _should_emit_aikido_ingest_progress(
     processed: int,
@@ -302,68 +307,78 @@ async def run_full_sync(
     async with async_session() as session:
         # Cross-source dedup: ingest merges by fingerprint; no delete (preserves Trivy/manual findings)
         for processed, raw in enumerate(raw_issues, start=1):
+            # SAVEPOINT per finding, commit every INGEST_COMMIT_EVERY. ingest_finding
+            # used to commit on every call, so a 121k-issue bootstrap paid 121k
+            # fsyncs plus 121k refresh round-trips — sampling the live sync caught
+            # COMMIT in 10 of 13 active-query probes. The savepoint keeps the old
+            # per-finding isolation: a bad payload rolls back only itself.
             try:
-                transformed = await adapter.to_vat_finding(
-                    raw,
-                    repo_map=repo_map,
-                    repo_id_to_name=repo_id_to_name,
-                    container_name_to_id=container_name_to_id,
-                )
-                trace_id = _aikido_trace_id(source_id, raw)
-                resolved_asset = (
-                    transformed.image or transformed.component or ""
-                ).strip() or None
-                await emit_audit_event(
-                    session,
-                    trace_id=trace_id,
-                    event_type="asset.mapping.resolved",
-                    actor_type="system",
-                    source_id=source_id or "aikido",
-                    parser_id="aikido",
-                    asset_id=resolved_asset,
-                    decision_name="asset_mapping",
-                    decision_reason_code="aikido_payload_identity",
-                    decision_confidence="high" if resolved_asset else "low",
-                    decision_result="resolved" if resolved_asset else "unresolved",
-                    data={"source_issue_id": str(raw.get("id") or "")},
-                )
-                finding, is_new = await ingest_finding(
-                    session,
-                    transformed,
-                    source_name="Aikido",
-                    tenant_id=DEFAULT_TENANT_ID,
-                    aikido_source_id=source_id,
-                    trace_id=_aikido_trace_id(source_id, raw),
-                    parser_id="aikido",
-                )
-                if await _ensure_asset_for_aikido_finding(session, finding):
-                    assets_created += 1
-                await emit_audit_event(
-                    session,
-                    trace_id=trace_id,
-                    event_type="dedup.replay.new" if is_new else "dedup.replay.merged",
-                    actor_type="system",
-                    source_id=source_id or "aikido",
-                    parser_id="aikido",
-                    asset_id=resolved_asset,
-                    finding_id=getattr(finding, "id", None),
-                    decision_name="replay_dedup",
-                    decision_reason_code="fingerprint_lookup",
-                    decision_confidence="high",
-                    decision_result="created" if is_new else "merged",
-                    data={"source_issue_id": str(raw.get("id") or "")},
-                )
-                if is_new:
-                    created += 1
-                else:
-                    merged += 1
+                async with session.begin_nested():
+                    transformed = await adapter.to_vat_finding(
+                        raw,
+                        repo_map=repo_map,
+                        repo_id_to_name=repo_id_to_name,
+                        container_name_to_id=container_name_to_id,
+                    )
+                    trace_id = _aikido_trace_id(source_id, raw)
+                    resolved_asset = (
+                        transformed.image or transformed.component or ""
+                    ).strip() or None
+                    await emit_audit_event(
+                        session,
+                        trace_id=trace_id,
+                        event_type="asset.mapping.resolved",
+                        actor_type="system",
+                        source_id=source_id or "aikido",
+                        parser_id="aikido",
+                        asset_id=resolved_asset,
+                        decision_name="asset_mapping",
+                        decision_reason_code="aikido_payload_identity",
+                        decision_confidence="high" if resolved_asset else "low",
+                        decision_result="resolved" if resolved_asset else "unresolved",
+                        data={"source_issue_id": str(raw.get("id") or "")},
+                    )
+                    finding, is_new = await ingest_finding(
+                        session,
+                        transformed,
+                        source_name="Aikido",
+                        tenant_id=DEFAULT_TENANT_ID,
+                        aikido_source_id=source_id,
+                        trace_id=_aikido_trace_id(source_id, raw),
+                        parser_id="aikido",
+                        commit=False,
+                    )
+                    if await _ensure_asset_for_aikido_finding(session, finding):
+                        assets_created += 1
+                    await emit_audit_event(
+                        session,
+                        trace_id=trace_id,
+                        event_type="dedup.replay.new" if is_new else "dedup.replay.merged",
+                        actor_type="system",
+                        source_id=source_id or "aikido",
+                        parser_id="aikido",
+                        asset_id=resolved_asset,
+                        finding_id=getattr(finding, "id", None),
+                        decision_name="replay_dedup",
+                        decision_reason_code="fingerprint_lookup",
+                        decision_confidence="high",
+                        decision_result="created" if is_new else "merged",
+                        data={"source_issue_id": str(raw.get("id") or "")},
+                    )
+                    if is_new:
+                        created += 1
+                    else:
+                        merged += 1
             except Exception as e:
-                await session.rollback()
+                # begin_nested already rolled the savepoint back; the batch of
+                # already-ingested findings before it stays intact.
                 logger.warning(
                     "Full sync bootstrap failed for issue %s: %s",
                     raw.get("id", "?"),
                     str(e).split("\n")[0][:200],
                 )
+            if processed % INGEST_COMMIT_EVERY == 0:
+                await session.commit()
             if _should_emit_aikido_ingest_progress(processed, ingest_total):
                 await _progress(
                     on_progress,
