@@ -191,3 +191,66 @@ async def test_rate_limit_is_reported_as_429_not_a_generic_failure(monkeypatch):
         await route.aikido_teams(db=None, _ctx=None, source_id="s-1")
     assert exc.value.status_code == 429
     assert "rate limit" in exc.value.detail.lower()
+
+
+async def test_upstream_failure_is_not_reported_as_an_empty_workspace(monkeypatch):
+    """A 429 on /teams used to return 200 with zero teams.
+
+    fetch_aikido_teams went through the swallowing getter, so "Aikido is rate
+    limiting you" and "you have no teams" were indistinguishable to the caller.
+    """
+    import httpx
+    import pytest
+    from fastapi import HTTPException
+    from app.api import aikido as route
+
+    async def _teams(_c):
+        request = httpx.Request("GET", "https://app.aikido.dev/api/public/v1/teams")
+        raise httpx.HTTPStatusError(
+            "429", request=request, response=httpx.Response(429, request=request)
+        )
+
+    async def _creds(_db, _sid):
+        return {"client_id": "x", "client_secret": "y", "region": "eu"}
+
+    async def _cached(_db, _sid):
+        return {"repos": CODE_REPOS, "containers": CONTAINERS}
+
+    monkeypatch.setattr(route, "fetch_aikido_teams", _teams)
+    monkeypatch.setattr(route, "get_aikido_credentials", _creds)
+    monkeypatch.setattr(route, "get_aikido_dashboard_cached", _cached)
+
+    with pytest.raises(HTTPException) as exc:
+        await route.aikido_teams(db=None, _ctx=None, source_id="s-1")
+    assert exc.value.status_code == 429
+
+
+async def test_unresolved_members_are_counted_in_the_response(monkeypatch):
+    """Dropped responsibilities must be visible, not silently missing."""
+    from app.api import aikido as route
+
+    async def _teams(_c):
+        return TEAMS[:1]  # has one responsibility pointing at a missing id
+
+    async def _repos(_c):
+        return CODE_REPOS
+
+    async def _containers(_c):
+        return CONTAINERS
+
+    async def _creds(_db, _sid):
+        return {"client_id": "x", "client_secret": "y", "region": "eu"}
+
+    async def _cached(_db, _sid):
+        return {}
+
+    for name, fn in (("fetch_aikido_teams", _teams),
+                     ("fetch_aikido_code_repositories", _repos),
+                     ("fetch_aikido_containers", _containers),
+                     ("get_aikido_credentials", _creds),
+                     ("get_aikido_dashboard_cached", _cached)):
+        monkeypatch.setattr(route, name, fn)
+
+    result = await route.aikido_teams(db=None, _ctx=None, source_id="s-1")
+    assert result["unresolvedTotal"] == sum(t["unresolved"] for t in result["teams"])
+    assert result["unresolvedTotal"] > 0

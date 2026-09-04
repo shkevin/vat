@@ -826,8 +826,16 @@ export async function fetchAikidoTeams(
       .catch(() => undefined);
     throw new Error(detail || `API error: ${res.status} ${res.statusText}`);
   }
-  const body = (await res.json()) as { teams: AikidoTeam[] };
-  return body.teams ?? [];
+  const body = (await res.json()) as {
+    teams: AikidoTeam[];
+    unresolvedTotal?: number;
+  };
+  const teams = body.teams ?? [];
+  // Attach so the import summary can report responsibilities Aikido returned
+  // but we could not resolve — otherwise they vanish without a trace.
+  (teams as AikidoTeam[] & { unresolvedTotal?: number }).unresolvedTotal =
+    body.unresolvedTotal ?? 0;
+  return teams;
 }
 
 /** Start full sync (pull + dashboard + backfill) in background. Returns immediately to avoid timeout. */

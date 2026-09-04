@@ -270,7 +270,14 @@ export function AikidoSettingsPage({
         imported++;
       }
       setTeamImportResult(
-        summarizeTeamImport({ imported, ownNothing, unmatched }),
+        summarizeTeamImport({
+          imported,
+          ownNothing,
+          unmatched,
+          unresolved:
+            (teams as typeof teams & { unresolvedTotal?: number })
+              .unresolvedTotal ?? 0,
+        }),
       );
     } catch (e) {
       setTeamImportResult(

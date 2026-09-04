@@ -195,3 +195,28 @@ describe("summarizeTeamImport", () => {
     expect(msg).toContain("1 team owns repos");
   });
 });
+
+describe("summarizeTeamImport: unresolved members", () => {
+  it("says so when Aikido members could not be read", () => {
+    // A failed container fetch drops those responsibilities, which used to
+    // look like "that team only owns repos".
+    const msg = summarizeTeamImport({
+      imported: 7, ownNothing: 12, unmatched: 0, unresolved: 41,
+    });
+    expect(msg).toContain("41 team members could not be read from Aikido");
+    expect(msg).toContain("retry");
+  });
+
+  it("stays quiet when everything resolved", () => {
+    const msg = summarizeTeamImport({
+      imported: 7, ownNothing: 12, unmatched: 0, unresolved: 0,
+    });
+    expect(msg).not.toContain("could not be read");
+  });
+
+  it("gets the singular right", () => {
+    expect(
+      summarizeTeamImport({ imported: 1, ownNothing: 0, unmatched: 0, unresolved: 1 }),
+    ).toContain("1 team member could not be read");
+  });
+});

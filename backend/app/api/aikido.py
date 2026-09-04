@@ -553,7 +553,13 @@ async def aikido_teams(
     except Exception as e:
         logger.exception("aikido upstream call failed")
         raise HTTPException(status_code=502, detail="aikido upstream error") from e
-    return {"teams": resolved}
+    # A responsibility that resolves to nothing is dropped from members, so
+    # without this a failed container fetch looks like "that team only owns
+    # repos" rather than "we could not read its containers".
+    return {
+        "teams": resolved,
+        "unresolvedTotal": sum(t["unresolved"] for t in resolved),
+    }
 
 
 @router.get("/dashboard-data")

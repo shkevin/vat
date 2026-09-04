@@ -2202,7 +2202,11 @@ async def fetch_aikido_teams(
     ``code_repository`` or ``container_repository`` and ``id`` refers to a
     row from ``/repositories/code`` or ``/containers`` respectively.
     """
-    data = await _aikido_api_get_safe("/teams", credentials)
+    # Raising, not _aikido_api_get_safe: swallowing an upstream error here
+    # returns an empty list, and "no teams" is indistinguishable from "Aikido
+    # said 429". The route turns the exception into a real status the user can
+    # act on.
+    data = await _aikido_api_get("/teams", credentials)
     if not data:
         return []
     if isinstance(data, list):

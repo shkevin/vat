@@ -160,8 +160,11 @@ export function summarizeTeamImport(counts: {
   imported: number;
   ownNothing: number;
   unmatched: number;
+  /** Responsibilities Aikido listed that could not be resolved to a repo or
+   *  container — usually a failed upstream fetch, and silent until reported. */
+  unresolved?: number;
 }): string {
-  const { imported, ownNothing, unmatched } = counts;
+  const { imported, ownNothing, unmatched, unresolved = 0 } = counts;
   const parts: string[] = [];
   if (imported > 0) {
     parts.push(
@@ -179,6 +182,11 @@ export function summarizeTeamImport(counts: {
     const suffix = unmatched > 0 ? "" : " (normal for people-only teams)";
     parts.push(
       `${ownNothing === 1 ? "1 owns" : `${ownNothing} own`} nothing in Aikido${suffix}.`,
+    );
+  }
+  if (unresolved > 0) {
+    parts.push(
+      `${unresolved} team ${unresolved === 1 ? "member" : "members"} could not be read from Aikido and were left out — retry if a team looks short.`,
     );
   }
   if (imported > 0) parts.push("Find them in the sidebar under Loadouts.");
