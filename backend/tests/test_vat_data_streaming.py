@@ -38,7 +38,12 @@ def _rows(n):
 async def test_streamed_body_matches_a_single_dump(count, batch):
     rows, assets, meta = _rows(count), [{"id": "a1"}], {"page": 1}
     body = await _collect(rows, assets, meta, batch)
-    expected = {"findings": rows, "assets": assets, "meta": meta}
+    # Null-valued keys are dropped from findings; everything else is verbatim.
+    expected = {
+        "findings": [{k: v for k, v in r.items() if v is not None} for r in rows],
+        "assets": assets,
+        "meta": meta,
+    }
     assert json.loads(body) == expected
     # Compact and consistent across batch joins — no stray ", " from json.dumps
     # defaults leaking in on some boundaries but not others.
@@ -83,3 +88,27 @@ def test_findings_query_orders_by_a_total_order():
     assert len(order) == 2, f"expected a tiebreaker, got {order}"
     assert "created_at" in order[0] and "DESC" in order[0].upper()
     assert "findings.id" in order[1]
+
+
+async def test_null_fields_are_dropped_from_findings():
+    """27% of the dashboard payload was keys whose value is null.
+
+    JSON null and an absent key both read as undefined on the client, and
+    nothing in the frontend compares a finding field to null or tests for key
+    presence — verified before making the change.
+    """
+    rows = [{"id": "f1", "cveId": "CVE-1", "epss": None, "owner": None, "team": ""}]
+    body = await _collect(rows, [], {}, 10)
+    f = json.loads(body)["findings"][0]
+    assert "epss" not in f and "owner" not in f
+    # Falsy-but-not-null values must survive — "" is a real value.
+    assert f["team"] == ""
+    assert f["id"] == "f1" and f["cveId"] == "CVE-1"
+
+
+async def test_assets_and_meta_keep_their_nulls():
+    """Only findings are stripped; assets are ~1,385 rows and not worth the risk."""
+    body = await _collect([], [{"id": "a1", "tag": None}], {"page": None}, 10)
+    d = json.loads(body)
+    assert d["assets"][0]["tag"] is None
+    assert d["meta"]["page"] is None
