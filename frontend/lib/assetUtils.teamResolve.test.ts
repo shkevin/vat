@@ -94,3 +94,36 @@ describe("resolveTeamEntries", () => {
     expect(resolveTeamEntries([{ name: "never/ingested" }], ASSETS)).toEqual([]);
   });
 });
+
+describe("duplicate asset rows for the same image", () => {
+  // Aikido-style `ns/images/api` and registry-prefixed `docker.io/ns/images/api`
+  // both exist as asset rows; only the prefixed one has findings and tags.
+  // Verified against live data: resolving to the bare row produced no tags at
+  // all, and pointed loadouts at an asset page with nothing on it.
+  const BOTH = [
+    { id: "repo" },
+    { id: "ns/images/api" },
+    { id: "docker.io/ns/images/api", observedTags: [{ tag: "develop" }] },
+  ];
+
+  it("resolves to the row that actually has data, either order", () => {
+    for (const assets of [BOTH, [...BOTH].reverse()]) {
+      expect(
+        resolveTeamEntries(
+          [{ name: "repo", branch: "develop" }, { name: "ns/images/api" }],
+          assets,
+        )[1],
+      ).toEqual({
+        assetId: "docker.io/ns/images/api",
+        branch: undefined,
+        tag: "develop",
+      });
+    }
+  });
+
+  it("still resolves when only the bare row exists", () => {
+    expect(
+      resolveTeamEntries([{ name: "ns/images/api" }], [{ id: "ns/images/api" }]),
+    ).toEqual([{ assetId: "ns/images/api", branch: undefined, tag: undefined }]);
+  });
+});

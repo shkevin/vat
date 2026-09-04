@@ -189,15 +189,23 @@ export function resolveTeamEntries(
   members: { name: string; branch?: string; tag?: string }[],
   assets: { id: string; observedTags?: Array<{ tag: string }> }[],
 ): { assetId: string; branch?: string; tag?: string }[] {
-  const byKey = new Map<string, { id: string; observedTags?: Array<{ tag: string }> }>();
+  type Candidate = { id: string; observedTags?: Array<{ tag: string }> };
+  const byKey = new Map<string, Candidate>();
+  // The same image can exist as two asset rows — the Aikido-style
+  // `ns/images/api` and the registry-prefixed `docker.io/ns/images/api` — and
+  // only the prefixed one carries the findings and observed tags. Both claim
+  // the same canonical key, so prefer the row that actually has data instead of
+  // whichever happened to come first.
+  const score = (a: Candidate) => (a.observedTags?.length ? 1 : 0);
+  const claim = (key: string, a: Candidate) => {
+    const current = byKey.get(key);
+    if (!current || score(a) > score(current)) byKey.set(key, a);
+  };
   for (const a of assets) {
     const id = (a.id ?? "").trim();
     if (!id) continue;
-    // First writer wins so an exact id is never shadowed by another asset's
-    // canonical form.
-    if (!byKey.has(id)) byKey.set(id, a);
-    const key = containerImageGroupKey(id);
-    if (!byKey.has(key)) byKey.set(key, a);
+    claim(id, a);
+    claim(containerImageGroupKey(id), a);
   }
   const branches = members
     .map((m) => m.branch)
@@ -208,7 +216,14 @@ export function resolveTeamEntries(
   for (const m of members) {
     const name = (m?.name ?? "").trim();
     if (!name) continue;
-    const asset = byKey.get(name) ?? byKey.get(containerImageGroupKey(name));
+    // Take the canonical hit over the exact one when it carries more data:
+    // an Aikido name matches the bare `ns/images/api` row exactly, but it is
+    // the canonical `docker.io/ns/images/api` row that holds the findings and
+    // observed tags.
+    const exact = byKey.get(name);
+    const canonical = byKey.get(containerImageGroupKey(name));
+    const asset =
+      canonical && (!exact || score(canonical) > score(exact)) ? canonical : exact;
     if (!asset) continue;
     const tag = m.branch
       ? m.tag
