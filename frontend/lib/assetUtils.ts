@@ -130,6 +130,40 @@ export function sameAssetIdentity(a: string, b: string): boolean {
   return false;
 }
 
+/**
+ * Map external asset names (e.g. Aikido team members) onto ids of assets VAT
+ * actually knows about. Aikido reports containers without the registry prefix
+ * VAT's derived ids carry, so match on the canonical group key too. Names with
+ * no matching asset are dropped — a team can own repos that were never ingested.
+ */
+export function resolveAssetIdsByName(
+  names: string[],
+  assets: { id: string }[],
+): string[] {
+  const byKey = new Map<string, string>();
+  for (const a of assets) {
+    const id = (a.id ?? "").trim();
+    if (!id) continue;
+    // First writer wins so an exact id is never shadowed by another asset's
+    // canonical form.
+    if (!byKey.has(id)) byKey.set(id, id);
+    const key = containerImageGroupKey(id);
+    if (!byKey.has(key)) byKey.set(key, id);
+  }
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const raw of names) {
+    const name = (raw ?? "").trim();
+    if (!name) continue;
+    const hit = byKey.get(name) ?? byKey.get(containerImageGroupKey(name));
+    if (hit && !seen.has(hit)) {
+      seen.add(hit);
+      out.push(hit);
+    }
+  }
+  return out;
+}
+
 /** All findings that belong to the same logical asset id as `assetId`. */
 export function collectFindingsForAssetIdentity(
   assetId: string,

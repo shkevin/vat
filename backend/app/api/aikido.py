@@ -12,11 +12,14 @@ from app.adapters.aikido import (
     _extract_branch_from_repo,
     _parse_repo_name_with_branch,
     _strip_tag_from_container_name,
+    aikido_teams_to_asset_names,
     fetch_aikido_code_repositories,
     fetch_aikido_containers,
     fetch_aikido_issues,
+    fetch_aikido_teams,
 )
 from app.api.settings import (
+    first_aikido_source_id,
     get_aikido_credentials,
     has_aikido_source_on_canvas,
 )
@@ -494,6 +497,34 @@ async def aikido_sync_dashboard(
         "fetchedAt": data.get("fetchedAt"),
         "containerSbomSync": data.get("containerSbomSync"),
     }
+
+
+@router.get("/teams")
+async def aikido_teams(
+    db: AsyncSession = Depends(get_db),
+    _ctx: UserContext = Depends(require_reviewer),
+    source_id: str | None = None,
+):
+    """Aikido teams with the repos/containers they own, for importing as loadouts.
+
+    Returns Aikido-side member names; the caller maps them onto VAT asset ids.
+    source_id defaults to the first Aikido source on the canvas.
+    """
+    source_id = source_id or await first_aikido_source_id(db)
+    creds = await get_aikido_credentials(db, source_id)
+    if not _aikido_configured(creds):
+        raise HTTPException(
+            status_code=503,
+            detail="Aikido not configured. Set client_id, client_secret, and region in Settings.",
+        )
+    try:
+        teams = await fetch_aikido_teams(creds)
+        code_repos = await fetch_aikido_code_repositories(creds)
+        containers = await fetch_aikido_containers(creds)
+    except Exception as e:
+        logger.exception("aikido upstream call failed")
+        raise HTTPException(status_code=502, detail="aikido upstream error") from e
+    return {"teams": aikido_teams_to_asset_names(teams, code_repos, containers)}
 
 
 @router.get("/dashboard-data")

@@ -793,6 +793,36 @@ export async function fetchAikidoSyncStatus(
   return res.json();
 }
 
+export interface AikidoTeam {
+  id: string;
+  name: string;
+  active: boolean;
+  /** Aikido-side repo/container names — map to VAT asset ids with resolveAssetIdsByName. */
+  assetNames: string[];
+  /** Responsibilities whose repo/container no longer exists upstream. */
+  unresolved: number;
+}
+
+/** Aikido teams with the repos/containers they own. Used to import teams as loadouts. */
+export async function fetchAikidoTeams(
+  auth?: Auth,
+  sourceId?: string | null,
+): Promise<AikidoTeam[]> {
+  const params = new URLSearchParams();
+  if (sourceId != null) params.set("source_id", sourceId);
+  const url = `${API_BASE}/aikido/teams${params.toString() ? `?${params}` : ""}`;
+  const res = await vatFetch(
+    url,
+    { headers: authHeaders(auth?.token, auth?.userEmail) },
+    auth,
+  );
+  if (!res.ok) {
+    throw new Error(`API error: ${res.status} ${res.statusText}`);
+  }
+  const body = (await res.json()) as { teams: AikidoTeam[] };
+  return body.teams ?? [];
+}
+
 /** Start full sync (pull + dashboard + backfill) in background. Returns immediately to avoid timeout. */
 export async function syncAikido(
   auth?: Auth,

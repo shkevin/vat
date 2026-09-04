@@ -321,6 +321,24 @@ async def has_aikido_source_on_canvas(db: AsyncSession) -> bool:
     )
 
 
+async def first_aikido_source_id(db: AsyncSession) -> str | None:
+    """Id of the first Aikido source on the canvas.
+
+    Lets callers omit source_id in the common single-source setup.
+    """
+    sources = await _get_json(db, DEFAULT_SOURCES, [])
+    if not isinstance(sources, list):
+        return None
+    for s in sources:
+        if (
+            isinstance(s, dict)
+            and (s.get("adapter") or "").lower() == "aikido"
+            and s.get("id")
+        ):
+            return str(s["id"])
+    return None
+
+
 async def get_source_config(db: AsyncSession, source_name: str) -> dict | None:
     """Return source config by name. Used for supports_outbound_sync.
     Fallback: Aikido defaults to adapter aikido, supportsOutboundSync from credentials."""

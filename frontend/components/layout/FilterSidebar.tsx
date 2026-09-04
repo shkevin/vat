@@ -10,6 +10,9 @@ import {
   ASSET_TYPE_LABELS,
 } from "@/lib/constants";
 import type { AssetLoadout } from "@/lib/assetLoadoutStorage";
+import { resolveAssetIdsByName } from "@/lib/assetUtils";
+import { fetchAikidoTeams } from "@/lib/api";
+import { useAuth } from "@/contexts/AuthContext";
 import { ThemedTooltip } from "@/components/ui/ThemedTooltip";
 import { SearchInput } from "@/components/ui/SearchInput";
 import { mono, sans } from "@/lib/styles";
@@ -545,6 +548,7 @@ export function FilterSidebar({
 function AssetLoadoutsSection() {
   const {
     loadouts,
+    allAssets,
     favoriteAssetIds,
     favoriteEntries,
     applyLoadout,
@@ -552,6 +556,7 @@ function AssetLoadoutsSection() {
     deleteLoadout,
     renameLoadout,
   } = useVATData();
+  const { token } = useAuth();
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [saveMode, setSaveMode] = useState<"idle" | "saving" | "editing">(
@@ -617,6 +622,46 @@ function AssetLoadoutsSection() {
     },
     [editName, renameLoadout],
   );
+
+  const [importState, setImportState] = useState<
+    { phase: "idle" | "running" } | { phase: "done"; message: string }
+  >({ phase: "idle" });
+
+  // Pull Aikido teams and save each one as a loadout of the VAT assets it owns.
+  // Teams whose repos/containers were never ingested resolve to nothing and are
+  // skipped rather than saved empty. Existing loadouts with the same name are
+  // overwritten so a re-import tracks team membership changes.
+  const handleImportAikidoTeams = useCallback(async () => {
+    setImportState({ phase: "running" });
+    try {
+      const teams = await fetchAikidoTeams({ token: token ?? undefined });
+      const byName = new Map(loadouts.map((l) => [l.name.toLowerCase(), l.id]));
+      let imported = 0;
+      let skipped = 0;
+      for (const team of teams) {
+        const assetIds = resolveAssetIdsByName(team.assetNames, allAssets);
+        if (assetIds.length === 0) {
+          skipped++;
+          continue;
+        }
+        await saveLoadout(
+          byName.get(team.name.toLowerCase()) ?? null,
+          team.name,
+          assetIds.map((assetId) => ({ assetId })),
+        );
+        imported++;
+      }
+      setImportState({
+        phase: "done",
+        message:
+          imported === 0
+            ? "No Aikido team matched a known asset"
+            : `Imported ${imported} team${imported === 1 ? "" : "s"}${skipped > 0 ? ` · ${skipped} with no matching assets` : ""}`,
+      });
+    } catch {
+      setImportState({ phase: "done", message: "Aikido team import failed" });
+    }
+  }, [allAssets, loadouts, saveLoadout, token]);
 
   const handleApply = useCallback(
     (loadout: AssetLoadout) => {
@@ -1060,6 +1105,45 @@ function AssetLoadoutsSection() {
                 </div>
               ))}
             </div>
+
+            <button
+              type="button"
+              onClick={handleImportAikidoTeams}
+              disabled={importState.phase === "running"}
+              title="Create a loadout per Aikido team from the repos and containers it owns"
+              style={{
+                padding: "8px 10px",
+                fontSize: 11,
+                background: "none",
+                border: "1px dashed var(--app-border)",
+                borderRadius: 4,
+                color:
+                  importState.phase === "running"
+                    ? "var(--app-muted)"
+                    : "var(--app-fg)",
+                cursor:
+                  importState.phase === "running" ? "default" : "pointer",
+                textAlign: "left",
+                ...sans,
+              }}
+            >
+              {importState.phase === "running"
+                ? "Pulling Aikido teams…"
+                : "↓ Import Aikido teams"}
+            </button>
+            {importState.phase === "done" && (
+              <span
+                role="status"
+                style={{
+                  fontSize: 10,
+                  color: "var(--app-muted)",
+                  padding: "0 2px",
+                  ...sans,
+                }}
+              >
+                {importState.message}
+              </span>
+            )}
 
             {saveMode === "idle" ? (
               <button

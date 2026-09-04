@@ -1807,11 +1807,30 @@ async def fetch_aikido_code_repositories(
     """
     Fetch code repositories from Aikido GET /repositories/code.
     Each repo may have id, name, branch. Used to map code_repo_id -> branch for issues.
+
+    Paginated: the endpoint defaults to 20 per page, so an unpaged call silently
+    truncates a workspace with more repos than that.
     """
-    data = await _aikido_api_get("/repositories/code", credentials)
-    if isinstance(data, list):
-        return data
-    return data.get("repositories", data.get("data", data.get("items", [])))
+    all_repos: list[dict[str, Any]] = []
+    # Aikido list endpoints are zero-indexed, same as /containers.
+    page = 0
+    per_page = 100
+    while True:
+        data = await _aikido_api_get(
+            f"/repositories/code?page={page}&per_page={per_page}", credentials
+        )
+        items = (
+            data
+            if isinstance(data, list)
+            else data.get("repositories", data.get("data", data.get("items", [])))
+        )
+        if not items:
+            break
+        all_repos.extend(items)
+        if len(items) < per_page:
+            break
+        page += 1
+    return all_repos
 
 
 async def _aikido_api_put(
@@ -2172,3 +2191,71 @@ async def fetch_aikido_workspace(
     if not data or not isinstance(data, dict):
         return None
     return data
+
+
+async def fetch_aikido_teams(
+    credentials: Optional[dict[str, Any]] = None,
+) -> list[dict[str, Any]]:
+    """Fetch teams from GET /teams.
+
+    Each team carries ``responsibilities``: ``{id, type}`` where type is
+    ``code_repository`` or ``container_repository`` and ``id`` refers to a
+    row from ``/repositories/code`` or ``/containers`` respectively.
+    """
+    data = await _aikido_api_get_safe("/teams", credentials)
+    if not data:
+        return []
+    if isinstance(data, list):
+        return data
+    return data.get("teams", data.get("data", data.get("items", [])))
+
+
+_TEAM_RESPONSIBILITY_SOURCES = {
+    "code_repository": "code_repos",
+    "container_repository": "containers",
+}
+
+
+def aikido_teams_to_asset_names(
+    teams: list[dict[str, Any]],
+    code_repos: list[dict[str, Any]],
+    containers: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Resolve each team's responsibilities to the Aikido names of its members.
+
+    Names are returned as Aikido reports them. VAT asset ids are derived on the
+    frontend and carry a registry prefix Aikido omits (``docker.io/ns/images/x``
+    vs ``ns/images/x``), so normalization is left to the caller that owns asset
+    identity. ``unresolved`` counts responsibilities whose id was not in the
+    repo/container lists — usually an inactive or since-deleted resource.
+    """
+    by_source = {
+        "code_repos": {r.get("id"): r for r in code_repos or [] if isinstance(r, dict)},
+        "containers": {c.get("id"): c for c in containers or [] if isinstance(c, dict)},
+    }
+    out: list[dict[str, Any]] = []
+    for team in teams or []:
+        if not isinstance(team, dict):
+            continue
+        names: list[str] = []
+        unresolved = 0
+        for resp in team.get("responsibilities") or []:
+            if not isinstance(resp, dict):
+                continue
+            source = _TEAM_RESPONSIBILITY_SOURCES.get(resp.get("type"))
+            member = by_source[source].get(resp.get("id")) if source else None
+            name = (member or {}).get("name")
+            if isinstance(name, str) and name.strip():
+                names.append(name.strip())
+            else:
+                unresolved += 1
+        out.append(
+            {
+                "id": str(team.get("id")),
+                "name": (team.get("name") or f"team-{team.get('id')}").strip(),
+                "active": bool(team.get("active", True)),
+                "assetNames": list(dict.fromkeys(names)),
+                "unresolved": unresolved,
+            }
+        )
+    return out
