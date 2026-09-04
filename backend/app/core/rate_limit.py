@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from typing import Optional
 
 from app.core.config import get_settings
@@ -110,3 +111,75 @@ async def reset(key: str) -> None:
             await client.aclose()
         except Exception:
             pass
+
+
+# --- Cross-process request pacing -------------------------------------------
+#
+# The Aikido adapter paced itself with a module-global timestamp, which is
+# per-process. Two backend replicas plus the celery workers each kept their own,
+# so the real request rate against Aikido was several times the configured gap
+# and the workspace sat in 429 — on /teams, and then on /issues/export during a
+# sync. These give every process one shared schedule.
+
+_GAP_TTL_MS = 300_000  # a stale key must not wedge the schedule forever
+_MAX_WAIT_SECONDS = 120.0
+
+# Atomic claim-the-next-slot. Returns ms to wait before the caller may proceed.
+_GAP_LUA = """
+local nxt = tonumber(redis.call('GET', KEYS[1]) or '0')
+local now = tonumber(ARGV[1])
+local gap = tonumber(ARGV[2])
+local ttl = ARGV[3]
+if now >= nxt then
+  redis.call('PSETEX', KEYS[1], ttl, now + gap)
+  return 0
+end
+redis.call('PSETEX', KEYS[1], ttl, nxt + gap)
+return nxt - now
+"""
+
+
+async def acquire_gap_slot(key: str, gap_ms: int) -> Optional[float]:
+    """Reserve the next slot on a shared schedule; return seconds to wait.
+
+    Returns None when there is no Redis, so the caller can fall back to its own
+    in-process pacing rather than losing rate limiting altogether.
+    """
+    client = await _client()
+    if client is None:
+        return None
+    try:
+        now_ms = time.time() * 1000.0
+        wait_ms = await client.eval(
+            _GAP_LUA, 1, f"ratelimit:gap:{key}", now_ms, gap_ms, _GAP_TTL_MS
+        )
+        return min(max(float(wait_ms) / 1000.0, 0.0), _MAX_WAIT_SECONDS)
+    except Exception as e:
+        logger.debug("rate_limit: gap slot failed for %s: %s", key, e)
+        return None
+
+
+async def note_upstream_backoff(key: str, retry_after_seconds: float) -> None:
+    """Push the shared schedule out after a 429.
+
+    Without this only the process that saw the 429 backs off while its siblings
+    keep calling, so the limit never clears.
+    """
+    client = await _client()
+    if client is None:
+        return
+    try:
+        until_ms = (time.time() + max(retry_after_seconds, 0.0)) * 1000.0
+        await client.eval(
+            "local nxt = tonumber(redis.call('GET', KEYS[1]) or '0')\n"
+            "if tonumber(ARGV[1]) > nxt then\n"
+            "  redis.call('PSETEX', KEYS[1], ARGV[2], ARGV[1])\n"
+            "end\n"
+            "return 1",
+            1,
+            f"ratelimit:gap:{key}",
+            until_ms,
+            _GAP_TTL_MS,
+        )
+    except Exception as e:
+        logger.debug("rate_limit: backoff note failed for %s: %s", key, e)

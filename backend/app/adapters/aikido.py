@@ -27,6 +27,7 @@ logger = logging.getLogger(__name__)
 
 from app.adapters.registry import SourceAdapterCapabilities, register_source_adapter
 from app.core.config import get_settings
+from app.core.rate_limit import acquire_gap_slot, note_upstream_backoff
 from app.parsers.image_digest import effective_image_digest
 from app.services.dedup import component_base as extract_component_base
 from app.schemas.integration_ui import IntegrationFieldSchema, IntegrationSettingsSchema
@@ -85,15 +86,46 @@ async def aclose_aikido_client() -> None:
 
 
 async def _acquire_rate_limit_slot() -> None:
-    """Wait until we can make another Aikido API request (min gap between requests)."""
+    """Wait until we can make another Aikido API request (min gap between requests).
+
+    Paces on a schedule shared through Redis when one is available. The old
+    module-global timestamp was per-process, so two backend replicas plus the
+    celery workers each kept their own and the real rate against Aikido was
+    several times the configured gap — which is how the workspace ended up
+    429-ing on /teams and then on /issues/export mid-sync. Falls back to the
+    in-process gap when there is no Redis, so pacing never disappears entirely.
+    """
     s = get_settings()
-    gap_s = s.aikido_request_gap_ms / 1000.0
+    gap_ms = s.aikido_request_gap_ms
+    wait = await acquire_gap_slot("aikido", gap_ms)
+    if wait is not None:
+        if wait > 0:
+            await asyncio.sleep(wait)
+        return
+    gap_s = gap_ms / 1000.0
     async with _rate_limit_lock:
         now = time.monotonic()
         elapsed = now - _rate_limit_last[0]
         if elapsed < gap_s:
             await asyncio.sleep(gap_s - elapsed)
         _rate_limit_last[0] = time.monotonic()
+
+
+async def _note_aikido_429(resp: httpx.Response) -> float:
+    """Back every process off after a 429, and return the wait in seconds.
+
+    Sleeping only in the process that saw the 429 leaves its siblings calling
+    straight through, so the limit never gets a chance to clear.
+    """
+    try:
+        retry_after = float(resp.headers.get("Retry-After", 60))
+    except (TypeError, ValueError):
+        retry_after = 60.0
+    # Retry-After of 1s is common and too optimistic when several processes are
+    # sharing the budget; give the schedule real room.
+    backoff = max(retry_after, get_settings().aikido_request_gap_ms / 1000.0)
+    await note_upstream_backoff("aikido", backoff)
+    return backoff
 
 
 # Aikido issue types → VAT finding types (PRD §5.1.3)
@@ -1475,9 +1507,9 @@ async def fetch_aikido_issues(
             timeout=120.0,
         )
         if resp.status_code == 429:
-            retry_after = int(resp.headers.get("Retry-After", 60))
+            backoff = await _note_aikido_429(resp)
             if attempt < max_retries - 1:
-                await asyncio.sleep(retry_after)
+                await asyncio.sleep(backoff)
                 continue
             resp.raise_for_status()
         resp.raise_for_status()
@@ -1517,9 +1549,9 @@ async def _aikido_api_get(
             url, headers={"Authorization": f"Bearer {token}"}, timeout=60.0
         )
         if resp.status_code == 429:
-            retry_after = int(resp.headers.get("Retry-After", 60))
+            backoff = await _note_aikido_429(resp)
             if attempt < max_retries - 1:
-                await asyncio.sleep(retry_after)
+                await asyncio.sleep(backoff)
                 continue
             resp.raise_for_status()
         resp.raise_for_status()
@@ -1561,7 +1593,7 @@ async def _aikido_api_get_maybe_json(
         }
         resp = await client.get(url, headers=headers, timeout=timeout)
         if resp.status_code == 429:
-            await asyncio.sleep(int(resp.headers.get("Retry-After", 60)))
+            await asyncio.sleep(await _note_aikido_429(resp))
             await _acquire_rate_limit_slot()
             resp = await client.get(url, headers=headers, timeout=timeout)
         if resp.status_code != 200:
@@ -1654,7 +1686,7 @@ async def _aikido_api_post_request(
         }
         resp = await client.post(url, headers=headers, json=json_body, timeout=timeout)
         if resp.status_code == 429:
-            await asyncio.sleep(int(resp.headers.get("Retry-After", 60)))
+            await asyncio.sleep(await _note_aikido_429(resp))
             await _acquire_rate_limit_slot()
             resp = await client.post(
                 url, headers=headers, json=json_body, timeout=timeout
@@ -1867,9 +1899,9 @@ async def _aikido_api_put(
             kwargs["json"] = json_body
         resp = await client.put(url, **kwargs)
         if resp.status_code == 429:
-            retry_after = int(resp.headers.get("Retry-After", 60))
+            backoff = await _note_aikido_429(resp)
             if attempt < max_retries - 1:
-                await asyncio.sleep(retry_after)
+                await asyncio.sleep(backoff)
                 continue
             resp.raise_for_status()
         resp.raise_for_status()
