@@ -29,20 +29,39 @@ logger = logging.getLogger(__name__)
 _PROBE_TIMEOUT_SECONDS = 1.0
 
 
+_redis_client: Optional[object] = None
+_redis_loop: Optional[asyncio.AbstractEventLoop] = None
+
+
 async def _client() -> Optional[object]:
     """Return a redis.asyncio client when the broker is redis, else None.
 
-    Lazy-imported and lazy-connected so the rest of the app never pays
-    the cost when this module isn't used. Errors are swallowed and the
-    caller treats it as "no rate limit available".
+    Cached per event loop. It used to build a fresh client on every call, which
+    the Aikido pacing turned into hundreds of leaked connection pools per sync;
+    caching it outright would be worse, because Celery runs each task under its
+    own asyncio.run() and a pool from a closed loop fails with "attached to a
+    different loop". Keying on the running loop gives one pool per task.
+
+    Lazy-imported and lazy-connected so the rest of the app never pays the cost
+    when this module isn't used. Errors are swallowed and the caller treats it
+    as "no rate limit available".
     """
+    global _redis_client, _redis_loop
     url = get_settings().celery_broker_url or ""
     if not url.startswith(("redis://", "rediss://")):
         return None
     try:
+        loop: Optional[asyncio.AbstractEventLoop] = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+    if _redis_client is not None and _redis_loop is loop:
+        return _redis_client
+    try:
         import redis.asyncio as aioredis  # type: ignore[import-not-found]
 
-        return aioredis.from_url(url, socket_timeout=_PROBE_TIMEOUT_SECONDS)
+        _redis_client = aioredis.from_url(url, socket_timeout=_PROBE_TIMEOUT_SECONDS)
+        _redis_loop = loop
+        return _redis_client
     except Exception as e:
         logger.debug("rate_limit: redis client init failed: %s", e)
         return None

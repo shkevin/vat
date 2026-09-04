@@ -29,7 +29,6 @@ from app.adapters.registry import SourceAdapterCapabilities, register_source_ada
 from app.core.config import get_settings
 from app.core.rate_limit import acquire_gap_slot, note_upstream_backoff
 from app.parsers.image_digest import effective_image_digest
-from app.services.dedup import component_base as extract_component_base
 from app.schemas.integration_ui import IntegrationFieldSchema, IntegrationSettingsSchema
 from app.schemas.vat import (
     VatFindingSchema,
@@ -37,6 +36,7 @@ from app.schemas.vat import (
     VatSourceIgnoreRequest,
     VatSourceUnignoreRequest,
 )
+from app.services.dedup import component_base as extract_component_base
 
 REGION_BASE_URLS: dict[str, str] = {
     "eu": "https://app.aikido.dev",
@@ -55,16 +55,33 @@ _rate_limit_lock = asyncio.Lock()
 # reuses connections. Transport-level retries=3 absorbs single connect
 # blips (DNS hiccups, TCP RST) without bubbling up to callers.
 _aikido_http_client: Optional[httpx.AsyncClient] = None
+# The loop the cached client's sockets belong to. Celery runs every task under a
+# fresh asyncio.run(), so a client cached across tasks carries connections bound
+# to a dead loop and the next request fails with "attached to a different loop".
+_aikido_http_loop: Optional[asyncio.AbstractEventLoop] = None
 _aikido_http_lock = asyncio.Lock()
 
 
 def _aikido_client() -> httpx.AsyncClient:
-    """Lazy module-level httpx client for Aikido. Per-request `timeout=`
-    overrides the default. Each uvicorn worker / Celery prefork worker
-    gets its own client bound to that worker's event loop.
+    """Lazy module-level httpx client for Aikido, one per event loop.
+
+    Per-request `timeout=` overrides the default. The cache is keyed on the
+    running loop: a Celery worker runs each task under its own asyncio.run(), so
+    reusing a client across tasks hands the next request sockets belonging to a
+    closed loop. The stale client is dropped rather than closed — closing needs
+    its loop, which is already gone; its sockets die with it.
     """
-    global _aikido_http_client
-    if _aikido_http_client is None or _aikido_http_client.is_closed:
+    global _aikido_http_client, _aikido_http_loop
+    try:
+        loop: Optional[asyncio.AbstractEventLoop] = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+    if (
+        _aikido_http_client is None
+        or _aikido_http_client.is_closed
+        or _aikido_http_loop is not loop
+    ):
+        _aikido_http_loop = loop
         # Default timeout = 60s; callers pass timeout= for longer/shorter
         # bounds. retries=3 at transport layer handles ConnectError /
         # ReadTimeout reconnects on a single retry, without callers needing
